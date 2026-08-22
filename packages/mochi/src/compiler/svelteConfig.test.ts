@@ -158,7 +158,7 @@ describe('loadSvelteConfig', () => {
       const merged = mergeCompilerOptions(cfg.compilerOptions, forced());
       // user's runes carries through
       expect(merged.runes).toBe(false);
-      // framework default for experimental.async still applies
+      // framework-forced experimental.async still applies
       expect(merged.experimental?.async).toBe(true);
       // forced fields applied
       expect(merged.generate).toBe('server');

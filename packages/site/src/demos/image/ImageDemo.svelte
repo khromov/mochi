@@ -25,8 +25,7 @@
 
   const blur = await getImagePlaceholder(remote);
 
-  // Small "how to use" snippets shown under each example. Syntax highlighting is
-  // server-side (Shiki), so these are computed once during SSR.
+  // Syntax highlighting is server-side (Shiki), so these are computed once during SSR.
   const svelte = (code) => highlightCode(code, 'svelte');
   const ts = (code) => highlightCode(code, 'typescript');
   const codeComponent = await svelte('<Image src={photo} size="hero" alt="A resized photo" />');

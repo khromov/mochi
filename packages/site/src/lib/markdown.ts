@@ -1,5 +1,6 @@
 import { compile as mdsvexCompile } from 'mdsvex';
 import { toHtml } from 'hast-util-to-html';
+import { decodeHTML } from 'entities';
 import rehypeSlug from 'rehype-slug';
 import rehypeExternalLinks from './rehypeExternalLinks';
 import type { TocEntry } from './toc';
@@ -16,7 +17,9 @@ export type HastNode = {
 
 export function hastText(node: HastNode): string {
   if (node.type === 'text') {
-    return node.value ?? '';
+    // mdsvex entity-encodes text inside code spans (`<` → `&lt;`, `{` → `&#123;`) so
+    // the compiled Svelte stays valid; decode it back for use as a plain-text title.
+    return decodeHTML(node.value ?? '');
   }
   if (!node.children) {
     return '';
@@ -44,11 +47,7 @@ export function collectHeadings(tree: HastNode): TocEntry[] {
   return toc;
 }
 
-/**
- * Markdown to plain HTML, for content that arrives at runtime and so can't go through
- * the build-time `.md` → Svelte component barrel. Runs the same mdsvex + rehype pipeline
- * the docs use, then stringifies the hast tree instead of letting mdsvex emit Svelte source.
- */
+/** Renders markdown that arrives at runtime (so it can't go through the build-time `.md` → Svelte barrel) to plain HTML, using the same mdsvex + rehype pipeline as the docs. */
 export async function renderMarkdown(markdown: string): Promise<string> {
   let html = '';
   // Stringify inside the plugin: mdsvex keeps transforming the tree afterwards on its

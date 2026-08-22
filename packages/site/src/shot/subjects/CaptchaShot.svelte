@@ -10,9 +10,8 @@
   const applied = $derived(theme === 'defaults' ? null : themes[theme]);
 </script>
 
-<!-- The island is MochiCaptcha itself, straight off the `mochi-framework/components`
-     package import — no local wrapper. The themed frame around it stays static SSR;
-     its CSS custom properties cascade into the hydrated widget as usual. -->
+<!-- MochiCaptcha hydrates directly from `mochi-framework/components` with no local wrapper;
+     the themed frame around it stays static SSR and its custom properties cascade into the widget as usual. -->
 <div class="subject" style={applied?.css}>
   <MochiCaptcha mochi:hydrate {...captcha} emoji={applied?.emoji} label={applied?.label} />
 </div>

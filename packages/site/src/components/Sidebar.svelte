@@ -19,9 +19,8 @@
   let sidebarInner: HTMLDivElement;
   let searchInput: HTMLInputElement;
 
-  // localStorage isn't readable during SSR, so we always emit a tiny inline
-  // <script> right after .sidebar-inner that reads localStorage and applies
-  // the scroll position synchronously while the HTML is being parsed (before paint).
+  // localStorage isn't readable during SSR, so emit an inline script that restores
+  // scroll synchronously while the HTML parses, before paint.
   const restoreScript =
     `<script>(function(){var el=document.currentScript.previousElementSibling;if(el&&el.classList.contains('sidebar-inner')){var v=Number(localStorage.getItem('${SCROLL_KEY}')||0);if(v>0){el.scrollTop=v;}}})();</` +
     `script>`;
@@ -133,7 +132,7 @@
         <a href="/blog/">Blog</a>
       </li>
       <li class="toc-item level-2">
-        <a href="/support/">Support</a>
+        <a href="/support">Support</a>
       </li>
       <li class="toc-item level-2">
         <a href="/docs/changelog/">Changelog</a>

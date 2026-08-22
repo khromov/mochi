@@ -64,6 +64,14 @@ describe('scanPublicDir', () => {
     const files = await scanPublicDir(`${dir}/`);
     expect(files.get('/favicon.ico')).toBe(path.join(dir, 'favicon.ico'));
   });
+
+  test('resolves disk paths to absolute even when given a relative dir', async () => {
+    const relDir = path.relative(process.cwd(), dir);
+    const files = await scanPublicDir(relDir);
+    const diskPath = files.get('/favicon.ico');
+    expect(path.isAbsolute(diskPath!)).toBe(true);
+    expect(diskPath).toBe(path.join(dir, 'favicon.ico'));
+  });
 });
 
 describe('publicRouteKey', () => {

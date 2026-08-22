@@ -1,9 +1,22 @@
 import { mkdirSync, rmSync, type Dirent } from 'node:fs';
 import { mkdir, open, readdir, rename, rm, stat, unlink, type FileHandle } from 'node:fs/promises';
-import { join, relative } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import type { Storage, SweepOptions, SweepResult } from './cache';
 import { mochiEvents } from '../events';
+import { registerPressureResponder } from '../runtime/memoryPressure';
+import { pinGlobal } from '../utils/globalState';
 import { logger } from '../utils/log';
+
+// A closure rather than the instance, so taking a sweeper over needs no public method on `FileStorage` — the registry
+// may hold an entry from a different bundled copy of this class.
+interface SweeperOwner {
+  stop(): void;
+}
+
+// Dev HMR rebuilds a module-scope FileStorage on every reload while the previous copy becomes unreachable, so nobody
+// is left to dispose() it and its unref'd interval sweeps forever. Keyed by directory since a sweep deletes files by
+// mtime; pinned so duplicate bundled framework copies share one registry.
+const sweeperOwners = pinGlobal('__mochi_cache_sweeper_owners__', () => new Map<string, SweeperOwner>());
 
 /**
  * On-disk sentinel written in place of a binary field: a pointer (relative to the
@@ -80,12 +93,15 @@ export class MemoryStorage implements Storage {
   private store = new Map<string, { value: unknown; writtenAt: number }>();
   private readonly maxAge?: number;
   private intervalTimer?: ReturnType<typeof setInterval>;
+  readonly pressureLabel = 'MemoryStorage';
 
   constructor(options: MemoryStorageOptions = {}) {
     this.maxAge = options.maxAge;
     if (options.purgeInterval && options.purgeInterval > 0) {
       this.startSweeper(options.purgeInterval);
     }
+    // This is the backend that actually holds bytes in RAM, so it is the one the OS low-memory signal drains.
+    registerPressureResponder(this);
   }
 
   getItem(key: string): unknown {
@@ -191,6 +207,10 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
   // Ramp to a 100ms poll and keep retrying for a few seconds: under heavy write
   // contention a peer's handle on the destination can linger longer than a short
   // window, and a rename that ultimately succeeds beats a spurious hard failure.
+  // The delay is jittered because a steady cadence can phase-lock with a reader that
+  // reopens the destination on its own steady cycle — every retry then lands inside the
+  // reader's open window and the writer starves until the budget runs out. Jitter keeps
+  // the mean backoff but decorrelates the two, so a retry eventually falls in the gap.
   for (let attempt = 0; ; attempt++) {
     try {
       return await rename(from, to);
@@ -199,7 +219,30 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
       if (attempt >= 50 || !RENAME_RETRY_CODES.has(code)) {
         throw err;
       }
-      await Bun.sleep(Math.min(100, 10 * (attempt + 1)));
+      await Bun.sleep(Math.min(100, 10 * (attempt + 1)) * (0.5 + Math.random()));
+    }
+  }
+}
+
+// TODO: This is very hacky and we should check if 1.4.0 solves it and/or remove this asap
+// Windows reports a delete-pending file — a concurrent sweep or removeItem mid-unlink — as EPERM/EACCES
+// on open rather than ENOENT, and an antivirus/indexer handle surfaces the same codes; retrying lets the
+// delete finish into a plain ENOENT miss and a transient lock clear into a successful read. ENOENT itself
+// is never retried — it is the miss signal `getItem` branches on. No-op on POSIX.
+const READ_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
+async function readTextWithRetry(path: string): Promise<string> {
+  if (process.platform !== 'win32') {
+    return Bun.file(path).text();
+  }
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await Bun.file(path).text();
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? '';
+      if (attempt >= 20 || !READ_RETRY_CODES.has(code)) {
+        throw err;
+      }
+      await Bun.sleep(Math.min(100, 10 * (attempt + 1)) * (0.5 + Math.random()));
     }
   }
 }
@@ -244,6 +287,8 @@ export class FileStorage implements Storage {
   private offloadBinary: boolean;
   private initialTimer?: ReturnType<typeof setTimeout>;
   private intervalTimer?: ReturnType<typeof setInterval>;
+  private sweepKey?: string;
+  private sweepOwner?: SweeperOwner;
 
   constructor(options: FileStorageOptions) {
     this.directory = options.directory;
@@ -264,7 +309,7 @@ export class FileStorage implements Storage {
   async getItem(key: string): Promise<unknown> {
     let text: string;
     try {
-      text = await Bun.file(this.pathFor(key)).text();
+      text = await readTextWithRetry(this.pathFor(key));
     } catch (err) {
       // A missing file is a cache miss; any other read error propagates so the
       // cache can degrade to a `miss` + `cache:error` rather than serving garbage.
@@ -451,8 +496,7 @@ export class FileStorage implements Storage {
     return options.reportKeys ? { removed, removedKeys } : { removed };
   }
 
-  /** Stop the background sweep. Call when the cache is no longer needed (e.g. in tests). */
-  dispose(): void {
+  private stopSweepTimers(): void {
     if (this.initialTimer) {
       clearTimeout(this.initialTimer);
     }
@@ -461,6 +505,17 @@ export class FileStorage implements Storage {
     }
     this.initialTimer = undefined;
     this.intervalTimer = undefined;
+  }
+
+  /** Stop the background sweep. Call when the cache is no longer needed (e.g. in tests). */
+  dispose(): void {
+    this.stopSweepTimers();
+    // A newer instance may have taken the directory over and must keep sweeping it.
+    if (this.sweepKey !== undefined && sweeperOwners.get(this.sweepKey) === this.sweepOwner) {
+      sweeperOwners.delete(this.sweepKey);
+    }
+    this.sweepKey = undefined;
+    this.sweepOwner = undefined;
   }
 
   // The plaintext key stored in a file's envelope, or null if it can't be recovered
@@ -552,6 +607,13 @@ export class FileStorage implements Storage {
         logger.warn(`Cache sweep failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     };
+    // Newest wins: an older instance is usually a dead HMR copy, and first-wins would pin the sweep to one that
+    // `dispose()` can never reach.
+    const key = resolve(this.directory);
+    sweeperOwners.get(key)?.stop();
+    this.sweepKey = key;
+    this.sweepOwner = { stop: () => this.stopSweepTimers() };
+
     // An initial pass shortly after boot reclaims accrued cruft and makes the
     // sweeper visible right away; both timers are unref'd so they never keep the
     // process alive.
@@ -559,5 +621,6 @@ export class FileStorage implements Storage {
     this.intervalTimer = setInterval(run, intervalMs);
     this.initialTimer.unref?.();
     this.intervalTimer.unref?.();
+    sweeperOwners.set(key, this.sweepOwner);
   }
 }

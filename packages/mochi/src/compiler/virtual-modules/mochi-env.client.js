@@ -1,4 +1,6 @@
 export const isServer = false; export const isBrowser = true; export const DEV = __MOCHI_DEV__; export const isDev = __MOCHI_DEV__;
+// Always false in the browser: a build never runs client-side, so nothing that executes here is ever mid-build.
+export const isBuilding = false;
 // Shared thrower for the server-only stubs below. Each stub stays a pure
 // declaration (tree-shaken when unused); this helper is pulled in only if one is.
 const __serverOnly = (n) => { throw new Error(n + " is only available on the server"); };
@@ -44,6 +46,9 @@ export { setLogLevel, getLogLevel };
 export const logger = __mochi_logger;
 if (typeof window !== "undefined" && window.__mochi_log_level) setLogLevel(window.__mochi_log_level);
 export function devWarn(msg) { if (typeof window !== "undefined" && window.__mochi_warn) window.__mochi_warn(msg); else __mochi_logger.warn(msg); }
+// Isomorphic: pins a value on globalThis (per realm in the browser). Real re-export,
+// not a server-only stub, so island code can dedupe singletons on the client too.
+export { pinGlobal } from "__MOCHI_GLOBAL_STATE__";
 export { stringify, parse } from "__MOCHI_DEVALUE__";
 export { trailingSlashIt } from "__MOCHI_TRAILING_SLASH__";
 // Server-only; the preprocessor never injects __mochi_emit_props__
@@ -120,6 +125,8 @@ export function getImage() { __serverOnly("getImage()"); }
 export function getImagePlaceholder() { return Promise.resolve(null); }
 export function imagePlaceholder() { return Promise.resolve(null); }
 export function invalidateImage() { __serverOnly("invalidateImage()"); }
+export { reloadDeferredIsland, reloadDeferredIslandAll } from "__MOCHI_DEFER_API__";
+export { deferReloadState, DeferReloadState } from "__MOCHI_DEFER_REACTIVE__";
 export function memoryStore() { __serverOnly("memoryStore()"); }
 export function sqliteStore() { __serverOnly("sqliteStore()"); }
 export function postgresStore() { __serverOnly("postgresStore()"); }
@@ -128,3 +135,5 @@ export { enhance, deserialize } from "__MOCHI_ENHANCE_CLIENT__";
 // every component that executes in the browser is part of a hydrating (or
 // client-only mounting) subtree. No context lookup needed.
 export function isHydratable() { return true; }
+// Server filesystem path — meaningless in the browser.
+export const PROTECTION_SHELL_COMPONENT = undefined;

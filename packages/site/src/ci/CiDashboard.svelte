@@ -1,9 +1,10 @@
 <script lang="ts">
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+  import Star from '@lucide/svelte/icons/star';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import type { CiDashboardData, CiRateLimit } from '../lib/ci';
   import { createCiBoard } from './board.svelte';
-  import { CI_ACTIONS_URL } from './repo';
+  import { CI_ACTIONS_URL, CI_STARGAZERS_URL } from './repo';
   import WorkflowCard from './WorkflowCard.svelte';
   import { formatRelative, formatUntil } from './status';
 
@@ -42,6 +43,12 @@
   </p>
 
   <div class="toolbar-right">
+    {#if board && board.stars != null}
+      <a class="stars" href={CI_STARGAZERS_URL} target="_blank" rel="noreferrer">
+        <Star size={13} aria-hidden="true" />
+        {board.stars.toLocaleString()} stars
+      </a>
+    {/if}
     {#if limit}
       <span class="quota">{limit.remaining}/{limit.limit} API calls left · resets {formatUntil(limit.resetAt, now)}</span>
     {/if}
@@ -99,6 +106,19 @@
   .quota {
     font-size: 0.75rem;
     color: var(--text-subtle);
+  }
+
+  .stars {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    text-decoration: none;
+  }
+
+  .stars:hover {
+    color: var(--text);
   }
 
   .chip {

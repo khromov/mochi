@@ -5,7 +5,7 @@ import { ComponentRegistry } from '../compiler/ComponentRegistry';
 import { requestContext, type MochiRequestContext } from '../runtime/requestContext';
 import { HYDRATABLE_CONTEXT_KEY } from '../islands/isHydratable';
 
-const COMPONENT_PATH = path.join(import.meta.dir, 'ViewTransitions.svelte');
+const COMPONENT_PATH = path.join(import.meta.dir, 'ViewTransitions.server.svelte');
 
 describe('ViewTransitions', () => {
   let outDir: string;
@@ -61,7 +61,8 @@ describe('ViewTransitions', () => {
 
   test('duration is interpolated into the animation', async () => {
     const { head } = await render({ duration: 500 });
-    expect(head).toContain('500ms');
+    expect(head).toContain('mochi-vt-out 500ms');
+    expect(head).toContain('mochi-vt-in 500ms');
   });
 
   test('custom wraps the supplied bodies in keyframes and the rules still reference them', async () => {

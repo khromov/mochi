@@ -1,7 +1,7 @@
 ---
 title: 'Deployment options'
 slug: deployment-options
-description: 'Where to deploy your Mochi app — PaaS, VPS, big cloud, and self-hosted options.'
+description: 'Where to deploy your Mochi app: PaaS, VPS, big cloud, and self-hosted options.'
 ---
 
 <script>
@@ -10,50 +10,21 @@ import Callout from './_components/Callout.svelte';
 
 # Deployment options
 
-Mochi is at its heart a _serverful_ application. That means it doesn't run on _some_ serverless hosts. While this can seem like a limitation, it is actually what gives Mochi its superpowers - features like built-in SQLite support, in-memory cache and built-in support for WebSockets and Server-Sent Events. You can easily build complex, data-driven realtime applications with Mochi without a single extra dependency or any external cloud services. It's both leaner _and_ cheaper.
+Mochi is a **serverful** application, so it does not run on every serverless host. That is what gives Mochi its features: built-in SQLite, in-memory cache, WebSockets, and Server-Sent Events. You can build complex, data-driven realtime apps with no extra dependency and no external cloud services.
 
-You can host Bun and Mochi at hundreds of different hosts. We list some of the most popular options below.
+You can host Bun and Mochi at hundreds of hosts. Some popular options are below. For how a build behaves once it is deployed — relocatable output, a persistent image cache — see [Production builds](/docs/production-builds/).
 
 <Callout type="info">
-None of the links below are affiliate links, nor should any of the links be seen as endorsements.
-</Callout>
 
-## Relocatable builds
-
-A manifest holds no absolute paths at all — artifacts are written relative to the out-dir, sources relative to the project root — so you can build in one place and run in another: build in a CI stage, copy `.mochi/` into the final image, move or rename the directory. A build also carries nothing specific to the machine that produced it, so the same commit built anywhere produces the same output. Point the runtime at wherever it landed:
-
-```ts
-Mochi.serve({ outDir: './.mochi' }); // default — or wherever you copied it
-```
-
-Paths resolve against the manifest's own directory, so pointing `manifest` at a relocated build works on its own:
-
-```ts
-Mochi.serve({ manifest: '/srv/app/build/manifest.json' });
-```
-
-<Callout type="warning">
-
-Four things still anchor a prebuilt app to its project:
-
-- **Build and serve from the same working directory.** Components are keyed relative to the project root, which both `mochi-framework build` and `Mochi.serve()` take to be the current working directory — so run both from the project root. How a route spells its component (`'./src/Site.svelte'` or an absolute path) doesn't have to match. A component the manifest doesn't cover is compiled from source instead, and says so loudly at startup.
-- **Ship your `public/` directory.** Static files are never copied into the build — the runtime scans `publicDir` (default `./public`) at startup, in production exactly as in development. A deploy that ships only `.mochi/` and `src/` 404s every static file; the build records how many files it saw, so a server that boots with none of them warns rather than failing silently. In exchange, swapping a `robots.txt` needs a restart, not a rebuild.
-- **Keep the out-dir in the project tree.** The compiled SSR modules resolve `node_modules` from the out-dir's location.
-- **On-demand server islands need sources.** Islands missing from the manifest are compiled at request time from source paths recorded at build. Prebuilt islands — the normal case — don't, and relocate fine.
-
-</Callout>
-
-<Callout type="danger">
-
-The manifest records a schema version, and the runtime loads only the exact version it writes. Booting a build made by a different `mochi-framework` version throws at startup rather than half-loading — always run `mochi-framework build` with the same version you serve with.
+None of the links below are affiliate links or endorsements.
 
 </Callout>
 
 ## PaaS
 
-Deploy code or containers — the platform manages infrastructure, scaling, and networking.
+Deploy code or containers. The platform manages infrastructure, scaling, and networking.
 
-- <span title="USA">🇺🇸</span> <a href="https://railway.app" target="_blank" rel="nofollow noopener">Railway</a> — Both dedicated Bun and Docker support
+- <span title="USA">🇺🇸</span> <a href="https://railway.app" target="_blank" rel="nofollow noopener">Railway</a> — dedicated Bun and Docker support
 - <span title="USA">🇺🇸</span> <a href="https://render.com" target="_blank" rel="nofollow noopener">Render</a> — Docker-based web services, Git-push deploys
 - <span title="USA">🇺🇸</span> <a href="https://fly.io" target="_blank" rel="nofollow noopener">Fly.io</a> — Docker-native, global edge, scale-to-zero
 - <span title="USA">🇺🇸</span> <a href="https://heroku.com" target="_blank" rel="nofollow noopener">Heroku</a> — supports Docker deployments
@@ -65,29 +36,29 @@ Deploy code or containers — the platform manages infrastructure, scaling, and 
 
 ## Traditional VPS / IaaS
 
-You get a server, install Bun yourself, and manage the process (systemd, Docker, etc.).
+You get a server, install Bun yourself, and manage the process (systemd, Docker).
 
 - <span title="Germany">🇩🇪</span> <a href="https://hetzner.com" target="_blank" rel="nofollow noopener">Hetzner</a> — very cheap, popular with indie devs
 - <span title="USA">🇺🇸</span> <a href="https://www.digitalocean.com/products/droplets" target="_blank" rel="nofollow noopener">DigitalOcean Droplets</a> — simple cloud VMs
-- <span title="France">🇫🇷</span> <a href="https://ovhcloud.com" target="_blank" rel="nofollow noopener">OVHcloud</a> — dedicated servers, VPS, private cloud; strong GDPR compliance
-- <span title="France">🇫🇷</span> <a href="https://www.scaleway.com/en/virtual-instances/" target="_blank" rel="nofollow noopener">Scaleway Instances</a> — Offers VMs alongside their serverless offering
+- <span title="France">🇫🇷</span> <a href="https://ovhcloud.com" target="_blank" rel="nofollow noopener">OVHcloud</a> — dedicated servers, VPS, private cloud, with strong GDPR compliance
+- <span title="France">🇫🇷</span> <a href="https://www.scaleway.com/en/virtual-instances/" target="_blank" rel="nofollow noopener">Scaleway Instances</a> — VMs alongside their serverless offering
 - <span title="USA">🇺🇸</span> <a href="https://vultr.com" target="_blank" rel="nofollow noopener">Vultr</a>
 - <span title="USA">🇺🇸</span> <a href="https://www.linode.com" target="_blank" rel="nofollow noopener">Akamai / Linode</a>
 - <span title="USA">🇺🇸</span><span title="Israeli-founded">🇮🇱</span> <a href="https://kamatera.com" target="_blank" rel="nofollow noopener">Kamatera</a> — pay-as-you-go cloud VMs
 
-## Big Cloud (multiple deployment options)
+## Big cloud
 
-Each of these offers VPS, serverless, containers, and Kubernetes — pick the model that fits.
+Each offers VPS, serverless, containers, and Kubernetes. Pick the model that fits.
 
-- <span title="USA">🇺🇸</span> <a href="https://aws.amazon.com" target="_blank" rel="nofollow noopener">AWS</a> — EC2 (VPS), Lambda + Web Adapter (serverless), Fargate (serverless containers), App Runner (PaaS), ECS/EKS (orchestrated)
-- <span title="USA">🇺🇸</span> <a href="https://cloud.google.com" target="_blank" rel="nofollow noopener">Google Cloud</a> — Compute Engine (VPS), Cloud Run (serverless containers), GKE (Kubernetes), Cloud Functions
-- <span title="USA">🇺🇸</span> <a href="https://azure.microsoft.com" target="_blank" rel="nofollow noopener">Azure</a> — VMs (VPS), Container Apps (serverless), ACI (containers), AKS (Kubernetes)
-- <span title="USA">🇺🇸</span> <a href="https://cloud.oracle.com" target="_blank" rel="nofollow noopener">Oracle Cloud</a> — generous always-free tier (ARM VMs)
-- <span title="USA">🇺🇸</span> <a href="https://www.ibm.com/cloud" target="_blank" rel="nofollow noopener">IBM Cloud</a> — VPC (VPS), Code Engine (serverless containers), IKS/OpenShift (Kubernetes)
+- <span title="USA">🇺🇸</span> <a href="https://aws.amazon.com" target="_blank" rel="nofollow noopener">AWS</a> — EC2, Lambda + Web Adapter, Fargate, App Runner, ECS/EKS
+- <span title="USA">🇺🇸</span> <a href="https://cloud.google.com" target="_blank" rel="nofollow noopener">Google Cloud</a> — Compute Engine, Cloud Run, GKE, Cloud Functions
+- <span title="USA">🇺🇸</span> <a href="https://azure.microsoft.com" target="_blank" rel="nofollow noopener">Azure</a> — VMs, Container Apps, ACI, AKS
+- <span title="USA">🇺🇸</span> <a href="https://cloud.oracle.com" target="_blank" rel="nofollow noopener">Oracle Cloud</a> — generous always-free ARM VMs
+- <span title="USA">🇺🇸</span> <a href="https://www.ibm.com/cloud" target="_blank" rel="nofollow noopener">IBM Cloud</a> — VPC, Code Engine, IKS/OpenShift
 
 ## Self-hosted tools
 
-Not platforms themselves — you install these on a VPS from one of the providers above.
+Install these on a VPS from one of the providers above.
 
 - <a href="https://coolify.io" target="_blank" rel="nofollow noopener">Coolify</a> — open-source, self-hosted PaaS
 - <a href="https://dokku.com" target="_blank" rel="nofollow noopener">Dokku</a> — open-source mini-Heroku
@@ -95,15 +66,15 @@ Not platforms themselves — you install these on a VPS from one of the provider
 
 ## Hosted tools
 
-Connect to your existing infrastructure at different cloud providers
+Connect to your existing infrastructure at different cloud providers.
 
-- <span title="United Kingdom">🇬🇧</span> <a href="https://northflank.com" target="_blank" rel="nofollow noopener">Northflank</a> — containers, jobs, APIs; bring-your-own-cloud
-- <span title="India">🇮🇳</span> <a href="https://kuberns.com" target="_blank" rel="nofollow noopener">Kuberns</a> — Git-push deploy on AWS infra, no Dockerfile needed
+- <span title="United Kingdom">🇬🇧</span> <a href="https://northflank.com" target="_blank" rel="nofollow noopener">Northflank</a> — containers, jobs, and APIs, with bring-your-own-cloud
+- <span title="India">🇮🇳</span> <a href="https://kuberns.com" target="_blank" rel="nofollow noopener">Kuberns</a> — Git-push deploy on AWS infra, no Dockerfile
 - <span title="USA">🇺🇸</span> <a href="https://www.convox.com/" target="_blank" rel="nofollow noopener">Convox</a>
 
 ## Where these companies are based
 
-The flag next to each provider above reflects where the **company** is headquartered (not where its data centers are).
+The flag next to each provider above shows where the **company** is headquartered, not where its data centers are.
 
 <details>
 <summary style="cursor: pointer">Provider headquarters &amp; sources</summary>

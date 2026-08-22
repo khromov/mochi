@@ -38,8 +38,8 @@ const CASES: Record<string, string> = {
  */
 const DEV_DIVERGENCES = new Set(['snippet/server', 'effect/client', 'awaitDerived/client']);
 
-// Mirrors FRAMEWORK_COMPILER_DEFAULTS in mochi's svelteConfig.ts, so parity is
-// asserted under the options Mochi actually compiles with.
+// Mirrors FRAMEWORK_COMPILER_DEFAULTS + FRAMEWORK_FORCED_COMPILER_OPTIONS in mochi's
+// svelteConfig.ts, so parity is asserted under the options Mochi actually compiles with.
 function opts(generate: 'server' | 'client', filename: string, dev: boolean): CompileOptions {
   return { generate, filename, dev, experimental: { async: true }, discloseVersion: false };
 }

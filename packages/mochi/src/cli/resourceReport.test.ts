@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { collectImageResources } from './resourceReport';
+import { collectFontResources, collectImageResources, mergeResourceRows } from './resourceReport';
 import type { LocalImageAsset } from '../image/types';
 
 const dirs: string[] = [];
@@ -49,5 +49,28 @@ describe('collectImageResources', () => {
 
   test('no assets yields no rows', () => {
     expect(collectImageResources([])).toEqual([]);
+  });
+});
+
+describe('collectFontResources', () => {
+  test('reports the emitted filename and size, with a font symbol and no dimensions', () => {
+    const { diskPath } = asset('inter-latin-400-normal-ab12cd34.woff2', 9000);
+    const rows = collectFontResources([{ diskPath }]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ name: 'inter-latin-400-normal-ab12cd34.woff2', dimensions: '—', bytes: 9000 });
+    expect(rows[0]!.symbol).toContain('ƒ');
+  });
+
+  test('a font missing from disk is listed at zero rather than throwing', () => {
+    const rows = collectFontResources([{ diskPath: join(tmpdir(), 'mochi-resreport-nope', 'gone.woff2') }]);
+    expect(rows[0]).toMatchObject({ name: 'gone.woff2', bytes: 0 });
+  });
+});
+
+describe('mergeResourceRows', () => {
+  test('interleaves images and fonts largest first', () => {
+    const images = collectImageResources([asset('big.png', 500), asset('small.png', 10)]);
+    const fonts = collectFontResources([{ diskPath: asset('mid-1234abcd.woff2', 100).diskPath }]);
+    expect(mergeResourceRows(images, fonts).map((r) => r.name)).toEqual(['big.png', 'mid-1234abcd.woff2', 'small.png']);
   });
 });

@@ -155,7 +155,8 @@ describe('MochiCache events', () => {
     await cache.fetch('k', async () => ++calls);
     await wait(20);
 
-    expect(seen).toContain('k');
+    // Exactly one emission for the single stale read.
+    expect(seen).toEqual(['k']);
   });
 });
 
@@ -229,8 +230,27 @@ describe('MochiCache.set', () => {
   });
 
   test('never leaves the key absent, unlike delete + fetch', async () => {
-    const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });
-    await cache.set('k', 'v1');
+    // An async backend with a gap before each write, so a non-atomic (remove-then-write) set would expose a null window.
+    const store = new Map<string, unknown>();
+    const storage: Storage = {
+      async getItem(key) {
+        await wait(1);
+        return store.get(key) ?? null;
+      },
+      async setItem(key, value) {
+        await wait(1);
+        store.set(key, value);
+      },
+      async removeItem(key) {
+        await wait(1);
+        store.delete(key);
+      },
+      async clear() {
+        store.clear();
+      },
+    };
+    const cache = new MochiCache({ storage, minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    await cache.set('k', 'v0');
 
     let sawMiss = false;
     let stop = false;
@@ -239,16 +259,33 @@ describe('MochiCache.set', () => {
         if ((await cache.peek('k')) === null) {
           sawMiss = true;
         }
-        await Promise.resolve();
       }
     })();
-    for (let i = 0; i < 50; i++) {
+    for (let i = 1; i <= 20; i++) {
       await cache.set('k', `v${i}`);
     }
     stop = true;
     await reader;
-
     expect(sawMiss).toBe(false);
+
+    // The contrast: delete + fetch leaves the key absent long enough for a concurrent reader to observe a miss.
+    let sawMissDuringReplace = false;
+    let replaceDone = false;
+    const probe = (async () => {
+      while (!replaceDone) {
+        if ((await cache.peek('k')) === null) {
+          sawMissDuringReplace = true;
+        }
+      }
+    })();
+    await cache.delete('k');
+    await cache.fetch('k', async () => {
+      await wait(10);
+      return 'replaced';
+    });
+    replaceDone = true;
+    await probe;
+    expect(sawMissDuringReplace).toBe(true);
   });
 
   test('supersedes a registered in-flight recompute rather than being clobbered by it', async () => {
@@ -421,6 +458,70 @@ describe('MochiCache stale-while-revalidate', () => {
 
     // Stale value is still served — the failed refresh did not poison the cache.
     expect((await cache.fetchWithStatus('k', fn)).value).toBe(1);
+  });
+});
+
+describe('MochiCache.whenIdle', () => {
+  test('resolves immediately when nothing is in flight', async () => {
+    const cache = new MochiCache({ minTimeToStale: 10, maxTimeToLive: 5_000 });
+    await cache.fetch('k', () => 1);
+    await cache.whenIdle();
+    expect(await cache.fetch('k', () => 2)).toBe(1);
+  });
+
+  test('waits for a background revalidation to finish, write included', async () => {
+    const writes: string[] = [];
+    const store = new Map<string, unknown>();
+    const storage: Storage = {
+      getItem: (key) => store.get(key) ?? null,
+      // The write is the last thing a run does, so a whenIdle() that returned
+      // early would let the assertion below observe the pre-refresh value.
+      setItem: async (key, value) => {
+        await wait(30);
+        store.set(key, value);
+        writes.push(key);
+      },
+      removeItem: (key) => void store.delete(key),
+      clear: () => void store.clear(),
+    };
+    const cache = new MochiCache({ minTimeToStale: 10, maxTimeToLive: 5_000, storage });
+
+    let calls = 0;
+    const fn = async () => {
+      calls++;
+      await wait(20);
+      return calls;
+    };
+
+    expect(await cache.fetch('k', fn)).toBe(1);
+    await wait(30); // now stale
+
+    const stale = await cache.fetchWithStatus('k', fn);
+    expect(stale.status).toBe('stale');
+    expect(stale.value).toBe(1); // background refresh still running
+
+    await cache.whenIdle();
+    expect(writes).toContain('k');
+    expect((await cache.fetchWithStatus('k', fn)).value).toBe(2);
+  });
+
+  test('a failed background revalidation still settles it', async () => {
+    const cache = new MochiCache({ minTimeToStale: 10, maxTimeToLive: 5_000 });
+    let calls = 0;
+    const fn = async () => {
+      calls++;
+      if (calls > 1) {
+        throw new Error('upstream down');
+      }
+      return 1;
+    };
+
+    expect(await cache.fetch('k', fn)).toBe(1);
+    await wait(30);
+    expect((await cache.fetchWithStatus('k', fn)).status).toBe('stale');
+
+    await cache.whenIdle(); // must not hang or reject on the rejected run
+    expect(calls).toBe(2);
   });
 });
 

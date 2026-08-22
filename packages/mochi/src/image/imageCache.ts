@@ -345,6 +345,11 @@ export class ImageCache {
     await this.cache.clearItems();
   }
 
+  /** Resolves once in-flight regenerations — including the background ones a stale read starts — have settled. See {@link MochiCache.whenIdle}. */
+  async whenIdle(): Promise<void> {
+    await this.cache.whenIdle();
+  }
+
   /** Entries currently cached — originals, variants, placeholders, and transient in-flight markers — as a rough size indicator for the dev debug bar. `0` when the backend can't count. */
   async count(): Promise<number> {
     return (await this.storage.count?.()) ?? 0;

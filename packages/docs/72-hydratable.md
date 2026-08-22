@@ -1,7 +1,7 @@
 ---
 title: 'Hydratable values'
 slug: hydratable
-description: 'Serialize computed server values into the page so the client can reuse them without re-running the work.'
+description: 'Serialize computed server values into the page so the client reuses them instead of re-running the work.'
 ---
 
 <script>
@@ -11,11 +11,11 @@ description: 'Serialize computed server values into the page so the client can r
 
 ## Hydratable values (experimental)
 
-> hydratable support is experimental, please create an issue if you find problems! 🙇
+> `hydratable` support is experimental. Please open an issue if you find problems.
 
-Svelte 5's [`hydratable(key, fn)`](https://svelte.dev/docs/svelte/svelte#hydratable) computes a value on the server, serializes it into `<head>`, and reads it back during client hydration instead of recomputing. Use it to avoid running the same async work twice when a hydrated component does data fetching at the top level.
+Svelte 5's [`hydratable(key, fn)`](https://svelte.dev/docs/svelte/svelte#hydratable) computes a value on the server, serializes it into the page, and reads it back during client hydration. Use it to avoid running the same async work twice when a hydrated component fetches data at the top level.
 
-Without it, the function runs once on the server and again during hydration:
+Without it, the function runs on the server and again during hydration:
 
 ```svelte
 <script>
@@ -28,42 +28,40 @@ Without it, the function runs once on the server and again during hydration:
 <h1>{user.name}</h1>
 ```
 
-With it, the server result is reused on the client:
+With it, the client reuses the server result:
 
 ```svelte
 <script>
   import { hydratable } from 'svelte';
   import { getUser } from 'my-database-library';
 
-  // SSR: runs `getUser`, devalue-serializes the result into <head>.
-  // Client: reads the value from window.__svelte.h, never invokes `getUser`.
+  // SSR: runs getUser and serializes the result into the page.
+  // Client: reads the serialized value and skips getUser.
   const user = await hydratable('app:user', () => getUser());
 </script>
 
 <h1>{user.name}</h1>
 ```
 
-Mochi already wires this up: any `hydratable()` call inside a `Mochi.page(...)` route or a `mochi:hydrate*` island is collected into the page's head script during SSR and picked up by Svelte's `hydrate()` automatically. There's no extra Mochi-side import — `hydratable` comes straight from `svelte`.
-
-See it in action in the [Hydratable demo](/demos/hydratable/), where the page and a hydrated island share the same key — the server function runs once, both sides render the same value, and the island skips the async work on hydration.
+Mochi wires this up. Any `hydratable()` call inside a `Mochi.page(...)` route or a `mochi:hydrate*` island is collected during SSR and picked up by Svelte's `hydrate()` automatically. Import `hydratable` straight from `svelte`.
 
 <Callout type="info">
 
-**Namespace your keys.** Hydratable keys are global per-render. Prefix every key with your app or library name (`app:user`, `mylib:cart`) so two unrelated callers can't collide.
+**Namespace your keys.** Hydratable keys are global per render. Prefix every key with your app or library name (`app:user`, `mylib:cart`) so two callers cannot collide.
 
 </Callout>
 
 ### Serialization
 
-Values are serialized with [`devalue`](https://www.npmjs.com/package/devalue), so `Map`, `Set`, `Date`, `URL`, `BigInt`, and circular references all round-trip. Promises also work — Svelte stitches them back together on the client.
+Mochi serializes values with [`devalue`](https://www.npmjs.com/package/devalue), so `Map`, `Set`, `Date`, `URL`, `BigInt`, and circular references round-trip. Promises work too — Svelte stitches them back together on the client.
 
 ### Limitations in Mochi today
 
 <Callout type="warning">
 
-**Server islands.** `mochi:defer` server islands render in a separate request, and their `<head>` output is not merged into the parent page. `hydratable()` calls inside a server island won't reach `window.__svelte.h` — keep them in the page or in eagerly hydrated islands for now.
+**Server islands.** A `mochi:defer` server island renders in a separate request, and its serialized values are not merged into the parent page. Keep `hydratable()` calls in the page or in eagerly hydrated islands.
 
-**No CSP nonce wiring.** Mochi does not yet pass a `csp.nonce` through to Svelte's `render()`, so the inline lookup script will be blocked under strict `script-src` policies. Either allow `'unsafe-inline'` for scripts (which you likely already do for the island bootstrap) or wait for nonce plumbing.
+**No CSP nonce wiring.** Mochi does not yet pass a `csp.nonce` to Svelte's `render()`, so the inline lookup script is blocked under strict `script-src`. Allow `'unsafe-inline'` for scripts, or wait for nonce support.
 
 </Callout>
 

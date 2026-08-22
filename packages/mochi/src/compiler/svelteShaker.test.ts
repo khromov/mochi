@@ -1,51 +1,94 @@
-import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { shakeApp } from './svelteShaker';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { isShakerBackend, loadSvelteShaker, resetSvelteShakerCache, resolveSvelteShaker, type SvelteShakerBackend } from './svelteShaker';
+import { logger } from '../utils/log';
 
-describe('shakeApp', () => {
-  let dir: string | undefined;
+const fake: SvelteShakerBackend = {
+  name: 'svelte-shaker',
+  version: '0.18.1',
+  shakeApp: async () => ({ shaken: new Map(), originals: new Map() }),
+};
 
-  afterEach(() => {
-    if (dir) {
-      rmSync(dir, { recursive: true, force: true });
-      dir = undefined;
-    }
+afterEach(() => {
+  resetSvelteShakerCache();
+});
+
+// The add-on resolves in this workspace, so the failure modes users actually hit — package absent, package broken —
+// are driven through the injected loader.
+describe('loadSvelteShaker', () => {
+  test('returns null and names the install command when the import rejects', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+
+    const backend = await loadSvelteShaker(() => Promise.reject(new Error("Cannot find module '@mochi-framework/svelte-shaker'")));
+
+    expect(backend).toBeNull();
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('bun add -d @mochi-framework/svelte-shaker'))).toBe(true);
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('Cannot find module'))).toBe(true);
+    warn.mockRestore();
   });
 
-  test('folds a never-varying prop, drops its dead branch and unused CSS', async () => {
-    dir = mkdtempSync(path.join(tmpdir(), 'shake-app-'));
-    const child = path.join(dir, 'Child.svelte');
-    writeFileSync(
-      child,
-      `<script>let { showBadge = false, label } = $props();</script>
-{#if showBadge}<span class="badge">★</span>{/if}
-<strong>{label}</strong>
-<style>.badge { color: gold; } .unused { color: red; }</style>`,
-    );
-    // Both call sites omit `showBadge`, so it always resolves to its default.
-    writeFileSync(
-      path.join(dir, 'Parent.svelte'),
-      `<script>import Child from './Child.svelte';</script>
-<Child label="hello" />
-<Child label="world" />`,
-    );
+  test('tolerates a non-Error rejection', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
 
-    const { shaken } = await shakeApp(dir);
+    expect(await loadSvelteShaker(() => Promise.reject('boom'))).toBeNull();
 
-    // Keyed by absolute path, matching the compiler's onLoad args.path.
-    const slimmed = shaken.get(child);
-    expect(slimmed).toBeDefined();
-    expect(slimmed).not.toContain('showBadge'); // folded — never varies
-    expect(slimmed).not.toContain('{#if'); // dead branch removed
-    expect(slimmed).not.toContain('.unused'); // CSS narrowed
-    expect(slimmed).toContain('label'); // genuinely varying prop kept
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('boom'))).toBe(true);
+    warn.mockRestore();
   });
 
-  test('returns an empty map for a directory with no .svelte files', async () => {
-    dir = mkdtempSync(path.join(tmpdir(), 'shake-app-empty-'));
-    const { shaken } = await shakeApp(dir);
-    expect(shaken.size).toBe(0);
+  test.each([
+    ['no exports', {}],
+    ['null module', null],
+    ['missing shakeApp', { svelteShakerBackend: { name: 'svelte-shaker', version: '0.18.1' } }],
+    ['missing version', { svelteShakerBackend: { name: 'svelte-shaker', shakeApp: () => {} } }],
+    ['missing name', { svelteShakerBackend: { version: '0.18.1', shakeApp: () => {} } }],
+  ])('returns null for a malformed module (%s)', async (_label, mod) => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+
+    expect(await loadSvelteShaker(() => Promise.resolve(mod))).toBeNull();
+
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('did not export a usable'))).toBe(true);
+    warn.mockRestore();
+  });
+
+  test('returns a conforming backend untouched', async () => {
+    expect(await loadSvelteShaker(() => Promise.resolve({ svelteShakerBackend: fake }))).toBe(fake);
+  });
+});
+
+describe('resolveSvelteShaker', () => {
+  test('memoizes, so a missing add-on warns once however many registries resolve it', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    const missing = () => Promise.reject(new Error('Cannot find module'));
+
+    expect(await resolveSvelteShaker(missing)).toBeNull();
+    expect(await resolveSvelteShaker(missing)).toBeNull();
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  test('announces the resolved engine once', async () => {
+    const info = spyOn(logger, 'info').mockImplementation(() => {});
+    const present = () => Promise.resolve({ svelteShakerBackend: fake });
+
+    expect(await resolveSvelteShaker(present)).toBe(fake);
+    expect(await resolveSvelteShaker(present)).toBe(fake);
+
+    expect(info.mock.calls.filter((c) => String(c[0]).includes('svelte-shaker@0.18.1'))).toHaveLength(1);
+    info.mockRestore();
+  });
+});
+
+describe('isShakerBackend', () => {
+  test.each([
+    [fake, true],
+    [{ ...fake, shakeApp: 'nope' }, false],
+    [{ name: 'x', version: '1' }, false],
+    [{}, false],
+    [null, false],
+    [undefined, false],
+    ['string', false],
+  ])('%p -> %p', (value, expected) => {
+    expect(isShakerBackend(value)).toBe(expected);
   });
 });

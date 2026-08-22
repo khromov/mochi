@@ -2,9 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { Mochi, getRequestContext, sqliteStore } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
 
-// Persist rate-limit counters to SQLite so they survive restarts — the default
-// store is in-memory (and sqliteStore() without a path is too). bun:sqlite won't
-// create the parent dir, and ./db is gitignored.
+// Persist rate-limit counters to SQLite so they survive restarts; bun:sqlite won't create ./db itself, and it's gitignored.
 mkdirSync('./db', { recursive: true });
 const store = sqliteStore({ path: './db/rate-limit.sqlite' });
 

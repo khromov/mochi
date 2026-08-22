@@ -14,8 +14,8 @@
 
   async function mint() {
     verified = false;
-    // Trailing slashes: this site is `trailingSlash: 'always'`, so the bare paths 301/308.
-    const res = await fetch('/api/captcha-demo/mint/', { cache: 'no-store' });
+    // Bare paths: these are `Mochi.api()` routes, exempt from the site's `trailingSlash: 'always'`.
+    const res = await fetch('/api/captcha-demo/mint', { cache: 'no-store' });
     const minted = (await res.json()) as { token: string; bits: number; solveBudgetMs: number };
     token = minted.token;
     bits = minted.bits;
@@ -32,7 +32,7 @@
     checking = true;
     result = null;
     const data = new FormData(form);
-    const res = await fetch('/api/captcha-demo/verify/', {
+    const res = await fetch('/api/captcha-demo/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: data.get('captcha_token'), pow: data.get('captcha_pow') }),
@@ -46,9 +46,15 @@
 </script>
 
 <form class="captcha-demo" bind:this={form} onsubmit={check}>
-  {#key token}
-    <MochiCaptcha {token} {bits} {solveBudgetMs} bind:verified />
-  {/key}
+  <!-- The mint is a round trip, so hold the track's height until a token lands —
+       mounting the widget tokenless trips its own misconfiguration check. -->
+  {#if token}
+    {#key token}
+      <MochiCaptcha {token} {bits} {solveBudgetMs} bind:verified />
+    {/key}
+  {:else}
+    <div class="captcha-pending"></div>
+  {/if}
   <div class="row">
     <button type="submit" disabled={checking}>{checking ? 'Verifying…' : 'Verify on the server'}</button>
     {#if result}
@@ -79,6 +85,10 @@
     border-radius: var(--radius-lg);
     padding: 1rem;
     margin: 1.25rem 0;
+  }
+
+  .captcha-pending {
+    min-height: 44px;
   }
 
   .row {
