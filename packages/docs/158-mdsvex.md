@@ -8,6 +8,7 @@ description: 'Enable Markdown support in Mochi pages with mdsvex and rehype/rema
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## MdSvex
@@ -120,6 +121,25 @@ markdown: {
 Omitting the `markdown` config disables `.md`/`.svx` handling, so importing one surfaces a "no loader" error from Bun's bundler. Your `svelte.config.js` `compilerOptions` still apply to compiled markdown. See [Svelte config](/docs/svelte-config/).
 
 </Callout>
+
+### Mapping slugs to markdown components
+
+<VersionNote since="0.10.0" message="compiled() and moduleRef() are not in the published release yet." />
+
+A docs or blog section usually needs every `.md` file keyed by slug. Build that map at build time with [`compiled()`](/docs/compiled/) instead of generating a barrel file into your source tree:
+
+```ts
+// src/lib/docs.compiled.ts
+import { compiled, moduleRef } from 'mochi-framework';
+import type { Component } from 'svelte';
+import { loadDocs } from './docs';
+
+export const docs: Record<string, Component> = await compiled(async () =>
+  Object.fromEntries((await loadDocs()).map((d) => [d.slug, moduleRef<Component>(`../../docs/${d.filename}`)])),
+);
+```
+
+Each `moduleRef()` becomes a real `import` of the `.md` file, so the markdown still compiles through the pipeline above.
 
 <SeeItInAction
 demos={[{ href: "/demos/mdsvex/", title: "MdSvex", hook: "A .md file compiled through mdsvex and rendered as a Svelte component." }]}

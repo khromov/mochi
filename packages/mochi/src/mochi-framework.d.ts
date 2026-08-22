@@ -60,6 +60,26 @@ declare module 'mochi-framework' {
   export { stringify, parse } from 'devalue';
 
   /**
+   * Evaluate a function at build time and inline its resolved value.
+   *
+   * The compiler replaces the call — and an enclosing `await` — with whatever the function returned, so neither the
+   * function nor anything it imports reaches the bundle. The expression may reference module-level imports and globals
+   * only; referencing a local binding is a compile error.
+   *
+   * ```ts
+   * const sources = await compiled(() => loadSources(files));
+   * ```
+   */
+  export function compiled<T>(fn: () => T | Promise<T>): Promise<Awaited<T>>;
+
+  /**
+   * Mark a module to import rather than a value to serialize. Only meaningful inside a value returned from
+   * {@link compiled}, where the compiler turns each marker into a real `import` in the generated module — which is how
+   * a build-time function hands back components it could never serialize.
+   */
+  export function moduleRef<T = unknown>(specifier: string): T;
+
+  /**
    * Internal: registers a hydratable island's props in the per-request dedup registry and returns a stable ref id. The
    * preprocessor injects the calls for `mochi:hydrate` islands, and the client virtual module stubs it with a throw.
    */

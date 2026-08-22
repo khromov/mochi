@@ -46,8 +46,6 @@ RUN mkdir -p packages/site/.mochi && chown -R bun:bun packages/site/.mochi packa
 RUN mkdir -p /snapshots && chown bun:bun /snapshots
 VOLUME /snapshots
 
-RUN bun packages/site/src/lib/generateDocsBarrel.ts
-
 ENV PORT=${PORT}
 ENV MODE=development
 ENV MOCHI_LIVE_RELOAD=false

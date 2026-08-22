@@ -1,6 +1,7 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import StylingDemo from './StylingDemo.svelte';
+  import { compiled } from 'mochi-framework';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
   import { themes, defaultsSample, rule, markup } from './themes.ts';
@@ -24,7 +25,7 @@
     terminal: await highlightCode(markup(themes.terminal), 'svelte'),
   };
 
-  const sources = await loadSources(files);
+  const sources = await compiled(() => loadSources(files));
 </script>
 
 <DemoPage

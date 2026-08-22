@@ -1,5 +1,5 @@
 <script module>
-  import { getImageUrl, getImage } from 'mochi-framework';
+  import { compiled, getImageUrl, getImage } from 'mochi-framework';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
   import { highlightCode } from '../../lib/highlight.server';
@@ -59,7 +59,7 @@
     );
     const codeFormat = await snippet("const { bytes } = await getImage(src, 'fmt-webp');");
 
-    const sources = await loadSources(files);
+    const sources = await compiled(() => loadSources(files));
 
     return {
       codeSetup,

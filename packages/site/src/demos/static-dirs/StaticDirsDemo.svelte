@@ -2,6 +2,7 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import CodeSnippet from '../../components/CodeSnippet.svelte';
   import ImageCredits from '../../components/ImageCredits.svelte';
+  import { compiled } from 'mochi-framework';
   import { loadSources } from '../../components/utils.ts';
   import { highlightCode } from '../../lib/highlight.server';
   import { files } from './files.ts';
@@ -22,7 +23,7 @@
     'typescript',
   );
 
-  const sources = await loadSources(files);
+  const sources = await compiled(() => loadSources(files));
 </script>
 
 <DemoPage

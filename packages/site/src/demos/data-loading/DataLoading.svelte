@@ -1,5 +1,5 @@
 <script>
-  import { params } from 'mochi-framework';
+  import { compiled, params } from 'mochi-framework';
   import { pokemonCache } from '../../lib/cache';
   import DemoPage from '../../components/DemoPage.svelte';
   import PokemonHeader from './PokemonHeader.svelte';
@@ -9,7 +9,7 @@
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
 
-  const sources = await loadSources(files);
+  const sources = await compiled(() => loadSources(files));
 
   const id = (params.id ?? 'pikachu').toLowerCase();
 

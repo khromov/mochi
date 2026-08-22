@@ -4,10 +4,11 @@
   import ThrowOnClient from './ThrowOnClient.svelte';
   import ThrowOnServerIsland from './ThrowOnServerIsland.svelte';
   import HealthyServerIsland from './HealthyServerIsland.svelte';
+  import { compiled } from 'mochi-framework';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
 
-  const sources = await loadSources(files);
+  const sources = await compiled(() => loadSources(files));
 </script>
 
 {#snippet caughtFallback(error: unknown)}

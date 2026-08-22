@@ -1,11 +1,12 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
+  import { compiled } from 'mochi-framework';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
   import Greeting from './Greeting.md';
   import Snippet from './Snippet.svx';
 
-  const sources = await loadSources(files);
+  const sources = await compiled(() => loadSources(files));
 </script>
 
 <DemoPage

@@ -1,11 +1,12 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import QueueWidget from './QueueWidget.svelte';
+  import { compiled } from 'mochi-framework';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
   import type { QueueStatus } from './types.ts';
 
-  const sources = await loadSources(files);
+  const sources = await compiled(() => loadSources(files));
 
   let { initial, suggestedUser }: { initial: QueueStatus; suggestedUser: string } = $props();
 </script>

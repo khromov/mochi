@@ -1,12 +1,13 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import Guestbook from './Guestbook.svelte';
+  import { compiled } from 'mochi-framework';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
 
   type GuestbookEntry = { id: string; name: string; at: number };
 
-  const sources = await loadSources(files);
+  const sources = await compiled(() => loadSources(files));
 
   let { guestbook }: { guestbook: GuestbookEntry[] } = $props();
 </script>

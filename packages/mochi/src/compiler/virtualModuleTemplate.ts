@@ -31,6 +31,7 @@ export function renderMochiEnvServer(development: boolean): string {
   return fill(SERVER_TEMPLATE, {
     __MOCHI_DEV__: String(development),
     __MOCHI_LOG__: frameworkFile('utils/log.ts'),
+    __MOCHI_COMPILED__: frameworkFile('compiled.ts'),
     __MOCHI_GLOBAL_STATE__: frameworkFile('utils/globalState.ts'),
     __MOCHI_DEVALUE__: toPosixPath(Bun.resolveSync('devalue', FRAMEWORK_DIR)),
     __MOCHI_TRAILING_SLASH__: frameworkFile('runtime/trailingSlash.ts'),

@@ -137,3 +137,10 @@ export { enhance, deserialize } from "__MOCHI_ENHANCE_CLIENT__";
 export function isHydratable() { return true; }
 // Server filesystem path — meaningless in the browser.
 export const PROTECTION_SHELL_COMPONENT = undefined;
+// Build-time evaluation. The compiler inlines these away, so reaching them in the
+// browser means an un-transformed call: run the function rather than hard-failing an
+// island, but a moduleRef can only ever have been resolved at build time.
+export async function compiled(fn) { return await fn(); }
+export function moduleRef(specifier) {
+  throw new Error("moduleRef(" + JSON.stringify(specifier) + ") only works inside a compiled() value that the build inlined.");
+}

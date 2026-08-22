@@ -2,7 +2,7 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
-  import { getImageUrl } from 'mochi-framework';
+  import { compiled, getImageUrl } from 'mochi-framework';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 
   let { src, generation } = $props();
@@ -18,7 +18,7 @@
   const bust = (url) => `${url}&g=${generation}`;
   const originalUrl = bust(getImageUrl(src));
 
-  const sources = await loadSources(files);
+  const sources = await compiled(() => loadSources(files));
 </script>
 
 <DemoPage

@@ -3,11 +3,12 @@
   import CodeSnippet from '../../components/CodeSnippet.svelte';
   import BasicTable from './BasicTable.svelte';
   import SortableTable from './SortableTable.svelte';
+  import { compiled } from 'mochi-framework';
   import { loadSources } from '../../components/utils.ts';
   import { highlightCode } from '../../lib/highlight.server';
   import { files } from './files.ts';
 
-  const sources = await loadSources(files);
+  const sources = await compiled(() => loadSources(files));
 
   const codeInstall = await highlightCode('bun add @tanstack/svelte-table', 'bash');
   const codeUsage = await highlightCode(

@@ -3,10 +3,11 @@
   import CancelDemo from './CancelDemo.svelte';
   import AbortDemo from './AbortDemo.svelte';
   import PlainDemo from './PlainDemo.svelte';
+  import { compiled } from 'mochi-framework';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
 
-  const sources = await loadSources(files);
+  const sources = await compiled(() => loadSources(files));
 </script>
 
 <DemoPage

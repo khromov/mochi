@@ -6,6 +6,7 @@
   import HtmlBars from './HtmlBars.svelte';
   import RuntimeDonut from './RuntimeDonut.svelte';
   import Callout from '../../../../docs/_components/Callout.svelte';
+  import { compiled } from 'mochi-framework';
   import { loadSources } from '../../components/utils.ts';
   import { highlightCode } from '../../lib/highlight.server';
   import { files } from './files.ts';
@@ -112,7 +113,7 @@ ${'<'}/script>
     'typescript',
   );
 
-  const sources = await loadSources(files);
+  const sources = await compiled(() => loadSources(files));
 </script>
 
 <DemoPage

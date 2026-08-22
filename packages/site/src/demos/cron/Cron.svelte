@@ -1,10 +1,11 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
   import CronLog from './CronLog.svelte';
+  import { compiled } from 'mochi-framework';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
 
-  const sources = await loadSources(files);
+  const sources = await compiled(() => loadSources(files));
 </script>
 
 <DemoPage
