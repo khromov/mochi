@@ -11,6 +11,16 @@ await runTests({
     // its 30s timeout. Running it after the parallel batch removes the load.
     'src/liveReloadFilter.test.ts',
   ],
+  windowsSequential: [
+    // Its last case races three concurrent runners against one SQLite file, so it
+    // depends on the OS resolving writer-vs-writer lock contention inside the
+    // runner's 30s busy_timeout. Windows file locking is slow enough that four
+    // test files competing for the disk push it past that: the leg failed twice
+    // in a row here, once with SQLITE_BUSY and once hanging outright, while
+    // Linux/macOS settle the same race in ~15ms. Running it after the parallel
+    // batch removes the competing load; the test itself is unchanged.
+    'src/migrations/runnerSqlite.test.ts',
+  ],
   // See testing.ts `windowsSkip`. Both suites' logic is OS-agnostic and fully
   // covered on Linux/macOS.
   windowsSkip: [
