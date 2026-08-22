@@ -3,7 +3,7 @@
   import '@fontsource-variable/fraunces/full.css';
   import Footer from '../components/Footer.svelte';
 
-  let { title, heading, body }: { title: string; heading: string; body: string } = $props();
+  let { title, heading, body, submit }: { title: string; heading: string; body: string; submit?: { label: string; token: string } } = $props();
 </script>
 
 <svelte:head>
@@ -23,6 +23,12 @@
     <section class="card">
       <h1>{heading}</h1>
       <p>{body}</p>
+      {#if submit}
+        <form method="POST" action="?/confirm">
+          <input type="hidden" name="token" value={submit.token} />
+          <button type="submit">{submit.label}</button>
+        </form>
+      {/if}
       <p class="back"><a href="https://mochi.fast/blog/">← Back to the blog</a></p>
     </section>
   </main>
@@ -80,6 +86,25 @@
   p {
     color: var(--text-muted);
     margin: 0 0 1rem;
+  }
+
+  form {
+    margin: 0 0 1rem;
+  }
+
+  button {
+    padding: 0.65rem 1rem;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: var(--accent);
+    color: var(--accent-text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  button:hover {
+    background: var(--accent-hover);
   }
 
   .back {

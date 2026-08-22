@@ -51,6 +51,42 @@ describe('updateSkill', () => {
     expect(await Bun.file(res.path).text()).toBe('fresh content');
   });
 
+  it('shows the diff before an existing skill is overwritten', async () => {
+    const cwd = freshCwd();
+    const dest = path.join(cwd, SKILL_DEST);
+    await Bun.write(dest, 'stale content\n');
+    const fetchImpl = async () => new Response('fresh content\n', { status: 200 });
+    let previewed = false;
+
+    const res = await updateSkill({
+      cwd,
+      fetchImpl,
+      confirmUpdate: async ({ diff }) => {
+        previewed = true;
+        expect(await Bun.file(dest).text()).toBe('stale content\n');
+        expect(diff).toContain('-stale content');
+        expect(diff).toContain('+fresh content');
+        return true;
+      },
+    });
+
+    expect(previewed).toBe(true);
+    expect(res.action).toBe('updated');
+    expect(await Bun.file(dest).text()).toBe('fresh content\n');
+  });
+
+  it('leaves the existing skill untouched when the preview is rejected', async () => {
+    const cwd = freshCwd();
+    const dest = path.join(cwd, SKILL_DEST);
+    await Bun.write(dest, 'trusted content');
+    const fetchImpl = async () => new Response('unsigned replacement', { status: 200 });
+
+    const res = await updateSkill({ cwd, fetchImpl, confirmUpdate: () => false });
+
+    expect(res.action).toBe('aborted');
+    expect(await Bun.file(dest).text()).toBe('trusted content');
+  });
+
   it('throws a helpful error when the URL 404s', async () => {
     const cwd = freshCwd();
     const fetchImpl = async () => new Response('Not found', { status: 404 });

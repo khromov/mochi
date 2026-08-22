@@ -45,10 +45,10 @@ export async function create(opts: CreateOptions): Promise<CreateResult> {
   const dir = path.resolve(opts.dir);
   await fs.mkdir(dir, { recursive: true });
 
-  // Template files come from `khromov/mochi`'s default branch, which can be ahead of the published
-  // npm version `mochiVersion` resolves to — see `Template.source` to pin a tag instead.
+  // Template files are tied to the reviewed commit and archive digest bundled with this CLI release.
   await downloadTemplate(template.source, {
     dir,
+    sha256: template.archiveSha256,
     force: opts.force ?? false,
   });
 

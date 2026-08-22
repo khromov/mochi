@@ -209,7 +209,7 @@ describe('newsletter signup', () => {
     expect(requestSubscription({ email: 'member@cooldown.test', source: '' }, closed).kind).toBe('throttled');
   });
 
-  test('confirming flips the row, and a second click is idempotent', async () => {
+  test('GET only presents confirmation; POST records consent and remains idempotent', async () => {
     sent.length = 0;
     expect((await subscribe(base, validFields('linus@example.com'))).status).toBe(200);
     await waitForSent(1);
@@ -218,8 +218,21 @@ describe('newsletter signup', () => {
 
     const first = await fetch(`${base}/newsletter/confirm/?token=${token}`);
     expect(first.status).toBe(200);
-    expect(await first.text()).toContain("You're subscribed");
+    expect(await first.text()).toContain('Confirm your subscription');
+    expect(rowFor('linus@example.com')?.status).toBe('pending');
+
+    const confirm = await fetch(`${base}/newsletter/confirm/?/confirm`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token }).toString(),
+    });
+    expect(confirm.status).toBe(303);
+    expect(confirm.headers.get('location')).toBe(`/newsletter/confirm/?token=${token}&confirmed=1`);
     expect(rowFor('linus@example.com')?.status).toBe('confirmed');
+
+    const confirmed = await fetch(`${base}${confirm.headers.get('location')}`);
+    expect(await confirmed.text()).toContain("You're subscribed");
 
     const second = await fetch(`${base}/newsletter/confirm/?token=${token}`);
     expect(second.status).toBe(200);

@@ -1,4 +1,4 @@
-import { assertPublicUrl, SsrfGuardError } from '../utils/assertPublicUrl';
+import { resolvePublicUrl, SsrfGuardError } from '../utils/assertPublicUrl';
 import { applyFilter } from '../extensions';
 import { getLocalImageAsset } from './localAssetRegistry';
 import { ImageError } from './types';
@@ -10,6 +10,33 @@ export interface FetchedSource {
 }
 
 const DEFAULT_MAX_REDIRECTS = 5;
+
+export interface PinnedFetchRequest {
+  url: URL;
+  init: BunFetchRequestInit;
+}
+
+export function createPinnedFetchRequest(url: URL, address: string | undefined, signal: AbortSignal): PinnedFetchRequest {
+  if (!address) {
+    return {
+      url,
+      init: { signal, redirect: 'manual', headers: { Accept: 'image/*' } },
+    };
+  }
+
+  const pinned = new URL(url);
+  pinned.hostname = address.includes(':') ? `[${address}]` : address;
+  const init: BunFetchRequestInit = {
+    signal,
+    redirect: 'manual',
+    headers: { Accept: 'image/*', Host: url.host },
+  };
+  if (url.protocol === 'https:') {
+    // Connect to the validated IP while preserving the original hostname for SNI and certificate verification.
+    init.tls = { serverName: url.hostname.replace(/^\[|\]$/g, '') };
+  }
+  return { url: pinned, init };
+}
 
 export async function fetchImageSource(src: string, opts: ResolvedImageOptions): Promise<FetchedSource> {
   // A locally-imported asset's `src` is a same-origin `/_mochi/asset/…` URL that `assertPublicUrl` would reject, so the
@@ -31,9 +58,9 @@ export async function fetchImageSource(src: string, opts: ResolvedImageOptions):
   let target = src;
   let res: Response;
   for (let hop = 0; ; hop++) {
-    let url: URL;
+    let resolved: Awaited<ReturnType<typeof resolvePublicUrl>>;
     try {
-      url = await assertPublicUrl(target, {
+      resolved = await resolvePublicUrl(target, {
         allowedHosts: opts.allowedHosts,
         blockPrivateNetworks: opts.blockPrivateNetworks,
       });
@@ -45,11 +72,8 @@ export async function fetchImageSource(src: string, opts: ResolvedImageOptions):
     }
 
     try {
-      res = await fetch(url, {
-        signal,
-        redirect: 'manual',
-        headers: { Accept: 'image/*' },
-      });
+      const request = createPinnedFetchRequest(resolved.url, resolved.address, signal);
+      res = await fetch(request.url, request.init);
     } catch {
       throw new ImageError(502, 'Failed to fetch source image');
     }
@@ -60,7 +84,7 @@ export async function fetchImageSource(src: string, opts: ResolvedImageOptions):
         throw new ImageError(502, 'Too many redirects');
       }
       await res.body?.cancel();
-      target = new URL(location, url).href; // resolve relative redirects
+      target = new URL(location, resolved.url).href; // resolve relative redirects against the original-host URL
       continue;
     }
     break;

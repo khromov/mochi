@@ -26,6 +26,17 @@ export function tarballUrl({ owner, repo, ref }: TemplateSource): string {
   return `https://codeload.github.com/${owner}/${repo}/tar.gz/${ref}`;
 }
 
+export function archiveSha256(bytes: Uint8Array): string {
+  return new Bun.CryptoHasher('sha256').update(bytes).digest('hex');
+}
+
+export function assertArchiveSha256(bytes: Uint8Array, expected: string): void {
+  const actual = archiveSha256(bytes);
+  if (actual !== expected.toLowerCase()) {
+    throw new Error(`Template archive integrity check failed: expected sha256:${expected}, received sha256:${actual}.`);
+  }
+}
+
 /**
  * Extract the repo subdirectory from an in-memory tarball into `dir`, stripping GitHub's `<repo>-<ref>/` wrapper.
  * The wrapper is read off the archive, not predicted — a short sha doesn't round-trip to the requested ref.
@@ -45,7 +56,7 @@ export async function extractTemplate(tarball: Blob | Uint8Array, source: Templa
   return written;
 }
 
-export async function downloadTemplate(source: string, opts: { dir: string; force?: boolean }): Promise<void> {
+export async function downloadTemplate(source: string, opts: { dir: string; sha256: string; force?: boolean }): Promise<void> {
   const parsed = parseTemplateSource(source);
   if (!opts.force) {
     const existing = await fs.readdir(opts.dir).catch(() => [] as string[]);
@@ -58,5 +69,7 @@ export async function downloadTemplate(source: string, opts: { dir: string; forc
   if (!response.ok) {
     throw new Error(`Could not download template from ${url} — HTTP ${response.status}.`);
   }
-  await extractTemplate(await response.blob(), parsed, opts.dir);
+  const archive = new Uint8Array(await response.arrayBuffer());
+  assertArchiveSha256(archive, opts.sha256);
+  await extractTemplate(archive, parsed, opts.dir);
 }

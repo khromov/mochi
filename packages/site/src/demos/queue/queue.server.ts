@@ -7,6 +7,9 @@ export const QUEUE_NAME = 'demo-notifications';
 const processed: ProcessedEntry[] = [];
 let processedTotal = 0;
 let inFlight = 0;
+let reservations = 0;
+
+export const MAX_PENDING_NOTIFICATION_JOBS = 100;
 
 mochiEvents.on('queue:added', (e) => {
   if (e.queue === QUEUE_NAME) {
@@ -37,6 +40,33 @@ export const notificationQueue = Mochi.queue<NotificationJob>(QUEUE_NAME, {
     return { delivered: true };
   },
 });
+
+export function reserveNotificationSlot(): (() => void) | null {
+  if (inFlight + reservations >= MAX_PENDING_NOTIFICATION_JOBS) {
+    return null;
+  }
+  reservations++;
+  let released = false;
+  return () => {
+    if (!released) {
+      reservations = Math.max(0, reservations - 1);
+      released = true;
+    }
+  };
+}
+
+export async function enqueueNotification(data: NotificationJob): Promise<boolean> {
+  const release = reserveNotificationSlot();
+  if (!release) {
+    return false;
+  }
+  try {
+    await notificationQueue.add(data);
+    return true;
+  } finally {
+    release();
+  }
+}
 
 export function queueStatus(): QueueStatus {
   return { processed: [...processed].reverse(), processedTotal, inFlight };

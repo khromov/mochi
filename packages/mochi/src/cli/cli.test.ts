@@ -20,7 +20,7 @@ async function runCli(...args: string[]) {
 // server so the end-to-end path is exercised without depending on the network
 // (the live https://mochi.fast/SKILL.md still 404s).
 async function runUpdateSkill(cwd: string, skillUrl: string, agent?: string) {
-  const proc = Bun.spawn([process.execPath, CLI, 'update-skill', ...(agent ? [agent] : [])], {
+  const proc = Bun.spawn([process.execPath, CLI, 'update-skill', ...(agent ? [agent] : []), '--force'], {
     cwd,
     env: { ...process.env, MOCHI_SKILL_URL: skillUrl },
     stdout: 'pipe',
@@ -35,9 +35,11 @@ describe('mochi-framework update-skill (subprocess)', () => {
     const server = Bun.serve({ port: 0, fetch: () => new Response('# Hosted skill body', { status: 200 }) });
     const cwd = freshCwd();
     try {
-      const { exitCode } = await runUpdateSkill(cwd, server.url.href);
+      const { exitCode, stdout } = await runUpdateSkill(cwd, server.url.href);
 
       expect(exitCode).toBe(0);
+      expect(stdout).toContain('Unsigned update fetched');
+      expect(stdout).toContain('+# Hosted skill body');
       const dest = path.join(cwd, '.claude', 'skills', 'mochi', 'SKILL.md');
       expect(existsSync(dest)).toBe(true);
       expect(await Bun.file(dest).text()).toBe('# Hosted skill body');

@@ -2,15 +2,16 @@ import { isIP } from 'node:net';
 import { lookup } from 'node:dns/promises';
 import ipaddr from 'ipaddr.js';
 
-/**
- * Defense-in-depth guard for outbound fetches against user-supplied URLs: validate the host against an optional
- * allowlist and reject hosts resolving to private, loopback, link-local, or reserved addresses. DNS-rebinding stays
- * partly open, since the IP is resolved here and re-resolved by `fetch`, so an encrypted, authenticated payload remains
- * the primary protection for callers that have one.
- */
+/** Defense-in-depth guard for outbound fetches against user-supplied URLs. */
 export interface UrlGuardOptions {
   allowedHosts?: string[] | undefined;
   blockPrivateNetworks?: boolean;
+}
+
+export interface ResolvedPublicUrl {
+  url: URL;
+  /** A validated address that the caller must pin the outbound connection to. */
+  address?: string;
 }
 
 /** Thrown for every rejection so callers can map it to their own error type. */
@@ -58,7 +59,7 @@ function isBlockedIp(ip: string): boolean {
   return addr.range() !== 'unicast';
 }
 
-export async function assertPublicUrl(src: string, opts: UrlGuardOptions): Promise<URL> {
+export async function resolvePublicUrl(src: string, opts: UrlGuardOptions): Promise<ResolvedPublicUrl> {
   let url: URL;
   try {
     url = new URL(src);
@@ -75,6 +76,7 @@ export async function assertPublicUrl(src: string, opts: UrlGuardOptions): Promi
     }
   }
 
+  let address: string | undefined;
   if (opts.blockPrivateNetworks) {
     if (url.hostname.toLowerCase() === 'localhost') {
       throw new SsrfGuardError('Source host resolves to a private address');
@@ -94,7 +96,12 @@ export async function assertPublicUrl(src: string, opts: UrlGuardOptions): Promi
     if (addresses.length === 0 || addresses.some(isBlockedIp)) {
       throw new SsrfGuardError('Source host resolves to a private address');
     }
+    address = addresses[0];
   }
 
-  return url;
+  return { url, address };
+}
+
+export async function assertPublicUrl(src: string, opts: UrlGuardOptions): Promise<URL> {
+  return (await resolvePublicUrl(src, opts)).url;
 }

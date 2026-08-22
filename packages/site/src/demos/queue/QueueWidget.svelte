@@ -35,11 +35,16 @@
     };
   });
 
-  const handleEnqueue: MochiSubmitFunction<{ queued: string }> = () => {
+  let enqueueError = $state<string | null>(null);
+
+  const handleEnqueue: MochiSubmitFunction<{ queued: string }, { error: string }> = () => {
     return ({ result }) => {
       if (result.type === 'success' && result.data) {
+        enqueueError = null;
         lastQueued = result.data.queued;
         username = randomUsername();
+      } else if (result.type === 'failure' && result.data) {
+        enqueueError = result.data.error;
       }
     };
   };
@@ -53,6 +58,10 @@
     </label>
     <button type="submit">Enqueue notification</button>
   </form>
+
+  {#if enqueueError}
+    <p class="error" role="alert">{enqueueError}</p>
+  {/if}
 
   <div class="status">
     <div class="stat">
@@ -168,6 +177,12 @@
     margin: 0;
     font-size: 0.85rem;
     color: var(--text-muted);
+  }
+
+  .error {
+    margin: 0;
+    color: var(--error, #b91c1c);
+    font-size: 0.85rem;
   }
 
   h3 {
