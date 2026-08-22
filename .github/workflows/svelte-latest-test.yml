@@ -1,0 +1,45 @@
+name: svelte latest test
+
+on:
+  schedule:
+    - cron: '0 7 * * *' # daily, offset from site-health (06:00) and cli regression (08:00)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  svelte-latest-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Scaffold, upgrade Svelte to latest, build + smoke
+        run: bun run svelte-latest-test
+
+      - name: Write report to Job Summary
+        if: always()
+        run: |
+          report=$(find svelte-latest-tests -name '*-report.md' -type f | head -1)
+          if [ -n "$report" ]; then
+            cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No report file found." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: svelte-latest-report
+          path: svelte-latest-tests/*-report.md
+          retention-days: 30
+          if-no-files-found: warn

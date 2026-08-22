@@ -1,7 +1,7 @@
 ---
 title: 'Client-only components with mochi:clientOnly'
 slug: client-only
-description: 'Skip SSR entirely and mount a component in the browser with mochi:clientOnly.'
+description: 'Skip SSR and mount a component in the browser with mochi:clientOnly.'
 ---
 
 <script>
@@ -10,14 +10,14 @@ description: 'Skip SSR entirely and mount a component in the browser with mochi:
 
 ## Client-only components with `mochi:clientOnly`
 
-Add `mochi:clientOnly` to a component that must never render on the server. SSR emits only an empty island wrapper; in the browser the component is mounted with Svelte's `mount()` (not hydrated — there is no SSR HTML to reuse). Use it for components built on browser-only APIs: `window`, canvas, `localStorage`, `requestAnimationFrame`, third-party browser SDKs.
+Add `mochi:clientOnly` to a component that must never render on the server. SSR emits an empty island wrapper. In the browser Mochi mounts the component. Use it for components built on browser-only APIs: `window`, canvas, `localStorage`, `requestAnimationFrame`, third-party browser SDKs.
 
 ```svelte
 <!-- file: src/Page.svelte -->
 <AudioVisualizer mochi:clientOnly />
 ```
 
-Props work exactly like `mochi:hydrate` — serialized with `devalue` and embedded into the HTML. See `Passing props to islands` for the supported types. [`isHydratable()`](/docs/selective-hydration/#ishydratable) always returns `true` in a client-only component (it only ever runs at client mount). There is **no** `islandId` prop on a client-only island — nothing renders server-side, so there's no id to carry; for a unique id inside the component, use Svelte's `$props.id()`, which `mount()` mints fresh in the browser.
+Props work like `mochi:hydrate` — serialized with `devalue` and embedded into the HTML. See [Passing props to islands](/docs/island-props/). [`isHydratable()`](/docs/selective-hydration/#ishydratable) always returns `true` here, since the component only ever runs at client mount. For a unique id, use Svelte's `$props.id()`, which is minted fresh in the browser.
 
 ```svelte
 <MapWidget mochi:clientOnly zoom={12} center={coords} />
@@ -25,7 +25,7 @@ Props work exactly like `mochi:hydrate` — serialized with `devalue` and embedd
 
 ### Fallback content
 
-Pass fallback markup as children — it renders server-side as placeholder content and is removed the moment the component mounts:
+Pass fallback markup as children. It renders on the server as placeholder content and is removed the moment the component mounts.
 
 ```svelte
 <ChartCanvas mochi:clientOnly data={points}>
@@ -33,7 +33,7 @@ Pass fallback markup as children — it renders server-side as placeholder conte
 </ChartCanvas>
 ```
 
-For `svelte-check` to accept the fallback children, the client-only component types its props with `ClientOnlyProps<T>` — it adds an optional `children` snippet so the call site type-checks without you declaring a `children` prop by hand:
+Type the component's props with `ClientOnlyProps<T>` so `svelte-check` accepts the fallback children:
 
 ```svelte
 <script lang="ts">
@@ -44,25 +44,19 @@ For `svelte-check` to accept the fallback children, the client-only component ty
 
 <Callout type="warning">
 
-The fallback children are an SSR placeholder only — they are **not** passed to the component at runtime, so don't render `children` inside a client-only component. Keep the fallback to static markup: do **NOT** put `mochi:*` islands inside it, since it is wiped from the DOM when the component mounts.
+The fallback children are an SSR placeholder only. They do not reach the component at runtime, so do not render `children` inside a client-only component. Keep the fallback to static markup. Do **not** put `mochi:*` islands inside it — the fallback is wiped from the DOM when the component mounts.
 
 </Callout>
 
 ### Lazy client-only with `mochi:clientOnly:visible`
 
-Defer the browser-side `mount()` until the wrapper scrolls into the viewport. The component still never renders on the server — its JavaScript and CSS are simply fetched and mounted only when the placeholder intersects the viewport via `IntersectionObserver`.
-
-```svelte
-<AudioVisualizer mochi:clientOnly:visible />
-```
-
-Pass `rootMargin` to start loading before the element enters the viewport — forwarded straight to `IntersectionObserver` (default `'0px'`):
+Defer the browser mount until the wrapper scrolls into the viewport. The component still never renders on the server. Its JavaScript and CSS are fetched and mounted only when the placeholder intersects the viewport.
 
 ```svelte
 <AudioVisualizer mochi:clientOnly:visible={{ rootMargin: '200px' }} />
 ```
 
-Provide fallback children as the placeholder — they reserve space and give the observer something to watch until the component mounts (an empty wrapper still gets a 1px minimum height so it remains observable):
+Provide fallback children as the placeholder. They reserve space and give the observer something to watch until the component mounts.
 
 ```svelte
 <ChartCanvas mochi:clientOnly:visible data={points}>
@@ -72,16 +66,16 @@ Provide fallback children as the placeholder — they reserve space and give the
 
 ### Server-side APIs are unavailable
 
-The component never runs on the server, so server-only APIs — `getRequestContext()`, `cookies`, `hydratable()` server reads — are unavailable inside it. Pass any server-derived values in as props from the page.
+The component never runs on the server, so `getRequestContext()`, `cookies`, and `hydratable()` server reads are unavailable inside it. Pass server-derived values in as props from the page.
 
 <Callout type="warning">
 
-`<script module>` blocks **do** still execute during SSR — the page's import statement remains even though the component is never invoked. Keep module-scope code free of `window` and other browser globals; access them from the instance script or `$effect` instead.
+`<script module>` blocks still run during SSR — the page's import statement remains even though the component is never invoked. Keep module-scope code free of `window` and other browser globals. Access them from the instance script or `$effect`.
 
 </Callout>
 
 ### Limitations
 
-- Combining `mochi:clientOnly*` with `mochi:hydrate*` or `mochi:defer*` is a compile error — a client-only component is never server-rendered.
-- Like other islands, it must not be nested inside another hydratable component.
-- The component must be statically imported from a relative `.svelte`/`.md`/`.svx` path — package imports or props-passed components are a compile error. See `Supported import forms` under `Selective hydration`.
+- Combining `mochi:clientOnly*` with `mochi:hydrate*` or `mochi:defer*` is a compile error.
+- Like other islands, a client-only component must not nest inside another hydratable component.
+- Import it statically from a relative `.svelte` / `.md` / `.svx` path. See [Supported import forms](/docs/selective-hydration/#supported-import-forms).

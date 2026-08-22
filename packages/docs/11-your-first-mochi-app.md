@@ -17,7 +17,7 @@ By the end we'll have a greeting card with a live like button and a personalized
 
 ### Set up
 
-You'll need [Bun installed](https://bun.com/docs/installation) (>=1.3.14). Scaffold a new project with the official CLI and pick the **minimal** template when prompted:
+You'll need [Bun installed](https://bun.com/docs/installation) (>=1.4.0). Scaffold a new project with the official CLI and pick the **minimal** template when prompted:
 
 ```sh
 bun create mochi@latest my-app
@@ -27,7 +27,7 @@ bun install
 bun run dev
 ```
 
-The scaffold gives you a working app on `http://localhost:3333`. Its entry point is `src/index.ts`, which boots the server and declares your routes inline in the `Mochi.serve()` call:
+The scaffold gives you a working app on `http://localhost:3333`, with ESLint and Prettier preconfigured (`bun run lint`, `bun run format`; create-mochi 0.4.0+) — opt out with `--no-eslint` / `--no-prettier`. Its entry point is `src/index.ts`, which boots the server and declares your routes inline in the `Mochi.serve()` call:
 
 ```ts
 // file: src/index.ts (scaffolded)

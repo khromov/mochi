@@ -1,7 +1,7 @@
 ---
 title: 'Request context'
 slug: request-context
-description: 'Access the current URL, route params, cookies, and locals from any server-side code — plus the isomorphic url export that works on the client too.'
+description: 'Access the current URL, route params, cookies, and locals from server-side code, plus the isomorphic url export.'
 ---
 
 <script>
@@ -17,7 +17,7 @@ Inside components and server-side helpers, import context values directly from `
 import { url, params, cookies, locals } from 'mochi-framework';
 ```
 
-Each export is a proxy that reads from the current request's `AsyncLocalStorage` context on every property access — no need to thread values through props.
+Each export reads from the current request's context on every property access, so you never thread values through props.
 
 ### `url`
 
@@ -34,17 +34,18 @@ The current page URL as a standard [`URL`](https://developer.mozilla.org/en-US/d
 <p>Current path: {url.pathname}</p>
 ```
 
-`url` is **isomorphic** — it works on both server and client:
-
-- **Server:** proxies `getRequestContext().url`, the parsed request URL.
-- **Client:** proxies `new URL(window.location.href)`, constructed fresh on each access so it always reflects the current browser URL (including after `pushState` / `replaceState`).
+`url` is **isomorphic**. On the server it reads the parsed request URL. On the client it reflects the current browser URL, including after `pushState` / `replaceState`.
 
 <Callout type="info">
-Because the proxy constructs a fresh URL on every access, destructured values like `const {'{'} pathname {'}'} = url` are snapshots — they won't update if the URL changes later. Access `url.pathname` directly when you need the live value.
+
+`url` reflects the live browser URL on each access, so a destructured value like `const { pathname } = url` is a snapshot. Access `url.pathname` directly when you need the live value.
+
 </Callout>
 
 <Callout type="warning">
+
 `url.hash` is always empty during SSR — browsers never send the fragment to the server. On the client the hash is available as expected.
+
 </Callout>
 
 ### `params`
@@ -62,11 +63,11 @@ Route parameters matched by the Bun router. Server-only.
 
 ### `cookies`
 
-Read and write cookies on both server and client through one API. See the [Cookies demo](/demos/cookies/) for a full example.
+Read and write cookies on the server and the client through one API. See the [Cookies demo](/demos/cookies/).
 
 ```svelte
 <script>
-  import { cookies, isBrowser } from 'mochi-framework';
+  import { cookies } from 'mochi-framework';
 
   const theme = cookies.get('theme') ?? 'light';
 </script>
@@ -97,7 +98,7 @@ export const auth: Handle = async ({ event, resolve }) => {
 
 ### `getRequestContext()`
 
-Returns the full context object with all fields. Server-only. Prefer the individual exports above unless you need multiple fields at once.
+Returns the full context object with all fields. Server-only. Prefer the individual exports above unless you need several fields at once.
 
 ```ts
 import { getRequestContext } from 'mochi-framework';
@@ -105,9 +106,9 @@ import { getRequestContext } from 'mochi-framework';
 const { url, params, cookies, locals, request, requestId } = getRequestContext();
 ```
 
-`url` and `cookies` work on both server and client; `getRequestContext()`, `params`, and `locals` are server-only and throw in the browser, so guard those branches with `isServer`.
+`url` and `cookies` work on the server and the client. `getRequestContext()`, `params`, and `locals` are server-only and throw in the browser, so guard those branches with `isServer`.
 
-The context also carries `isWarmup` — `true` when the request was issued by [route warmup](/docs/serve-options/#route-warmup) at startup, not a real client. Guard side effects in `serverProps` that shouldn't fire for synthetic warmup hits:
+The context also carries `isWarmup` — `true` when the request came from [route warmup](/docs/serve-options/#route-warmup) at startup, not a real client. Guard side effects in `serverProps` that should not fire for synthetic warmup hits:
 
 ```ts
 serverProps: async () => {

@@ -3,10 +3,8 @@ import { CHANGELOG_URL, getChangelogTxt } from './changelog';
 
 const realFetch = globalThis.fetch;
 
-// The changelog cache is a single module-level instance shared across this file.
-// Once a successful fetch populates it, the value stays fresh for 4h — so the
-// failure cases must run *before* any success. bun runs tests top-to-bottom, so
-// the ordering below (failures → success → cache-hit) is deliberate.
+// The cache stays fresh for 4h after a successful fetch, so failure cases must run
+// before the success case — bun runs tests top-to-bottom, which this order relies on.
 describe('changelog', () => {
   let fetchCount = 0;
   let mode: 'ok' | 'not-ok' | 'throw' = 'throw';

@@ -36,8 +36,10 @@ describe('build precompiles nested server islands', () => {
       expect.stringMatching(/^Level2_\w+$/),
       expect.stringMatching(/^Level3_\w+$/),
     ]);
-    for (const islandPath of Object.values(manifest.serverIslandPaths ?? {})) {
-      expect(manifest.components[islandPath], `expected components entry for ${islandPath}`).toBeDefined();
+    const islandPaths = Object.values(manifest.serverIslandPaths ?? {});
+    expect(islandPaths).toHaveLength(3);
+    for (const islandPath of islandPaths) {
+      expect(manifest.components[islandPath]?.ssrModule, `expected components entry for ${islandPath}`).toMatch(/\.js$/);
     }
   });
 });

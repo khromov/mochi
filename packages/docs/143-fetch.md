@@ -6,9 +6,12 @@ description: 'A resilient fetch wrapper with retries, a request timeout, and an 
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## mochiFetch
+
+<VersionNote since="0.10.0" message="mochiFetch() ships in the next Mochi release (0.10.0). This page describes the upcoming API." />
 
 <Callout type="warning">
 

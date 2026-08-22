@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { fail, isFormFail, isFormRedirect, isFormSuccess, redirect, success } from './forms';
+import { fail, isFormFail, isFormSuccess, isRedirect, redirect, success } from './forms';
 
 describe('fail', () => {
   test('builds a MochiFormFail with status and data', () => {
@@ -11,9 +11,9 @@ describe('fail', () => {
 });
 
 describe('redirect', () => {
-  test('builds a MochiFormRedirect with status and location', () => {
+  test('builds a MochiRedirect with status and location', () => {
     const result = redirect(303, '/dashboard');
-    expect(result.__mochiFormRedirect).toBe(true);
+    expect(result.__mochiRedirect).toBe(true);
     expect(result.status).toBe(303);
     expect(result.location).toBe('/dashboard');
   });
@@ -45,13 +45,13 @@ describe('type guards', () => {
     expect(isFormFail('string')).toBe(false);
   });
 
-  test('isFormRedirect matches redirect() output and nothing else', () => {
-    expect(isFormRedirect(redirect(302, '/x'))).toBe(true);
-    expect(isFormRedirect(fail(400, { error: 'x' }))).toBe(false);
-    expect(isFormRedirect(success())).toBe(false);
-    expect(isFormRedirect(null)).toBe(false);
-    expect(isFormRedirect(undefined)).toBe(false);
-    expect(isFormRedirect({})).toBe(false);
+  test('isRedirect matches redirect() output and nothing else', () => {
+    expect(isRedirect(redirect(302, '/x'))).toBe(true);
+    expect(isRedirect(fail(400, { error: 'x' }))).toBe(false);
+    expect(isRedirect(success())).toBe(false);
+    expect(isRedirect(null)).toBe(false);
+    expect(isRedirect(undefined)).toBe(false);
+    expect(isRedirect({})).toBe(false);
   });
 
   test('isFormSuccess matches success() output and nothing else', () => {
