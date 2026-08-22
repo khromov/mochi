@@ -35,8 +35,7 @@ const serve = async (opts: Partial<Parameters<typeof Mochi.serve>[0]>): Promise<
   Mochi.serve({ port: 0, development: false, logger: { enabled: false }, routes: {}, outDir: makeOutDir(), ...opts });
 
 describe('Mochi.serve({ cron })', () => {
-  // Only one Mochi.serve() may succeed per process (the __mochi_config__ singleton), so exactly one test boots a
-  // server; the rest assert rejections, which throw in the prelude before the singleton pins.
+  // Only one Mochi.serve() may succeed per process (the __mochi_config__ singleton), so exactly one test boots a server and the rest assert rejections that throw before the singleton pins.
   test('starts durable schedules and stops them on shutdown', async () => {
     server = await serve({ cron: [Mochi.cron('nightly', IDLE, () => {}), Mochi.cron('weekly', IDLE, () => {})] });
     expect((await registeredCronNames()).sort()).toEqual(['nightly', 'weekly']);

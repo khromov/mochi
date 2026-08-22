@@ -91,8 +91,8 @@ export const newsletterEmailQueue = Mochi.queue<NewsletterEmailJob>(NEWSLETTER_E
 });
 
 /**
- * A pending sign-up whose confirmation window closed is otherwise only noticed when someone visits the dead token, so
- * unconfirmed addresses accumulate forever. Nightly at 03:15, offset off the hour to avoid the thundering herd.
+ * Unconfirmed sign-ups otherwise accumulate forever, so purge them nightly at 03:15 — offset off the hour to avoid the
+ * thundering herd.
  */
 export const purgeExpiredSubscribers = Mochi.cron('newsletter-purge-expired', '15 3 * * *', () => {
   const removed = purgeExpiredPendingSubscribers();

@@ -38,7 +38,7 @@ describe('respondToPressure', () => {
     expect(store.getItem('fresh')).toBe(2);
   });
 
-  // The broadcast lets non-cache subsystems react; it carries the raw level and fires regardless of any responders.
+  // The broadcast lets non-cache subsystems react, so it fires regardless of any responders.
   test("emits 'memory:pressure' with the level for other subsystems", () => {
     const seen: Array<'warning' | 'critical'> = [];
     const listener = (e: { level: 'warning' | 'critical' }) => seen.push(e.level);

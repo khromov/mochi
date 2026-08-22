@@ -469,9 +469,9 @@ interface ConstructBossOptions {
   /** Enable bun-boss's durable cron timekeeper on this instance. */
   schedule: boolean;
   enableSpies: boolean;
-  /** How often the timekeeper checks whether a schedule is due. Low values let tests fire quickly. */
+  /** How often the timekeeper checks whether a schedule is due; low values let tests fire quickly. */
   cronMonitorIntervalSeconds?: number;
-  /** How often the internal send-it worker forwards a due schedule to its queue. Test hook. */
+  /** How often the internal send-it worker forwards a due schedule to its queue (test hook). */
   cronWorkerIntervalSeconds?: number;
 }
 
@@ -865,7 +865,7 @@ async function verifyOrCreateQueue(boss: BunBoss, entry: DeclaredQueueEntry, con
 // tables even when pointed at the same store. Each cron becomes a queue named `cron-<name>`, reserving that prefix.
 const CRON_SCHEMA = 'mochi_cron';
 export const CRON_QUEUE_PREFIX = 'cron-';
-/** Fixed startup jitter (ms): a random 0..N delay staggers the timekeeper poll across nodes. Not user-configurable. */
+/** Fixed startup jitter (ms): a random 0..N delay staggers the timekeeper poll across nodes; not user-configurable. */
 export const CRON_JITTER_MS = 3000;
 
 const cronQueueName = (name: string): string => `${CRON_QUEUE_PREFIX}${name}`;
@@ -873,7 +873,7 @@ const cronQueueName = (name: string): string => `${CRON_QUEUE_PREFIX}${name}`;
 export interface StartCronOptions {
   cronStorage: MochiQueueStorage;
   development: boolean;
-  /** Random 0..jitterMs delay before the scheduler starts. Pass 0 in dev/tests. */
+  /** Random 0..jitterMs delay before the scheduler starts; pass 0 in dev/tests. */
   jitterMs: number;
   enableSpies?: boolean;
   /** Test hooks: low intervals let a `* * * * *` schedule fire within seconds instead of up to a minute. */
@@ -894,7 +894,7 @@ function cronWorkHandler(job: MochiCronJob) {
   });
 }
 
-/** Stop the dedicated cron boss (if any) and release its SQL handle. Idempotent. Schedules stay in the store. */
+/** Stop the dedicated cron boss (if any) and release its SQL handle; idempotent, and schedules stay in the store. */
 export async function stopCronRuntime(): Promise<void> {
   const { cronBoss, cronOwnedSql, shutdownTimeout } = registry;
   registry.cronBoss = null;
@@ -916,9 +916,9 @@ export async function stopCronRuntime(): Promise<void> {
 }
 
 /**
- * Register durable schedules on a dedicated bun-boss instance. The single winner per tick is elected atomically in the
- * database, so exactly one node enqueues each firing regardless of node count. Skipped during a build. Re-running it
- * replaces any prior cron boss, so the dev watcher can re-register when the cron array changes.
+ * Register durable schedules on a dedicated bun-boss instance; the single winner per tick is elected atomically in the
+ * database, so exactly one node enqueues each firing. Skipped during a build; re-running replaces any prior cron boss so
+ * the dev watcher can re-register when the cron array changes.
  */
 export async function startCronRuntime(jobs: MochiCronJob[], opts: StartCronOptions): Promise<void> {
   if (isBuildingEntry()) {

@@ -16,7 +16,7 @@ afterAll(() => {
 const emailOf = (id: number): string | undefined => getSubscriber(id)?.email;
 
 // Expiry was previously only noticed when someone visited a dead confirm link, so an address that never confirmed
-// stayed on file forever. The nightly `newsletter-purge-expired` cron job calls this.
+// stayed on file forever; the nightly `newsletter-purge-expired` cron calls this.
 describe('purgeExpiredPendingSubscribers', () => {
   test('deletes pending sign-ups past their confirmation window and leaves live ones alone', () => {
     const stale = requestSubscription({ email: 'stale@example.com', source: 'test' }, { cooldownMs: 0, ttlMs: 1 });

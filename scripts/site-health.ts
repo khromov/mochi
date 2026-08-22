@@ -1,7 +1,7 @@
 import { styleText } from 'node:util';
 
-// Only the slice of the Chrome DevTools Protocol this script reads. Bun.WebView's `cdp()`/`addEventListener()` are
-// untyped by design, and hand-writing these few shapes is cheaper than a dependency on the full protocol types.
+// Hand-written types for the CDP slice this script reads — Bun.WebView's `cdp()`/`addEventListener()` are untyped, so
+// this is cheaper than a dependency on the full protocol types.
 type RemoteObject = { value?: unknown; description?: string; unserializableValue?: string; preview?: { description?: string } };
 type RequestWillBeSent = { requestId: string; loaderId: string; type?: string; request: { url: string }; redirectResponse?: { status: number; url: string } };
 type ResponseReceived = { requestId: string; loaderId: string; type?: string; response: { status: number } };
@@ -208,8 +208,8 @@ type Issue = { kind: 'error' | 'warning'; text: string };
 type PageResult = { url: string; status?: number; redirects: string[]; issues: Issue[]; ok: boolean; retried: boolean };
 
 /**
- * Flatten one console call into a readable line. Bun unwraps primitive arguments to their raw values and hands
- * objects over as the CDP `RemoteObject` descriptor, so both shapes arrive in the same array.
+ * Flatten one console call into a readable line; Bun unwraps primitives to raw values but hands objects over as the
+ * CDP `RemoteObject` descriptor, so both shapes arrive in the same array.
  */
 function renderArgs(args: unknown[]): string {
   return args
@@ -271,9 +271,8 @@ async function checkPage(url: string, timeout: number): Promise<PageResult> {
     issues.push({ kind, text: clean });
   };
 
-  // Each view is its own tab in the one Chrome that Bun spawns per process. Console output has to come through
-  // this option rather than a `Runtime.consoleAPICalled` listener: Bun consumes that CDP event internally to
-  // implement the option and never re-dispatches it, so a listener silently sees nothing.
+  // Console output must come through this option, not a `Runtime.consoleAPICalled` listener: Bun consumes that CDP
+  // event internally to implement the option and never re-dispatches it, so a listener silently sees nothing.
   const view = new Bun.WebView({
     backend: 'chrome',
     console: (type: string, ...args: unknown[]) => {
@@ -323,9 +322,9 @@ async function checkPage(url: string, timeout: number): Promise<PageResult> {
       }
       add(entry.level as Issue['kind'], entry.url ? `${entry.text} (${entry.url})` : entry.text);
     });
-    // Not `Page.loadEventFired`: Bun.WebView consumes that one internally to resolve its own navigate(), and never
-    // re-dispatches it. The main-frame `load` lifecycle event is the same signal, and being frame-scoped it also
-    // ignores the load events of cross-origin iframes such as the newsletter embed on the blog.
+    // Not `Page.loadEventFired`: Bun.WebView consumes that internally to resolve its own navigate() and never
+    // re-dispatches it, so use the frame-scoped main-frame `load` event, which also ignores cross-origin iframe loads
+    // like the blog's newsletter embed.
     view.addEventListener<LifecycleEvent>('Page.lifecycleEvent', ({ data }) => {
       if (data.name === 'load' && data.frameId === mainFrameId) {
         onLoad?.();

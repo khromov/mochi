@@ -45,7 +45,6 @@ export async function extractTemplate(tarball: Blob | Uint8Array, source: Templa
   return written;
 }
 
-/** Fetch a template from GitHub and write it into `dir`. */
 export async function downloadTemplate(source: string, opts: { dir: string; force?: boolean }): Promise<void> {
   const parsed = parseTemplateSource(source);
   if (!opts.force) {

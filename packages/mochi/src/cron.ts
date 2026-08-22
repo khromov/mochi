@@ -1,7 +1,6 @@
-// Cron descriptors and validation. The durable runtime that talks to bun-boss lives in `queue.ts`, which is the only
-// module allowed to import bun-boss; this file stays dependency-free so it can be imported anywhere.
+// Kept dependency-free (the bun-boss runtime lives in `queue.ts`) so it can be imported anywhere.
 
-/** The invocation handed to a cron handler. `scheduledTime` is when the underlying job ran. */
+/** The invocation handed to a cron handler. */
 export interface MochiCronRun {
   readonly name: string;
   readonly schedule: string;
@@ -75,8 +74,7 @@ export function createCronJob(name: string, schedule: string, config: MochiCronO
   return { __mochiCron: true, name, schedule, run, options, nextRun };
 }
 
-/** A stable string identifying a cron array by what actually matters — name, schedule, tz, dev — so the dev watcher can
- * tell whether an entry edit changed the cron config and re-register only then. Works on the descriptor or its twin. */
+/** A stable string identifying a cron array by what matters — name, schedule, tz, dev — so the dev watcher re-registers only when an entry edit actually changed the cron config. */
 export function cronSignature(jobs: ReadonlyArray<{ name: string; schedule: string; options?: MochiCronRuntimeOptions }>): string {
   return JSON.stringify(jobs.map((j) => [j.name, j.schedule, j.options?.tz ?? null, j.options?.dev ?? true]).sort());
 }

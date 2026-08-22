@@ -5,8 +5,7 @@ import { createCronJob } from './cron';
 import { closeAllQueueResources, registeredCronNames, startCronRuntime } from './queue';
 import { mochiEvents } from './events';
 
-// A dedicated cron boss on :memory: sqlite; a low monitor interval makes a `* * * * *` schedule fire within seconds,
-// because bun-boss fires when the previous occurrence is under a minute old.
+// A low monitor interval makes a `* * * * *` schedule fire within seconds, because bun-boss fires when the previous occurrence is under a minute old.
 const runtimeOpts = { development: false, jitterMs: 0, cronMonitorIntervalSeconds: 1, cronWorkerIntervalSeconds: 1, workerPollingSeconds: 1 };
 
 const tmpDirs: string[] = [];

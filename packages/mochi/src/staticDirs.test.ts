@@ -79,7 +79,6 @@ describe('Mochi.serve({ staticDirs })', () => {
     const notModified = await fetch(`${base}/assets/hello.txt`, { headers: { 'If-None-Match': file.headers.get('etag')! } });
     expect(notModified.status).toBe(304);
 
-    // index.html is served for a directory.
     expect(await (await fetch(`${base}/assets/nested/`)).text()).toContain('nested index');
 
     expect((await fetch(`${base}/assets/missing.txt`)).status).toBe(404);

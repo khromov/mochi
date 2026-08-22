@@ -244,9 +244,8 @@ export class Mochi {
   }
 
   /**
-   * Declare a scheduled job. The returned descriptor is inert until `Mochi.serve({ cron: [job] })` starts it. Pass a
-   * handler directly, or `{ run, tz, dev, on }` for time-zone, development and listener control. Invalid schedules
-   * throw here, at import time, rather than at boot.
+   * Declare a scheduled job — inert until `Mochi.serve({ cron: [job] })` starts it. Invalid schedules throw here at
+   * import time, not at boot.
    */
   static cron(name: string, schedule: string, config: MochiCronOptions | MochiCronHandler): MochiCronJob {
     return createCronJob(name, schedule, config);
@@ -2034,8 +2033,7 @@ export class Mochi {
     }
 
     // Installed once the server is up, so a boot that throws never leaves a listener behind on a dead process; never
-    // in development, where the compile-heavy boot hair-triggers the OS signal (Linux reports only 'critical') and the
-    // reclaim would be a spurious no-op.
+    // in development, where the compile-heavy boot hair-triggers the OS signal and the reclaim would be a spurious no-op.
     if (!development && (options.memoryPressure ?? true)) {
       installMemoryPressureHandler();
     }

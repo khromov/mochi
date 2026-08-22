@@ -71,8 +71,8 @@ function renderDepReportSection(content: string): string[] {
 // eslint-disable-next-line no-control-regex
 const stripAnsi = (text: string): string => text.replace(/\u001b\[[0-9;]*m/g, '');
 
-/** `bun audit` and `bun pm licenses --prod`, folded into one collapsible section. Advisory only — the PR never goes
- * red for a vulnerability it did not introduce; a reviewer reads this and runs `bun audit fix` deliberately. */
+/** Folds `bun audit` and `bun pm licenses --prod` into one collapsible section — advisory only, so the PR never goes
+ * red for a vulnerability it did not introduce. */
 function renderAdvisorySection(audit?: string, licenses?: string): string[] {
   const out: string[] = ['### Security & licenses', ''];
   if (audit !== undefined) {

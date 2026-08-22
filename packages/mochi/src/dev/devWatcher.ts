@@ -324,8 +324,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   let routeComponentPaths: Set<string> = new Set();
   let lastCronSignature = deps.initialCronSignature ?? cronSignature([]);
 
-  // Re-register durable cron when an entry edit changes the cron array — the schedule reconcile drops removed jobs and
-  // upserts the rest. Skipped when nothing changed, so a route-only edit doesn't churn the scheduler.
+  // Re-register durable cron only when an entry edit actually changes the cron array, so a route-only edit doesn't
+  // churn the scheduler.
   async function reconcileCron(serveOptions: { cron?: MochiCronJob[]; cronStorage?: MochiQueueStorage }): Promise<void> {
     const cron = serveOptions.cron ?? [];
     const signature = cronSignature(cron);

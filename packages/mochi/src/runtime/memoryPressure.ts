@@ -30,7 +30,6 @@ export function registerPressureResponder(responder: PressureResponder): void {
   registry.responders.add(new WeakRef(responder));
 }
 
-/** Live responders, dropping refs whose target has been collected. */
 function liveResponders(): PressureResponder[] {
   const alive: PressureResponder[] = [];
   for (const ref of registry.responders) {
@@ -50,8 +49,8 @@ function liveResponders(): PressureResponder[] {
  */
 export function respondToPressure(level: MemoryPressureLevel): { level: MemoryPressureLevel; removed: number; caches: number; durationMs: number } {
   const start = Date.now();
-  // Broadcast the raw signal before the cache drain, so subsystems that aren't registered caches (connection pools,
-  // worker queues, user code) can reclaim their own resources too. The drain's aggregate rides `cache:pressure` below.
+  // Broadcast the raw signal before the cache drain, so unregistered subsystems (connection pools, worker queues, user
+  // code) can reclaim their own resources too.
   mochiEvents.emit('memory:pressure', { level });
   const responders = liveResponders();
   let removed = 0;
@@ -72,10 +71,7 @@ export function respondToPressure(level: MemoryPressureLevel): { level: MemoryPr
   return result;
 }
 
-/**
- * Subscribe to the OS low-memory notification. Idempotent, so repeated `Mochi.serve()` calls in one process install one
- * handler. The listener does not keep the event loop alive.
- */
+/** Subscribe to the OS low-memory notification. Idempotent, so repeated `Mochi.serve()` calls install one handler. */
 export function installMemoryPressureHandler(): void {
   if (registry.handler) {
     return;

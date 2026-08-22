@@ -4,10 +4,7 @@ import type { BunRouteValue } from '../types';
 /** A prefix → directory mount, as declared in `Mochi.serve({ staticDirs })`. */
 export type MochiStaticDirs = Record<string, string>;
 
-/**
- * Validate the mounts and normalize each prefix. Throws on anything Bun's directory routes cannot express, so a bad
- * mount rejects before the socket binds rather than 404ing at runtime.
- */
+/** Validate and normalize each mount, throwing before the socket binds on anything Bun's directory routes cannot express. */
 export function resolveStaticDirs(staticDirs: MochiStaticDirs, assetPrefix: string): { pattern: string; dir: string }[] {
   const seen = new Set<string>();
   return Object.entries(staticDirs).map(([rawPrefix, dir]) => {
@@ -16,9 +13,8 @@ export function resolveStaticDirs(staticDirs: MochiStaticDirs, assetPrefix: stri
     }
     const prefix = rawPrefix.endsWith('/') ? rawPrefix.replace(/\/+$/, '') : rawPrefix;
     if (prefix === '') {
-      // A root mount would have to register the global catch-all `/*`, which answers every otherwise-unmatched
-      // request with Bun's own 404 — the framework's error page, `fetch` fallback and asset routes would stop
-      // running. `publicDir` is the supported way to serve files at the site root.
+      // A root mount would register the global catch-all `/*`, which answers every unmatched request with Bun's own
+      // 404 — shadowing the framework's error page, `fetch` fallback and asset routes.
       throw new Error(`Mochi.serve({ staticDirs }): "/" cannot be mounted — it would shadow every unmatched route. Use publicDir to serve files at the site root.`);
     }
     if (prefix.includes('*') || prefix.includes(':')) {
@@ -39,10 +35,7 @@ export function resolveStaticDirs(staticDirs: MochiStaticDirs, assetPrefix: stri
   });
 }
 
-/**
- * Register the mounts as Bun directory routes. Deliberately called after the trailing-slash mirroring pass: a `/*`
- * pattern must never be mirrored to `/*\/`, which is not a valid route.
- */
+/** Register the mounts as Bun directory routes, after the trailing-slash mirroring pass — a `/*` pattern must never be mirrored to `/*\/`, which is not a valid route. */
 export function registerStaticDirRoutes(bunRoutes: Record<string, BunRouteValue>, mounts: { pattern: string; dir: string }[]): void {
   for (const { pattern, dir } of mounts) {
     if (pattern in bunRoutes) {

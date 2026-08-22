@@ -543,22 +543,22 @@ export interface MochiServeOptions {
     level?: import('./utils/log').LogLevel;
   } & import('./dev/consoleLogger').ConsoleLoggerOptions;
   /**
-   * Durable scheduled jobs started with the server: descriptors from `Mochi.cron(name, schedule, handler)`. Schedules
-   * are persisted in `cronStorage` and a single node is elected per firing, so a job runs once across a multi-node
-   * setup rather than once per node. A run executes internally as a queue job named `cron-<name>` (surfacing through
-   * `queue:*` events); a handler that throws is reported through `queue:failed`, and the schedule keeps running.
+   * Durable scheduled jobs started with the server, from `Mochi.cron(name, schedule, handler)`; schedules persist in
+   * `cronStorage` and a single node is elected per firing, so a job runs once across a multi-node setup. Each run
+   * executes as a queue job named `cron-<name>` (surfacing through `queue:*` events), and a handler that throws is
+   * reported via `queue:failed` while the schedule keeps running.
    */
   cron?: MochiCronConfig[];
   /**
-   * Storage for the durable cron scheduler (`memory` | `{ sqlite }` | `{ postgres }` | `{ pglite }`). Defaults to
-   * `memory`, independent of `queueStorage` — cron always runs on its own bun-boss instance. Point it at a shared
+   * Storage for the durable cron scheduler (`memory` | `{ sqlite }` | `{ postgres }` | `{ pglite }`), defaulting to
+   * `memory` and independent of `queueStorage` — cron always runs on its own bun-boss instance. Point it at a shared
    * store (Postgres, or a SQLite file on a shared volume) for a multi-node deployment.
    */
   cronStorage?: MochiQueueStorage;
   /**
-   * Drain in-memory caches when the operating system reports low memory, before the kernel starts killing processes.
-   * `'warning'` (macOS only) drops aged-out entries; `'critical'` drops everything. Reports through the `cache:pressure`
-   * event. Default: `true`.
+   * Drain in-memory caches when the OS reports low memory, before the kernel starts killing processes: `'warning'`
+   * (macOS only) drops aged-out entries, `'critical'` drops everything, reported through the `cache:pressure` event.
+   * Default: `true`.
    */
   memoryPressure?: boolean;
   /**

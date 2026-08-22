@@ -16,8 +16,8 @@ describe('buildSitemapXml', () => {
     expect(locs(xml).length).toBe(urlCount);
   });
 
-  // The document is built with Bun.XML.stringify rather than string concatenation, so every value is escaped.
-  // Parsing it back is the check string-joining could never pass: a stray & or < in a slug used to emit invalid XML.
+  // Parsing it back is the check string-joining could never pass: Bun.XML.stringify escapes every value,
+  // so a stray & or < in a slug no longer breaks the document.
   it('round-trips through an XML parser', async () => {
     const xml = await buildSitemapXml();
     const parsed = Bun.XML.parse(xml) as { urlset: { url: { loc: string }[] } };

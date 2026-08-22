@@ -21,8 +21,8 @@ function pubDate(date: string): string {
 }
 
 /**
- * The blog as an RSS 2.0 feed. Summaries only: post bodies are mdsvex and may embed Svelte components, which have no
- * meaning outside the site. Every value goes through `Bun.XML.stringify`, so titles containing `&` or `<` escape.
+ * The blog as an RSS 2.0 feed, summaries only: post bodies are mdsvex and may embed Svelte components, which have
+ * no meaning outside the site.
  */
 export async function buildFeedXml(): Promise<string> {
   if (cachedFeedXml) {

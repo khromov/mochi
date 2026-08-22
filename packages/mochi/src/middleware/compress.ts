@@ -28,9 +28,9 @@ function isDev(): boolean {
  * encodings allowed by `methods`; the array order is only the tiebreak for `Accept-Encoding: *`.
  *
  * Every encoding streams through a single `CompressionStream`, so a chunked SSR response stays chunked. Brotli is
- * deliberately absent: Bun's `CompressionStream('brotli')` is fixed at quality 11, far too slow for per-request SSR, so
- * we standardize on the one streaming API and reach for `zstd` for brotli-class ratios. It returns once Bun exposes a
- * quality level (see the TODO in `utils/index.ts`).
+ * deliberately absent — Bun's `CompressionStream('brotli')` is fixed at quality 11, too slow for per-request SSR, so we
+ * use `zstd` for brotli-class ratios instead and will revisit once Bun exposes a quality level (see the TODO in
+ * `utils/index.ts`).
  */
 export function compress(opts: CompressOptions = {}): Handle {
   const methods = opts.methods ?? ['zstd', 'gzip'];

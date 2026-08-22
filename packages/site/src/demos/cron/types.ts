@@ -1,6 +1,5 @@
-// Pure types shared between the server module (cron.server.ts) and the island. Components must import types
-// from here, NOT from cron.server.ts: a type import from a side-effectful server module still drags that
-// module into the SSR component bundle, re-registering its cron job a second time.
+// Components must import types from here, NOT from cron.server.ts: a type import from a side-effectful server
+// module still drags that module into the SSR component bundle, re-registering its cron job a second time.
 
 export interface CronLogEntry {
   seq: number;

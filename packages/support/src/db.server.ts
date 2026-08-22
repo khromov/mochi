@@ -319,9 +319,8 @@ export function deleteSubscriber(id: number): void {
 }
 
 /**
- * Delete pending sign-ups whose confirmation window has closed. Expiry is otherwise only noticed when someone visits a
- * dead token, so without this every unconfirmed address is retained forever — a row nobody may ever look at again.
- * Returns how many were removed.
+ * Delete pending sign-ups whose confirmation window closed — otherwise expiry is only noticed when someone visits a
+ * dead token, so unconfirmed addresses are retained forever.
  */
 export function purgeExpiredPendingSubscribers(now: number = Date.now()): number {
   const expired = subExpiredIdsStmt.all(now);
