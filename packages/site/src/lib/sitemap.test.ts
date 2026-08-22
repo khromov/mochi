@@ -16,6 +16,15 @@ describe('buildSitemapXml', () => {
     expect(locs(xml).length).toBe(urlCount);
   });
 
+  // The document is built with Bun.XML.stringify rather than string concatenation, so every value is escaped.
+  // Parsing it back is the check string-joining could never pass: a stray & or < in a slug used to emit invalid XML.
+  it('round-trips through an XML parser', async () => {
+    const xml = await buildSitemapXml();
+    const parsed = Bun.XML.parse(xml) as { urlset: { url: { loc: string }[] } };
+    expect(parsed.urlset.url.length).toBe(locs(xml).length);
+    expect(parsed.urlset.url[0]!.loc).toBe('https://mochi.fast/');
+  });
+
   it('never produces a double slash in the path (regression: …/request-id//)', async () => {
     const xml = await buildSitemapXml();
     for (const loc of locs(xml)) {

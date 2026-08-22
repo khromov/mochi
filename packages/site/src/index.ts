@@ -9,6 +9,7 @@ import { generateDocsBarrel } from './lib/generateDocsBarrel';
 import { generateBlogBarrel } from './lib/generateBlogBarrel';
 import { clearDocsCaches, DOCS_DIR } from './lib/docs';
 import { clearBlogCaches, BLOG_DIR } from './lib/blog';
+import { clearFeedCache } from './lib/feed';
 import { highlightCode } from './lib/highlight.server';
 import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes';
 import { handle as modeWatcherHandle } from './demos/mode-watcher/routes';
@@ -42,6 +43,7 @@ if (process.env.MODE === 'development') {
   mochiEvents.setHandler('blog-cache-clear', 'file:change', async ({ path: changed }) => {
     if (changed.startsWith(blogDirPrefix) && changed.endsWith('.md')) {
       clearBlogCaches();
+      clearFeedCache();
       // The sitemap cache lives with the docs caches and includes blog URLs.
       clearDocsCaches();
       await generateBlogBarrel();

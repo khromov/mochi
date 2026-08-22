@@ -33,6 +33,7 @@
 
 <svelte:head>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="alternate" type="application/rss+xml" title="Mochi blog" href="https://mochi.fast/feed.xml" />
 </svelte:head>
 
 <PageShell

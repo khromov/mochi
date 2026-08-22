@@ -280,7 +280,9 @@ export async function buildLlmsFullTxt(): Promise<string> {
   return `${cachedLlmsFullBaseTxt}\n\n# Changelog\n\n${changelog.trimEnd()}\n`;
 }
 
-const SITE_BASE = 'https://mochi.fast';
+export const SITE_BASE = 'https://mochi.fast';
+const SITEMAP_NS = 'http://www.sitemaps.org/schemas/sitemap/0.9';
+export const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>';
 
 export async function buildSitemapXml(): Promise<string> {
   if (cachedSitemapXml) {
@@ -292,17 +294,17 @@ export async function buildSitemapXml(): Promise<string> {
   const internalDemos = demos.filter((d) => d.href.startsWith('/'));
 
   const urls: string[] = [
-    `  <url><loc>${SITE_BASE}/</loc></url>`,
-    ...docs.map((d) => `  <url><loc>${SITE_BASE}/docs/${d.slug}/</loc></url>`),
-    `  <url><loc>${SITE_BASE}/docs/${CHANGELOG_SLUG}/</loc></url>`,
-    `  <url><loc>${SITE_BASE}/blog/</loc></url>`,
-    ...posts.map((p) => `  <url><loc>${SITE_BASE}/blog/${p.slug}/</loc></url>`),
+    `${SITE_BASE}/`,
+    ...docs.map((d) => `${SITE_BASE}/docs/${d.slug}/`),
+    `${SITE_BASE}/docs/${CHANGELOG_SLUG}/`,
+    `${SITE_BASE}/blog/`,
+    ...posts.map((p) => `${SITE_BASE}/blog/${p.slug}/`),
     // Demo hrefs already carry a trailing slash; trailingSlashIt normalizes to
     // exactly one rather than appending unconditionally (which produced `…/request-id//`).
-    ...internalDemos.map((d) => `  <url><loc>${trailingSlashIt(`${SITE_BASE}${d.href}`)}</loc></url>`),
+    ...internalDemos.map((d) => trailingSlashIt(`${SITE_BASE}${d.href}`)),
   ];
 
-  cachedSitemapXml = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">', ...urls, '</urlset>', ''].join('\n');
+  cachedSitemapXml = `${XML_DECLARATION}\n${Bun.XML.stringify({ urlset: { '@xmlns': SITEMAP_NS, url: urls.map((loc) => ({ loc })) } })}\n`;
   return cachedSitemapXml;
 }
 

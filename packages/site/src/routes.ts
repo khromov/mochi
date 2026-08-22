@@ -16,6 +16,7 @@ import {
   loadDocs,
 } from './lib/docs';
 import { loadPosts, getPost } from './lib/blog';
+import { buildFeedXml, FEED_CONTENT_TYPE } from './lib/feed';
 import { CHANGELOG_SLUG, CHANGELOG_TITLE, CHANGELOG_DESCRIPTION, getChangelogHtml, getChangelogTxt } from './lib/changelog';
 import { respondMcp } from './lib/mcp';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
@@ -274,6 +275,11 @@ export const routes: Record<string, MochiRouteValue> = {
   '/sitemap.xml': Mochi.api(async () => {
     return new Response(await buildSitemapXml(), {
       headers: { 'Content-Type': 'application/xml; charset=utf-8' },
+    });
+  }),
+  '/feed.xml': Mochi.api(async () => {
+    return new Response(await buildFeedXml(), {
+      headers: { 'Content-Type': FEED_CONTENT_TYPE },
     });
   }),
   '/llms.txt': Mochi.api(async () => {
