@@ -7,7 +7,7 @@
  * Boots its own dev server on a free port unless `--base` names a running one, measures the render before capturing
  * (a mis-scaled subject or a failed hydration is invisible in the image itself), and fails loudly on a console error.
  */
-import { styleText } from 'node:util';
+import { parseArgs, styleText } from 'node:util';
 import path from 'node:path';
 import type { Subprocess } from 'bun';
 import { DEFAULT_WIDTH, subjects } from '../src/shot/registry.ts';
@@ -29,51 +29,38 @@ Options:
 
 type Args = { subject: string; out: string; w?: number; h?: number; scheme: string; theme?: string; base?: string; keepOpen: boolean };
 
-function parseArgs(argv: string[]): Args {
-  const positional: string[] = [];
-  let out: string | undefined;
-  let w: number | undefined;
-  let h: number | undefined;
-  let scheme = 'light';
-  let theme: string | undefined;
-  let base: string | undefined;
-  let keepOpen = false;
-
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i]!;
-    if (a === '-h' || a === '--help') {
+function parseCliArgs(): Args {
+  // `-h` is help, `--h` is height — parseArgs keeps the short and long namespaces separate, so they don't clash.
+  const { values, positionals } = (() => {
+    try {
+      return parseArgs({
+        args: process.argv.slice(2),
+        allowPositionals: true,
+        options: {
+          help: { type: 'boolean', short: 'h', default: false },
+          out: { type: 'string' },
+          w: { type: 'string' },
+          h: { type: 'string' },
+          scheme: { type: 'string', default: 'light' },
+          theme: { type: 'string' },
+          base: { type: 'string' },
+          'keep-open': { type: 'boolean', default: false },
+        },
+        strict: true,
+      });
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
       console.log(usage);
-      process.exit(0);
-    } else if (a === '--keep-open') {
-      keepOpen = true;
-    } else if (a.startsWith('--')) {
-      const value = argv[++i];
-      if (value === undefined) {
-        console.error(`Missing value for ${a}`);
-        process.exit(2);
-      }
-      if (a === '--out') {
-        out = value;
-      } else if (a === '--w') {
-        w = Number(value);
-      } else if (a === '--h') {
-        h = Number(value);
-      } else if (a === '--scheme') {
-        scheme = value;
-      } else if (a === '--theme') {
-        theme = value;
-      } else if (a === '--base') {
-        base = value.replace(/\/+$/, '');
-      } else {
-        console.error(`Unknown flag: ${a}`);
-        process.exit(2);
-      }
-    } else {
-      positional.push(a);
+      process.exit(2);
     }
+  })();
+
+  if (values.help) {
+    console.log(usage);
+    process.exit(0);
   }
 
-  const subject = positional[0];
+  const subject = positionals[0];
   if (!subject) {
     console.log(usage);
     process.exit(2);
@@ -82,11 +69,29 @@ function parseArgs(argv: string[]): Args {
     console.error(`No subject '${subject}'. Known: ${SUBJECT_NAMES.join(', ')}`);
     process.exit(2);
   }
-  if ((w !== undefined && !Number.isFinite(w)) || (h !== undefined && !Number.isFinite(h))) {
-    console.error('--w and --h must be numbers');
-    process.exit(2);
-  }
-  return { subject, out: out ?? `${subject}.png`, w, h, scheme, theme, base, keepOpen };
+
+  const toNumber = (raw: string | undefined, flag: string): number | undefined => {
+    if (raw === undefined) {
+      return undefined;
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n)) {
+      console.error(`${flag} must be a number`);
+      process.exit(2);
+    }
+    return n;
+  };
+
+  return {
+    subject,
+    out: values.out ?? `${subject}.png`,
+    w: toNumber(values.w, '--w'),
+    h: toNumber(values.h, '--h'),
+    scheme: values.scheme ?? 'light',
+    theme: values.theme,
+    base: values.base?.replace(/\/+$/, ''),
+    keepOpen: values['keep-open'] ?? false,
+  };
 }
 
 async function freePort(): Promise<number> {
@@ -178,7 +183,7 @@ const ASPECT = 9 / 16;
 const EXPECTED_FILL_PCT = 90;
 
 async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
+  const args = parseCliArgs();
   const width = args.w ?? DEFAULT_WIDTH;
   const height = args.h ?? Math.round(width * ASPECT);
 
