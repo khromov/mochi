@@ -1,5 +1,5 @@
 import { Mochi, error, getRequestContext, mintCaptcha, verifyCaptcha } from 'mochi-framework';
-import type { MochiRouteValue, MochiQueueConfig } from 'mochi-framework';
+import type { MochiRouteValue, MochiQueueConfig, MochiCronConfig } from 'mochi-framework';
 import {
   buildDocsNav,
   buildLlmsJson,
@@ -65,6 +65,7 @@ import { routes as portableTextRoutes } from './demos/portable-text/routes';
 import { routes as propDedupRoutes } from './demos/prop-dedup/routes';
 import { routes as propsIdRoutes } from './demos/props-id/routes';
 import { routes as queueRoutes, queues as queueQueues } from './demos/queue/routes';
+import { routes as cronRoutes, cron as cronJobs } from './demos/cron/routes';
 import { routes as rateLimitRoutes } from './demos/rate-limit/routes';
 import { routes as reloadFormDataRoutes } from './demos/reload-form-data/routes';
 import { routes as requestCacheRoutes } from './demos/request-cache/routes';
@@ -386,6 +387,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...propDedupRoutes,
   ...propsIdRoutes,
   ...queueRoutes,
+  ...cronRoutes,
   ...rateLimitRoutes,
   ...reloadFormDataRoutes,
   ...requestCacheRoutes,
@@ -408,3 +410,6 @@ export const routes: Record<string, MochiRouteValue> = {
 
 // Background job queues, mounted in Mochi.serve({ queues }) (see src/index.ts).
 export const queues: MochiQueueConfig[] = [...queueQueues];
+
+// Scheduled jobs, mounted in Mochi.serve({ cron }) (see src/index.ts).
+export const cron: MochiCronConfig[] = [...cronJobs];

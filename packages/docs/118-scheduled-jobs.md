@@ -8,6 +8,7 @@ description: 'Run recurring work on a cron schedule with Mochi.cron(), backed by
 <script>
   import Callout from './_components/Callout.svelte';
   import VersionNote from './_components/VersionNote.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
 </script>
 
 ## Scheduled jobs
@@ -101,3 +102,7 @@ Schedules persist in the database. On each boot Mochi reconciles: it registers t
 ### Shutdown
 
 The scheduler stops on `SIGTERM`/`SIGINT`, on `server.stop()`, and on [`Mochi.stop()`](/docs/queues/#mochistop). Schedules are **not** removed on shutdown — they are durable and resume on the next boot.
+
+<SeeItInAction
+demos={[{ href: "/demos/cron/", title: "Scheduled jobs with cron", hook: "A Mochi.cron() job appends to an in-memory log every minute; the browser streams each new entry over a WebSocket." }]}
+/>
