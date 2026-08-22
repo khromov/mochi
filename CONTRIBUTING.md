@@ -12,13 +12,15 @@ This repo uses [release-please](https://github.com/googleapis/release-please) fo
 
 On push to `main`, release-please opens or updates a `chore(main): release …` PR with the pending version + changelog. Merging that PR creates a git tag, a GitHub Release, and publishes to npm with provenance.
 
-Three packages are released independently, each with its own version, changelog and tag:
+Four packages are released independently, each with its own version, changelog and tag. Note that release-please strips
+the npm scope when deriving the tag component, so a scoped package tags as `<unscoped-name>-v*`:
 
-| Directory                | npm package                | Tag                           |
-| ------------------------ | -------------------------- | ----------------------------- |
-| `packages/mochi`         | `mochi-framework`          | `mochi-framework-v*`          |
-| `packages/cli`           | `create-mochi`             | `create-mochi-v*`             |
-| `packages/mochi-rsvelte` | `@mochi-framework/rsvelte` | `@mochi-framework/rsvelte-v*` |
+| Directory                      | npm package                      | Tag                  |
+| ------------------------------ | -------------------------------- | -------------------- |
+| `packages/mochi`               | `mochi-framework`                | `mochi-framework-v*` |
+| `packages/cli`                 | `create-mochi`                   | `create-mochi-v*`    |
+| `packages/mochi-rsvelte`       | `@mochi-framework/rsvelte`       | `rsvelte-v*`         |
+| `packages/mochi-svelte-shaker` | `@mochi-framework/svelte-shaker` | `svelte-shaker-v*`   |
 
 Adding a package to the release flow means: an entry in `release-please-config.json`, a starting version in `.release-please-manifest.json`, and a `publish-<name>` job plus a `republish` tag→directory case in `.github/workflows/release.yml`.
 

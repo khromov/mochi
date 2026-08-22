@@ -61,7 +61,8 @@ export interface MochiHookContext {
   'mochi:shutdown': {
     options: MochiServeOptions;
     server: Server<undefined>;
-    signal: NodeJS.Signals;
+    /** Absent when the shutdown came from a programmatic `Mochi.stop()` rather than SIGTERM/SIGINT. */
+    signal?: NodeJS.Signals;
   };
   'route:matched': {
     pattern: string;
@@ -106,6 +107,7 @@ export interface MochiFilterValue {
   'cookie:defaults': CookieSerializeOptions;
   'html:shell': string;
   'serverIsland:secretKey': Buffer;
+  'serverIsland:inlineBudget': number;
   'payload:compressMinBytes': number;
   'compile:preprocessors': PreprocessorGroup[];
   'publicDir:scan': Map<string, string>;
@@ -122,8 +124,7 @@ export interface MochiFilterValue {
   'captcha:minAgeMs': number;
   'captcha:driftAllowanceMs': number;
   'captcha:solveBudgetMs': number;
-  'queue:recoveryStallWarningMs': number;
-  'queue:lockDurationMs': number;
+  'queue:expireInSeconds': number;
 }
 
 // Overrides the return type where it differs from the input. Most filters are symmetric, so this map is sparse and an
@@ -143,6 +144,12 @@ export interface MochiFilterContext {
   'cookie:defaults': { options: MochiServeOptions };
   'html:shell': { options: MochiServeOptions; development: boolean };
   'serverIsland:secretKey': { options: MochiServeOptions; envKeyPresent: boolean };
+  /** Resolved per island fetch as the endpoint arms nested-island inlining; never fires when `inlineNestedIslands` is off or the fetched island also hydrates. */
+  'serverIsland:inlineBudget': {
+    /** Identity key of the island being fetched, e.g. `Dashboard_ab12cd34`. */
+    componentName: string;
+    request: Request;
+  };
   'payload:compressMinBytes': { options: MochiServeOptions; payload: Uint8Array };
   'compile:preprocessors': {
     filename: string;
@@ -193,12 +200,10 @@ export interface MochiFilterContext {
     /** Resolved difficulty, filter included — the budget has to cover the work this implies. */
     bits: number;
   };
-  /** Resolved once per queue that declares a `recover` callback, as recovery starts. */
-  'queue:recoveryStallWarningMs': { queue: string };
-  /** Resolved once per queue, as it is created. */
-  'queue:lockDurationMs': {
+  /** Resolved once per queue, as it is mounted. */
+  'queue:expireInSeconds': {
     queue: string;
-    /** Whether this queue set `lockDuration` itself — through the option or the raw `bunqueue` passthrough — so the incoming value is its choice, not the framework default. */
+    /** Whether this queue set `expireInSeconds` itself, so the incoming value is its choice, not the framework default. */
     explicit: boolean;
   };
 }
@@ -212,6 +217,7 @@ export interface MochiFilterKindMap {
   'cookie:defaults': 'sync';
   'html:shell': 'sync';
   'serverIsland:secretKey': 'async';
+  'serverIsland:inlineBudget': 'sync';
   'payload:compressMinBytes': 'sync';
   'compile:preprocessors': 'sync';
   'publicDir:scan': 'async';
@@ -228,8 +234,7 @@ export interface MochiFilterKindMap {
   'captcha:minAgeMs': 'sync';
   'captcha:driftAllowanceMs': 'sync';
   'captcha:solveBudgetMs': 'sync';
-  'queue:recoveryStallWarningMs': 'sync';
-  'queue:lockDurationMs': 'sync';
+  'queue:expireInSeconds': 'sync';
 }
 
 type FilterReturn<K extends keyof MochiFilterValue> = K extends keyof MochiFilterReturn ? MochiFilterReturn[K] : MochiFilterValue[K];
@@ -262,6 +267,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'cookie:defaults': 'sync',
   'html:shell': 'sync',
   'serverIsland:secretKey': 'async',
+  'serverIsland:inlineBudget': 'sync',
   'payload:compressMinBytes': 'sync',
   'compile:preprocessors': 'sync',
   'publicDir:scan': 'async',
@@ -278,8 +284,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'captcha:minAgeMs': 'sync',
   'captcha:driftAllowanceMs': 'sync',
   'captcha:solveBudgetMs': 'sync',
-  'queue:recoveryStallWarningMs': 'sync',
-  'queue:lockDurationMs': 'sync',
+  'queue:expireInSeconds': 'sync',
 };
 
 // Pinned on globalThis so duplicate bundled copies of mochi-framework share one registry, the same reasoning as the

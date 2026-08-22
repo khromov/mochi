@@ -69,7 +69,7 @@ describe('config hash', () => {
 describe('getSize', () => {
   test('returns the resolved size for a known name and undefined otherwise', () => {
     const options = resolveImageOptions({ sizes: { thumb: BASE } });
-    expect(getSize('thumb', options)?.name).toBe('thumb');
+    expect(getSize('thumb', options)).toMatchObject({ name: 'thumb', width: 100, height: 80, format: 'webp', quality: 80 });
     expect(getSize('nope', options)).toBeUndefined();
     expect(getSize(undefined, options)).toBeUndefined();
   });

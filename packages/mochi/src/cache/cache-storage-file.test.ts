@@ -79,7 +79,7 @@ describe('FileStorage', () => {
     const file = readdirSync(dir).find((n) => n.endsWith('.json'));
     expect(file).toBeDefined();
     await Bun.write(join(dir, file!), '{ not json');
-    await expect(storage.getItem('k')).rejects.toBeDefined();
+    await expect(storage.getItem('k')).rejects.toThrow(SyntaxError);
 
     // Wired through MochiCache, a read error degrades to a `miss` + recompute.
     const cache = new MochiCache({ storage });
@@ -147,6 +147,48 @@ describe('FileStorage', () => {
     // Windows CI with the entry gone but no event yet recorded. Waiting on both
     // observable effects removes the ordering assumption between them.
     expect(events.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('a second store on the same directory takes the sweeper over instead of adding one', async () => {
+    let ticks = 0;
+    mochiEvents.on('cache:sweep', () => ticks++);
+
+    // Three deep so a take-over that only ever displaces the immediately preceding store is caught too.
+    const dir = makeDir();
+    created.push(new FileStorage({ directory: dir, maxAge: 5, purgeInterval: 20 }));
+    created.push(new FileStorage({ directory: dir, maxAge: 5, purgeInterval: 20 }));
+    const newest = new FileStorage({ directory: dir, maxAge: 5, purgeInterval: 20 });
+    created.push(newest);
+
+    for (let i = 0; i < 200 && ticks === 0; i++) {
+      await wait(10);
+    }
+    expect(ticks).toBeGreaterThanOrEqual(1);
+
+    // Asserts silence after disposing the owner rather than counting events over a window, which flakes when CI load
+    // starves the 20ms interval. The wait before snapshotting lets a sweep already in flight at dispose() land first.
+    newest.dispose();
+    await wait(50);
+    const settled = ticks;
+    await wait(200);
+    expect(ticks).toBe(settled);
+  });
+
+  // Guards the ownership check in `dispose()`: a superseded store must not clear the live owner's registry entry.
+  test('disposing a superseded store leaves the newest one sweeping', async () => {
+    let ticks = 0;
+    mochiEvents.on('cache:sweep', () => ticks++);
+
+    const dir = makeDir();
+    const first = new FileStorage({ directory: dir, maxAge: 5, purgeInterval: 20 });
+    created.push(first);
+    created.push(new FileStorage({ directory: dir, maxAge: 5, purgeInterval: 20 }));
+
+    first.dispose();
+    for (let i = 0; i < 200 && ticks === 0; i++) {
+      await wait(10);
+    }
+    expect(ticks).toBeGreaterThanOrEqual(1);
   });
 
   test('sweep reports the plaintext keys it removed when asked', async () => {

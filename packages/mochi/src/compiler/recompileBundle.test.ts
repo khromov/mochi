@@ -1,6 +1,6 @@
 // Previously .isolated.test.ts — all tests now run in isolated processes.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from './ComponentRegistry';
 import { mochiEvents } from '../events';
@@ -115,7 +115,7 @@ describe('recompile* batches into one compileAll + one buildClientBundle per cyc
     await registry.compileAll([PAGE_A, PAGE_B]);
     expect(compileAllCalls).toBe(1);
     expect(bundleCalls).toBe(1); // single trailing buildClientBundle for the cohort
-    expect(registry.getPageCount()).toBe(2);
+    expect(registry.getPageCount()).toBe(2); // stub-derived sanity precondition, not a real-compile claim
   });
 
   test('recompileAll re-runs the entire cohort in one compileAll and bundles once', async () => {
@@ -306,5 +306,88 @@ describe('recompile* batches into one compileAll + one buildClientBundle per cyc
     const afterEntry = internals.compiledComponents.get(PAGE_A);
     expect(afterEntry).toBeDefined();
     expect(afterEntry).not.toBe(beforeEntry);
+  });
+});
+
+// Integration anchor for the stubbed suite above: exercises recompileChanged /
+// compileAll against the REAL Svelte + Bun.build pipeline so the stub's contract
+// assumptions (path resolution, cached-entry filtering, entryDeps seeding, one
+// trailing client bundle per cycle) stay tied to production behavior.
+describe('recompile* against the real compileAll', () => {
+  let dir: string;
+  let registry: ComponentRegistry;
+  let compileStarts: string[];
+  let bundleEvents: number;
+  let pageDep: string;
+  let pageSolo: string;
+  let sharedTs: string;
+
+  const onCompileStart = ({ path: p }: { path: string }) => {
+    compileStarts.push(p);
+  };
+  const onBundle = () => {
+    bundleEvents += 1;
+  };
+
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-recompile-real-'));
+    registry = new ComponentRegistry({ development: true, outDir: path.join(dir, '.mochi') });
+    sharedTs = path.join(dir, 'shared.ts');
+    pageDep = path.join(dir, 'PageDep.svelte');
+    pageSolo = path.join(dir, 'PageSolo.svelte');
+    writeFileSync(sharedTs, "export const label = 'from-shared';\n");
+    writeFileSync(path.join(dir, 'Widget.svelte'), '<button>widget</button>\n');
+    writeFileSync(
+      pageDep,
+      '<script lang="ts">\n' +
+        "  import { label } from './shared';\n" +
+        "  import Widget from './Widget.svelte';\n" +
+        '</script>\n\n<main>{label}<Widget mochi:hydrate /></main>\n',
+    );
+    writeFileSync(pageSolo, '<div>solo</div>\n');
+    compileStarts = [];
+    bundleEvents = 0;
+    mochiEvents.on('compile:start', onCompileStart);
+    mochiEvents.on('client-bundle:complete', onBundle);
+  });
+
+  afterEach(() => {
+    mochiEvents.off('compile:start', onCompileStart);
+    mochiEvents.off('client-bundle:complete', onBundle);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('recompileChanged walks the real dep graph and bundles once per cycle', async () => {
+    await registry.compileAll([pageDep, pageSolo]);
+    expect(new Set(compileStarts)).toEqual(new Set([pageDep, pageSolo]));
+    expect(bundleEvents).toBe(1); // one trailing bundle for the whole cohort
+
+    compileStarts = [];
+    bundleEvents = 0;
+
+    const summary = await registry.recompileChanged(sharedTs);
+    expect(summary.pages).toEqual(new Set([pageDep])); // PageSolo's real dep graph excludes shared.ts
+    expect(summary.clientBundleCount).toBe(1);
+    expect(compileStarts).toEqual([pageDep]);
+    expect(bundleEvents).toBe(1);
+
+    const noop = await registry.recompileChanged(path.join(dir, 'unrelated.ts'));
+    expect(noop.pages.size).toBe(0);
+    expect(noop.clientBundleCount).toBe(0);
+  });
+
+  test('relative and absolute registrations resolve to one cached entry', async () => {
+    const rel = path.relative(process.cwd(), pageSolo);
+    await registry.compileAll([rel]);
+    expect(compileStarts).toEqual([pageSolo]); // emitted paths are resolved absolute
+
+    compileStarts = [];
+    await registry.compileAll([pageSolo]);
+    expect(compileStarts).toEqual([]); // cached under the resolved key → filtered out
+
+    // The entry's own resolved path is in its dep set, so entry-as-changed-path rebuilds it.
+    const summary = await registry.recompileChanged(pageSolo);
+    expect(summary.pages).toEqual(new Set([pageSolo]));
+    expect(compileStarts).toEqual([pageSolo]);
   });
 });

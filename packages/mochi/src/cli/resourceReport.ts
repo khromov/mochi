@@ -9,7 +9,11 @@ export interface ResourceRow {
   name: string;
   dimensions: string;
   bytes: number;
+  /** Styled list glyph; defaults to the image marker. */
+  symbol?: string;
 }
+
+const byLargest = (a: ResourceRow, b: ResourceRow) => b.bytes - a.bytes || a.name.localeCompare(b.name);
 
 /**
  * Rows for the build's resources list, largest first so an oversized import is
@@ -20,7 +24,21 @@ export function collectImageResources(assets: Iterable<LocalImageAsset>): Resour
   for (const asset of assets) {
     rows.push({ name: path.basename(asset.diskPath), dimensions: `${asset.width}×${asset.height}`, bytes: sizeOnDisk(asset.diskPath) });
   }
-  return rows.sort((a, b) => b.bytes - a.bytes || a.name.localeCompare(b.name));
+  return rows.sort(byLargest);
+}
+
+/** Rows for fonts extracted from imported CSS, sharing the images' resources list. */
+export function collectFontResources(fonts: Iterable<{ diskPath: string }>): ResourceRow[] {
+  const rows: ResourceRow[] = [];
+  for (const font of fonts) {
+    rows.push({ name: path.basename(font.diskPath), dimensions: '—', bytes: sizeOnDisk(font.diskPath), symbol: styleText('magenta', 'ƒ') });
+  }
+  return rows.sort(byLargest);
+}
+
+/** One largest-first list across resource kinds, so the report reads as a single table. */
+export function mergeResourceRows(...groups: ResourceRow[][]): ResourceRow[] {
+  return groups.flat().sort(byLargest);
 }
 
 // A report must never fail a build that otherwise succeeded, so an asset that
@@ -49,10 +67,10 @@ export function printResourceTree(rows: ResourceRow[]): void {
 
   const n = rows.length;
   for (let i = 0; i < n; i++) {
-    const { name, dimensions } = rows[i]!;
+    const { name, dimensions, symbol } = rows[i]!;
     const char = styleText('dim', n === 1 ? '─' : i === 0 ? '┌' : i === n - 1 ? '└' : '├');
     console.log(
-      `  ${char} ${styleText('yellow', '▣')} ${name.padEnd(nameWidth + 2)}  ${styleText('dim', dimensions.padStart(dimWidth))}  ${styleText('dim', sizes[i]!.padStart(sizeWidth))}`,
+      `  ${char} ${symbol ?? styleText('yellow', '▣')} ${name.padEnd(nameWidth + 2)}  ${styleText('dim', dimensions.padStart(dimWidth))}  ${styleText('dim', sizes[i]!.padStart(sizeWidth))}`,
     );
   }
 

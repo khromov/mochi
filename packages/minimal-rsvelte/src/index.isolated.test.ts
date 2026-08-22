@@ -33,8 +33,7 @@ describe('minimal-rsvelte app', () => {
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  // The framework falls back to svelte/compiler without failing, so the binding
-  // loading at all is the thing worth asserting on each CI platform.
+  // The framework falls back to svelte/compiler without failing, so the binding loading at all is worth asserting on each CI platform.
   test('the rsvelte binding loads on this platform', () => {
     expect(svelteCompilerBackend.name).toBe('rsvelte');
     expect(svelteCompilerBackend.compile('<p>x</p>', { generate: 'server' }).js.code).toContain('$$renderer.push(`<p>x</p>`)');

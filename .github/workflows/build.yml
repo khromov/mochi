@@ -45,12 +45,7 @@ jobs:
             image: ghcr.io/khromov/mochi
             caprover_app: mochi
             caprover_token_secret: APP_TOKEN_S1
-            # Temporary: try the site on the Bun canary line (Bun 1.4.0)
-            # while demos stays on the stable default pinned in the Dockerfile.
-            # Pinned by digest so the moving canary tag can't drift the deploy
-            # underneath us; bump the digest to intentionally move forward.
-            bun_image: oven/bun:1.3.14-alpine
-            #bun_image: oven/bun:canary-alpine@sha256:bba48f6599532b99017f1d7aabf80a80bbce9dd33e6faf6ac7f76b8f2d75fac8
+            bun_image: oven/bun:1.4.0-alpine
           # Standalone demos site, also deployed in dev mode. Requires repo
           # secret APP_TOKEN_DEMOS — the per-app deploy token from the
           # mochi-demos CapRover app's "Deployment" tab.
@@ -61,7 +56,7 @@ jobs:
             image: ghcr.io/khromov/mochi-demos
             caprover_app: mochi-demos
             caprover_token_secret: APP_TOKEN_DEMOS_S1
-            bun_image: oven/bun:1.3.14-alpine
+            bun_image: oven/bun:1.4.0-alpine
           # Support form (support.mochi.fast). The only leg on the prebuilt
           # Dockerfile.production rather than the dev-mode Dockerfile — a contact
           # form wants no debug toolbar, and it needs no live docs rendering.
@@ -76,7 +71,7 @@ jobs:
             image: ghcr.io/khromov/mochi-support
             caprover_app: mochi-support
             caprover_token_secret: APP_TOKEN_SUPPORT_S1
-            bun_image: oven/bun:1.3.14-alpine
+            bun_image: oven/bun:1.4.0-alpine
             # Dockerfile.production refuses to boot without ADMIN_PASSWORD +
             # SMTP_HOST + MOCHI_ORIGIN; the transport only connects on send and
             # /admin/ is never hit here, so dummy values suffice for a boot
@@ -130,7 +125,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
       # Boot the freshly built container and verify it actually serves before
-      # pushing/deploying: /health/ answers, and the island JS referenced by
+      # pushing/deploying: /health answers, and the island JS referenced by
       # the served HTML resolves on the same server (guards the class of
       # incident where stale/mismatched bundle hashes 404 in production).
       #
@@ -165,14 +160,14 @@ jobs:
           # trouble is surfaced by docker logs on the not-ready fail() below.
           ready=""
           for _ in $(seq 1 50); do
-            if curl -fs --max-time 5 -o /dev/null "$BASE/health/"; then
+            if curl -fs --max-time 5 -o /dev/null "$BASE/health"; then
               ready=1
               break
             fi
             [ "$(docker inspect -f '{{.State.Running}}' smoke)" = "true" ] || fail "container exited during boot"
             sleep 3
           done
-          [ -n "$ready" ] || fail "/health/ not ready after 150s"
+          [ -n "$ready" ] || fail "/health not ready after 150s"
 
           # 2) GET / must succeed, and the island bundle it references must
           # resolve on the same server. Re-fetch / on each attempt so a dev-mode
@@ -192,6 +187,25 @@ jobs:
             sleep 3
           done
           [ -n "$verified" ] || fail "HTML references an island bundle the server won't serve"
+
+          # 3) The image's own HEALTHCHECK must converge. Curling /health ourselves
+          # proves the route serves, not that the probe baked into the Dockerfile
+          # asks for the right URL — an orchestrator would restart-loop on that.
+          # A transient `unhealthy` is not fatal — with --start-period=30s --interval=30s
+          # --retries=3 a slow dev-mode boot can latch it around t=120s while the readiness
+          # loop above still tolerates 150s, and the next passing probe clears it.
+          healthy=""
+          status=""
+          for _ in $(seq 1 30); do
+            status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' smoke)"
+            [ "$status" != "none" ] || fail "image declares no HEALTHCHECK"
+            if [ "$status" = "healthy" ]; then
+              healthy=1
+              break
+            fi
+            sleep 5
+          done
+          [ -n "$healthy" ] || fail "HEALTHCHECK never reached healthy after 150s (last status: $status) — the probe's URL likely does not match what the app serves"
 
           docker rm -f smoke
 
@@ -230,10 +244,17 @@ jobs:
             caprover_token_secret: APP_TOKEN_SUPPORT_S1
 
     steps:
+      # caprover CLI pinned to 2.3.1: the caprover/deploy-from-github action
+      # installs npm `latest` unpinned, and 2.4.0 crashes on load
+      # (caprover-cli#126, duplicate `-t` short flag), so we invoke the CLI
+      # directly against a known-good version instead of via the action.
       - name: Deploy on CapRover
-        uses: caprover/deploy-from-github@v1.2.0
-        with:
-          server: '${{ secrets.APP_SERVER_S1 }}'
-          app: ${{ matrix.caprover_app }}
-          token: '${{ secrets[matrix.caprover_token_secret] }}'
-          image: '${{ matrix.image }}:main'
+        env:
+          APP_TOKEN: ${{ secrets[matrix.caprover_token_secret] }}
+        run: |
+          npm i -g caprover@2.3.1
+          caprover deploy \
+            --caproverUrl "${{ secrets.APP_SERVER_S1 }}" \
+            --appToken "$APP_TOKEN" \
+            --appName "${{ matrix.caprover_app }}" \
+            --imageName "${{ matrix.image }}:main"

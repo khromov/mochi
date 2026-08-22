@@ -241,6 +241,22 @@ export class MochiCache {
     }
   }
 
+  /**
+   * Resolves once every compute this cache is currently running has settled, including the fire-and-forget background
+   * revalidations a stale read starts. A run is tracked from before its `fn` is invoked until after its storage write,
+   * so an awaited `whenIdle()` guarantees the refreshed value is readable — unlike waiting on `cache:revalidate`, which
+   * only marks the start.
+   *
+   * Each pass also picks up work a settling run started, so this drains a chain of revalidations rather than one level.
+   * It waits for whatever is in flight: under continuous writes it keeps waiting, so treat it as a shutdown/quiescence
+   * primitive rather than something to await on a hot request path. A failed run settles it like any other.
+   */
+  async whenIdle(): Promise<void> {
+    while (this.inflight.size > 0) {
+      await Promise.allSettled([...this.inflight.values()]);
+    }
+  }
+
   async clearItems(): Promise<void> {
     // Drop in-flight runs first so a pending revalidation can't repopulate a key
     // after the storage is cleared.

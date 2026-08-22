@@ -14,8 +14,14 @@ Keep this package tiny. If a helper is useful to Mochi users rather than just to
 
 ## Contents
 
-| Export      | What                                                                                                              |
-| ----------- | ----------------------------------------------------------------------------------------------------------------- |
-| `analytics` | A `Handle` that fills the `{{mochi.analytics}}` shell placeholder with the Umami snippet when `MOCHI_DOCKER=true` |
+| Export        | What                                                                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `analytics()` | Builds a `Handle` that fills the `{{mochi.analytics}}` shell placeholder with the Umami snippet when `MOCHI_DOCKER=true` |
 
-Using `analytics` requires a `{{mochi.analytics}}` placeholder in the site's `shell.html` — without it the snippet has nowhere to land, and without the handle the placeholder renders as literal text.
+Using `analytics()` requires a `{{mochi.analytics}}` placeholder in the site's `shell.html` — without it the snippet has nowhere to land, and without the handle the placeholder renders as literal text.
+
+Pass `exclude` to keep pages out of the stats — the placeholder is still cleared, so nothing leaks into the markup:
+
+```ts
+handle: sequence(analytics({ exclude: ['/ci/dashboard'] }));
+```

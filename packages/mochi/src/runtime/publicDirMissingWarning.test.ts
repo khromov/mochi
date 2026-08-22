@@ -3,7 +3,7 @@
 // manifest's build-time count the only witness. This exercises the boot check that reads it, in its own file because
 // one `Mochi.serve()` is allowed per process (publicDirProduction.test.ts covers the healthy-boot side).
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { build } from '../cli/build';
@@ -28,6 +28,9 @@ describe('a deploy that left publicDir behind warns at boot', () => {
     outDir = tempDir('.mochi-public-missing-out-');
     writeFileSync(path.join(publicDir, 'robots.txt'), 'User-agent: *\nDisallow:\n');
     writeFileSync(path.join(publicDir, 'favicon.ico'), 'x');
+    // A nested file proves the recorded count is the recursive scan, not a top-level readdir.
+    mkdirSync(path.join(publicDir, 'assets'));
+    writeFileSync(path.join(publicDir, 'assets', 'logo.svg'), '<svg></svg>');
 
     await build({ routes, development: false, outDir, publicDir });
     manifest = JSON.parse(await Bun.file(path.join(outDir, 'manifest.json')).text());
@@ -55,13 +58,13 @@ describe('a deploy that left publicDir behind warns at boot', () => {
   });
 
   test('the build records how many static files it saw', () => {
-    expect(manifest.publicFileCount).toBe(2);
+    expect(manifest.publicFileCount).toBe(3);
   });
 
   test('boot warns once, with the count and something to do about it', () => {
     const hits = warnings.filter((w) => w.includes('every static file will 404'));
     expect(hits).toHaveLength(1);
-    expect(hits[0]).toContain('2 file(s)');
+    expect(hits[0]).toContain('3 file(s)');
     expect(hits[0]).toContain('COPY');
   });
 
