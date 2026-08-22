@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveMochiVersionRange, setDefaultPort, stringifyJson, transformPackageJson, transformTsconfig, validatePackageName } from './utils.ts';
+import { bunVersionWarning, resolveMochiVersionRange, setDefaultPort, stringifyJson, transformPackageJson, transformTsconfig, validatePackageName } from './utils.ts';
 
 /** A scaffold dir whose `patches/` folder holds the given `name@version.patch` files (none → no `patches/` dir). */
 function scaffoldDir(patchFiles: string[] = []): string {
@@ -16,6 +16,25 @@ function scaffoldDir(patchFiles: string[] = []): string {
   }
   return dir;
 }
+
+describe('bunVersionWarning', () => {
+  test('warns below the recommended Bun 1.4', () => {
+    expect(bunVersionWarning('1.3.14')).toContain('1.4');
+    expect(bunVersionWarning('1.0.0')).toContain('1.4');
+    expect(bunVersionWarning('0.8.1')).toContain('1.4');
+  });
+
+  test('stays quiet on 1.4 and newer', () => {
+    expect(bunVersionWarning('1.4.0')).toBeNull();
+    expect(bunVersionWarning('1.4.2')).toBeNull();
+    expect(bunVersionWarning('1.10.0')).toBeNull();
+    expect(bunVersionWarning('2.0.0')).toBeNull();
+  });
+
+  test('stays quiet on an unparseable version rather than false-warning', () => {
+    expect(bunVersionWarning('unknown')).toBeNull();
+  });
+});
 
 describe('validatePackageName', () => {
   test('accepts simple names', () => {
