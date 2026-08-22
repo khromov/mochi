@@ -1,6 +1,7 @@
+import type { Server } from 'bun';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { toPosixPath } from '../utils';
+import { toPosixPath, relForDisplay } from '../utils';
 import { logger } from '../utils/log';
 import { applyFilter } from '../extensions';
 import type { BunRouteValue } from '../types';
@@ -43,6 +44,9 @@ export async function scanPublicDir(dir: string): Promise<Map<string, string>> {
   if (!existsSync(dir)) {
     return new Map();
   }
+  // Pin the base to absolute while cwd is still valid, so `Bun.file()` can't re-resolve a relative disk path against a
+  // later-changed or deleted cwd and turn every static file into a 404.
+  const absDir = path.resolve(dir);
   const result = new Map<string, string>();
   const glob = new Bun.Glob('**/*');
   // Bun.Glob yields backslash separators on Windows, so normalizing first keeps the URL key at `/a/b` and lets
@@ -52,7 +56,7 @@ export async function scanPublicDir(dir: string): Promise<Map<string, string>> {
     if (isExcludedDotPath(rel)) {
       continue;
     }
-    result.set('/' + rel, path.join(dir, rel));
+    result.set('/' + rel, path.join(absDir, rel));
   }
   return result;
 }
@@ -68,18 +72,41 @@ export async function resolvePublicFiles(opts: { publicDir: string; development:
 }
 
 /**
+ * Wraps serving a public file (used by protection mode): either short-circuit with a blocked Response, or call `serve`
+ * and decorate its result — a gate that read the clearance cookie must add `Vary: Cookie` to the served file too, or a
+ * shared cache would replay a cleared visitor's copy to unverified ones.
+ */
+export type PublicRouteGuard = (req: Request, server: Server<undefined>, serve: () => Promise<Response>) => Promise<Response>;
+
+/**
  * Register public files as Bun routes under their encoded keys, skipping any URL a user route already claims. Shared by
  * the startup and dev-watcher-reload paths so the encoding and conflict rules stay in lockstep — registering under a raw
  * key here is what made spaced filenames 404 before this was centralized.
  */
-export function registerPublicRoutes(routes: Record<string, BunRouteValue>, files: Map<string, string>, wrap?: (route: string, value: BunRouteValue) => BunRouteValue): void {
+export function registerPublicRoutes(
+  routes: Record<string, BunRouteValue>,
+  files: Map<string, string>,
+  guard?: PublicRouteGuard,
+  wrap?: (route: string, value: BunRouteValue) => BunRouteValue,
+): void {
   for (const [urlPath, diskPath] of files) {
     const routeKey = publicRouteKey(urlPath);
     if (routeKey in routes) {
-      logger.warn(`Public file "${diskPath}" skipped: URL "${urlPath}" is already registered as a route.`);
+      logger.warn(`Public file "${relForDisplay(diskPath)}" skipped: URL "${urlPath}" is already registered as a route.`);
       continue;
     }
-    const value = Bun.file(diskPath);
+    // A guarded file becomes a handler route: static BunFile values can't run the check. The file re-checks existence so
+    // a deletion 404s instead of surfacing Bun.file's lazy ENOENT as a 500.
+    const value: BunRouteValue = guard
+      ? (req: Request, server: Server<undefined>): Promise<Response> =>
+          guard(req, server, async () => {
+            const file = Bun.file(diskPath);
+            if (!(await file.exists())) {
+              return new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+            }
+            return new Response(file);
+          })
+      : Bun.file(diskPath);
     routes[routeKey] = wrap ? wrap(routeKey, value) : value;
   }
 }

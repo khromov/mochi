@@ -1,0 +1,28 @@
+# Self-updating memtest supervisor. Install on the memtest box:
+#   sudo cp memtest/mochi-memtest-loop.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now mochi-memtest-loop
+# Requires the `k` user to be in the `docker` group: sudo usermod -aG docker k
+# Adjust User/WorkingDirectory/ExecStart if the checkout isn't /home/k/mochi.
+
+[Unit]
+Description=Mochi memtest self-updating loop
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=k
+WorkingDirectory=/home/k/mochi
+ExecStart=/home/k/mochi/memtest/loop.sh
+Restart=always
+RestartSec=30
+# loop.sh exits 78 when it detects stale code (non-ff divergence / dirty tree); do
+# not auto-restart that — land in `failed` so a human reconciles the branch first.
+RestartPreventExitStatus=78
+# Give loop.sh's SIGTERM trap room to `docker stop` the container before the kill.
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

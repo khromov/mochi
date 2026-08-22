@@ -51,9 +51,12 @@ describe('metafile walk — transitive attribution at depth 2', () => {
       getClientAddress: () => null,
     };
     const result = await requestContext.run(ctx, () => registry.renderComponent(FIXTURE_PAGE));
-    const deepComponentCss = result.cssUrls.find((u) => u.includes('/css/Deep-'));
-    expect(deepComponentCss).toBeDefined();
-    const deepImportedCss = result.cssUrls.find((u) => u.includes('/import-css/deep-'));
-    expect(deepImportedCss).toBeDefined();
+    expect(result.cssUrls).toHaveLength(2);
+    const deepComponentCss = result.cssUrls.filter((u) => u.startsWith('/_mochi/css/Deep-'));
+    expect(deepComponentCss).toHaveLength(1);
+    expect(deepComponentCss[0]).toMatch(/^\/_mochi\/css\/Deep-[a-z0-9]+\.css$/);
+    const deepImportedCss = result.cssUrls.filter((u) => u.startsWith('/_mochi/import-css/deep-'));
+    expect(deepImportedCss).toHaveLength(1);
+    expect(deepImportedCss[0]).toMatch(/^\/_mochi\/import-css\/deep-[a-z0-9]+\.css$/);
   });
 });

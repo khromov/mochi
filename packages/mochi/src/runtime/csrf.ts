@@ -67,6 +67,30 @@ export function isFormContentType(contentType: string | null, formContentTypes: 
 }
 
 /**
+ * Boot-time visibility for a production-only failure: without a trusted origin every form-action POST 403s in
+ * production while development only warns per-request — invisible until deploy. Returns the warning line, or null.
+ * The page marker is checked structurally ("__mochiPage") because importing types.ts here would be a module cycle.
+ */
+export function csrfBootWarning(options: {
+  csrf?: MochiCsrfOptions;
+  proxy?: MochiProxyOptions;
+  filters?: { 'csrf:check'?: unknown };
+  routes?: Record<string, unknown>;
+}): string | null {
+  if (options.csrf?.checkOrigin === false || options.filters?.['csrf:check'] !== undefined || options.proxy?.origin || options.proxy?.hostHeader) {
+    return null;
+  }
+  const actionRoutes = Object.entries(options.routes ?? {}).filter(([, handler]) => {
+    const page = handler as { __mochiPage?: boolean; actions?: Record<string, unknown> } | undefined;
+    return page?.__mochiPage === true && page.actions !== undefined && Object.keys(page.actions).length > 0;
+  });
+  if (actionRoutes.length === 0) {
+    return null;
+  }
+  return `CSRF: ${actionRoutes.length} route(s) declare form actions (e.g. "${actionRoutes[0]?.[0]}") but no proxy.origin or proxy.hostHeader is configured — their form POSTs will be blocked with 403 in production, because the expected origin can't be trusted. Set Mochi.serve({ proxy: { origin: '...' } }) before deploying.`;
+}
+
+/**
  * Resolve the framework's default CSRF decision and run it through the `csrf:check` filter, the single override point
  * for extensions. The filter receives that decision — `null` to pass, `Response` to block — and returns the input
  * unchanged to delegate, `null` to bypass, or a fresh `Response` to substitute a custom block.

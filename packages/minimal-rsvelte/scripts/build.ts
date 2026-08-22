@@ -1,11 +1,4 @@
-/**
- * `mochi-framework build`, plus the assertion this whole package exists for.
- *
- * `resolveSvelteCompiler()` never throws: a missing or unloadable rsvelte binary
- * warns and silently compiles with `svelte/compiler`, so a broken install looks
- * exactly like a passing build. CI runs on the three platforms rsvelte ships
- * prebuilt binaries for, so here a fallback is a failure, not a degradation.
- */
+// `resolveSvelteCompiler()` falls back to `svelte/compiler` silently on a broken rsvelte install, so this script must fail the build if that happens.
 import path from 'node:path';
 
 const FALLBACK_MARKERS = ['falling back to svelte/compiler', 'did not export a usable'];

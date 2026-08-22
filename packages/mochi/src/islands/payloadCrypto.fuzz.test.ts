@@ -60,6 +60,20 @@ describe('payloadCrypto — property-based fuzzing', () => {
     );
   });
 
+  // Random text rarely deflates smaller, so the threshold test above can skip the compressed
+  // branch entirely — repetitive input forces it, proven by the token beating compress:false.
+  test('compressible input provably takes the deflate branch and round-trips', () => {
+    fc.assert(
+      fc.property(fc.string({ minLength: 1, maxLength: 20 }), fc.integer({ min: 200, max: 400 }), (chunk, n) => {
+        const s = chunk.repeat(n);
+        const token = encryptPayload(s);
+        expect(token.length).toBeLessThan(encryptPayload(s, { compress: false }).length);
+        expect(decryptPayload(token)).toBe(s);
+      }),
+      RUNS,
+    );
+  });
+
   test('bytes round-trip for arbitrary buffers', () => {
     fc.assert(
       fc.property(fc.uint8Array(), (bytes) => {
@@ -94,13 +108,16 @@ describe('payloadCrypto — property-based fuzzing', () => {
   });
 
   test('decryptPayload never throws on arbitrary garbage tokens', () => {
+    // Forging AES-SIV's 128-bit tag by chance is negligible, so garbage must yield null
+    // (any throw fails fc.assert on its own).
     fc.assert(
       fc.property(fc.string(), (token) => {
-        const out = decryptPayload(token);
-        expect(out === null || typeof out === 'string').toBe(true);
+        expect(decryptPayload(token)).toBeNull();
       }),
       RUNS,
     );
+    // Guards against decryptPayload trivially returning null for everything.
+    expect(decryptPayload(encryptPayload('sanity'))).toBe('sanity');
   });
 });
 

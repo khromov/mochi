@@ -8,6 +8,8 @@ import { MochiCookieJar, type CookieSerializeOptions } from './cookies';
 import { mochiEvents } from '../events';
 import { isWarmupRequest } from './warmup';
 import type { MochiRequestContext } from './requestContext';
+import type { ProtectionGate } from '../protection/gate';
+import type { MochiProtectionKind } from '../protection/types';
 
 // RouteKind covers user-route shapes; MochiRequestKind in events.ts covers the
 // broader event taxonomy (asset, fallback, error). They overlap on page|api|file.
@@ -24,6 +26,7 @@ export interface RequestSetupConfig {
   protectedMethods: ReadonlySet<string>;
   trustedOrigins: ReadonlySet<string>;
   newRequestId: (req: Request) => string;
+  protection?: ProtectionGate;
 }
 
 export interface PerCallOptions {
@@ -33,6 +36,8 @@ export interface PerCallOptions {
   csrfErrorTransform?: (resp: Response) => Response;
   /** Build context now but defer trailing-slash/CSRF responses until `resolve()`. */
   deferGuards?: boolean;
+  /** The protection verify endpoint sets this — the one route that must answer an uncleared client. */
+  skipProtection?: boolean;
 }
 
 export type SetupResult =
@@ -46,7 +51,7 @@ export type SetupResult =
       guardResponse?: Response;
     };
 
-export type RequestContextBuilder = (req: Request, server: Server<undefined>, opts: PerCallOptions) => SetupResult;
+export type RequestContextBuilder = (req: Request, server: Server<undefined>, opts: PerCallOptions) => Promise<SetupResult>;
 
 interface KindPolicy {
   timeout: boolean;
@@ -55,25 +60,43 @@ interface KindPolicy {
   debugBar: boolean;
 }
 
+// `trailingSlash` governs both halves of the policy — registering the route under its other slash form, and redirecting
+// a matched request to the canonical one. Only pages get it: a canonical URL is a navigation concern, and every other
+// kind is addressed by a client that already knows the exact pattern it wants.
 const KIND_POLICY: Record<RouteKind, KindPolicy> = {
-  page: { timeout: false, trailingSlash: true, csrf: true, debugBar: true },
-  api: { timeout: false, trailingSlash: true, csrf: true, debugBar: false },
-  sse: { timeout: true, trailingSlash: true, csrf: false, debugBar: false },
+  page: { timeout: true, trailingSlash: true, csrf: true, debugBar: true },
+  api: { timeout: false, trailingSlash: false, csrf: true, debugBar: false },
+  sse: { timeout: true, trailingSlash: false, csrf: false, debugBar: false },
   ws: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
   island: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
   image: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
-  asset: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
-  raw: { timeout: false, trailingSlash: true, csrf: true, debugBar: false },
+  asset: { timeout: false, trailingSlash: false, csrf: true, debugBar: false },
+  raw: { timeout: false, trailingSlash: false, csrf: true, debugBar: false },
   dev: { timeout: false, trailingSlash: false, csrf: true, debugBar: false },
-  fallback: { timeout: false, trailingSlash: true, csrf: true, debugBar: false },
-  error: { timeout: false, trailingSlash: true, csrf: true, debugBar: false },
-  // Files are leaf resources (like static assets), so they opt out of
-  // trailing-slash normalization — a file URL should never gain a trailing `/`.
+  fallback: { timeout: false, trailingSlash: false, csrf: true, debugBar: false },
+  error: { timeout: false, trailingSlash: false, csrf: true, debugBar: false },
   file: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
 };
 
+/** The kinds that reach the alt-slash mirroring decision, i.e. everything `registerRoutePattern` can return. */
+export type MirrorableRouteKind = Exclude<RouteKind, 'island' | 'image' | 'asset' | 'raw' | 'dev' | 'fallback' | 'error'>;
+
+// The single source of truth for alt-slash registration, shared by the initial
+// registration in `Mochi.ts` and by dev hot-reload in `devWatcher.ts`.
+export function mirrorsSlashForm(kind: MirrorableRouteKind): boolean {
+  return KIND_POLICY[kind].trailingSlash;
+}
+
+// Framework-owned bytes (bundles, images, public files, dev endpoints) stay ungated: the interstitial loads its own
+// assets, so gating them would lock a visitor out of the very page that clears them.
+const PROTECTABLE_KINDS: ReadonlySet<RouteKind> = new Set<RouteKind>(['page', 'api', 'ws', 'sse', 'island', 'file', 'fallback']);
+
+function isProtectableKind(kind: RouteKind): kind is MochiProtectionKind {
+  return PROTECTABLE_KINDS.has(kind);
+}
+
 export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestContextBuilder {
-  return function buildRequestContext(req, server, opts): SetupResult {
+  return async function buildRequestContext(req, server, opts): Promise<SetupResult> {
     const policy = KIND_POLICY[opts.kind];
     const start = performance.now();
     const requestId = cfg.newRequestId(req);
@@ -100,9 +123,8 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
     }
 
     const reportEarlyExit = (status: number): void => {
-      // Normal route handlers defer guards so middleware and their unified
-      // request-event finalizer still run. This path remains for direct
-      // request-context consumers and setup failures before a context exists.
+      // Handlers passing `deferGuards` emit their own request event after middleware, so this stays for the remaining
+      // early exits, narrowed to the kinds `MochiRequestKind` in events.ts can carry.
       if (opts.kind !== 'page' && opts.kind !== 'api' && opts.kind !== 'file') {
         return;
       }
@@ -145,6 +167,15 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
     }
 
     const cookies = new MochiCookieJar(req.headers.get('Cookie'), cfg.cookieDefaults);
+
+    if (cfg.protection && !opts.skipProtection && isProtectableKind(opts.kind)) {
+      const blocked = await cfg.protection({ request: req, url, kind: opts.kind, cookies, server });
+      if (blocked) {
+        reportEarlyExit(blocked.status);
+        return { earlyResponse: blocked };
+      }
+    }
+
     const ctx: MochiRequestContext = {
       requestId,
       request: req,

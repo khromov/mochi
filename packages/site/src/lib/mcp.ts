@@ -84,8 +84,8 @@ mcpServer.tool(
   },
 );
 
-// A `trailingSlash:redirect` filter in index.ts exempts /mcp from the site's `trailingSlash: 'always'`
-// policy so the endpoint answers at /mcp directly.
+// /mcp is a `Mochi.api()` route, so the site's `trailingSlash: 'always'` policy never applies to it and
+// the endpoint answers at /mcp directly — some MCP clients don't follow a redirect to /mcp/.
 const transport = new HttpTransport(mcpServer, { path: null, disableSse: true });
 
 export async function respondMcp(request: Request): Promise<Response> {

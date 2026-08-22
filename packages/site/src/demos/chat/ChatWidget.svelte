@@ -6,7 +6,6 @@
   let messagesEl: HTMLDivElement | undefined = $state();
 
   $effect(() => {
-    // scroll to bottom whenever messages change
     void messages.length;
     messagesEl?.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
   });

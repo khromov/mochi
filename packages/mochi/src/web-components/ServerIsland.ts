@@ -2,21 +2,39 @@
 /// <reference lib="dom.iterable" />
 
 import '../debug-bar/types';
+import { isReloadableIslandName, notifyDeferredIslandChange, registerDeferredIsland, unregisterDeferredIsland } from '../islands/deferInvalidation';
 
 // Key must match sharedCssTracker.ts for cross-bundle dedup with HydratableIsland.
 const _css: Set<string> = ((globalThis as unknown as Record<string, unknown>).__mochi_loaded_css__ ??= new Set()) as Set<string>;
 
 class ServerIsland extends HTMLElement {
   _loaded = false;
+  _options: Record<string, unknown> = {};
+  _name: string | null = null;
+  _inflight: Promise<boolean> | null = null;
+  _everLoaded = false;
 
   connectedCallback() {
     if (this._loaded) {
+      // Re-registered from the stored name, not the attribute, so a moved element stays
+      // reachable by `reloadDeferredIsland` even if `server-options` was mangled in transit.
+      if (this._name) {
+        registerDeferredIsland(this._name, this);
+      }
       return;
     }
     this._loaded = true;
 
     const optionsRaw = this.getAttribute('server-options');
     const options = optionsRaw ? JSON.parse(optionsRaw) : {};
+    this._options = options;
+
+    if (isReloadableIslandName(options.name)) {
+      this._name = options.name;
+      registerDeferredIsland(options.name, this);
+    } else if (options.name !== undefined) {
+      window.__mochi_warn?.(`[mochi] mochi:defer name must be a non-empty string; got ${JSON.stringify(options.name)} — the island will not be reloadable.`);
+    }
 
     if (this.getAttribute('defer-on') === 'visible') {
       // `display:contents` leaves this element without a layout box, so the firstElementChild is observed instead; with
@@ -27,7 +45,9 @@ class ServerIsland extends HTMLElement {
           for (const e of entries) {
             if (e.isIntersecting) {
               obs.disconnect();
-              this._fetchContent(options);
+              // Queued behind any manual reload already running so the two can never race, and
+              // skipped when one of them has already delivered content.
+              this._track((this._inflight ?? Promise.resolve(true)).then(() => this._everLoaded || this._fetchContent(this._options)));
               return;
             }
           }
@@ -37,14 +57,80 @@ class ServerIsland extends HTMLElement {
       return;
     }
 
-    this._fetchContent(options);
+    this._track(this._fetchContent(options));
   }
 
-  async _fetchContent(options: Record<string, unknown> = {}) {
+  disconnectedCallback() {
+    if (this._name) {
+      unregisterDeferredIsland(this._name, this);
+    }
+  }
+
+  // Svelte roots outlive their DOM, so a discarded subtree keeps running without this.
+  _unmountChildren() {
+    for (const el of this.querySelectorAll('mochi-hydratable-island')) {
+      const island = el as { _unmount?: () => void; _generation?: number };
+      // Bumped so a hydration whose bundle import is still in flight bails instead of mounting
+      // a permanently-orphaned root onto the discarded subtree.
+      island._generation = (island._generation ?? 0) + 1;
+      island._unmount?.();
+    }
+  }
+
+  _notify(change: { ok?: boolean } = {}) {
+    if (this._name) {
+      notifyDeferredIslandChange(this._name, change);
+    }
+  }
+
+  // Notified from here, not inside the operation, so a notification never reports a stale `_inflight`.
+  _track(op: Promise<boolean>): Promise<boolean> {
+    const tracked = op
+      .then(
+        (ok) => ok === true,
+        () => false,
+      )
+      .then((ok) => {
+        if (this._inflight === tracked) {
+          this._inflight = null;
+        }
+        this._notify();
+        return ok;
+      });
+    this._inflight = tracked;
+    this._notify();
+    return tracked;
+  }
+
+  // Queued behind any fetch already running rather than sharing it, so a reload issued after a
+  // mutation observes it and a late-landing fetch cannot clobber newer content. The outcome
+  // travels through the returned promise; `reloadDeferredIsland` aggregates it per round.
+  reload(): Promise<boolean> {
+    return this._track((this._inflight ?? Promise.resolve(true)).then(() => this._reload()));
+  }
+
+  async _reload(): Promise<boolean> {
+    this.setAttribute('data-reloading', '');
+    this.setAttribute('aria-busy', 'true');
+    try {
+      // The current content stays up until the new HTML lands: swapping to the fallback would
+      // discard hydrated children's client state even when the fetch succeeds.
+      return await this._fetchContent(this._options);
+    } finally {
+      this.removeAttribute('data-reloading');
+      this.removeAttribute('aria-busy');
+    }
+  }
+
+  isReloading(): boolean {
+    return this._inflight !== null;
+  }
+
+  async _fetchContent(options: Record<string, unknown> = {}): Promise<boolean> {
     const g = (k: string) => this.getAttribute(k);
     const componentName = g('component-name');
     if (!componentName) {
-      return;
+      return false;
     }
 
     const tag = `[mochi] Server island "${componentName}"`;
@@ -93,10 +179,13 @@ class ServerIsland extends HTMLElement {
           document.head.appendChild(link);
         }
 
+        this._unmountChildren();
+
         // SAFETY: HTML comes from our own same-origin server-island endpoint with encrypted props.
         // If the island endpoint ever returns user-controlled content, this must be sanitized.
         this.innerHTML = html;
-        return;
+        this._everLoaded = true;
+        return true;
       } catch (err) {
         lastErr = err;
         if (err instanceof Error && 'abort' in err) {
@@ -119,6 +208,7 @@ class ServerIsland extends HTMLElement {
       console.error(msg);
     }
     window.__mochi_warn?.(msg);
+    return false;
   }
 }
 

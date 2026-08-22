@@ -2,10 +2,8 @@ import { Mochi, error, getRequestContext } from 'mochi-framework';
 import type { Handle, MochiRouteValue } from 'mochi-framework';
 import { subjects, frameSize, fitScale, readScheme, SCHEMES } from './registry';
 
-/**
- * Renders one component alone on a bare 16:9 canvas (1280x720 by default), with no
- * site chrome, for screenshotting. Size via `?w=`/`?h=`; see registry.ts for subjects.
- */
+/** Renders one component alone on a bare 16:9 canvas (1280x720 default) with no site
+ * chrome, for screenshotting; size via `?w=`/`?h=`. */
 export const routes: Record<string, MochiRouteValue> = {
   '/shot/:name': Mochi.page('./src/shot/Shot.svelte', {
     serverProps: () => {
@@ -24,12 +22,8 @@ export const routes: Record<string, MochiRouteValue> = {
   }),
 };
 
-/**
- * Pins the shot's colour scheme so a given URL yields the same image everywhere.
- * Without this the shell's `prefers-color-scheme` tokens leak the screenshotting
- * machine's OS theme into the canvas. Stamped on <html> because that's where the
- * shell declares its tokens, and the page component can't reach outside its own body.
- */
+/** Pins the shot's colour scheme on `<html>` so a given URL yields the same image
+ * everywhere; otherwise the shell's `prefers-color-scheme` tokens leak the screenshotting machine's OS theme into the canvas. */
 export const handle: Handle = async ({ event, resolve }) => {
   if (!event.url.pathname.startsWith('/shot/')) {
     return resolve(event);

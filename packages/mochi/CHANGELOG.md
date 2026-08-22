@@ -1,26 +1,40 @@
 # Changelog
 
-## Unreleased
+## [0.9.1](https://github.com/khromov/mochi/compare/mochi-framework-v0.9.0...mochi-framework-v0.9.1) (2026-07-30)
 
-### Breaking changes
 
-- `handle` middleware now wraps every framework route kind, including files, WebSocket handshakes, SSE, server islands, images, public/framework assets, raw Bun routes, dev endpoints, and fallbacks. `event.kind` and request/error lifecycle kind unions were expanded accordingly.
-- `Mochi.ws()` now requires an exact same-origin `Origin` header by default. Configure additional browser origins with its second `trustedOrigins` argument, or explicitly opt into missing/unchecked origins for non-browser clients.
-- SSE routes invoke handlers only for `GET`; every other method returns `405` with `Allow: GET`.
+### Bug Fixes
 
-### Security
+* **cache:** run one FileStorage sweeper per directory ([#227](https://github.com/khromov/mochi/issues/227)) ([45f2c7b](https://github.com/khromov/mochi/commit/45f2c7b6ab3153a41d2a5db14b33b0f97e6561b6))
 
-- Prevent cross-site WebSocket hijacking by validating the proxy-aware public origin before upgrades, including the development live-reload socket.
-- Prevent middleware authorization bypasses on non-page/API routes and server-island endpoints.
-- Redact inbound and outbound cookie values from the client-readable development debug payload.
-- Sanitize unexpected enhanced form-action errors to `Internal Server Error` in production.
-- Reject ambiguous or malformed trusted-proxy origin headers and validate proxy/origin configuration before binding.
-- Prevent SSE field injection through bare carriage returns or newline-bearing `event`/`id` metadata.
-- Preserve finite idle timeouts for ordinary requests; only SSE streams disable the per-request timeout.
+## [0.9.0](https://github.com/khromov/mochi/compare/mochi-framework-v0.8.2...mochi-framework-v0.9.0) (2026-07-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **build:** precompile src/emails templates into the manifest - email templates must now be in src/emails ([#220](https://github.com/khromov/mochi/issues/220))
+* relocatable build output — manifest v2, publicDir served from disk ([#170](https://github.com/khromov/mochi/issues/170))
 
 ### Features
 
-- Type `maxRequestBodySize` and `idleTimeout` explicitly on `MochiServeOptions`; the request-body default remains Bun's 128 MiB limit.
+* add optional rsvelte compiler backend ([#197](https://github.com/khromov/mochi/issues/197)) ([df9aede](https://github.com/khromov/mochi/commit/df9aede35eb49cc9ff74a86ef867939bb84b5ccc))
+* **build:** precompile src/emails templates into the manifest - email templates must now be in src/emails ([#220](https://github.com/khromov/mochi/issues/220)) ([000e193](https://github.com/khromov/mochi/commit/000e193233227f49484d99d5076b0ceb9a2ab13b))
+* **captcha:** fix hang, sync PoW, a11y/CLS, configurable bits/budget ([#199](https://github.com/khromov/mochi/issues/199)) ([5028c6b](https://github.com/khromov/mochi/commit/5028c6b616119c0cd647715050cb982ac0b7f6d5))
+* **extensions:** crash when server-only internals reach the client ([#206](https://github.com/khromov/mochi/issues/206)) ([ad496ee](https://github.com/khromov/mochi/commit/ad496eec94ee43127ef2b6d2c38cb44f3b313156))
+* memlab heap-snapshot analyzer + property-based fuzzing suite ([#203](https://github.com/khromov/mochi/issues/203)) ([49b3c85](https://github.com/khromov/mochi/commit/49b3c857e0e1635ca1c68a9918ae5d548e80c767))
+* relocatable build output — manifest v2, publicDir served from disk ([#170](https://github.com/khromov/mochi/issues/170)) ([b31c052](https://github.com/khromov/mochi/commit/b31c05277a10196a8ba73ea74b88268e7a891bc5))
+* request cache ([#202](https://github.com/khromov/mochi/issues/202)) ([9dd20b6](https://github.com/khromov/mochi/commit/9dd20b675b80d8f28176f3c570e7223cf3d34be8))
+* warn at boot when publicDir was non-empty at build time but empty at serve ([#214](https://github.com/khromov/mochi/issues/214)) ([f807d31](https://github.com/khromov/mochi/commit/f807d3141db80f033fc708c9c3a8763ffa55138b))
+
+
+### Bug Fixes
+
+* require svelte-shaker &gt;=0.18.1 so mochi: directives survive shaking ([#221](https://github.com/khromov/mochi/issues/221)) ([f5b4522](https://github.com/khromov/mochi/commit/f5b45224756b2b6431b402a66be3dc9790e83cf1))
+
+
+### Documentation
+
+* **mochi:** slim down over-verbose source comments ([#217](https://github.com/khromov/mochi/issues/217)) ([82b29f6](https://github.com/khromov/mochi/commit/82b29f6bf55b6f978fbe99742a2c3fff831da34d))
 
 ## [0.8.2](https://github.com/khromov/mochi/compare/mochi-framework-v0.8.1...mochi-framework-v0.8.2) (2026-07-21)
 
