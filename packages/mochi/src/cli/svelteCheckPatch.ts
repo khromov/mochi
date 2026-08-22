@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { logger } from '../utils/log';
+import { relForDisplay, toPosixPath } from '../utils';
 
 export interface SvelteCheckPatchResult {
   /** Whether the file was modified on this call. */
@@ -67,20 +68,21 @@ export function ensureSvelteCheckPatched(): SvelteCheckPatchResult {
   } catch {
     return { patched: false, reason: 'svelte-check not installed' };
   }
+  const shown = relForDisplay(entry) || toPosixPath(entry);
 
   let source: string;
   try {
     source = readFileSync(entry, 'utf8');
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    logger.warn(`Could not read svelte-check at ${entry}: ${msg}`);
+    logger.warn(`Could not read svelte-check at ${shown}: ${msg}`);
     return { patched: false, reason: 'read failed' };
   }
 
   const { source: next, changed, reason } = injectMochiBranch(source);
   if (!changed) {
     if (reason && reason !== 'already patched') {
-      logger.warn(`Could not patch svelte-check for mochi: attributes (${reason}). Custom mochi: attributes may report type errors. svelte-check at: ${entry}`);
+      logger.warn(`Could not patch svelte-check for mochi: attributes (${reason}). Custom mochi: attributes may report type errors. svelte-check at: ${shown}`);
     }
     return { patched: false, reason };
   }
@@ -89,10 +91,10 @@ export function ensureSvelteCheckPatched(): SvelteCheckPatchResult {
     writeFileSync(entry, next);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    logger.warn(`Could not write svelte-check patch to ${entry}: ${msg}`);
+    logger.warn(`Could not write svelte-check patch to ${shown}: ${msg}`);
     return { patched: false, reason: 'write failed' };
   }
 
-  logger.debug(`Patched svelte-check for mochi: attributes at ${entry}`);
+  logger.debug(`Patched svelte-check for mochi: attributes at ${shown}`);
   return { patched: true };
 }
