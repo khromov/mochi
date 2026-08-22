@@ -8,6 +8,7 @@ import type { LocalImageAsset, MochiImageOptions } from './image/types';
 import type { MochiEmailOptions } from './email/types';
 import type { MochiCaptchaOptions } from './captcha/types';
 import type { MochiProtectionOptions } from './protection/types';
+import type { MochiCronHandler, MochiCronListeners, MochiCronRuntimeOptions } from './cron';
 import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions, MochiQueueStorage } from './queue';
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
@@ -270,6 +271,21 @@ export function isMochiQueue(value: unknown): value is MochiQueueConfig {
   return typeof value === 'object' && value !== null && (value as MochiQueueConfig).__mochiQueue === true;
 }
 
+/** Structural twin of `MochiCronJob`, kept here so `types.ts` never has to import values from `cron.ts`. */
+export interface MochiCronConfig {
+  readonly __mochiCron: true;
+  readonly name: string;
+  readonly schedule: string;
+  readonly run: MochiCronHandler;
+  readonly options?: MochiCronRuntimeOptions;
+  readonly on?: Partial<MochiCronListeners>;
+  nextRun(from?: number | Date): number | null;
+}
+
+export function isMochiCron(value: unknown): value is MochiCronConfig {
+  return typeof value === 'object' && value !== null && (value as MochiCronConfig).__mochiCron === true;
+}
+
 /** Options for `Mochi.worker()` — consume queues in a process that never calls `Mochi.serve()`. */
 export interface MochiWorkerOptions {
   queues: MochiQueueConfig[];
@@ -527,6 +543,31 @@ export interface MochiServeOptions {
      */
     level?: import('./utils/log').LogLevel;
   } & import('./dev/consoleLogger').ConsoleLoggerOptions;
+  /**
+   * Scheduled jobs started with the server: descriptors from `Mochi.cron(name, schedule, handler)`, backed by
+   * `Bun.cron()`. Invocations never overlap — the next fire is computed only once the handler settles — and a handler
+   * that throws is reported through `cron:failed` instead of taking the process down. Jobs stop on shutdown.
+   *
+   * Jobs run in every instance, so an app scaled to N replicas fires each job N times. For once-per-schedule work,
+   * have the handler enqueue onto a queue backed by shared storage.
+   */
+  cron?: MochiCronConfig[];
+  /**
+   * Drain in-memory caches when the operating system reports low memory, before the kernel starts killing processes.
+   * `'warning'` (macOS only) drops aged-out entries; `'critical'` drops everything. Reports through the `cache:pressure`
+   * event. Default: `true`.
+   */
+  memoryPressure?: boolean;
+  /**
+   * Extra directory trees mounted under a URL prefix, as `{ "/assets": "./media" }`. Each becomes one Bun directory
+   * route, so a large tree costs one route instead of one per file, and Range, ETag, `If-None-Match`, `index.html`
+   * and sendfile streaming come from Bun.
+   *
+   * Unlike `publicDir` these mounts do no dotfile filtering, do not run the `publicDir:scan` filter, and cannot be
+   * gated by `protection.protectFiles`. A miss under the prefix answers with Bun's own 404 rather than the configured
+   * `errorPage`; paths outside the prefix are unaffected, which is why the site root cannot be mounted.
+   */
+  staticDirs?: import('./runtime/staticDirs').MochiStaticDirs;
   /** Directory served as static assets (cwd-relative). Default: `./public`. */
   publicDir?: string;
   /**

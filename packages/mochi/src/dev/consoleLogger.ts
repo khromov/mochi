@@ -200,6 +200,17 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     verySlow,
     level: removed === 0 ? 'debug' : 'info',
   }));
+  // Pinned at warn: this only fires when the OS is already short of memory, which an operator needs to see in
+  // production, where the default level hides info lines.
+  subscribe('cache:pressure', ({ level, removed, caches, durationMs }) => ({
+    label: 'CACHE',
+    path: 'pressure',
+    note: `${styleText(level === 'critical' ? 'red' : 'yellow', level)} ${styleText('dim', `${removed} entr${removed === 1 ? 'y' : 'ies'} dropped from ${caches} cache${caches === 1 ? '' : 's'}`)}`,
+    duration: durationMs,
+    slow,
+    verySlow,
+    level: 'warn',
+  }));
   subscribe('image:cache-sweep', ({ removedVariants, removedOriginals, removedOther, durationMs }) => {
     const removed = removedVariants + removedOriginals + removedOther;
     // `removedOther` is markers/tmp/unattributable — noise on the common line, so
@@ -284,6 +295,38 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     label: 'QUEUE',
     path: queue ?? 'queue',
     note: `${styleText('red', 'queue error')} ${styleText('dim', error)}`,
+    level: 'warn',
+  }));
+
+  subscribe('cron:scheduled', ({ job, schedule, nextRun }) => ({
+    label: 'CRON',
+    path: job,
+    note: `${styleText('dim', schedule)}${nextRun === undefined ? '' : styleText('dim', ` → next ${new Date(nextRun).toISOString()}`)}`,
+  }));
+  subscribe('cron:active', ({ job }) => ({
+    label: 'CRON',
+    path: job,
+    note: styleText('cyan', 'active'),
+    level: 'debug',
+  }));
+  // Pinned at warn for the same reason the queue lines are: production's default level hides info, and a scheduled
+  // job that silently stops completing is exactly what an operator needs to notice.
+  subscribe('cron:completed', ({ job, duration }) => ({
+    label: 'CRON',
+    path: job,
+    note: styleText('green', 'done'),
+    duration,
+    slow,
+    verySlow,
+    level: 'warn',
+  }));
+  subscribe('cron:failed', ({ job, duration, error }) => ({
+    label: 'CRON',
+    path: job,
+    note: `${styleText('red', 'failed')} ${styleText('dim', error)}`,
+    duration,
+    slow,
+    verySlow,
     level: 'warn',
   }));
 

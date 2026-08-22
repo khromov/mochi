@@ -1,0 +1,109 @@
+import { afterEach, describe, expect, test } from 'bun:test';
+import { MemoryStorage } from '../cache/cache-storage';
+import { mochiEvents } from '../events';
+import { installMemoryPressureHandler, removeMemoryPressureHandler, registerPressureResponder, respondToPressure, type PressureResponder } from './memoryPressure';
+
+afterEach(() => {
+  removeMemoryPressureHandler();
+});
+
+const fill = (store: MemoryStorage, count: number) => {
+  for (let i = 0; i < count; i++) {
+    store.setItem(`k${i}`, `v${i}`);
+  }
+};
+
+describe('respondToPressure', () => {
+  test("'critical' empties an in-memory store outright", () => {
+    const store = new MemoryStorage();
+    fill(store, 5);
+
+    const result = respondToPressure('critical');
+
+    expect(store.count()).toBe(0);
+    expect(result.removed).toBeGreaterThanOrEqual(5);
+    expect(result.level).toBe('critical');
+  });
+
+  // The distinction that matters: a warning is the OS asking politely, so live entries must survive it.
+  test("'warning' drops only aged-out entries, leaving fresh ones", async () => {
+    const store = new MemoryStorage({ maxAge: 10 });
+    store.setItem('stale', 1);
+    await Bun.sleep(25);
+    store.setItem('fresh', 2);
+
+    respondToPressure('warning');
+
+    expect(store.getItem('stale')).toBeNull();
+    expect(store.getItem('fresh')).toBe(2);
+  });
+
+  test("'warning' on a store with no maxAge keeps everything (sweep is a no-op there)", () => {
+    const store = new MemoryStorage();
+    fill(store, 3);
+
+    respondToPressure('warning');
+
+    expect(store.count()).toBe(3);
+  });
+
+  test('emits cache:pressure with the level and what it reclaimed', () => {
+    const store = new MemoryStorage();
+    fill(store, 4);
+    const events: unknown[] = [];
+    const handler = (payload: unknown) => events.push(payload);
+    mochiEvents.on('cache:pressure', handler);
+
+    try {
+      respondToPressure('critical');
+    } finally {
+      mochiEvents.off('cache:pressure', handler);
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ level: 'critical', caches: expect.any(Number) });
+  });
+
+  // One cache throwing must not stop the rest from giving memory back — the whole point is to survive the squeeze.
+  test('a responder that throws does not stop the others', () => {
+    const exploding: PressureResponder = {
+      pressureLabel: 'exploding',
+      count: () => 1,
+      sweep: () => ({ removed: 0 }),
+      clear: () => {
+        throw new Error('boom');
+      },
+    };
+    registerPressureResponder(exploding);
+    const store = new MemoryStorage();
+    fill(store, 2);
+
+    expect(() => respondToPressure('critical')).not.toThrow();
+    expect(store.count()).toBe(0);
+  });
+});
+
+describe('installMemoryPressureHandler', () => {
+  test('registers one process listener however many times it is called', () => {
+    const before = process.listenerCount('memoryPressure');
+    installMemoryPressureHandler();
+    installMemoryPressureHandler();
+    installMemoryPressureHandler();
+
+    expect(process.listenerCount('memoryPressure')).toBe(before + 1);
+  });
+
+  test('an OS notification drains the caches, and removing the handler stops that', () => {
+    const store = new MemoryStorage();
+    installMemoryPressureHandler();
+    fill(store, 3);
+
+    process.emit('memoryPressure' as never, 'critical' as never);
+    expect(store.count()).toBe(0);
+
+    removeMemoryPressureHandler();
+    fill(store, 3);
+    process.emit('memoryPressure' as never, 'critical' as never);
+    expect(store.count()).toBe(3);
+  });
+});

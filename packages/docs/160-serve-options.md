@@ -7,6 +7,7 @@ description: 'Reference for every configuration option on Mochi.serve().'
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Serve options
@@ -61,6 +62,9 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `inlineNestedIslands` — render nested `mochi:defer` islands in-process during an island fetch instead of emitting more client fetches. `mochi:defer:visible` children keep their own fetch; one call site opts out with `mochi:defer={{ inline: false }}`. Default: `true`. See [Server islands](/docs/server-islands/).
 - `logger` — built-in request logger. Default: `{ enabled: true }`.
 - `publicDir` — directory served as static assets. Default: `./public`. Scanned from disk at startup in every mode, so it must ship with a production deploy.
+- `staticDirs` — extra directory trees mounted under a URL prefix. See [Static directories](#static-directories).
+- `memoryPressure` — drain in-memory caches when the OS reports low memory. Default: `true`. See [Cache](/docs/cache/#memory-pressure).
+- `cron` — scheduled jobs to start with the server, from `Mochi.cron(name, schedule, handler)`. See [Scheduled jobs](/docs/scheduled-jobs/).
 - `outDir` — base directory for build artifacts and dev cache. Default: `./.mochi`.
 - `assetPrefix` — URL prefix for framework client assets and the server-island endpoint. Must start with `/`, must not be `/` or end with `/`. Default: `/_mochi`.
 - `additionalWatchPaths` — extra dev-mode watcher paths added to `src` and `public`. Default: `[]`.
@@ -79,6 +83,41 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 <Callout type="info">
 
 **Sync `assetPrefix` between build and runtime.** When using a prebuilt manifest, pass `assetPrefix` to the `build()` call (or `--asset-prefix`) so the baked-in URLs match. The manifest's URLs take precedence at runtime if the two disagree.
+
+</Callout>
+
+### Static directories
+
+<VersionNote since="0.10.0" message="staticDirs ships in the next Mochi release (0.10.0). This section describes the upcoming API." />
+
+Mount a directory tree under a URL prefix. Each entry becomes one Bun directory route, so a large tree costs one route rather than one per file, and `Content-Type`, `ETag`, `If-None-Match`, `Range`, `index.html` and sendfile streaming all come from Bun.
+
+```ts
+// file: src/index.ts
+await Mochi.serve({
+  staticDirs: { '/assets': './media' },
+  routes,
+});
+```
+
+This is for **large or generated** trees — a media library, a docs export, a build directory from another tool. For ordinary site assets keep using `publicDir`, which scans and registers each file individually.
+
+The differences that matter:
+
+|                           | `publicDir`                     | `staticDirs`            |
+| ------------------------- | ------------------------------- | ----------------------- |
+| Routes registered         | one per file                    | one per mount           |
+| Dotfiles                  | skipped, except `.well-known/`  | **served**              |
+| `publicDir:scan` filter   | applied                         | not applied             |
+| `protection.protectFiles` | gates every file                | **cannot gate a mount** |
+| A miss                    | falls through to your errorPage | Bun's bare 404          |
+| New files                 | need a dev-watcher rescan       | live immediately        |
+
+Bun clamps each mount: an encoded separator (`%2F`), a traversal segment (`..`) and empty path segments are all rejected, and on Linux the file is opened with `openat2(RESOLVE_IN_ROOT)` so a symlink inside the directory cannot escape it.
+
+<Callout type="warning">
+
+The site root (`"/"`) cannot be mounted — it would register the global catch-all and answer every otherwise-unmatched request with Bun's 404, so your error page, `fetch` fallback and `/_mochi/*` assets would stop working. `Mochi.serve()` rejects it at boot. Use `publicDir` to serve files at the site root.
 
 </Callout>
 

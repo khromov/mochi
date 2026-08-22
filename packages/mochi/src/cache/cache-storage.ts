@@ -3,6 +3,7 @@ import { mkdir, open, readdir, rename, rm, stat, unlink, type FileHandle } from 
 import { join, relative, resolve } from 'node:path';
 import type { Storage, SweepOptions, SweepResult } from './cache';
 import { mochiEvents } from '../events';
+import { registerPressureResponder } from '../runtime/memoryPressure';
 import { pinGlobal } from '../utils/globalState';
 import { logger } from '../utils/log';
 
@@ -92,12 +93,15 @@ export class MemoryStorage implements Storage {
   private store = new Map<string, { value: unknown; writtenAt: number }>();
   private readonly maxAge?: number;
   private intervalTimer?: ReturnType<typeof setInterval>;
+  readonly pressureLabel = 'MemoryStorage';
 
   constructor(options: MemoryStorageOptions = {}) {
     this.maxAge = options.maxAge;
     if (options.purgeInterval && options.purgeInterval > 0) {
       this.startSweeper(options.purgeInterval);
     }
+    // This is the backend that actually holds bytes in RAM, so it is the one the OS low-memory signal drains.
+    registerPressureResponder(this);
   }
 
   getItem(key: string): unknown {

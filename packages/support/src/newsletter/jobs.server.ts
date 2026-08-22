@@ -1,5 +1,13 @@
 import { Mochi, logger } from 'mochi-framework';
-import { appendNewsletterLog, claimNewsletterSend, getSubscriber, markNewsletterEmailFailed, markNewsletterEmailSent, noteNewsletterAttemptError } from '../db.server';
+import {
+  appendNewsletterLog,
+  claimNewsletterSend,
+  getSubscriber,
+  markNewsletterEmailFailed,
+  markNewsletterEmailSent,
+  noteNewsletterAttemptError,
+  purgeExpiredPendingSubscribers,
+} from '../db.server';
 import { confirmUrl, unsubscribeUrl } from './config';
 
 export const NEWSLETTER_EMAIL_QUEUE = 'newsletter-emails';
@@ -80,4 +88,15 @@ export const newsletterEmailQueue = Mochi.queue<NewsletterEmailJob>(NEWSLETTER_E
     });
     return { sent: true };
   },
+});
+
+/**
+ * A pending sign-up whose confirmation window closed is otherwise only noticed when someone visits the dead token, so
+ * unconfirmed addresses accumulate forever. Nightly at 03:15, offset off the hour to avoid the thundering herd.
+ */
+export const purgeExpiredSubscribers = Mochi.cron('newsletter-purge-expired', '15 3 * * *', () => {
+  const removed = purgeExpiredPendingSubscribers();
+  if (removed > 0) {
+    logger.info(`[newsletter] purged ${removed} expired pending sign-up(s)`);
+  }
 });

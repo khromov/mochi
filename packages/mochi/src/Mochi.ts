@@ -14,6 +14,7 @@ import {
   isMochiWs,
   isMochiSse,
   isMochiFile,
+  isMochiCron,
   isMochiQueue,
   isServerPropsResolver,
   isAlsoHydrateMode,
@@ -60,6 +61,7 @@ import {
   headResponse,
   isHtmlResponse,
   MochiHttpError,
+  normalizeAssetPrefix,
   relForDisplay,
   toPosixPath,
   withHead,
@@ -114,6 +116,9 @@ import { consoleLogger } from './dev/consoleLogger';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
 import { ISLAND_FAILURE_CSS, ISLAND_FAILURE_DEV_CSS, islandFailureStub } from './web-components/islandFailureStub';
 import { resolvePublicFiles, registerPublicRoutes, isExcludedDotPath } from './runtime/publicDir';
+import { installMemoryPressureHandler, removeMemoryPressureHandler } from './runtime/memoryPressure';
+import { registerStaticDirRoutes, resolveStaticDirs } from './runtime/staticDirs';
+import { createCronJob, startCronJobs, stopAllCronJobs, type MochiCronHandler, type MochiCronJob, type MochiCronOptions } from './cron';
 import { startDevWatcher } from './dev/devWatcher';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './dev/pageCacheAdminRoutes';
 import { liveReloadGreeting } from './dev/liveReloadGeneration';
@@ -234,6 +239,15 @@ export class Mochi {
    */
   static queue<T = unknown, R = unknown>(name: string, config: MochiQueueOptions<T, R> = {}): MochiQueueDescriptor<T, R> {
     return createQueueDescriptor<T, R>(name, config);
+  }
+
+  /**
+   * Declare a scheduled job. The returned descriptor is inert until `Mochi.serve({ cron: [job] })` starts it. Pass a
+   * handler directly, or `{ run, tz, dev, on }` for time-zone, development and listener control. Invalid schedules
+   * throw here, at import time, rather than at boot.
+   */
+  static cron(name: string, schedule: string, config: MochiCronOptions | MochiCronHandler): MochiCronJob {
+    return createCronJob(name, schedule, config);
   }
 
   /**
@@ -417,6 +431,26 @@ export class Mochi {
       // Fail before the config singleton pins and the server binds — rejecting this deep in the boot would wedge the process.
       assertNoConflictingStandaloneRuntime(queueStorage);
     }
+
+    // Same fail-fast rule for cron: a bad descriptor or duplicate name rejects before the config singleton pins and
+    // the socket binds, so a typo can never leave a half-scheduled server listening.
+    const declaredCron = options.cron ?? [];
+    const cronNames = new Set<string>();
+    for (const job of declaredCron) {
+      if (!isMochiCron(job)) {
+        throw new Error(`Mochi.serve({ cron }): every element must be a descriptor created with Mochi.cron(name, schedule, …).`);
+      }
+      if (typeof job.name !== 'string' || !/^[\w.\-/]+$/.test(job.name)) {
+        throw new Error(`Mochi.serve({ cron }): "${job.name}" is not a valid cron job name. Names may only contain letters, digits, underscores, dots, dashes, and slashes.`);
+      }
+      if (cronNames.has(job.name)) {
+        throw new Error(`Mochi.serve({ cron }): two cron jobs are named "${job.name}". Cron job names must be unique.`);
+      }
+      cronNames.add(job.name);
+    }
+
+    // Same fail-fast rule: an unmountable prefix rejects here rather than 404ing at runtime.
+    const staticDirMounts = options.staticDirs ? resolveStaticDirs(options.staticDirs, normalizeAssetPrefix(options.assetPrefix)) : [];
 
     const { svelteVersion } = await checkEnvironment();
     const mochiVersion = await readMochiVersion();
@@ -1479,6 +1513,9 @@ export class Mochi {
       }
     }
 
+    // After the mirroring pass on purpose: a `/*` pattern must not be mirrored to `/*\/`.
+    registerStaticDirRoutes(bunRoutes, staticDirMounts);
+
     // Register server island endpoint
     bunRoutes[`${registry.assetPrefix}/island/:componentName`] = withHead(async (req: Request, server: Server<undefined>): Promise<Response> => {
       const setup = await buildRequestContext(req, server, {
@@ -1863,6 +1900,7 @@ export class Mochi {
       htmlShell: _htmlShell,
       handle: _handle,
       markdown: _markdown,
+      cron: _cron,
       websocket: userWebSocketOptions,
       bun: bunPassthrough,
       ...bunOptions
@@ -1966,6 +2004,9 @@ export class Mochi {
         // listener open and hang shutdown. Best-effort, then always stop.
         try {
           sweeperStop?.();
+          // Before the queues close: a job firing mid-drain must not add() into a boss that is stopping.
+          stopAllCronJobs();
+          removeMemoryPressureHandler();
           stopEmailBadgeBroadcast?.();
           await closeEmailTransport();
           for (const store of rateLimitStores) {
@@ -1981,6 +2022,11 @@ export class Mochi {
         }
         return stopServer(closeActiveConnections);
       }) as typeof server.stop;
+    }
+
+    // Installed once the server is up, so a boot that throws never leaves a listener behind on a dead process.
+    if (options.memoryPressure ?? true) {
+      installMemoryPressureHandler();
     }
 
     await runHook('mochi:listening', { options, server });
@@ -2015,6 +2061,18 @@ export class Mochi {
     // Fires once every declared queue is registered, so a user hook reaching for a handle (or `Mochi.boss()`)
     // gets it instead of a "not mounted yet" error.
     await runHook('mochi:queuesMounted', { options, server, queues: declaredQueues.map((q) => q.name) });
+
+    // After the queues mount, so a job firing immediately can reach Mochi.getQueue(); a throw here tears the
+    // just-bound server down rather than leaving it listening with half a schedule registered.
+    if (declaredCron.length > 0) {
+      try {
+        startCronJobs(declaredCron, { development });
+      } catch (err) {
+        await closeAllQueueResources();
+        await server.stop(true);
+        throw err;
+      }
+    }
 
     if (warmupHandlers.length > 0) {
       mochiEvents.emit('warmup:start', { routeCount: warmupHandlers.length });
@@ -2135,6 +2193,7 @@ async function runShutdown(signal?: NodeJS.Signals): Promise<void> {
   const { server, options } = shutdownState;
   if (!server || !options) {
     // Nothing served in this process — at most a standalone producer queue runtime is up.
+    stopAllCronJobs();
     await closeAllQueueResources();
     resetStartupMilestones();
     return;
