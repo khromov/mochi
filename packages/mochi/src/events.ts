@@ -223,7 +223,10 @@ export interface MochiQueueFailedEvent {
   error: string;
 }
 
-/** Emitted once per cron job when `Mochi.serve({ cron })` registers it. */
+/**
+ * Emitted once per cron job when `Mochi.serve({ cron })` registers it. A durable cron run is a queue job named
+ * after the cron, so its run lifecycle surfaces through `queue:active` / `queue:completed` / `queue:failed`.
+ */
 export interface MochiCronScheduledEvent {
   /** The cron job's name. */
   job: string;
@@ -232,28 +235,6 @@ export interface MochiCronScheduledEvent {
   tz?: string;
   /** Epoch ms of the next fire; absent when none could be computed. */
   nextRun?: number;
-}
-
-export interface MochiCronActiveEvent {
-  job: string;
-  schedule: string;
-  /** Epoch ms at which this invocation started. */
-  scheduledTime: number;
-}
-
-export interface MochiCronCompletedEvent {
-  job: string;
-  schedule: string;
-  /** Milliseconds the handler ran. */
-  duration: number;
-}
-
-export interface MochiCronFailedEvent {
-  job: string;
-  schedule: string;
-  duration: number;
-  /** Message of the error the handler threw. The schedule keeps running. */
-  error: string;
 }
 
 export interface MochiQueueErrorEvent {
@@ -462,9 +443,6 @@ export type MochiEventMap = {
   'queue:failed': MochiQueueFailedEvent;
   'queue:error': MochiQueueErrorEvent;
   'cron:scheduled': MochiCronScheduledEvent;
-  'cron:active': MochiCronActiveEvent;
-  'cron:completed': MochiCronCompletedEvent;
-  'cron:failed': MochiCronFailedEvent;
   'email:sent': MochiEmailSentEvent;
   'email:error': MochiEmailErrorEvent;
   'server:start': MochiServerStartEvent;

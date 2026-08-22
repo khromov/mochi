@@ -23,7 +23,7 @@ Event names use a `namespace:action` convention. Every key is in the typed `Moch
 - [`ws:open`](#wsopen), [`ws:message`](#wsmessage), [`ws:close`](#wsclose) — WebSocket lifecycle
 - [`sse:open`](#sseopen), [`sse:message`](#ssemessage), [`sse:close`](#sseclose) — Server-Sent Events lifecycle
 - [`queue:added`](#queueadded), [`queue:active`](#queueactive), [`queue:completed`](#queuecompleted), [`queue:failed`](#queuefailed), [`queue:error`](#queueerror) — [background job](/docs/queues/) lifecycle
-- `cron:scheduled`, `cron:active`, `cron:completed`, `cron:failed` — [scheduled job](/docs/scheduled-jobs/) lifecycle
+- `cron:scheduled` — a [scheduled job](/docs/scheduled-jobs/) was registered (its runs surface through `queue:*` on the job name)
 - [`email:sent`](#emailsent), [`email:error`](#emailerror) — [transactional email](/docs/email/) delivery
 - [`server:start`](#serverstart), [`server:stop`](#serverstop) — server lifecycle
 - [`warmup:start`](#warmupstart), [`warmup:complete`](#warmupcomplete) — route warmup batch (only with `warmup: true`)

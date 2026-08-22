@@ -88,6 +88,7 @@ import {
   assertNoConflictingStandaloneRuntime,
   resolveQueueConfigMode,
   collectQueueClosure,
+  startCronRuntime,
 } from './queue';
 import { pinGlobal } from './utils/globalState';
 import { resetStartupMilestones } from './lifecycle';
@@ -118,7 +119,7 @@ import { ISLAND_FAILURE_CSS, ISLAND_FAILURE_DEV_CSS, islandFailureStub } from '.
 import { resolvePublicFiles, registerPublicRoutes, isExcludedDotPath } from './runtime/publicDir';
 import { installMemoryPressureHandler, removeMemoryPressureHandler } from './runtime/memoryPressure';
 import { registerStaticDirRoutes, resolveStaticDirs } from './runtime/staticDirs';
-import { createCronJob, startCronJobs, stopAllCronJobs, type MochiCronHandler, type MochiCronJob, type MochiCronOptions } from './cron';
+import { createCronJob, type MochiCronHandler, type MochiCronJob, type MochiCronOptions } from './cron';
 import { startDevWatcher } from './dev/devWatcher';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './dev/pageCacheAdminRoutes';
 import { liveReloadGreeting } from './dev/liveReloadGeneration';
@@ -447,7 +448,21 @@ export class Mochi {
         throw new Error(`Mochi.serve({ cron }): two cron jobs are named "${job.name}". Cron job names must be unique.`);
       }
       cronNames.add(job.name);
+      // A durable cron job is a queue named after the cron, so it must not collide with a declared queue.
+      if (queueNames.has(job.name)) {
+        throw new Error(`Mochi.serve({ cron }): "${job.name}" is both a cron job and a queue. A durable cron job runs as a queue of the same name — rename one.`);
+      }
     }
+    const cronStorage = options.cronStorage ?? queueStorage;
+    if (declaredCron.length > 0 && !isValidQueueStorage(cronStorage)) {
+      throw new Error(`Mochi.serve({ cronStorage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
+    }
+    const cronJitterSeconds = options.cronJitterSeconds ?? 0;
+    if (!Number.isFinite(cronJitterSeconds) || cronJitterSeconds < 0) {
+      throw new Error(`Mochi.serve({ cronJitterSeconds }): expected a non-negative number, got ${String(options.cronJitterSeconds)}.`);
+    }
+    // Cron shares the queue boss when it lands on the same storage; only then does the queue runtime need scheduling on.
+    const cronShared = declaredCron.length > 0 && storageEquals(cronStorage, queueStorage);
 
     // Same fail-fast rule: an unmountable prefix rejects here rather than 404ing at runtime.
     const staticDirMounts = options.staticDirs ? resolveStaticDirs(options.staticDirs, normalizeAssetPrefix(options.assetPrefix)) : [];
@@ -1901,6 +1916,8 @@ export class Mochi {
       handle: _handle,
       markdown: _markdown,
       cron: _cron,
+      cronStorage: _cronStorage,
+      cronJitterSeconds: _cronJitterSeconds,
       websocket: userWebSocketOptions,
       bun: bunPassthrough,
       ...bunOptions
@@ -2004,8 +2021,6 @@ export class Mochi {
         // listener open and hang shutdown. Best-effort, then always stop.
         try {
           sweeperStop?.();
-          // Before the queues close: a job firing mid-drain must not add() into a boss that is stopping.
-          stopAllCronJobs();
           removeMemoryPressureHandler();
           stopEmailBadgeBroadcast?.();
           await closeEmailTransport();
@@ -2048,10 +2063,13 @@ export class Mochi {
     // Mounted after bind so the queues drain on the same shutdown path as the server; a throw mid-mount tears the
     // just-bound server down rather than leaving it listening half-started.
     try {
-      if (declaredQueues.length > 0) {
+      // Started when queues are declared, or when cron shares the queue store (its timekeeper rides this boss).
+      if (declaredQueues.length > 0 || cronShared) {
         // kind 'serve' adopts a standalone producer runtime already connected to the same storage.
-        await startQueueRuntime(queueStorage, { kind: 'serve' });
-        await mountQueues(declaredQueues, resolveQueueConfigMode(options.queueConfig), options.queueShutdownTimeout);
+        await startQueueRuntime(queueStorage, { kind: 'serve', schedule: cronShared });
+        if (declaredQueues.length > 0) {
+          await mountQueues(declaredQueues, resolveQueueConfigMode(options.queueConfig), options.queueShutdownTimeout);
+        }
       }
     } catch (err) {
       await closeAllQueueResources();
@@ -2066,7 +2084,7 @@ export class Mochi {
     // just-bound server down rather than leaving it listening with half a schedule registered.
     if (declaredCron.length > 0) {
       try {
-        startCronJobs(declaredCron, { development });
+        await startCronRuntime(declaredCron, { shared: cronShared, cronStorage, development, jitterMs: cronJitterSeconds * 1000 });
       } catch (err) {
         await closeAllQueueResources();
         await server.stop(true);
@@ -2193,7 +2211,6 @@ async function runShutdown(signal?: NodeJS.Signals): Promise<void> {
   const { server, options } = shutdownState;
   if (!server || !options) {
     // Nothing served in this process — at most a standalone producer queue runtime is up.
-    stopAllCronJobs();
     await closeAllQueueResources();
     resetStartupMilestones();
     return;

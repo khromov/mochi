@@ -3,8 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
-import { registeredCronJobs, stopAllCronJobs } from './cron';
-import { closeAllQueueResources } from './queue';
+import { closeAllQueueResources, registeredCronNames } from './queue';
 import { resetStartupMilestones } from './lifecycle';
 import { isMochiCron } from './types';
 
@@ -21,7 +20,6 @@ let server: Server<undefined> | undefined;
 afterEach(async () => {
   server?.stop(true);
   server = undefined;
-  stopAllCronJobs();
   await closeAllQueueResources();
   resetStartupMilestones();
   for (const dir of outDirs.splice(0)) {
@@ -29,38 +27,52 @@ afterEach(async () => {
   }
 });
 
-const serve = async (cron: Parameters<typeof Mochi.serve>[0]['cron']): Promise<Server<undefined>> =>
-  Mochi.serve({ port: 0, development: false, logger: { enabled: false }, routes: {}, outDir: makeOutDir(), cron });
+// A schedule far from now, so a real firing never races the test — registration is what's asserted here (firing is
+// covered end-to-end in cronRuntime.test.ts with a fast monitor interval).
+const IDLE = '0 0 1 1 *';
 
-// Only one Mochi.serve() may succeed per process (the __mochi_config__ singleton, which server.stop() never clears),
-// so exactly one test here boots a server; the rest assert rejections, which throw in the prelude before it pins.
+const serve = async (opts: Partial<Parameters<typeof Mochi.serve>[0]>): Promise<Server<undefined>> =>
+  Mochi.serve({ port: 0, development: false, logger: { enabled: false }, routes: {}, outDir: makeOutDir(), ...opts });
+
 describe('Mochi.serve({ cron })', () => {
-  test('starts declared jobs and stops them when the server stops', async () => {
-    server = await serve([Mochi.cron('nightly', '0 3 * * *', () => {}), Mochi.cron('hourly', '@hourly', () => {})]);
-    expect(registeredCronJobs().sort()).toEqual(['hourly', 'nightly']);
+  // Only one Mochi.serve() may succeed per process (the __mochi_config__ singleton), so exactly one test boots a
+  // server; the rest assert rejections, which throw in the prelude before the singleton pins.
+  test('starts durable schedules on the shared queue store and stops them on shutdown', async () => {
+    server = await serve({ cron: [Mochi.cron('nightly', IDLE, () => {}), Mochi.cron('weekly', IDLE, () => {})] });
+    expect((await registeredCronNames()).sort()).toEqual(['nightly', 'weekly']);
 
-    await server.stop(true);
-    server = undefined;
-    expect(registeredCronJobs()).toEqual([]);
+    await closeAllQueueResources();
+    expect(await registeredCronNames()).toEqual([]);
   });
 
-  // Rejecting before bind matters: the alternative is a listening server with half a schedule registered.
   test('rejects duplicate job names before binding', async () => {
-    await expect(serve([Mochi.cron('dup', '@daily', () => {}), Mochi.cron('dup', '@hourly', () => {})])).rejects.toThrow(/two cron jobs are named "dup"/);
-    expect(registeredCronJobs()).toEqual([]);
+    await expect(serve({ cron: [Mochi.cron('dup', IDLE, () => {}), Mochi.cron('dup', '@hourly', () => {})] })).rejects.toThrow(/two cron jobs are named "dup"/);
+    expect(await registeredCronNames()).toEqual([]);
+  });
+
+  test('rejects a cron job whose name collides with a queue', async () => {
+    await expect(
+      serve({
+        queues: [Mochi.queue('reports', { process: async () => null })],
+        cron: [Mochi.cron('reports', IDLE, () => {})],
+      }),
+    ).rejects.toThrow(/both a cron job and a queue/);
   });
 
   test('rejects anything that is not a Mochi.cron descriptor', async () => {
-    await expect(serve([{ name: 'fake', schedule: '@daily' } as never])).rejects.toThrow(/must be a descriptor created with Mochi.cron/);
+    await expect(serve({ cron: [{ name: 'fake', schedule: IDLE } as never] })).rejects.toThrow(/must be a descriptor created with Mochi.cron/);
   });
 
-  test('rejects an invalid job name that bypassed the factory', async () => {
-    const smuggled = { ...Mochi.cron('ok', '@daily', () => {}), name: 'bad name' } as never;
-    await expect(serve([smuggled])).rejects.toThrow(/is not a valid cron job name/);
+  test('rejects an invalid cronStorage', async () => {
+    await expect(serve({ cron: [Mochi.cron('x', IDLE, () => {})], cronStorage: { sqlite: '' } as never })).rejects.toThrow(/expected 'memory'/);
+  });
+
+  test('rejects a negative cronJitterSeconds', async () => {
+    await expect(serve({ cron: [Mochi.cron('x', IDLE, () => {})], cronJitterSeconds: -1 })).rejects.toThrow(/non-negative number/);
   });
 
   test('the descriptor is recognised by isMochiCron', () => {
-    expect(isMochiCron(Mochi.cron('x', '@daily', () => {}))).toBe(true);
+    expect(isMochiCron(Mochi.cron('x', IDLE, () => {}))).toBe(true);
     expect(isMochiCron({ name: 'x' })).toBe(false);
   });
 });

@@ -303,33 +303,6 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     path: job,
     note: `${styleText('dim', schedule)}${nextRun === undefined ? '' : styleText('dim', ` → next ${new Date(nextRun).toISOString()}`)}`,
   }));
-  subscribe('cron:active', ({ job }) => ({
-    label: 'CRON',
-    path: job,
-    note: styleText('cyan', 'active'),
-    level: 'debug',
-  }));
-  // Pinned at warn for the same reason the queue lines are: production's default level hides info, and a scheduled
-  // job that silently stops completing is exactly what an operator needs to notice.
-  subscribe('cron:completed', ({ job, duration }) => ({
-    label: 'CRON',
-    path: job,
-    note: styleText('green', 'done'),
-    duration,
-    slow,
-    verySlow,
-    level: 'warn',
-  }));
-  subscribe('cron:failed', ({ job, duration, error }) => ({
-    label: 'CRON',
-    path: job,
-    note: `${styleText('red', 'failed')} ${styleText('dim', error)}`,
-    duration,
-    slow,
-    verySlow,
-    level: 'warn',
-  }));
-
   subscribe('email:sent', ({ to, subject, transport, duration }) => {
     // Four delivery classes, coloured so a non-delivery never reads as a success line: `log` didn't send (yellow, warn,
     // visible in production), `dev` was captured into the outbox (info, pointed at the viewer), `suppressed` was vetoed

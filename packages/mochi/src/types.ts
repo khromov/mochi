@@ -8,7 +8,7 @@ import type { LocalImageAsset, MochiImageOptions } from './image/types';
 import type { MochiEmailOptions } from './email/types';
 import type { MochiCaptchaOptions } from './captcha/types';
 import type { MochiProtectionOptions } from './protection/types';
-import type { MochiCronHandler, MochiCronListeners, MochiCronRuntimeOptions } from './cron';
+import type { MochiCronHandler, MochiCronRuntimeOptions } from './cron';
 import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions, MochiQueueStorage } from './queue';
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
@@ -278,7 +278,6 @@ export interface MochiCronConfig {
   readonly schedule: string;
   readonly run: MochiCronHandler;
   readonly options?: MochiCronRuntimeOptions;
-  readonly on?: Partial<MochiCronListeners>;
   nextRun(from?: number | Date): number | null;
 }
 
@@ -544,14 +543,24 @@ export interface MochiServeOptions {
     level?: import('./utils/log').LogLevel;
   } & import('./dev/consoleLogger').ConsoleLoggerOptions;
   /**
-   * Scheduled jobs started with the server: descriptors from `Mochi.cron(name, schedule, handler)`, backed by
-   * `Bun.cron()`. Invocations never overlap — the next fire is computed only once the handler settles — and a handler
-   * that throws is reported through `cron:failed` instead of taking the process down. Jobs stop on shutdown.
-   *
-   * Jobs run in every instance, so an app scaled to N replicas fires each job N times. For once-per-schedule work,
-   * have the handler enqueue onto a queue backed by shared storage.
+   * Durable scheduled jobs started with the server: descriptors from `Mochi.cron(name, schedule, handler)`. Schedules
+   * live in `cronStorage`, and each firing is claimed by exactly one instance, so a job runs once across the fleet
+   * rather than once per replica. A run executes as a queue job named after the cron (surfacing through `queue:*`
+   * events); a handler that throws is reported through `queue:failed`, and the schedule keeps running.
    */
   cron?: MochiCronConfig[];
+  /**
+   * Storage for the durable cron scheduler (`memory` | `{ sqlite }` | `{ postgres }` | `{ pglite }`). Defaults to
+   * `queueStorage`, so cron shares the queue store unless you point it elsewhere (e.g. sqlite for cron, postgres for
+   * queues). A different store than `queueStorage` runs cron on its own bun-boss instance.
+   */
+  cronStorage?: MochiQueueStorage;
+  /**
+   * Random 0..N-second delay before the cron scheduler starts, to stagger the timekeeper poll across replicas.
+   * Off (`0`) by default and unnecessary for correctness — bun-boss elects one winner per tick atomically. Honored
+   * only when cron runs on its own store (`cronStorage` differs from `queueStorage`); ignored otherwise.
+   */
+  cronJitterSeconds?: number;
   /**
    * Drain in-memory caches when the operating system reports low memory, before the kernel starts killing processes.
    * `'warning'` (macOS only) drops aged-out entries; `'critical'` drops everything. Reports through the `cache:pressure`
