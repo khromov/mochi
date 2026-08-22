@@ -56,6 +56,8 @@ describe('server island CSS collection', () => {
   });
 
   test('a CSS-less island yields no cssUrls (so the endpoint omits the header)', async () => {
+    // Guard the premise: if the shared Echo fixture ever gains a <style> block, this test no longer means "CSS-less".
+    expect(await Bun.file(ECHO).text()).not.toContain('<style');
     const result = await requestContext.run(makeCtx(), () => registry.renderComponent(ECHO, { name: 'x' }));
     expect(result.cssUrls).toHaveLength(0);
   });

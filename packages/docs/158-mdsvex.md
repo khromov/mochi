@@ -1,6 +1,7 @@
 ---
 title: 'MdSvex'
 slug: mdsvex
+ogTitle: 'Markdown pages with MdSvex'
 description: 'Enable Markdown support in Mochi pages with mdsvex and rehype/remark plugins.'
 ---
 
@@ -17,19 +18,15 @@ Experimental — `markdown` and `mochi-framework/highlight` APIs may change.
 
 </Callout>
 
-Markdown support is opt-in. Install `mdsvex` and any rehype/remark plugins you
-want, then inject them through `Mochi.serve({ markdown: ... })`.
+Markdown support is opt-in. Install `mdsvex` and any rehype/remark plugins you want, then inject them through `Mochi.serve({ markdown: ... })`.
 
 ```sh
 bun add mdsvex@^0.12 rehype-slug@^6
 ```
 
-Mochi is tested against `mdsvex ^0.12` and `rehype-slug ^6`. Other rehype/remark
-plugins follow their own version ranges — install whichever your pipeline needs.
+Mochi is tested against `mdsvex ^0.12` and `rehype-slug ^6`.
 
-With `markdown` configured, `.md` and `.svx` files compile through the supplied
-pipeline and can be used anywhere a `.svelte` component is accepted — including
-as a `Mochi.page()` route target:
+With `markdown` configured, `.md` and `.svx` files compile through the pipeline and can be used anywhere a `.svelte` component is accepted, including as a `Mochi.page()` route target:
 
 ```ts
 // src/index.ts
@@ -48,8 +45,7 @@ await Mochi.serve({
 });
 ```
 
-Markdown can embed Svelte syntax — a top-level `<script>` block, `$props`, and
-`{expression}` interpolation all work the same as in a `.svelte` file:
+Markdown can embed Svelte syntax — a top-level `<script>` block, `$props`, and `{expression}` interpolation work as in a `.svelte` file:
 
 ```svelte
 <script>
@@ -61,27 +57,11 @@ Markdown can embed Svelte syntax — a top-level `<script>` block, `$props`, and
 This page was rendered at {new Date().toISOString()}.
 ```
 
-The `markdown` config accepts a full plugin chain — anything compatible with
-mdsvex's `rehypePlugins` and `remarkPlugins` works:
-
-```ts
-import rehypeSlug from 'rehype-slug';
-import rehypeAutolinkHeadings from 'rehype-autolink-headings';
-
-markdown: {
-  compile: mdsvexCompile,
-  rehypePlugins: [rehypeSlug, rehypeAutolinkHeadings],
-  remarkPlugins: [],
-}
-```
+The `markdown` config accepts a full plugin chain compatible with mdsvex's `rehypePlugins` and `remarkPlugins`.
 
 ### Syntax highlighting
 
-Fenced code blocks are passed through unchanged unless you supply
-`markdown.highlight.highlighter`. Install a highlighting engine (Shiki,
-highlight.js, Prism, etc.) and build a highlighter with the framework's
-`createHighlighter` factory — it adds the code-block wrapper, copy button,
-and Svelte-brace escape around the engine's output.
+Fenced code blocks pass through unchanged unless you supply `markdown.highlight.highlighter`. Install a highlighting engine (Shiki, highlight.js, Prism) and build a highlighter with the framework's `createHighlighter` factory. It adds the code-block wrapper, copy button, and Svelte-brace escape.
 
 ```sh
 bun add shiki
@@ -101,24 +81,13 @@ const shiki = await createShiki({
 export const highlightCode = createHighlighter((code, lang) => shiki.codeToHtml(code, { lang, theme: 'vitesse-dark' }));
 ```
 
-Results are memoized per `(code, lang)`, so a page that highlights the same
-snippets on every SSR render only pays for the first one — a grammar pass costs
-milliseconds per snippet, enough to dominate a render otherwise. The cache holds
-1000 snippets and evicts in insertion order; tune it with `cacheSize` (`0`
-disables memoization) if you highlight unbounded user input:
+Mochi memoizes results per `(code, lang)`. The cache holds 1000 snippets and evicts in insertion order. Tune it with `cacheSize` (`0` disables memoization).
 
-```ts
-export const highlightCode = createHighlighter((code, lang) => shiki.codeToHtml(code, { lang, theme: 'vitesse-dark' }), { cacheSize: 200 });
-```
-
-Shiki defaults to the oniguruma WASM engine, whose `WebAssembly.Memory`
-grows and is never reclaimed — and each compiled SSR bundle that imports
-this module spins up its own copy. `createJavaScriptRegexEngine` uses the
-JS `RegExp` engine instead, so no WASM is loaded.
+`createJavaScriptRegexEngine` uses the JS `RegExp` engine, so no WASM is loaded — Shiki's default oniguruma WASM engine grows `WebAssembly.Memory` that is never reclaimed.
 
 <Callout type="info">
 
-The JS `RegExp` engine can hang on Windows — gate it behind `process.platform !== 'win32'` and fall back to the WASM default there.
+The JS `RegExp` engine can hang on Windows. Gate it behind `process.platform !== 'win32'` and fall back to the WASM default there.
 
 </Callout>
 
@@ -132,19 +101,11 @@ markdown: {
 }
 ```
 
-`highlightCode` is also usable directly in pages and components for
-snippets outside the markdown pipeline.
-
-`createHighlighter` accepts any `(code, lang) => string | Promise<string>`
-function, so you can plug in highlight.js, Prism, or a custom engine the
-same way.
+`createHighlighter` accepts any `(code, lang) => string | Promise<string>` function.
 
 ### Islands in markdown
 
-`mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, and `mochi:defer:visible` all work on
-components instantiated inside a `.md` / `.svx` file. Import the component
-as a default import from the markdown's top-level `<script>` block, then
-apply the directive on the tag:
+`mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, and `mochi:defer:visible` work on components instantiated inside a `.md` / `.svx` file. Import the component as a default import from the markdown's top-level `<script>` block, then apply the directive on the tag:
 
 ```svelte
 <script>
@@ -155,12 +116,11 @@ apply the directive on the tag:
 ```
 
 <Callout type="info">
-Omitting the `markdown` config disables `.md`/`.svx` handling entirely —
-importing one then surfaces as a "no loader" error from Bun's bundler. Your
-`svelte.config.js` `compilerOptions` still apply to compiled markdown. See
-[Svelte config](/docs/svelte-config/).
+
+Omitting the `markdown` config disables `.md`/`.svx` handling, so importing one surfaces a "no loader" error from Bun's bundler. Your `svelte.config.js` `compilerOptions` still apply to compiled markdown. See [Svelte config](/docs/svelte-config/).
+
 </Callout>
 
 <SeeItInAction
-demos={[{ href: "/demos/mdsvex/", title: "MdSvex", hook: "How mdsvex works — a .md file compiled through mdsvex and rendered as a Svelte component, embedded <script> and all." }]}
+demos={[{ href: "/demos/mdsvex/", title: "MdSvex", hook: "A .md file compiled through mdsvex and rendered as a Svelte component." }]}
 />

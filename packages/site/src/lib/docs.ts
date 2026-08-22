@@ -7,7 +7,7 @@ import { SITE_ROOT } from './siteRoot';
 import { loadPosts, getPost } from './blog';
 import { CHANGELOG_SLUG, CHANGELOG_TITLE, CHANGELOG_DESCRIPTION, getChangelogTxt } from './changelog';
 import { demos, type Demo } from './demos';
-import { isDemoIndex, stripImageConfig, type SourceSpec } from '../components/utils.ts';
+import { isDemoIndex, stripImageConfig, stripStaticDirs, type SourceSpec } from '../components/sourceUtils';
 import { collectHeadings, type HastNode, type MdsvexRehypePlugin } from './markdown';
 import type { TocEntry } from './toc';
 
@@ -26,7 +26,7 @@ function filesForDemo(slug: string): SourceSpec[] | undefined {
   return internalDemos().find((d) => d.slug === slug)?.files;
 }
 
-/** Parses the leading numeric prefix of a filename (e.g. `"01-intro.md"` → `1`). */
+// Parses the leading numeric prefix of a filename (e.g. `"01-intro.md"` → `1`).
 function leadingFileNumber(filename: string, fallback = Number.NaN): number {
   const digits = /^(\d+)-/.exec(filename)?.[1];
   return digits === undefined ? fallback : Number.parseInt(digits, 10);
@@ -36,6 +36,8 @@ export interface DocMetadata {
   title: string;
   slug: string;
   description?: string;
+  /** Overrides `title` on the social card only, where there's no sidebar or breadcrumb for context. */
+  ogTitle?: string;
   order?: number;
 }
 
@@ -43,6 +45,7 @@ export interface DocEntry {
   slug: string;
   title: string;
   description?: string;
+  ogTitle?: string;
   order: number;
   filename: string;
   toc: TocEntry[];
@@ -84,11 +87,9 @@ export async function loadDocs(): Promise<DocEntry[]> {
   filenames.sort((a, b) => {
     const na = leadingFileNumber(a);
     const nb = leadingFileNumber(b);
-    // Only let the numeric prefix decide when the two numbers differ. Two docs
-    // sharing a prefix must fall back to a total order, else stable-sort
-    // preserves Bun.Glob.scan's filesystem order, which differs between the
-    // image-build and runtime container filesystems and makes the generated
-    // docs barrel non-reproducible.
+    // Numeric prefix decides order only when it differs; ties need a total order too, since
+    // Bun.Glob.scan's filesystem order differs between the image-build and runtime containers,
+    // which would make the generated docs barrel non-reproducible.
     if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) {
       return na - nb;
     }
@@ -114,6 +115,7 @@ export async function loadDocs(): Promise<DocEntry[]> {
       slug,
       title,
       description: metadata.description,
+      ogTitle: metadata.ogTitle,
       order,
       filename,
       toc,
@@ -211,7 +213,7 @@ async function buildDemoLlmsTxt(slug: string, stripStyles = false): Promise<stri
     return null;
   }
   const parts: string[] = [`## Demo: ${slug}\n`];
-  for (const { label, path: rel, lang, showImageConfig } of specs) {
+  for (const { label, path: rel, lang, showImageConfig, showStaticDirs } of specs) {
     const abs = path.resolve(SITE_ROOT, rel);
     if (!existsSync(abs)) {
       // A declared source file that isn't on disk is almost always a typo'd path
@@ -220,8 +222,13 @@ async function buildDemoLlmsTxt(slug: string, stripStyles = false): Promise<stri
       continue;
     }
     let content = (await Bun.file(abs).text()).trimEnd();
-    if (isDemoIndex(rel) && !showImageConfig) {
-      content = stripImageConfig(content).trimEnd();
+    if (isDemoIndex(rel)) {
+      if (!showImageConfig) {
+        content = stripImageConfig(content).trimEnd();
+      }
+      if (!showStaticDirs) {
+        content = stripStaticDirs(content).trimEnd();
+      }
     }
     const fence = lang ?? (label.endsWith('.svelte') ? 'svelte' : 'ts');
     // Strip <style> blocks only from Svelte-fenced sources — never from .ts, where a
@@ -269,8 +276,8 @@ export async function buildLlmsFullTxt(): Promise<string> {
     const [docs, demos, posts] = await Promise.all([loadDocs(), buildDemosTxt(true), buildBlogPostsTxt()]);
     cachedLlmsFullBaseTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n\n' + demos + '\n\n' + posts;
   }
-  // The changelog is fetched (and cached) separately; concatenate it per request so
-  // its own 4h TTL isn't frozen into the forever memo. Omit the block on a fetch miss.
+  // The changelog is fetched (and cached) separately; concatenate it per request so its own
+  // 4h TTL isn't frozen into the forever memo, and omit the block on a fetch miss.
   const changelog = await getChangelogTxt();
   if (changelog === null) {
     return cachedLlmsFullBaseTxt;
@@ -278,7 +285,9 @@ export async function buildLlmsFullTxt(): Promise<string> {
   return `${cachedLlmsFullBaseTxt}\n\n# Changelog\n\n${changelog.trimEnd()}\n`;
 }
 
-const SITE_BASE = 'https://mochi.fast';
+export const SITE_BASE = 'https://mochi.fast';
+const SITEMAP_NS = 'http://www.sitemaps.org/schemas/sitemap/0.9';
+export const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>';
 
 export async function buildSitemapXml(): Promise<string> {
   if (cachedSitemapXml) {
@@ -290,17 +299,17 @@ export async function buildSitemapXml(): Promise<string> {
   const internalDemos = demos.filter((d) => d.href.startsWith('/'));
 
   const urls: string[] = [
-    `  <url><loc>${SITE_BASE}/</loc></url>`,
-    ...docs.map((d) => `  <url><loc>${SITE_BASE}/docs/${d.slug}/</loc></url>`),
-    `  <url><loc>${SITE_BASE}/docs/${CHANGELOG_SLUG}/</loc></url>`,
-    `  <url><loc>${SITE_BASE}/blog/</loc></url>`,
-    ...posts.map((p) => `  <url><loc>${SITE_BASE}/blog/${p.slug}/</loc></url>`),
+    `${SITE_BASE}/`,
+    ...docs.map((d) => `${SITE_BASE}/docs/${d.slug}/`),
+    `${SITE_BASE}/docs/${CHANGELOG_SLUG}/`,
+    `${SITE_BASE}/blog/`,
+    ...posts.map((p) => `${SITE_BASE}/blog/${p.slug}/`),
     // Demo hrefs already carry a trailing slash; trailingSlashIt normalizes to
     // exactly one rather than appending unconditionally (which produced `…/request-id//`).
-    ...internalDemos.map((d) => `  <url><loc>${trailingSlashIt(`${SITE_BASE}${d.href}`)}</loc></url>`),
+    ...internalDemos.map((d) => trailingSlashIt(`${SITE_BASE}${d.href}`)),
   ];
 
-  cachedSitemapXml = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">', ...urls, '</urlset>', ''].join('\n');
+  cachedSitemapXml = `${XML_DECLARATION}\n${Bun.XML.stringify({ urlset: { '@xmlns': SITEMAP_NS, url: urls.map((loc) => ({ loc })) } })}\n`;
   return cachedSitemapXml;
 }
 
@@ -326,24 +335,17 @@ export interface LlmsIndexEntry {
   url: string;
 }
 
-/** The plain-text source URL for a demo, derived from its page href (which ends in '/'). */
+// The plain-text source URL for a demo, derived from its page href (which ends in '/').
 function demoLlmsPath(href: string): string {
   return href.endsWith('/') ? `${href}llms.txt` : `${href}/llms.txt`;
 }
 
 export interface DemoLlmsRoute {
-  /** Route path, sitting alongside the demo page (e.g. /demos/chat/llms.txt, /cookie-vary-test/llms.txt). */
   path: string;
-  /** Demo folder name (the demo's `slug`) used to look up its source. */
   slug: string;
 }
 
-/**
- * Demos with local source, each as the static llms.txt route to register and the
- * `slug` (folder name) behind it. The route is static (not a param) so it outranks
- * demo param routes like /demos/data-loading/:id, and its path tracks the demo's own
- * page href so source and page share a prefix.
- */
+/** Static llms.txt routes for demos with local source, one per `slug` — static (not a param) so it outranks demo param routes like `/demos/data-loading/:id`, and its path tracks the demo's own page href. */
 export function internalDemoLlmsRoutes(): DemoLlmsRoute[] {
   return internalDemos().map((d) => ({ path: demoLlmsPath(d.href), slug: d.slug }));
 }
@@ -402,8 +404,8 @@ export async function buildLlmsJson(origin: string): Promise<{ docs: LlmsIndexEn
 const SITE_NAME = 'Mochi';
 const SITE_SUMMARY = 'Mochi is an SSR-first framework for Svelte 5 on Bun with islands-based selective hydration.';
 
-// Standard llms.txt index: title + summary + linked sections, rendered from the same
-// data as /llms.json. Per-request (origin-dependent), so not cached.
+// Standard llms.txt index (title + summary + linked sections) rendered from the same data
+// as /llms.json; per-request since it's origin-dependent, so not cached.
 export async function buildLlmsIndexTxt(origin: string): Promise<string> {
   const { docs, posts, demos } = await buildLlmsJson(origin);
   const link = (e: LlmsIndexEntry) => `- [${e.title}](${e.url}): ${e.description}`;

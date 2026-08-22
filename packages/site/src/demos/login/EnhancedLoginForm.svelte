@@ -44,8 +44,7 @@
 {#if currentUser}
   <div class="signed-in">
     <p>Signed in as <strong>{currentUser}</strong>.{hydratable ? ' No page reloads happened on the way here.' : ''}</p>
-    <!-- The default fallback handles redirect by calling window.location.assign,
-         which works fine for logout. No callback needed. -->
+    <!-- No callback needed — the default redirect fallback (window.location.assign) already handles logout. -->
     <form method="POST" action="?/logout" {@attach enhance()}>
       <button type="submit">Log out</button>
     </form>

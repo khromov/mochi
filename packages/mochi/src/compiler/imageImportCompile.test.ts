@@ -53,8 +53,11 @@ describe('local image import through the compiler', () => {
   test('round-trips through toManifest / fromManifest and repopulates the global registry', async () => {
     const manifest = registry.toManifest();
     expect(manifest.localImageAssets).toBeDefined();
-    const [url] = Object.keys(manifest.localImageAssets!);
-    expect(url).toBeDefined();
+    const keys = Object.keys(manifest.localImageAssets!);
+    expect(keys.length).toBe(1);
+    const [url] = keys;
+    expect(url).toMatch(/^\/_mochi\/asset\/hero-[a-z0-9]+\.png$/);
+    expect(registry.getLocalImageAssets().has(url!)).toBe(true);
 
     const manifestPath = path.join(outDir, 'manifest.json');
     writeFileSync(manifestPath, JSON.stringify(manifest));
@@ -64,7 +67,12 @@ describe('local image import through the compiler', () => {
     expect(getLocalImageAsset(url!)).toBeUndefined();
 
     const restored = await ComponentRegistry.fromManifest(manifestPath, false);
-    expect(restored.getLocalImageAssets().has(url!)).toBe(true);
+    const restoredAsset = restored.getLocalImageAssets().get(url!);
+    expect(restoredAsset).toBeDefined();
+    expect(restoredAsset!.width).toBe(48);
+    expect(restoredAsset!.height).toBe(24);
+    expect(restoredAsset!.format).toBe('png');
+    expect(restoredAsset!.contentType).toBe('image/png');
     const info = getLocalImageAsset(url!);
     expect(info).toBeDefined();
     expect(info!.contentType).toBe('image/png');

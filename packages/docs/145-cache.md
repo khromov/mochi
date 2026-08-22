@@ -1,17 +1,24 @@
 ---
 title: 'Cache'
 slug: cache
+ogTitle: 'Caching with stale-while-revalidate'
 description: 'Cache server-side data with stale-while-revalidate semantics using MochiCache.'
 ---
 
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
+  import PersistenceTable from './_components/PersistenceTable.svelte';
 </script>
 
 ## Cache
 
-`MochiCache` caches server-side data — typically slow upstream API calls — with stale-while-revalidate semantics. Construct once at module scope and share the instance across requests.
+<VersionNote since="0.8.0" href="/blog/mochi-0-8-0/" />
+
+`MochiCache` caches server-side data — typically slow upstream API calls — with stale-while-revalidate semantics. Construct it once at module scope and share the instance across requests.
+
+<PersistenceTable feature="cache" />
 
 ```ts
 // src/lib/cache.ts
@@ -41,14 +48,41 @@ Use it from a page or API route:
 
 <Callout type="warning">
 
-**Caches are shared in-process.** Every request reads from the same `Map`, so a key like `cart:current` will leak one user's data to another. Prefix per-user keys with the user id — e.g. `` `cart:${userId}` `` — and do the same for any other request-scoped dimension (tenant, locale, role).
+**A cache is shared across requests in one process.** So a key like `cart:current` leaks one user's data to another. Prefix per-user keys with the user id, for example `cart:${userId}`, and do the same for any other request-scoped dimension (tenant, locale, role).
 
 </Callout>
 
-### Behaviour
+### Caching expensive serverProps
+
+A page's latency is usually dominated by its data loading, not the render — so `serverProps` resolvers are the highest-leverage place to cache. Construct a `MochiCache` at module scope and wrap the slow call in `fetch()`, keyed per route params:
+
+```ts
+// file: src/index.ts
+import { Mochi, MochiCache } from 'mochi-framework';
+import { loadPokemon } from './lib/pokemon';
+
+const pokemonCache = new MochiCache({
+  minTimeToStale: 10_000, // serve fresh for 10s
+  maxTimeToLive: 300_000, // hard expiry at 5min
+});
+
+await Mochi.serve({
+  routes: {
+    '/pokemon/:id': Mochi.page('./src/Pokemon.svelte', {
+      serverProps: async (_req, params) => ({
+        pokemon: await pokemonCache.fetch(`pokemon:${params.id}`, () => loadPokemon(params.id)),
+      }),
+    }),
+  },
+});
+```
+
+The first request per key pays the load; later requests follow the fresh / stale / expired lifecycle below. Everything that shapes the result must be in the key — route params as above, plus any cookie- or locals-derived dimension per the warning above.
+
+### Behavior
 
 - **Fresh** (within `minTimeToStale`): cached value returned, no fetch.
-- **Stale** (between `minTimeToStale` and `maxTimeToLive`): cached value returned immediately, fetch runs in the background and updates the cache.
+- **Stale** (between `minTimeToStale` and `maxTimeToLive`): cached value returned at once, fetch runs in the background and updates the cache.
 - **Expired** (past `maxTimeToLive`): fetch runs synchronously and the caller waits.
 
 ### API
@@ -62,14 +96,31 @@ Use it from a page or API route:
 | `markStale(key)`           | `Promise<void>`                      |
 | `delete(key)`              | `Promise<void>`                      |
 | `clearItems()`             | `Promise<void>`                      |
+| `whenIdle()`               | `Promise<void>`                      |
 
-`clearItems()` empties the whole cache in one call.
+`peek(key)` reports a key's `status` and value **without** running `fn`, revalidating, or emitting `cache:read` — a pure probe that returns `null` on a miss. `markStale(key)` backdates an entry so its next read serves stale-while-revalidate. It is a no-op on a missing or already-stale key, and it never freshens or un-expires one. Both run through the `storage` interface, so they apply to any backend. `set(key, value)` writes a value directly, stamped fresh. Prefer `set` over `delete(key)` then `fetch`: that sequence leaves the key absent, so concurrent readers each start their own recompute.
 
-`peek(key)` reports a key's current `status` and value **without** running `fn`, revalidating, or emitting `cache:read` — a pure probe (returns `null` on a miss). `markStale(key)` backdates an entry so its next read is served stale-while-revalidate; it's a no-op on a missing or already-stale key and never freshens or un-expires one. Both work through the `storage` interface, so they apply to any backend.
+`status` is `'fresh' | 'stale' | 'expired' | 'miss'`.
 
-`set(key, value)` writes a value directly, stamped fresh, overwriting whatever is there — the counterpart to `fetch`, which only computes on a miss or stale read and so can't replace a still-present entry. Reach for it instead of `delete(key)` followed by `fetch`: that sequence leaves the key absent for the whole write, and concurrent readers hitting that gap each start their own recompute.
+#### Waiting for background revalidations
 
-`status` is `'fresh' \| 'stale' \| 'expired' \| 'miss'`.
+<VersionNote since="0.10.0" message="whenIdle() was added in 0.10.0." />
+
+A stale read returns at once and refreshes in the background, so the new value is not readable when `fetch` resolves. `whenIdle()` waits for those background runs to finish — including the storage write, not just the upstream call — which is what you want before shutting down, or in a test that asserts on the refreshed value.
+
+```ts
+const stale = await cache.fetchWithStatus('users', loadUsers); // 'stale', old value
+await cache.whenIdle();
+const fresh = await cache.fetchWithStatus('users', loadUsers); // 'fresh', new value
+```
+
+<Callout type="warning">
+
+`whenIdle()` waits for whatever is in flight, so on a busy cache it keeps waiting as new revalidations start. Treat it as a shutdown or test primitive — don't await it on a request path.
+
+</Callout>
+
+A run that throws settles it like any other, so a failing upstream can't leave it hanging. `ImageCache` exposes the same method for its own regenerations.
 
 ### Options
 
@@ -77,17 +128,19 @@ Use it from a page or API route:
 | ---------------- | ----------------- |
 | `minTimeToStale` | `5_000` (5s)      |
 | `maxTimeToLive`  | `600_000` (10min) |
-| `storage`        | in-memory `Map`   |
-| `serialize`      | identity          |
-| `deserialize`    | identity          |
+| `storage`        | `MemoryStorage`   |
+| `serialize`      | none (`v => v`)   |
+| `deserialize`    | none (`v => v`)   |
 
-For multi-process or persistent caching, pass a custom `storage` that implements `getItem` / `setItem` / `removeItem` / `clear` (e.g. Redis, SQLite via `bun:sqlite`). These methods may be synchronous (in-memory `Map`, `bun:sqlite`) or `async` / Promise-returning (Redis, network stores) — the cache awaits every call. Each key holds a single entry (the value plus its write time). When a backend needs a string or buffer — like Redis — supply `serialize` / `deserialize` to encode and decode that entry, e.g. `serialize: JSON.stringify, deserialize: JSON.parse`.
+Two storage backends ship with the framework: `MemoryStorage` (the default) and `FileStorage`. Built-in SQLite and Postgres backends are planned; until then any other backend — SQLite, Postgres, Redis — needs a `storage` you write yourself, implementing `getItem` / `setItem` / `removeItem` / `clear`. Those methods may be synchronous or `async`. The cache awaits every call. When a backend needs a string or buffer, supply `serialize` / `deserialize` — for example `serialize: JSON.stringify, deserialize: JSON.parse`.
 
-The default `MemoryStorage` accepts `{ maxAge, purgeInterval }` for age-based eviction, mirroring `FileStorage` below — `new MemoryStorage({ maxAge: 300_000, purgeInterval: 60_000 })`. With no options it never evicts (the prior, still-default behavior).
+The default `MemoryStorage` accepts `{ maxAge, purgeInterval }` for age-based eviction. With no options it never evicts.
+
+See [Persistence](/docs/persistence/) for how cache storage compares to the other stateful subsystems.
 
 ### File-based storage
 
-`FileStorage` persists each entry as a JSON file on disk, so the cache survives restarts. It's turnkey — no `serialize` / `deserialize` needed:
+`FileStorage` persists the cache to disk, so it survives restarts — the only built-in persistent backend (see [Persistence](/docs/persistence/)). It needs no `serialize` / `deserialize`:
 
 ```ts
 import { MochiCache, FileStorage } from 'mochi-framework';
@@ -102,9 +155,9 @@ export const pokemonCache = new MochiCache({
 });
 ```
 
-Stale-while-revalidate works exactly as with in-memory storage — the entry's write time lives inside the file. A background sweep runs on an interval to delete expired files (there's no read-time eviction otherwise), and `purgeOnInit` empties the directory on startup.
+A background sweep deletes expired files on an interval. `purgeOnInit` empties the directory on startup.
 
-Binary fields (`Uint8Array` / `Buffer`) anywhere in a value round-trip transparently — by default they're inlined as base64 in the JSON and come back as `Uint8Array`, nothing to manage. For values carrying large binaries, opt into `offloadBinary: true`: each binary is written to its own file in a `<key-hash>/` folder and replaced by a pointer in the JSON instead of base64-bloating it. Offloaded fields read back as lazy blob references — resolve one with `readBlobRef(ref)` (`isBlobRef(value)` narrows) — so a metadata read never loads the bytes. Deleting a key removes its blob folder with it, and pointers already on disk always decode, so flipping the flag never orphans existing entries. The built-in [image cache](/docs/images/) enables offloading internally.
+Binary fields (`Uint8Array` / `Buffer`) anywhere in a value round-trip transparently. By default Mochi inlines them as base64 in the JSON and returns them as `Uint8Array`. When values carry large binaries, set `offloadBinary: true`: Mochi writes each binary to its own file in a `<key-hash>/` folder and puts a pointer in the JSON instead of base64. An offloaded field reads back as a lazy blob reference, so a metadata read never loads the bytes. Resolve one with `readBlobRef(ref)`, and narrow a value with `isBlobRef(value)`. Deleting a key also removes its blob folder. Pointers already on disk always decode, so the flag never orphans existing entries. The built-in [image cache](/docs/images/) enables offloading internally.
 
 | Option          | Default           |                                                                            |
 | --------------- | ----------------- | -------------------------------------------------------------------------- |
@@ -114,38 +167,68 @@ Binary fields (`Uint8Array` / `Buffer`) anywhere in a value round-trip transpare
 | `maxAge`        | `600_000` (10min) | Files older than this are deleted by the sweep.                            |
 | `offloadBinary` | `false`           | Offload binary fields to per-key blob files, read back as lazy `BlobRef`s. |
 
-Only one background sweeper runs per cache directory per process. Constructing another `FileStorage` on the same directory transfers the sweep to the newest instance (and with it that instance's `maxAge`), so a dev-server reload that re-runs your module never stacks up duplicate sweepers. Ownership never moves back: `dispose()` on the newest instance ends the sweep for that directory even if an older instance is still in use.
+Only one background sweeper runs per cache directory per process. A new `FileStorage` on the same directory transfers the sweep to the newest instance, and with it that instance's `maxAge`, so a dev-server reload that re-runs your module never stacks up duplicate sweepers. Ownership never moves back: `dispose()` on the newest instance ends the sweep for that directory, even if an older instance is still in use.
 
 <Callout type="warning">
 
-**Keep `maxAge` at or above `maxTimeToLive`.** The sweep deletes files past `maxAge` — set it lower and the sweeper would remove entries the cache still wants to serve stale, turning a fast stale read into a blocking recompute. Values must be JSON-serializable (no `Date`, `Map`, `BigInt`, or `undefined` round-trip).
+**Keep `maxAge` at or above `maxTimeToLive`.** The sweep deletes files past `maxAge`. Set it lower and the sweeper removes entries the cache still wants to serve stale, turning a fast stale read into a blocking recompute. Values must be JSON-serializable (no `Date`, `Map`, `BigInt`, or `undefined` round-trip).
 
 </Callout>
 
 <Callout type="warning">
 
-**In-flight de-duplication is per-server.** Concurrent calls for the same key on one instance share a single `fn` invocation, but that coordination lives in process memory. With multiple instances behind a shared backend (`bun:sqlite`, Redis), each instance de-duplicates only its own requests — so on a cold key, every instance may run `fn` once and race to write the same entry. The shared store keeps results consistent; it does not collapse the concurrent fetches into one.
+**In-flight de-duplication is per-server.** Concurrent calls for the same key on one instance share a single `fn` invocation. With multiple instances behind a shared backend, each instance de-duplicates only its own requests, so on a cold key every instance may run `fn` once and race to write the same entry. The shared store keeps results consistent.
 
 </Callout>
 
-If a `storage` call throws, the cache degrades instead of failing the request: a read error recomputes via `fn` (reported as a `miss`), a write error returns the freshly computed value uncached, and a `delete` error is re-thrown to the caller. Every case also emits a `cache:error` event.
+If a `storage` call throws, the cache degrades instead of failing the request: a read error recomputes via `fn` (reported as a `miss`), a write error returns the freshly computed value uncached, and a `delete` error is re-thrown to the caller. Every case emits a `cache:error` event.
 
 ### Subscribing to cache events
 
 `MochiCache` emits these events on `mochiEvents`:
 
-| Event                     | Payload                     | When                                                         |
-| ------------------------- | --------------------------- | ------------------------------------------------------------ |
-| `cache:read`              | `{ key, status }`           | Every cache lookup, regardless of which method ran.          |
-| `cache:revalidate`        | `{ key }`                   | A background refetch starts (stale read).                    |
-| `cache:delete`            | `{ key }`                   | A key was removed via `delete(key)`.                         |
-| `cache:sweep`             | `{ removed, durationMs }`   | A `FileStorage` background sweep deleted expired files.      |
-| `cache:revalidate:failed` | `{ key, error }`            | A background refetch threw; the stale value is still served. |
-| `cache:error`             | `{ key, operation, error }` | A `storage` `get` / `set` / `remove` call threw.             |
+| Event                     | Payload                                  | When                                                               |
+| ------------------------- | ---------------------------------------- | ------------------------------------------------------------------ |
+| `cache:read`              | `{ key, status }`                        | Every cache lookup.                                                |
+| `cache:revalidate`        | `{ key }`                                | A background refetch starts (stale read).                          |
+| `cache:delete`            | `{ key }`                                | A key was removed via `delete(key)`.                               |
+| `cache:sweep`             | `{ removed, durationMs }`                | A `FileStorage` background sweep deleted expired files.            |
+| `cache:pressure`          | `{ level, removed, caches, durationMs }` | The OS reported low memory and Mochi drained its in-memory caches. |
+| `cache:revalidate:failed` | `{ key, error }`                         | A background refetch threw; the stale value is still served.       |
+| `cache:error`             | `{ key, operation, error }`              | A `storage` `get` / `set` / `remove` call threw.                   |
 
-`consoleLogger()` surfaces `cache:revalidate:failed` and `cache:error` as warnings — a silently degrading upstream or storage backend is otherwise invisible.
+### Memory pressure
 
-`status` is `'fresh' \| 'stale' \| 'expired' \| 'miss'`. Use `mochiEvents.setHandler` to attach a custom subscriber — it replaces a prior handler under the same name, so dev re-imports don't pile up listeners:
+<VersionNote since="0.10.0" message="Memory-pressure cache draining (and the memoryPressure serve option) ships in the next Mochi release (0.10.0). This section describes the upcoming API." />
+
+When the operating system runs low on memory, Bun raises `process.on("memoryPressure")` and Mochi drains every
+in-memory cache before the kernel starts killing processes. `'critical'` (all platforms) clears them outright;
+`'warning'` (macOS only) drops just the aged-out entries, so a store without `maxAge` keeps everything. Each response
+emits one `cache:pressure` event and one `consoleLogger()` warning.
+
+Only `MemoryStorage` participates — it is the backend that holds bytes in RAM. `FileStorage` is disk-backed, so
+dropping it would not help. Turn the whole thing off with `Mochi.serve({ memoryPressure: false })`.
+
+Reclamation runs in production only. In development (`development: true`) it is always disabled — the compile-heavy
+boot hair-triggers the OS signal (Linux reports only `'critical'`), so the reclaim would be a spurious no-op.
+
+The raw signal is also broadcast as a `memory:pressure` event (payload `{ level }`) the moment it arrives, before the
+cache drain. Subscribe to reclaim resources Mochi doesn't own — idle connection pools, worker queues, your own maps:
+
+```ts
+import { mochiEvents } from 'mochi-framework';
+
+mochiEvents.on('memory:pressure', ({ level }) => {
+  if (level === 'critical') pool.drainIdle();
+});
+```
+
+```ts
+// file: src/index.ts
+await Mochi.serve({ memoryPressure: false, routes });
+```
+
+`consoleLogger()` surfaces `cache:revalidate:failed` and `cache:error` as warnings. Use `mochiEvents.setHandler` to attach a custom subscriber — it replaces a prior handler under the same name, so dev re-imports do not pile up listeners:
 
 ```ts
 import { mochiEvents } from 'mochi-framework';
@@ -155,23 +238,15 @@ mochiEvents.setHandler('metrics:cache-read', 'cache:read', ({ key, status }) => 
 });
 ```
 
-`consoleLogger()` already prints `cache:revalidate` lines by default. Pass `{ cache: 'verbose' }` to also print every read, or `{ cache: false }` to silence cache logging:
-
-```ts
-import { consoleLogger } from 'mochi-framework';
-
-consoleLogger({ cache: 'verbose' });
-```
-
-See the [Cache Events demo](/demos/cache-events/) for a working example that pipes events into an in-memory ring buffer and renders them on the page.
+`consoleLogger()` prints `cache:revalidate` lines by default. Pass `{ cache: 'verbose' }` to print every read, or `{ cache: false }` to silence cache logging.
 
 ### Per-request memoization
 
-`MochiCache` is process-wide and outlives the request. To collapse repeated work _within_ a single render — the same lookup called from ten components — reach for the [request cache](/docs/request-cache/) instead, which needs no TTL because entries die with the request.
+`MochiCache` is process-wide and outlives the request. To collapse repeated work **within** a single render, use the [request cache](/docs/request-cache/) instead. It needs no TTL because entries die with the request.
 
 ### Server-only
 
-`MochiCache` lives on the server. Importing it into a hydratable island throws — caches are shared per-process state and don't make sense in the browser. Construct cache instances in `.ts` modules or page-route scripts, never inside a `mochi:hydrate` component.
+`MochiCache` lives on the server. Importing it into a hydratable island throws. Construct cache instances in `.ts` modules or page-route scripts, never inside a `mochi:hydrate` component.
 
 <SeeItInAction
 demos={[
