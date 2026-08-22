@@ -11,7 +11,7 @@ import { routes, queues } from './routes';
 // the actual router — this is what catches collisions like /demos/data-loading/:id
 // shadowing /demos/data-loading/llms.txt.
 describe('per-demo llms.txt routes', () => {
-  let server: Server<undefined>;
+  let server: Server<undefined> | undefined;
   let outDir: string;
   let base: string;
 
@@ -31,15 +31,9 @@ describe('per-demo llms.txt routes', () => {
       }
       return realFetch(input as never, init as never);
     }) as typeof fetch;
-    // This test boots the whole site with an in-process compile, which imports a
-    // local image (the Image demo's `hero.jpg`). The build-time image loader
-    // probes intrinsic dimensions with `new Bun.Image().metadata()` — a native
-    // decode. Run *inside* a `Bun.build` pass under the `bun test` runtime, that
-    // decode can trip the Bun bundler bug worked around in bunfig.toml, in the
-    // next pass (the client bundle). Real `bun run` builds (dev +
-    // `mochi-framework build`) are unaffected, so we only need to neutralize the
-    // native decode here: stub `Bun.Image` with a metadata-only fake (this test
-    // never inspects image dimensions), restored in `afterAll`.
+    // The build-time image loader's native `Bun.Image().metadata()` decode can trip the
+    // Bun bundler bug worked around in bunfig.toml when this test's in-process compile
+    // runs a nested `Bun.build` pass; stub it with a metadata-only fake, restored in `afterAll`.
     // @ts-expect-error minimal metadata-only stub, not the full Bun.Image type
     Bun.Image = class {
       constructor(_bytes: unknown) {}
@@ -58,12 +52,16 @@ describe('per-demo llms.txt routes', () => {
       queues,
     });
     base = `http://localhost:${server.port}`;
-  });
+    // No prebuilt manifest here, so this boot compiles every component in the site — ~26s and
+    // growing with the route table, against bun test's 30s default. Kept under the 240s per-file
+    // kill in scripts/run-tests.ts so a real hang still reports as a hook timeout, not a SIGKILL.
+  }, 120_000);
 
   afterAll(() => {
     Bun.Image = realBunImage;
     globalThis.fetch = realFetch;
-    server.stop(true);
+    // Guarded: if `beforeAll` failed, an unconditional stop() throws and buries the real error.
+    server?.stop(true);
     rmSync(outDir, { recursive: true, force: true });
   });
 

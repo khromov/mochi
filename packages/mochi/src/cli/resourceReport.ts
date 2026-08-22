@@ -3,6 +3,7 @@ import path from 'node:path';
 import { styleText } from 'node:util';
 import prettyBytes from '../vendor/pretty-bytes';
 import type { LocalImageAsset } from '../image/types';
+import { toPosixPath } from '../utils';
 
 export interface ResourceRow {
   /** Emitted (content-hashed) filename, as written under the build output directory. */
@@ -10,8 +11,10 @@ export interface ResourceRow {
   /** Optional second column — image dimensions today; omitted for rows that have none. */
   detail?: string;
   bytes: number;
-  /** Overrides the section glyph — marks a row that stands for many files. */
+  /** Overrides the section glyph — marks a row that stands for many files, or a kind of its own. */
   glyph?: string;
+  /** Overrides the section colour, so a kind sharing a section still reads as itself. */
+  color?: Parameters<typeof styleText>[0];
   /** Number of files this row stands for. Set only on aggregate rows. */
   files?: number;
 }
@@ -35,6 +38,20 @@ export function collectImageResources(assets: Iterable<LocalImageAsset>): Resour
     rows.push({ name: path.basename(asset.diskPath), detail: `${asset.width}×${asset.height}`, bytes: sizeOnDisk(asset.diskPath) });
   }
   return sortRows(rows);
+}
+
+/** Rows for fonts extracted from imported CSS, sharing the images' section. */
+export function collectFontResources(fonts: Iterable<{ diskPath: string }>): ResourceRow[] {
+  const rows: ResourceRow[] = [];
+  for (const font of fonts) {
+    rows.push({ name: path.basename(font.diskPath), detail: '—', bytes: sizeOnDisk(font.diskPath), glyph: 'ƒ', color: 'magenta' });
+  }
+  return sortRows(rows);
+}
+
+/** One largest-first list across resource kinds, so the section reads as a single table. */
+export function mergeResourceRows(...groups: ResourceRow[][]): ResourceRow[] {
+  return sortRows(groups.flat());
 }
 
 /** One row standing in for many files, so a long tail of small outputs stays one line. */
@@ -154,10 +171,10 @@ export function printResourceSection(header: string, rows: ResourceRow[], opts: 
 
   const n = rows.length;
   for (let i = 0; i < n; i++) {
-    const { name, detail, glyph } = rows[i]!;
+    const { name, detail, glyph, color } = rows[i]!;
     const char = styleText('dim', n === 1 ? '─' : i === 0 ? '┌' : i === n - 1 ? '└' : '├');
     const detailText = showDetail ? styleText('dim', detailCol(detail ?? '')) : '';
-    console.log(`  ${char} ${styleText(opts.color, glyph ?? opts.glyph)} ${name.padEnd(nameWidth + 2)}${detailText}  ${styleText('dim', sizes[i]!.padStart(sizeWidth))}`);
+    console.log(`  ${char} ${styleText(color ?? opts.color, glyph ?? opts.glyph)} ${name.padEnd(nameWidth + 2)}${detailText}  ${styleText('dim', sizes[i]!.padStart(sizeWidth))}`);
   }
 
   const total = rows.reduce((sum, r) => sum + r.bytes, 0);
@@ -177,5 +194,7 @@ export function printStaticSummary(publicDir: string, count: number, bytes: numb
   }
   console.log('');
   console.log(styleText('dim', `      Static files`));
-  console.log(`  ${styleText('dim', '─')} ${styleText('blue', '▢')} ${publicDir}  ${styleText('dim', `${count} file${count === 1 ? '' : 's'} · ${prettyBytes(bytes)}`)}`);
+  console.log(
+    `  ${styleText('dim', '─')} ${styleText('blue', '▢')} ${toPosixPath(publicDir)}  ${styleText('dim', `${count} file${count === 1 ? '' : 's'} · ${prettyBytes(bytes)}`)}`,
+  );
 }

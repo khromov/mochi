@@ -2,6 +2,7 @@
 /// <reference path="../negotiator.d.ts" />
 import type { Server } from 'bun';
 import Negotiator from 'negotiator';
+import { STATUS_CODES } from 'node:http';
 import path from 'node:path';
 import type { MochiCompileErrorLog } from '../events';
 import type { BunRouteValue } from '../types';
@@ -25,16 +26,31 @@ export function relForDisplay(p: string): string {
   return toPosixPath(path.relative(process.cwd(), p));
 }
 
-export type CompressionMethod = 'gzip' | 'brotli';
+/** Absolutize a Bun plugin `onResolve` specifier against its importer's directory. */
+export function resolveArgsPath(args: { path: string; resolveDir?: string }): string {
+  return args.resolveDir ? path.resolve(args.resolveDir, args.path) : path.resolve(args.path);
+}
 
-export const COMPRESSION_TOKEN: Record<CompressionMethod, 'gzip' | 'br'> = { gzip: 'gzip', brotli: 'br' };
+// TODO: restore 'brotli' once Bun's CompressionStream accepts a quality level — it is fixed at 11, far too slow for
+// per-request SSR, and we've standardized on the single streaming CompressionStream API (zstd covers brotli-class ratios).
+export type CompressionMethod = 'gzip' | 'zstd' | 'deflate';
+
+/** Internal method name to the `Content-Encoding` token that goes on the wire. */
+export const COMPRESSION_TOKEN: Record<CompressionMethod, 'gzip' | 'zstd' | 'deflate'> = { gzip: 'gzip', zstd: 'zstd', deflate: 'deflate' };
+
+/** Bun accepts zstd on top of the three formats the Web-standard `CompressionFormat` type lists. */
+export type CompressionStreamFormat = CompressionFormat | 'zstd';
+
+export const COMPRESSION_FORMAT: Record<CompressionMethod, CompressionStreamFormat> = { gzip: 'gzip', zstd: 'zstd', deflate: 'deflate' };
 
 // `methods` is the server's allowlist (and tiebreak order for `*`); the client's
 // header preference (order + q-values) decides among configured methods.
 export function negotiateEncoding(acceptEncoding: string, methods: CompressionMethod[]): CompressionMethod | null {
-  const tokens = methods.map((m) => COMPRESSION_TOKEN[m]);
-  const best = new Negotiator({ headers: { 'accept-encoding': acceptEncoding } }).encodings(tokens)[0];
-  return methods.find((m) => COMPRESSION_TOKEN[m] === best) ?? null;
+  // A method this build no longer supports ('brotli', from a config written against an older release) has no token, and
+  // negotiator dereferences whatever it is handed — drop it so the request degrades to the remaining methods.
+  const supported = methods.filter((m) => COMPRESSION_TOKEN[m]);
+  const best = new Negotiator({ headers: { 'accept-encoding': acceptEncoding } }).encodings(supported.map((m) => COMPRESSION_TOKEN[m]))[0];
+  return supported.find((m) => COMPRESSION_TOKEN[m] === best) ?? null;
 }
 
 /** Create a JSON response. */
@@ -58,15 +74,19 @@ export function json(
   });
 }
 
-/** Throws an error the framework catches and turns into a JSON error response. */
-export function error(status: number, message: string): never {
+export function httpStatusText(status: number): string {
+  return STATUS_CODES[status] ?? `Error ${status}`;
+}
+
+/** Throws an error the framework catches and turns into a JSON error response. Omitting `message` uses the canonical status text. */
+export function error(status: number, message?: string): never {
   throw new MochiHttpError(status, message);
 }
 
 export class MochiHttpError extends Error {
   status: number;
-  constructor(status: number, message: string) {
-    super(message);
+  constructor(status: number, message?: string) {
+    super(message ?? httpStatusText(status));
     this.status = status;
   }
 }
@@ -153,6 +173,14 @@ export function cssLinkTag(url: string): string {
   return `<link rel="stylesheet" href="${url}">`;
 }
 
+/** Guards against a many-subset font package turning the preload hint into unconditional downloads of every subset. */
+export const FONT_PRELOAD_MAX = 8;
+
+// `crossorigin` is mandatory: font requests are CORS-mode even same-origin, and a mode mismatch double-fetches.
+export function fontPreloadTag(url: string): string {
+  return `<link rel="preload" as="font" type="font/woff2" href="${url}" crossorigin>`;
+}
+
 /**
  * Test whether an HTML comment's text is a Svelte SSR hydration marker. `text` must be the comment's inner bytes, with
  * the surrounding `<!--` `-->` already stripped by the caller, since the patterns below assume it.
@@ -183,30 +211,24 @@ export function normalizeIslandHydrationMarkers(html: string): string {
 /**
  * Strip Svelte SSR hydration markers from HTML while preserving them inside `<mochi-hydratable-island>` and
  * `<mochi-server-island>` blocks, parsing through Bun's HTMLRewriter so element nesting is tracked properly.
- *
- * NOTE(bun<1.4.0): the obvious `el.onEndTag(() => islandDepth--)` depth counter leaks the request's `AsyncLocalStorage`
- * frame — and with it the whole request — for the life of the process on Bun 1.3.x. Island-internal comments are flagged
- * through an element-scoped `comments` handler instead, which lol-html invokes immediately before the document handler
- * for the same comment. Revert to the depth counter once the minimum supported Bun is >= 1.4.0.
  */
 export function stripHydrationMarkers(html: string): string {
-  let insideIsland = false;
-  const markInside = {
-    comments() {
-      insideIsland = true;
+  let islandDepth = 0;
+  const trackIsland = {
+    element(el: HTMLRewriterTypes.Element) {
+      islandDepth++;
+      el.onEndTag(() => {
+        islandDepth--;
+      });
     },
   };
 
   return new HTMLRewriter()
-    .on('mochi-hydratable-island', markInside)
-    .on('mochi-server-island', markInside)
+    .on('mochi-hydratable-island', trackIsland)
+    .on('mochi-server-island', trackIsland)
     .onDocument({
       comments(comment) {
-        if (insideIsland) {
-          insideIsland = false;
-          return;
-        }
-        if (isSvelteMarker(comment.text)) {
+        if (islandDepth === 0 && isSvelteMarker(comment.text)) {
           comment.remove();
         }
       },

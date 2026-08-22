@@ -1,4 +1,3 @@
-// Shared rendering pipeline: load fonts, satori markup -> SVG (+ grain) -> PNG.
 import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
 import { buildFrame } from './frame';
@@ -18,7 +17,6 @@ export async function loadFonts(): Promise<Font[]> {
   ];
 }
 
-// Overlay a faint monochrome noise texture on the gradient backdrop (the hero look).
 function injectNoise(svg: string): string {
   const filter = `<filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch" result="n"/><feColorMatrix in="n" type="saturate" values="0" result="m"/><feComponentTransfer in="m" result="f"><feFuncA type="linear" slope="0.05"/></feComponentTransfer><feBlend mode="overlay" in="SourceGraphic" in2="f"/></filter>`;
   if (svg.includes('</defs>')) {

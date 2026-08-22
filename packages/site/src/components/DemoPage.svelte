@@ -12,16 +12,19 @@
 
   const docsNav = await buildDocsNav();
 
-  // Internal demos expose their source next to the demo page at `${href}llms.txt`,
-  // matching the /llms.json index derivation.
+  // Internal demos expose their source next to the demo page at `${href}llms.txt`.
   const current = demos.find((d) => d.title === title);
   const demoHref = current?.href.startsWith('/') ? current.href : undefined;
 
-  // Match by URL, not title — a demo page's heading can differ from its registry
-  // title (e.g. queue), and some demos route to sub-paths (e.g. data-loading →
-  // /pikachu). Prefix-match the trailing-slashed href so sub-routes still resolve.
+  // Match by URL, not title — a demo's heading can differ from its registry title,
+  // and some demos route to sub-paths, so prefix-match the trailing-slashed href.
   const sourceDemo = demos.find((d) => d.href.startsWith('/') && url.pathname.startsWith(d.href));
-  const sourcePath = sourceDemo?.slug ? `packages/site/src/demos/${sourceDemo.slug}` : undefined;
+  const sourcePaths = sourceDemo?.sourcePaths ?? (sourceDemo?.slug ? [`packages/site/src/demos/${sourceDemo.slug}`] : []);
+  // Several source folders need disambiguation by path; one alone doesn't.
+  const sourceLinks = sourcePaths.map((path) => ({
+    path,
+    label: sourcePaths.length > 1 ? `View ${path.replace('packages/site/src/', '')}/ on GitHub` : undefined,
+  }));
 
   const moreDemos = demos
     .filter((d) => d.title !== title)
@@ -74,8 +77,12 @@
         {@render children()}
       </div>
       {#if sources && sources.length > 0}
-        {#if sourcePath}
-          <ViewSourceLink path={sourcePath} />
+        {#if sourceLinks.length > 0}
+          <div class="source-links">
+            {#each sourceLinks as link (link.path)}
+              <ViewSourceLink path={link.path} label={link.label} />
+            {/each}
+          </div>
         {/if}
         <CodeViewer {sources} mochi:hydrate />
       {/if}
@@ -217,6 +224,15 @@
     .demo-card {
       padding: 1.5rem;
     }
+  }
+
+  .source-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-self: flex-start;
+    gap: 0.2rem 1rem;
+    /* Pull the links closer to the code viewer below (parent flex uses gap: 1rem). */
+    margin-bottom: -1.25rem;
   }
 
   .card-header {

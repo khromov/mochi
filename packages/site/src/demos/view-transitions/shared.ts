@@ -1,6 +1,5 @@
-// Demo plumbing shared by PageOne/PageTwo so the description and source-tab
-// list aren't duplicated. Hidden from the displayed demo source by
-// stripDemoWrapper, like the inline loadSources call it replaces.
+// Shared by PageOne/PageTwo so the description and source-tab list aren't duplicated;
+// stripDemoWrapper hides this file from the displayed demo source, like the inline loadSources call it replaces.
 import { loadSources } from '../../components/utils.ts';
 import { files } from './files.ts';
 
