@@ -20,7 +20,7 @@ description: 'Slide-to-verify captcha with proof-of-work, replay protection, and
   <figcaption>The widget with no CSS applied — every colour falls back to a built-in default.</figcaption>
 </figure>
 
-`<MochiCaptcha />` is a slide-to-verify widget that gates form submissions without a third-party service or tracker. Mint a challenge in `serverProps`, render the component, verify in the action.
+`<MochiCaptcha />` is a slide-to-verify widget that gates form submissions without a third-party service or tracker. Mint a challenge in `serverProps`, render the component, verify in the action. To gate whole routes instead of forms, the same proof-of-work backs [Protection Mode](/docs/protection/).
 
 <PersistenceTable feature="captcha" />
 

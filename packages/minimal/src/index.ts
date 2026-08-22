@@ -12,6 +12,7 @@ await Mochi.serve({
   },
   routes: {
     '/': Mochi.page('./src/HelloWorld.svelte'),
+    '/health': Mochi.api(() => Response.json({ status: 'ok' })),
   },
 });
 

@@ -16,6 +16,7 @@ import ClipboardPen from '@lucide/svelte/icons/clipboard-pen';
 import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 import ShieldAlert from '@lucide/svelte/icons/shield-alert';
 import ShieldCheck from '@lucide/svelte/icons/shield-check';
+import ShieldEllipsis from '@lucide/svelte/icons/shield-ellipsis';
 import Palette from '@lucide/svelte/icons/palette';
 import Flame from '@lucide/svelte/icons/flame';
 import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
@@ -27,6 +28,7 @@ import OctagonAlert from '@lucide/svelte/icons/octagon-alert';
 import Signpost from '@lucide/svelte/icons/signpost';
 import FileUp from '@lucide/svelte/icons/file-up';
 import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+import RotateCw from '@lucide/svelte/icons/rotate-cw';
 import CircleX from '@lucide/svelte/icons/circle-x';
 import ListTree from '@lucide/svelte/icons/list-tree';
 import FileText from '@lucide/svelte/icons/file-text';
@@ -58,6 +60,8 @@ import TextQuote from '@lucide/svelte/icons/text-quote';
 import FileKey from '@lucide/svelte/icons/file-key';
 import Table from '@lucide/svelte/icons/table';
 import SunMoon from '@lucide/svelte/icons/sun-moon';
+import CalendarClock from '@lucide/svelte/icons/calendar-clock';
+import FolderOpen from '@lucide/svelte/icons/folder-open';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -83,7 +87,10 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Shared State': { icon: Share2, label: 'Shared $state across islands' },
   'Real-time Streams': { icon: AudioWaveform, label: 'WebSocket + SSE streams' },
   'Background jobs with queues': { icon: Inbox, label: 'Embedded job queue + worker' },
+  'Scheduled jobs with cron': { icon: CalendarClock, label: 'Recurring job on a cron schedule' },
+  'Static Directories': { icon: FolderOpen, label: 'Mount a directory tree with staticDirs' },
   'Server Islands': { icon: ComponentIcon, label: 'Deferred server island' },
+  'Invalidate mochi:defer islands': { icon: RotateCw, label: 'Reload a server island on demand' },
   'Client-only Islands': { icon: MonitorSmartphone, label: 'No SSR — mounts in the browser' },
   'Lazy Islands': { icon: Telescope, label: 'Hydrate when visible' },
   'Lazy Server Islands': { icon: Eye, label: 'Fetch server island when visible' },
@@ -101,6 +108,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Form Actions': { icon: ClipboardPen, label: 'Forms with action handlers' },
   'Using form return data': { icon: Dices, label: 'success({ value }) round-trip via {@attach enhance(...)}' },
   Captcha: { icon: ShieldCheck, label: 'Slide-to-verify captcha with proof-of-work' },
+  'Protection Mode': { icon: ShieldEllipsis, label: 'Browser-verification interstitial with an auto-solving captcha' },
   'Captcha Styling': { icon: Palette, label: 'Theming the captcha with CSS custom properties' },
   'Form Errors': { icon: OctagonAlert, label: 'Thrown server errors, inline or full-page' },
   'Form Redirects': { icon: Signpost, label: 'redirect() — intercepted JSON or followed natively' },

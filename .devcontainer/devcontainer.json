@@ -7,7 +7,7 @@
       "CLAUDE_CODE_VERSION": "latest",
       "GIT_DELTA_VERSION": "0.18.2",
       "ZSH_IN_DOCKER_VERSION": "1.2.0",
-      "BUN_VERSION": "1.3.14"
+      "BUN_VERSION": "1.4.0"
     }
   },
   "runArgs": ["--add-host=host.docker.internal:host-gateway", "--privileged"],
@@ -30,7 +30,7 @@
       "onAutoForward": "silent"
     },
     "3337": {
-      "label": "support",
+      "label": "minimal-rsvelte",
       "onAutoForward": "silent"
     },
     "3338": {
@@ -104,9 +104,9 @@
     "127.0.0.1:8008:3334",
     "127.0.0.1:8009:3335",
     "127.0.0.1:8010:3336",
-    "127.0.0.1:8010:3337",
-    "127.0.0.1:8011:3338",
-    "127.0.0.1:8012:3339",
+    "127.0.0.1:8011:3337",
+    "127.0.0.1:8012:3338",
+    "127.0.0.1:8013:3339",
     "127.0.0.1:8045:5432"
   ]
 }

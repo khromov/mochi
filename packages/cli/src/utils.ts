@@ -3,6 +3,43 @@ import fs from 'node:fs';
 
 const MOCHI_FRAMEWORK_FALLBACK = '^0.1.1';
 
+const PRINT_WIDTH = 180;
+
+/** Like `JSON.stringify(value, null, 2)` but with short primitive arrays kept on one line, so generated JSON passes `prettier --check` out of the box. */
+export function stringifyJson(value: unknown): string {
+  return renderJson(value, '', 0) + '\n';
+}
+
+// Hand-rolled because scaffolds run `prettier --check` on this output and `JSON.stringify(…, null, 2)` always expands arrays,
+// while prettier inlines primitive arrays whose whole line fits printWidth — the two must agree (guarded by prettierCompat.test.ts).
+function renderJson(value: unknown, indent: string, prefixWidth: number): string {
+  if (Array.isArray(value)) {
+    // JSON.stringify serializes undefined array elements as null; mirror that.
+    const items = value.map((v) => (v === undefined ? null : v));
+    if (items.length === 0) {
+      return '[]';
+    }
+    if (items.every((v) => v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')) {
+      const inline = `[${items.map((v) => JSON.stringify(v)).join(', ')}]`;
+      // The +1 reserves room for a trailing comma — prettier fits the whole `"key": […],` line into printWidth.
+      if (indent.length + prefixWidth + inline.length + 1 <= PRINT_WIDTH) {
+        return inline;
+      }
+    }
+    const inner = indent + '  ';
+    return `[\n${items.map((v) => inner + renderJson(v, inner, 0)).join(',\n')}\n${indent}]`;
+  }
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).filter(([, v]) => v !== undefined);
+    if (entries.length === 0) {
+      return '{}';
+    }
+    const inner = indent + '  ';
+    return `{\n${entries.map(([k, v]) => `${inner}${JSON.stringify(k)}: ${renderJson(v, inner, JSON.stringify(k).length + 2)}`).join(',\n')}\n${indent}}`;
+  }
+  return JSON.stringify(value);
+}
+
 export function validatePackageName(name: string): string | null {
   if (!name) {
     return 'Package name is required.';
@@ -14,6 +51,15 @@ export function validatePackageName(name: string): string | null {
     return 'Package name must be lowercase and may only contain letters, digits, hyphens, dots, underscores, and tildes (optionally with an `@scope/` prefix).';
   }
   return null;
+}
+
+/** A warning string when `version` (e.g. `Bun.version`) is below the recommended Bun 1.4, else `null`. */
+export function bunVersionWarning(version: string): string | null {
+  const [major, minor] = version.split('.').map((n) => Number.parseInt(n, 10));
+  if (major === undefined || Number.isNaN(major) || major > 1 || (major === 1 && (minor ?? 0) >= 4)) {
+    return null;
+  }
+  return `Bun ${version} detected — create-mochi recommends Bun 1.4 or newer. Run \`bun upgrade\` first.`;
 }
 
 export function isDirEmpty(dir: string): boolean {
@@ -101,7 +147,7 @@ export function transformPackageJson(contents: string, opts: PackageJsonTransfor
     pkg.patchedDependencies = patched;
   }
 
-  return JSON.stringify(pkg, null, 2) + '\n';
+  return stringifyJson(pkg);
 }
 
 // bun's convention makes each patch filename (`svelte-check@4.7.4.patch`) exactly
@@ -129,7 +175,7 @@ export function transformTsconfig(contents: string): string {
       ...(cfg.compilerOptions ?? {}),
     };
   }
-  return JSON.stringify(cfg, null, 2) + '\n';
+  return stringifyJson(cfg);
 }
 
 export function setDefaultPort(contents: string, port: number): string {

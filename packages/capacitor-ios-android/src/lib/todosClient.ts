@@ -10,9 +10,9 @@ export const API_ORIGIN = 'http://localhost:3339';
 // the bundled sample data stands in for a local cache so the UI can show an offline notice instead of nothing.
 export async function fetchTodos(): Promise<{ todos: Todo[]; offline: boolean }> {
   try {
-    // Trailing slash: the web app serves with `trailingSlash: 'always'`, and a cross-origin caller must hit the
-    // canonical URL directly — the 301 a slashless path gets carries no CORS headers.
-    return { todos: await fetchDevalue<Todo[]>(`${API_ORIGIN}/api/todos/`), offline: false };
+    // No trailing slash: `trailingSlash` applies to page routes only, so an API route answers on exactly its declared
+    // pattern — and a cross-origin caller has to hit that canonical URL anyway, since redirects carry no CORS headers.
+    return { todos: await fetchDevalue<Todo[]>(`${API_ORIGIN}/api/todos`), offline: false };
   } catch (err) {
     if (err instanceof MochiFetchError) {
       return { todos: [], offline: false };
@@ -23,7 +23,7 @@ export async function fetchTodos(): Promise<{ todos: Todo[]; offline: boolean }>
 
 export async function fetchTodo(id: number): Promise<{ todo: Todo | null; offline: boolean }> {
   try {
-    return { todo: await fetchDevalue<Todo>(`${API_ORIGIN}/api/todos/${id}/`), offline: false };
+    return { todo: await fetchDevalue<Todo>(`${API_ORIGIN}/api/todos/${id}`), offline: false };
   } catch (err) {
     if (err instanceof MochiFetchError) {
       return { todo: null, offline: false };

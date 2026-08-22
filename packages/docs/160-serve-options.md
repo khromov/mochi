@@ -7,6 +7,7 @@ description: 'Reference for every configuration option on Mochi.serve().'
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Serve options
@@ -61,6 +62,10 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `inlineNestedIslands` — render nested `mochi:defer` islands in-process during an island fetch instead of emitting more client fetches. `mochi:defer:visible` children keep their own fetch; one call site opts out with `mochi:defer={{ inline: false }}`. Default: `true`. See [Server islands](/docs/server-islands/).
 - `logger` — built-in request logger. Default: `{ enabled: true }`.
 - `publicDir` — directory served as static assets. Default: `./public`. Scanned from disk at startup in every mode, so it must ship with a production deploy.
+- `staticDirs` — extra directory trees mounted under a URL prefix. See [Static directories](#static-directories).
+- `memoryPressure` — drain in-memory caches when the OS reports low memory. Default: `true`; always off in development. See [Cache](/docs/cache/#memory-pressure).
+- `cron` — durable scheduled jobs to start with the server, from `Mochi.cron(name, schedule, handler)`. See [Scheduled jobs](/docs/scheduled-jobs/).
+- `cronStorage` — where the cron scheduler stores schedules and jobs. Defaults to `memory`. See [Scheduled jobs](/docs/scheduled-jobs/#storage).
 - `outDir` — base directory for build artifacts and dev cache. Default: `./.mochi`.
 - `assetPrefix` — URL prefix for framework client assets and the server-island endpoint. Must start with `/`, must not be `/` or end with `/`. Default: `/_mochi`.
 - `additionalWatchPaths` — extra dev-mode watcher paths added to `src` and `public`. Default: `[]`.
@@ -69,6 +74,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `svelteConfigPath` — path to a Svelte config file. Default: `./svelte.config.js`. See [Svelte config](/docs/svelte-config/).
 - `svelteCompiler` — which compiler emits component JS. Default: `'svelte'`. `'rsvelte'` needs `@mochi-framework/rsvelte`. See [rsvelte](/docs/rsvelte/).
 - `optimize` — run the whole-program svelte-shaker pass over `.svelte` source before compiling, so the compiler emits less code. **Production only**, and needs `@mochi-framework/svelte-shaker`. `true` shakes everything; `{ enabled, exclude }` gives finer control. Default: `false`. See [Svelte Shaker](/docs/svelte-shaker/).
+- `protection` — Cloudflare-style browser verification: unverified clients get an interstitial that auto-solves the captcha proof-of-work and redeems it for a signed clearance cookie. Default: disabled. See [Protection Mode](/docs/protection/).
 - `csrf` — `MochiCsrfOptions` for the origin-header check. See below.
 - `proxy` — `MochiProxyOptions` for trusted reverse-proxy headers. See below.
 - `hooks` / `filters` — named lifecycle hooks and value filters. See [Extensions](/docs/extensions/).
@@ -78,6 +84,28 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 <Callout type="info">
 
 **Sync `assetPrefix` between build and runtime.** When using a prebuilt manifest, pass `assetPrefix` to the `build()` call (or `--asset-prefix`) so the baked-in URLs match. The manifest's URLs take precedence at runtime if the two disagree.
+
+</Callout>
+
+### Static directories
+
+<VersionNote since="0.10.0" message="staticDirs ships in the next Mochi release (0.10.0). This section describes the upcoming API." />
+
+Mount a directory tree under a URL prefix. Each entry becomes one Bun directory route, so a large tree costs one route rather than one per file, and `Content-Type`, `ETag`, `If-None-Match`, `Range`, `index.html` and sendfile streaming all come from Bun.
+
+```ts
+// file: src/index.ts
+await Mochi.serve({
+  staticDirs: { '/assets': './media' },
+  routes,
+});
+```
+
+This is for **large or generated** trees — a media library, a docs export, a build directory from another tool. For ordinary site assets keep using `publicDir`, which scans and registers each file individually.
+
+<Callout type="warning">
+
+A mount is a native Bun directory route, matched **before** Mochi's request pipeline — so your middleware never sees it. `handle` hooks, `filterResponseHeaders`, `transformPage`, rate limiting, CSRF, trailing-slash normalization and the `request` event all skip `/prefix/*`, and a miss returns Bun's bare 404 rather than your `errorPage`. If you need any of that — auth, custom headers, logging — serve those files through `publicDir` (which can be gated with `protection.protectFiles`) or your own `Mochi.api` / `Mochi.file` route instead.
 
 </Callout>
 
@@ -150,7 +178,7 @@ await Mochi.serve({
 });
 ```
 
-In production, the check refuses every form mutation until `proxy.origin` (or `proxy.hostHeader`) is set, so the deployment break is loud. In development the request is allowed through with a `[mochi]` warning.
+In production, the check refuses every form mutation until `proxy.origin` (or `proxy.hostHeader`) is set, so the deployment break is loud. In development the request is allowed through with a `[mochi]` warning. Routes declaring form `actions` without either option also warn once at boot — in both modes — so the misconfiguration is visible before deploy, not first discovered as a production 403.
 
 ### Proxy
 

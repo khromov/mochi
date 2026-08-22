@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveMochiVersionRange, setDefaultPort, transformPackageJson, transformTsconfig, validatePackageName } from './utils.ts';
+import { bunVersionWarning, resolveMochiVersionRange, setDefaultPort, stringifyJson, transformPackageJson, transformTsconfig, validatePackageName } from './utils.ts';
 
 /** A scaffold dir whose `patches/` folder holds the given `name@version.patch` files (none → no `patches/` dir). */
 function scaffoldDir(patchFiles: string[] = []): string {
@@ -16,6 +16,25 @@ function scaffoldDir(patchFiles: string[] = []): string {
   }
   return dir;
 }
+
+describe('bunVersionWarning', () => {
+  test('warns below the recommended Bun 1.4', () => {
+    expect(bunVersionWarning('1.3.14')).toContain('1.4');
+    expect(bunVersionWarning('1.0.0')).toContain('1.4');
+    expect(bunVersionWarning('0.8.1')).toContain('1.4');
+  });
+
+  test('stays quiet on 1.4 and newer', () => {
+    expect(bunVersionWarning('1.4.0')).toBeNull();
+    expect(bunVersionWarning('1.4.2')).toBeNull();
+    expect(bunVersionWarning('1.10.0')).toBeNull();
+    expect(bunVersionWarning('2.0.0')).toBeNull();
+  });
+
+  test('stays quiet on an unparseable version rather than false-warning', () => {
+    expect(bunVersionWarning('unknown')).toBeNull();
+  });
+});
 
 describe('validatePackageName', () => {
   test('accepts simple names', () => {
@@ -59,7 +78,7 @@ describe('transformPackageJson', () => {
         svelte: '^5.55.1',
       },
       devDependencies: {
-        '@types/bun': '1.3.14',
+        '@types/bun': '1.4.0',
       },
     });
 
@@ -68,7 +87,7 @@ describe('transformPackageJson', () => {
     expect(out.private).toBe(true);
     expect(out.dependencies['mochi-framework']).toBe('^0.2.5');
     expect(out.dependencies.svelte).toBe('^5.55.1');
-    expect(out.devDependencies['@types/bun']).toBe('1.3.14');
+    expect(out.devDependencies['@types/bun']).toBe('1.4.0');
   });
 
   test('replaces workspace:* deps for non-mochi packages with "latest"', () => {
@@ -139,6 +158,51 @@ describe('transformTsconfig', () => {
     const input = JSON.stringify({ extends: 'some-other-config' });
     const out = JSON.parse(transformTsconfig(input));
     expect(out.extends).toBe('some-other-config');
+  });
+});
+
+describe('stringifyJson', () => {
+  test('collapses short primitive arrays onto one line, like prettier does', () => {
+    const out = stringifyJson({ lib: ['ESNext', 'DOM', 'DOM.Iterable'], strict: true });
+    expect(out).toContain('"lib": ["ESNext", "DOM", "DOM.Iterable"]');
+    expect(out.endsWith('\n')).toBe(true);
+  });
+
+  test('keeps arrays with object elements expanded', () => {
+    const out = stringifyJson({ overrides: [{ files: ['*.svelte'] }] });
+    expect(out).toContain('"overrides": [\n');
+    expect(out).toContain('"files": ["*.svelte"]');
+  });
+
+  test('keeps very long primitive arrays expanded', () => {
+    const out = stringifyJson({ items: Array.from({ length: 40 }, (_, i) => `entry-number-${i}`) });
+    expect(out).toContain('"items": [\n');
+  });
+
+  test('round-trips values and drops undefined like JSON.stringify', () => {
+    const value = { a: 1, b: 'x', c: null, d: undefined, e: [], f: {} };
+    expect(JSON.parse(stringifyJson(value))).toEqual(JSON.parse(JSON.stringify(value)));
+  });
+
+  test('serializes undefined array elements as null, like JSON.stringify', () => {
+    const out = stringifyJson({ a: [1, undefined, 3] });
+    expect(out).not.toContain('undefined');
+    expect(JSON.parse(out)).toEqual({ a: [1, null, 3] });
+  });
+
+  // The inline-vs-expand decision must mirror prettier's, which fits the whole `"key": […],` line into printWidth 180.
+  test('counts the key prefix when deciding whether an array fits inline', () => {
+    const shortKeyLongArray = stringifyJson({ k: Array.from({ length: 12 }, () => 'x'.repeat(10)) });
+    expect(shortKeyLongArray).toContain('"k": ["xxxxxxxxxx", ');
+    const longKeySameArray = stringifyJson({ ['k'.repeat(170)]: Array.from({ length: 12 }, () => 'x'.repeat(10)) });
+    expect(longKeySameArray).toContain('": [\n');
+  });
+
+  test('transformTsconfig output keeps the inlined base arrays prettier-clean', () => {
+    const out = transformTsconfig(JSON.stringify({ extends: '../../tsconfig.base.json', compilerOptions: { types: ['bun'] }, include: ['src/**/*'] }));
+    expect(out).toContain('"lib": ["ESNext", "DOM", "DOM.Iterable"]');
+    expect(out).toContain('"types": ["bun"]');
+    expect(out).toContain('"include": ["src/**/*"]');
   });
 });
 

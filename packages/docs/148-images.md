@@ -110,7 +110,7 @@ Import a local image Vite-style and get an object with its served URL and intrin
 
 Supported formats: png, jpg, jpeg, webp, avif, gif. Put SVGs in your `public/` directory and reference them with a plain `<img src>`.
 
-Mochi copies the file to a content-hashed URL (`/_mochi/asset/<slug>-<hash>.<ext>`) and serves it from disk with a long-lived immutable cache in production. Transforms read the file from disk, so `<Image src={hero} size="…">` and `placeholder` work without an origin round-trip. Emitted copies live under `<outDir>/assets/` and [relocate with the build](/docs/deployment-options/#relocatable-builds).
+Mochi copies the file to a content-hashed URL (`/_mochi/asset/<slug>-<hash>.<ext>`) and serves it from disk with a long-lived immutable cache in production. Transforms read the file from disk, so `<Image src={hero} size="…">` and `placeholder` work without an origin round-trip. Emitted copies live under `<outDir>/assets/` and [relocate with the build](/docs/production-builds/#relocatable-builds).
 
 The `{ src, width, height, format }` shape is available as the exported `ImportedImage` type. Ambient module types come free through `mochi-framework/ambient`.
 

@@ -6,6 +6,7 @@ import { files as chat } from '../demos/chat/files.ts';
 import { files as clientOnly } from '../demos/client-only/files.ts';
 import { files as cookieVaryTest } from '../demos/cookie-vary-test/files.ts';
 import { files as captcha } from '../demos/captcha/files.ts';
+import { files as protection } from '../demos/protection/files.ts';
 import { files as captchaStyling } from '../demos/captcha-styling/files.ts';
 import { files as cookies } from '../demos/cookies/files.ts';
 import { files as customTransitions } from '../demos/custom-transitions/files.ts';
@@ -41,6 +42,7 @@ import { files as portableText } from '../demos/portable-text/files.ts';
 import { files as propDedup } from '../demos/prop-dedup/files.ts';
 import { files as propsId } from '../demos/props-id/files.ts';
 import { files as queue } from '../demos/queue/files.ts';
+import { files as cron } from '../demos/cron/files.ts';
 import { files as rateLimit } from '../demos/rate-limit/files.ts';
 import { files as reloadFormData } from '../demos/reload-form-data/files.ts';
 import { files as requestCache } from '../demos/request-cache/files.ts';
@@ -48,8 +50,10 @@ import { files as requestId } from '../demos/request-id/files.ts';
 import { files as modeWatcher } from '../demos/mode-watcher/files.ts';
 import { files as runed } from '../demos/runed/files.ts';
 import { files as serverIsland } from '../demos/server-island/files.ts';
+import { files as deferInvalidation } from '../demos/defer-invalidation/files.ts';
 import { files as serverProps } from '../demos/server-props/files.ts';
 import { files as sharedState } from '../demos/shared-state/files.ts';
+import { files as staticDirs } from '../demos/static-dirs/files.ts';
 import { files as streams } from '../demos/streams/files.ts';
 import { files as tanstackTable } from '../demos/tanstack-table/files.ts';
 import { files as url } from '../demos/url/files.ts';
@@ -300,11 +304,35 @@ export const demos: Demo[] = [
     category: 'endpoints',
   },
   {
+    href: '/demos/cron/',
+    slug: 'cron',
+    files: cron,
+    title: 'Scheduled jobs with cron',
+    hook: 'How scheduled jobs work — a Mochi.cron() job writes to an in-memory log every minute and the browser streams each new entry over a WebSocket.',
+    category: 'endpoints',
+  },
+  {
+    href: '/demos/static-dirs/',
+    slug: 'static-dirs',
+    files: staticDirs,
+    title: 'Static Directories',
+    hook: 'How staticDirs works — mount a whole directory tree under a URL prefix as one Bun route, with Content-Type / ETag / Range / index.html from Bun and no per-file registration.',
+    category: 'endpoints',
+  },
+  {
     href: '/demos/server-island/',
     slug: 'server-island',
     files: serverIsland,
     title: 'Server Islands',
     hook: 'How server islands work — components marked mochi:defer render server-side on demand after the initial page is delivered.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/defer-invalidation/',
+    slug: 'defer-invalidation',
+    files: deferInvalidation,
+    title: 'Invalidate mochi:defer islands',
+    hook: 'How to reload server islands on demand — name a mochi:defer island and call reloadDeferredIsland(name) from the browser to re-fetch its server HTML.',
     category: 'hydration',
   },
   {
@@ -466,6 +494,14 @@ export const demos: Demo[] = [
     files: captcha,
     title: 'Captcha',
     hook: 'How the captcha works — slide-to-verify backed by a hash chain and proof-of-work, with no third party and no tracking.',
+    category: 'forms',
+  },
+  {
+    href: '/demos/protection/',
+    slug: 'protection',
+    files: protection,
+    title: 'Protection Mode',
+    hook: 'How protection mode works — a Cloudflare-style browser check where an interstitial auto-solves the captcha proof-of-work and redeems it for a clearance cookie.',
     category: 'forms',
   },
   {

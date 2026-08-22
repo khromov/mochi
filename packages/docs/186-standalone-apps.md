@@ -78,7 +78,7 @@ A packaged app must expect to run with no connectivity. A useful pattern: have y
 ```ts
 export async function fetchTodo(id: number): Promise<{ todo: Todo | null; offline: boolean }> {
   try {
-    return { todo: await fetchDevalue<Todo>(`${API_ORIGIN}/api/todos/${id}/`), offline: false };
+    return { todo: await fetchDevalue<Todo>(`${API_ORIGIN}/api/todos/${id}`), offline: false };
   } catch (err) {
     if (err instanceof MochiFetchError) {
       return { todo: null, offline: false }; // a 404 is a real "not found", not connectivity
@@ -128,10 +128,10 @@ Register the matching route in **both** entries — `clientProps` in `src/app.ts
 // shared client code — the standalone app consumes it
 import { fetchDevalue } from 'mochi-framework';
 
-const todo = await fetchDevalue<Todo>(`${API_ORIGIN}/api/todos/${id}/`);
+const todo = await fetchDevalue<Todo>(`${API_ORIGIN}/api/todos/${id}`);
 ```
 
-A non-2xx response throws `MochiFetchError` with the HTTP `status`. The standalone app runs on its own origin (the dev server, or Capacitor's webview), so the web app must allow CORS on its API routes — and cross-origin calls must hit the canonical URL directly (mind your `trailingSlash` policy; redirects carry no CORS headers):
+A non-2xx response throws `MochiFetchError` with the HTTP `status`. The standalone app runs on its own origin (the dev server, or Capacitor's webview), so the web app must allow CORS on its API routes — and cross-origin calls must hit the exact declared path, with no trailing slash (`trailingSlash` applies to page routes only, and a redirect would carry no CORS headers anyway):
 
 ```ts
 // src/index.ts

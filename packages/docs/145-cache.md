@@ -52,6 +52,33 @@ Use it from a page or API route:
 
 </Callout>
 
+### Caching expensive serverProps
+
+A page's latency is usually dominated by its data loading, not the render — so `serverProps` resolvers are the highest-leverage place to cache. Construct a `MochiCache` at module scope and wrap the slow call in `fetch()`, keyed per route params:
+
+```ts
+// file: src/index.ts
+import { Mochi, MochiCache } from 'mochi-framework';
+import { loadPokemon } from './lib/pokemon';
+
+const pokemonCache = new MochiCache({
+  minTimeToStale: 10_000, // serve fresh for 10s
+  maxTimeToLive: 300_000, // hard expiry at 5min
+});
+
+await Mochi.serve({
+  routes: {
+    '/pokemon/:id': Mochi.page('./src/Pokemon.svelte', {
+      serverProps: async (_req, params) => ({
+        pokemon: await pokemonCache.fetch(`pokemon:${params.id}`, () => loadPokemon(params.id)),
+      }),
+    }),
+  },
+});
+```
+
+The first request per key pays the load; later requests follow the fresh / stale / expired lifecycle below. Everything that shapes the result must be in the key — route params as above, plus any cookie- or locals-derived dimension per the warning above.
+
 ### Behavior
 
 - **Fresh** (within `minTimeToStale`): cached value returned, no fetch.
@@ -69,10 +96,31 @@ Use it from a page or API route:
 | `markStale(key)`           | `Promise<void>`                      |
 | `delete(key)`              | `Promise<void>`                      |
 | `clearItems()`             | `Promise<void>`                      |
+| `whenIdle()`               | `Promise<void>`                      |
 
 `peek(key)` reports a key's `status` and value **without** running `fn`, revalidating, or emitting `cache:read` — a pure probe that returns `null` on a miss. `markStale(key)` backdates an entry so its next read serves stale-while-revalidate. It is a no-op on a missing or already-stale key, and it never freshens or un-expires one. Both run through the `storage` interface, so they apply to any backend. `set(key, value)` writes a value directly, stamped fresh. Prefer `set` over `delete(key)` then `fetch`: that sequence leaves the key absent, so concurrent readers each start their own recompute.
 
 `status` is `'fresh' | 'stale' | 'expired' | 'miss'`.
+
+#### Waiting for background revalidations
+
+<VersionNote since="0.10.0" message="whenIdle() was added in 0.10.0." />
+
+A stale read returns at once and refreshes in the background, so the new value is not readable when `fetch` resolves. `whenIdle()` waits for those background runs to finish — including the storage write, not just the upstream call — which is what you want before shutting down, or in a test that asserts on the refreshed value.
+
+```ts
+const stale = await cache.fetchWithStatus('users', loadUsers); // 'stale', old value
+await cache.whenIdle();
+const fresh = await cache.fetchWithStatus('users', loadUsers); // 'fresh', new value
+```
+
+<Callout type="warning">
+
+`whenIdle()` waits for whatever is in flight, so on a busy cache it keeps waiting as new revalidations start. Treat it as a shutdown or test primitive — don't await it on a request path.
+
+</Callout>
+
+A run that throws settles it like any other, so a failing upstream can't leave it hanging. `ImageCache` exposes the same method for its own regenerations.
 
 ### Options
 
@@ -139,14 +187,46 @@ If a `storage` call throws, the cache degrades instead of failing the request: a
 
 `MochiCache` emits these events on `mochiEvents`:
 
-| Event                     | Payload                     | When                                                         |
-| ------------------------- | --------------------------- | ------------------------------------------------------------ |
-| `cache:read`              | `{ key, status }`           | Every cache lookup.                                          |
-| `cache:revalidate`        | `{ key }`                   | A background refetch starts (stale read).                    |
-| `cache:delete`            | `{ key }`                   | A key was removed via `delete(key)`.                         |
-| `cache:sweep`             | `{ removed, durationMs }`   | A `FileStorage` background sweep deleted expired files.      |
-| `cache:revalidate:failed` | `{ key, error }`            | A background refetch threw; the stale value is still served. |
-| `cache:error`             | `{ key, operation, error }` | A `storage` `get` / `set` / `remove` call threw.             |
+| Event                     | Payload                                  | When                                                               |
+| ------------------------- | ---------------------------------------- | ------------------------------------------------------------------ |
+| `cache:read`              | `{ key, status }`                        | Every cache lookup.                                                |
+| `cache:revalidate`        | `{ key }`                                | A background refetch starts (stale read).                          |
+| `cache:delete`            | `{ key }`                                | A key was removed via `delete(key)`.                               |
+| `cache:sweep`             | `{ removed, durationMs }`                | A `FileStorage` background sweep deleted expired files.            |
+| `cache:pressure`          | `{ level, removed, caches, durationMs }` | The OS reported low memory and Mochi drained its in-memory caches. |
+| `cache:revalidate:failed` | `{ key, error }`                         | A background refetch threw; the stale value is still served.       |
+| `cache:error`             | `{ key, operation, error }`              | A `storage` `get` / `set` / `remove` call threw.                   |
+
+### Memory pressure
+
+<VersionNote since="0.10.0" message="Memory-pressure cache draining (and the memoryPressure serve option) ships in the next Mochi release (0.10.0). This section describes the upcoming API." />
+
+When the operating system runs low on memory, Bun raises `process.on("memoryPressure")` and Mochi drains every
+in-memory cache before the kernel starts killing processes. `'critical'` (all platforms) clears them outright;
+`'warning'` (macOS only) drops just the aged-out entries, so a store without `maxAge` keeps everything. Each response
+emits one `cache:pressure` event and one `consoleLogger()` warning.
+
+Only `MemoryStorage` participates — it is the backend that holds bytes in RAM. `FileStorage` is disk-backed, so
+dropping it would not help. Turn the whole thing off with `Mochi.serve({ memoryPressure: false })`.
+
+Reclamation runs in production only. In development (`development: true`) it is always disabled — the compile-heavy
+boot hair-triggers the OS signal (Linux reports only `'critical'`), so the reclaim would be a spurious no-op.
+
+The raw signal is also broadcast as a `memory:pressure` event (payload `{ level }`) the moment it arrives, before the
+cache drain. Subscribe to reclaim resources Mochi doesn't own — idle connection pools, worker queues, your own maps:
+
+```ts
+import { mochiEvents } from 'mochi-framework';
+
+mochiEvents.on('memory:pressure', ({ level }) => {
+  if (level === 'critical') pool.drainIdle();
+});
+```
+
+```ts
+// file: src/index.ts
+await Mochi.serve({ memoryPressure: false, routes });
+```
 
 `consoleLogger()` surfaces `cache:revalidate:failed` and `cache:error` as warnings. Use `mochiEvents.setHandler` to attach a custom subscriber — it replaces a prior handler under the same name, so dev re-imports do not pile up listeners:
 

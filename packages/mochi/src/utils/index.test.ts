@@ -123,10 +123,9 @@ describe('stripHydrationMarkers', () => {
     expect(stripHydrationMarkers(html)).toBe(html);
   });
 
-  // The tests below pin the lol-html dispatch invariants the flag-based
-  // implementation depends on (see the NOTE(bun<1.4.0) in utils.ts): the
-  // element-scoped comments handler must fire before the document handler for
-  // the same comment, and must cover descendant comments. If a Bun upgrade
+  // The tests below pin the onEndTag depth-counter invariant: an island's end
+  // tag must fire before the document handler sees the sibling comment that
+  // follows it, and island descendants must count as inside. If a Bun upgrade
   // ever breaks either, these fail loudly instead of hydration breaking
   // silently in production.
   test('does not touch <mochi-hydratable-island> contents', () => {

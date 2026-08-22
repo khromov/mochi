@@ -9,15 +9,14 @@
 # Prebuilt production variants live at Dockerfile.production and
 # packages/demos/Dockerfile.production if we ever need to flip back.
 #
-# Base image defaults to oven/bun:1.3.14-alpine (pure musl alpine, multi-arch),
+# Base image defaults to oven/bun:1.4.0-alpine (pure musl alpine, multi-arch),
 # overridable via the BUN_IMAGE build arg so a single workspace can ride a
-# different Bun tag without moving the others — the site is temporarily pinned
-# to oven/bun:canary-alpine in .github/workflows/build.yml while demos stays on
-# the stable default. Earlier revisions used frolvlad/alpine-glibc with a copied
-# bun binary; that combo broke @tailwindcss/oxide's native binding on linux/arm64
-# because the glibc compat shim was loaded in place of musl libc.
+# different Bun tag without moving the others. Earlier revisions used
+# frolvlad/alpine-glibc with a copied bun binary; that combo broke
+# @tailwindcss/oxide's native binding on linux/arm64 because the glibc compat
+# shim was loaded in place of musl libc.
 
-ARG BUN_IMAGE=oven/bun:1.3.14-alpine
+ARG BUN_IMAGE=oven/bun:1.4.0-alpine
 FROM ${BUN_IMAGE} AS base
 WORKDIR /usr/src/app
 
@@ -81,9 +80,9 @@ USER bun
 EXPOSE ${PORT}/tcp
 
 # No curl/wget in the alpine base; bun is on PATH, so probe with fetch. Reads
-# PORT from the env above and hits the canonical /health/ (trailingSlash:'always'
-# would otherwise 308 a bare /health) so the redirect hop never happens.
+# PORT from the env above and hits the bare /health: it is a Mochi.api() route,
+# so trailingSlash:'always' never applies to it and /health/ is a hard 404.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-CMD bun --eval "fetch('http://127.0.0.1:'+process.env.PORT+'/health/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD bun --eval "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT [ "sh", "-c", "exec bun run dev:${WORKSPACE}" ]

@@ -67,6 +67,9 @@ export { MemoryStorage, FileStorage, isBlobRef, readBlobRef } from "__MOCHI_CACH
 // Image helpers. Server-only (signing needs the secret key); re-exported
 // so .svelte files can `import { getImageUrl } from 'mochi-framework'`.
 export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from "__MOCHI_IMAGE_API__";
+// Server-safe: the island registry is empty during SSR, so these resolve to a no-op here.
+export { reloadDeferredIsland, reloadDeferredIslandAll } from "__MOCHI_DEFER_API__";
+export { deferReloadState, DeferReloadState } from "__MOCHI_DEFER_REACTIVE__";
 // `enhance` / `deserialize` are browser-only Svelte action helpers.
 // Svelte never invokes actions during SSR, so these stubs only fire
 // if user code calls them on the server — which is a usage error.
@@ -76,3 +79,6 @@ export { memoryStore, sqliteStore, postgresStore } from "__MOCHI_RATE_LIMIT__";
 // Isomorphic devalue-fetch helper for Mochi.apiDevalue() endpoints — a real
 // re-export on the server too (SSR code may fetch a sibling service).
 export { fetchDevalue, MochiFetchError } from "__MOCHI_FETCH_DEVALUE__";
+// The built-in protection interstitial's absolute path — lets a docs/tooling
+// component read the default `protection.page` source straight from disk.
+export const PROTECTION_SHELL_COMPONENT = "__MOCHI_PROTECTION_SHELL_PATH__";

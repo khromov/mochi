@@ -5,8 +5,8 @@ export interface Template {
   label: string;
   hint: string;
   /**
-   * giget-core URI (`<owner>/<repo>/<subdir>`); resolves to the default branch, which can drift
-   * ahead of the published `mochi-framework` version — append `#<tag>` for lockstep.
+   * `<owner>/<repo>/<subdir>` URI; resolves to the default branch, which can drift ahead of the
+   * published `mochi-framework` version — append `#<ref>` for lockstep.
    */
   source: string;
 }

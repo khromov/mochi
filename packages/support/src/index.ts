@@ -4,6 +4,8 @@ import { analytics } from 'mochi-shared';
 import { routes } from './routes';
 import { adminAuth } from './adminAuth';
 import { supportEmailQueue } from './jobs.server';
+import { newsletterEmailQueue, purgeExpiredSubscribers } from './newsletter/jobs.server';
+import { NEWSLETTER_EMBED_PATH, embedHeaders } from './embedHeaders';
 
 const PORT = Number(process.env.PORT) || 3336;
 const DEVELOPMENT = process.env.MODE === 'development';
@@ -34,11 +36,16 @@ await Mochi.serve({
   // Without addressHeader every visitor keys to the proxy's own IP, making /admin/'s rate limit one shared bucket; the rightmost X-Forwarded-For entry (xffDepth 1) can't be spoofed by the client.
   proxy: { origin: ORIGIN, addressHeader: 'x-forwarded-for', xffDepth: 1 },
   // Auth first, so an unauthorised /admin hit is never counted as a pageview.
-  handle: sequence(adminAuth, analytics()),
-  queues: [supportEmailQueue],
+  // The embed is excluded from analytics — it would double every blog pageview.
+  handle: sequence(adminAuth, embedHeaders, analytics({ exclude: [NEWSLETTER_EMBED_PATH] })),
+  queues: [supportEmailQueue, newsletterEmailQueue],
+  cron: [purgeExpiredSubscribers],
   // A separate file from SUPPORT_DB on purpose: the app holds its own bun:sqlite handle on support.sqlite, and sharing
   // one file across two drivers invites writer contention for no benefit.
   queueStorage: { sqlite: process.env.SUPPORT_QUEUE_DB || '.db/queue.sqlite' },
+  // Its own file rather than the queue's, for the same writer-contention reason: cron runs on a second bun-boss
+  // instance with a second SQL handle. Without this the default is `memory`, so a restart drops the nightly firing.
+  cronStorage: { sqlite: process.env.SUPPORT_CRON_DB || '.db/cron.sqlite' },
   email: {
     from: process.env.SMTP_FROM || 'Mochi Support Form <support@mochi.fast>',
     transport: smtp,

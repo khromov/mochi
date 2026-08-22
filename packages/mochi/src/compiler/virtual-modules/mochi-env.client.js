@@ -128,6 +128,8 @@ export function getImage() { __serverOnly("getImage()"); }
 export function getImagePlaceholder() { return Promise.resolve(null); }
 export function imagePlaceholder() { return Promise.resolve(null); }
 export function invalidateImage() { __serverOnly("invalidateImage()"); }
+export { reloadDeferredIsland, reloadDeferredIslandAll } from "__MOCHI_DEFER_API__";
+export { deferReloadState, DeferReloadState } from "__MOCHI_DEFER_REACTIVE__";
 export function memoryStore() { __serverOnly("memoryStore()"); }
 export function sqliteStore() { __serverOnly("sqliteStore()"); }
 export function postgresStore() { __serverOnly("postgresStore()"); }
@@ -142,3 +144,5 @@ export { fetchDevalue, MochiFetchError } from "__MOCHI_FETCH_DEVALUE__";
 // The standalone client bootstrap: `Mochi.standalone()` boots the hash router in
 // the browser, descriptor factories return plain data, and server-only statics throw.
 export { Mochi } from "__MOCHI_STANDALONE_MOCHI__";
+// Server filesystem path — meaningless in the browser.
+export const PROTECTION_SHELL_COMPONENT = undefined;

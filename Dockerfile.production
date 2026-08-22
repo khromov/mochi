@@ -4,7 +4,7 @@
 # so SSR + client bundles are baked at build time and no Svelte preprocessor
 # / devDeps are present at runtime.
 #
-# Base image is oven/bun:1.3.14-alpine for all stages (pure musl alpine,
+# Base image is oven/bun:1.4.0-alpine for all stages (pure musl alpine,
 # bun preinstalled, plays nicely with native bindings end-to-end). The
 # earlier frolvlad/alpine-glibc + copied-bun pattern caused the
 # @tailwindcss/oxide loader to hit a glibc compat shim on arm64.
@@ -18,7 +18,7 @@ ARG PORT=3333
 # Global scope (before the first FROM) so every stage's FROM can read it. Kept in
 # sync with the root Dockerfile's arg of the same name; build.yml passes it to
 # every matrix leg.
-ARG BUN_IMAGE=oven/bun:1.3.14-alpine
+ARG BUN_IMAGE=oven/bun:1.4.0-alpine
 
 FROM ${BUN_IMAGE} AS base
 WORKDIR /usr/src/app
@@ -106,4 +106,12 @@ RUN mkdir -p /data/image-cache && chown -R bun:bun /data
 
 USER bun
 EXPOSE ${PORT}/tcp
+
+# No curl/wget in the alpine base; bun is on PATH, so probe with fetch. Reads
+# PORT from the env above and hits the bare /health: it is a Mochi.api() route,
+# so trailingSlash:'always' never applies to it and /health/ is a hard 404. Every
+# workspace built from this file serves /health — site, demos, support, minimal.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD bun --eval "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 ENTRYPOINT [ "sh", "-c", "exec bun --cwd=packages/$WORKSPACE run start" ]

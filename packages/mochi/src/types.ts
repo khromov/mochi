@@ -7,6 +7,8 @@ import type { MochiProxyOptions } from './runtime/proxy';
 import type { LocalImageAsset, MochiImageOptions } from './image/types';
 import type { MochiEmailOptions } from './email/types';
 import type { MochiCaptchaOptions } from './captcha/types';
+import type { MochiProtectionOptions } from './protection/types';
+import type { MochiCronHandler, MochiCronRuntimeOptions } from './cron';
 import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions, MochiQueueStorage } from './queue';
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
@@ -316,11 +318,37 @@ export function isMochiQueue(value: unknown): value is MochiQueueConfig {
   return typeof value === 'object' && value !== null && (value as MochiQueueConfig).__mochiQueue === true;
 }
 
+/** Structural twin of `MochiCronJob`, kept here so `types.ts` never has to import values from `cron.ts`. */
+export interface MochiCronConfig {
+  readonly __mochiCron: true;
+  readonly name: string;
+  readonly schedule: string;
+  readonly run: MochiCronHandler;
+  readonly options?: MochiCronRuntimeOptions;
+  nextRun(from?: number | Date): number | null;
+}
+
+export function isMochiCron(value: unknown): value is MochiCronConfig {
+  return typeof value === 'object' && value !== null && (value as MochiCronConfig).__mochiCron === true;
+}
+
 /** Options for `Mochi.worker()` — consume queues in a process that never calls `Mochi.serve()`. */
 export interface MochiWorkerOptions {
   queues: MochiQueueConfig[];
   /** The app's queue storage; may instead come from a `storage` declared on the descriptors. */
   storage?: MochiQueueStorage;
+  /**
+   * `'verify'` (default): a stored queue whose config differs from its declaration is a start() error — code is
+   * authoritative. `'sync'`: write the declared config to storage instead, logging each change. `MOCHI_QUEUE_SYNC=1`
+   * forces `'sync'` process-wide and wins over this option.
+   */
+  queueConfig?: 'verify' | 'sync';
+  /**
+   * Grace period (ms) on shutdown for in-flight queue jobs to drain before the boss is stopped and the store closed.
+   * Default: `10000`. Raise it for handlers that legitimately run longer than 10s, so a job in flight at shutdown
+   * finishes and is not failed and re-run.
+   */
+  queueShutdownTimeout?: number;
 }
 
 export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | MochiFileConfig | BunRouteValue;
@@ -504,6 +532,18 @@ export interface MochiServeOptions {
    * declarations are a boot error.
    */
   queueStorage?: MochiQueueStorage;
+  /**
+   * `'verify'` (default): a stored queue whose config differs from its declaration is a boot error — code is
+   * authoritative. `'sync'`: write the declared config to storage instead, logging each change. `MOCHI_QUEUE_SYNC=1`
+   * forces `'sync'` process-wide and wins over this option.
+   */
+  queueConfig?: 'verify' | 'sync';
+  /**
+   * Grace period (ms) on shutdown for in-flight queue jobs to drain before the boss is stopped and the store closed.
+   * Default: `10000`. Distinct from `shutdownTimeout`, which bounds the HTTP server drain. Raise it for queues whose
+   * handlers legitimately run longer than 10s, so a job in flight at shutdown finishes and is not failed and re-run.
+   */
+  queueShutdownTimeout?: number;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
   htmlShell?: string;
   /**
@@ -549,6 +589,35 @@ export interface MochiServeOptions {
      */
     level?: import('./utils/log').LogLevel;
   } & import('./dev/consoleLogger').ConsoleLoggerOptions;
+  /**
+   * Durable scheduled jobs started with the server, from `Mochi.cron(name, schedule, handler)`; schedules persist in
+   * `cronStorage` and a single node is elected per firing, so a job runs once across a multi-node setup. Each run
+   * executes as a queue job named `cron-<name>` (surfacing through `queue:*` events), and a handler that throws is
+   * reported via `queue:failed` while the schedule keeps running.
+   */
+  cron?: MochiCronConfig[];
+  /**
+   * Storage for the durable cron scheduler (`memory` | `{ sqlite }` | `{ postgres }` | `{ pglite }`), defaulting to
+   * `memory` and independent of `queueStorage` — cron always runs on its own bun-boss instance. Point it at a shared
+   * store (Postgres, or a SQLite file on a shared volume) for a multi-node deployment.
+   */
+  cronStorage?: MochiQueueStorage;
+  /**
+   * Drain in-memory caches when the OS reports low memory, before the kernel starts killing processes: `'warning'`
+   * (macOS only) drops aged-out entries, `'critical'` drops everything, reported through the `cache:pressure` event.
+   * Default: `true`.
+   */
+  memoryPressure?: boolean;
+  /**
+   * Extra directory trees mounted under a URL prefix, as `{ "/assets": "./media" }`. Each becomes one Bun directory
+   * route, so a large tree costs one route instead of one per file, and Range, ETag, `If-None-Match`, `index.html`
+   * and sendfile streaming come from Bun.
+   *
+   * Unlike `publicDir` these mounts do no dotfile filtering, do not run the `publicDir:scan` filter, and cannot be
+   * gated by `protection.protectFiles`. A miss under the prefix answers with Bun's own 404 rather than the configured
+   * `errorPage`; paths outside the prefix are unaffected, which is why the site root cannot be mounted.
+   */
+  staticDirs?: import('./runtime/staticDirs').MochiStaticDirs;
   /** Directory served as static assets (cwd-relative). Default: `./public`. */
   publicDir?: string;
   /**
@@ -606,13 +675,28 @@ export interface MochiServeOptions {
    */
   proxy?: MochiProxyOptions;
   /**
-   * Trailing-slash policy. When set, every non-asset, non-root user route is registered under both `/foo` and `/foo/`,
+   * Trailing-slash policy for `Mochi.page()` routes. When set, each page is registered under both `/foo` and `/foo/`,
    * and the non-canonical form redirects:
    *
    * - `'never'` — `/foo/` → 301/308 → `/foo`
    * - `'always'` — `/foo` → 301/308 → `/foo/`
    *
-   * 301 for GET/HEAD, 308 otherwise, leaving root `/` and paths with file extensions alone. Default: unset.
+   * 301 for GET/HEAD, 308 for POST (the only other method a page registers, via `actions`), leaving root `/` and
+   * paths with file extensions alone.
+   *
+   * Every other route kind — `Mochi.api()`, `Mochi.sse()`, `Mochi.ws()`, `Mochi.file()` — is exempt: no mirroring and
+   * no redirect, so only the exact pattern you declared matches and the other slash form 404s. To answer on both,
+   * point two patterns at one route:
+   *
+   * ```ts
+   * const ping = Mochi.api(() => json({ ok: true }));
+   * routes = { '/api/ping': ping, '/api/ping/': ping };
+   * ```
+   *
+   * Paths that match no route are never redirected either — they 404 (or reach your `fetch`/middleware fallback) in
+   * whichever slash form they arrived.
+   *
+   * Default: unset — neither form redirects, and only the form you registered is matched.
    */
   trailingSlash?: 'never' | 'always';
   /**
@@ -649,6 +733,13 @@ export interface MochiServeOptions {
    * Default: 16 bits, a 2s floor, a 15-minute expiry, and an in-memory nonce store.
    */
   captcha?: MochiCaptchaOptions;
+  /**
+   * Cloudflare-style browser verification: unverified clients get an interstitial that auto-solves the captcha
+   * proof-of-work and redeems it for a signed clearance cookie before any protected route answers. `protect` selects
+   * which requests are gated (default: all); `bits` and `maxAgeMs` tune difficulty and clearance lifetime; `page`
+   * swaps in a custom interstitial component, like `errorPage`. See `MochiProtectionOptions`. Default: disabled.
+   */
+  protection?: MochiProtectionOptions;
   /**
    * Run the whole-program [svelte-shaker](https://github.com/baseballyama/svelte-shaker) pass before compiling, slimming
    * `.svelte` source (prop folding, dead-branch removal, CSS narrowing) so the Svelte compiler emits less code.

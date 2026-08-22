@@ -80,6 +80,7 @@ export const Mochi = {
 
   serve: serverOnly('Mochi.serve()'),
   queue: serverOnly('Mochi.queue()'),
+  cron: serverOnly('Mochi.cron()'),
   getQueue: serverOnly('Mochi.getQueue()'),
   worker: serverOnly('Mochi.worker()'),
   boss: serverOnly('Mochi.boss()'),

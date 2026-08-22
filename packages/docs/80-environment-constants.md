@@ -81,31 +81,7 @@ Inside `.svelte` components it is always `false` — components are compiled but
 
 ## Detecting hydration with `isHydratable()`
 
-`isHydratable()` returns `true` when the calling component — at any nesting depth — belongs to a subtree that will hydrate on this page load. See [Selective hydration](/docs/selective-hydration/#ishydratable) for the full semantics.
-
-For a unique per-instance id (for example, `<label for>`), use Svelte's native `$props.id()`.
-
-### Branching SSR-only behavior
-
-Use `isHydratable()` to do work only when the client won't take over rendering. A component that renders both as a hydrated island and as a plain SSR-only child can prepare a server-rendered fallback in the SSR-only case and skip it when the island will hydrate:
-
-```svelte
-<!-- file: src/lib/LiveCount.svelte -->
-<script lang="ts">
-  import { isHydratable } from 'mochi-framework';
-
-  let { count }: { count: number } = $props();
-
-  // The hydrated island renders a live control; plain SSR gets a static snapshot.
-  const interactive = isHydratable();
-</script>
-
-{#if interactive}
-  <button>{count}</button>
-{:else}
-  <span>{count}</span>
-{/if}
-```
+To branch on whether the client will take over rendering, use `isHydratable()`: it returns `true` when the calling component — at any nesting depth — belongs to a subtree that will hydrate on this page load. Unlike the constants above it is a runtime signal, not a build-time literal, so it lives with the hydration model rather than here. See [Selective hydration](/docs/selective-hydration/#ishydratable) for the full semantics and an example.
 
 <SeeItInAction
 demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "How the isomorphic URL helper works — one import that reads the request URL on the server and window.location on the client." }]}
