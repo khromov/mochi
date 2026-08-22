@@ -22,13 +22,10 @@ describe('agent-discovery well-known surfaces', () => {
       development: false,
       logger: { enabled: false },
       outDir,
-      // Mirror the site's policy so the test also guards the trailing-slash
-      // exemption for the extensionless API catalog.
+      // Mirror the site's policy so the test guards that these api routes stay
+      // exempt from the trailing-slash redirect and answer at their exact paths.
       trailingSlash: 'always',
       handle: agentDiscoveryLinks,
-      filters: {
-        'trailingSlash:redirect': (redirect, { url }) => (url.pathname === '/mcp' || url.pathname === '/.well-known/api-catalog' ? null : redirect),
-      },
       routes: {
         '/': Mochi.api(() => Response.json({ ok: true })),
         '/other': Mochi.api(() => Response.json({ ok: true })),
@@ -59,24 +56,15 @@ describe('agent-discovery well-known surfaces', () => {
     const entry = body.linkset[0]!;
     expect(entry.anchor).toBe(`${base}/mcp`);
     expect(entry['service-doc']?.[0]?.href).toBe(`${base}/llms.txt`);
-    // The status link must carry a trailing slash so it resolves without a 308.
-    expect(entry.status?.[0]?.href).toBe(`${base}/health/`);
+    // api routes are exempt from trailingSlash, so the status link is the bare path.
+    expect(entry.status?.[0]?.href).toBe(`${base}/health`);
   });
 
-  test('the api-catalog status target GET /health/ responds 200 under trailingSlash:always', async () => {
-    // The catalog points at /health/ (with slash) precisely so it resolves
-    // directly. If trailingSlash ever stops serving the slash form, this fails.
-    const res = await fetch(`${base}/health/`, { redirect: 'manual' });
+  test('the api-catalog status target GET /health responds 200 without redirecting', async () => {
+    const res = await fetch(`${base}/health`, { redirect: 'manual' });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { status: string };
     expect(body.status).toBe('ok');
-  });
-
-  test('the bare /health redirects to the slash form (why the catalog uses /health/)', async () => {
-    const res = await fetch(`${base}/health`, { redirect: 'manual' });
-    // GET → 301 (308 is reserved for non-GET methods).
-    expect(res.status).toBe(301);
-    expect(res.headers.get('location')).toBe('/health/');
   });
 
   test('GET /.well-known/mcp/server-card.json describes the streamable-http endpoint', async () => {

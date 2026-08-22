@@ -10,13 +10,13 @@ description: 'A minimal production Dockerfile template for deploying Mochi apps 
 
 ## Building a Dockerfile
 
-A production Mochi app is a single Bun process. This example image is a simple one-stage build on `oven/bun:1.3-alpine` — no Node, no preprocessor, no shell at runtime.
+A production Mochi app is a single Bun process. This image is a one-stage build on `oven/bun:1.4-alpine`.
 
 ### Minimal Dockerfile
 
 ```dockerfile
 # file: Dockerfile
-FROM oven/bun:1.3-alpine
+FROM oven/bun:1.4-alpine
 WORKDIR /app
 COPY . .
 RUN bun install --production
@@ -34,15 +34,15 @@ docker run --rm -p 3333:3333 my-app
 
 <Callout type="info">
 
-`bun run build` and `bun run start` must share a working directory — the template's single `WORKDIR /app` covers it. The one to watch is a multi-stage build that copies `.mochi/` into a differently-shaped final image: keep the app at the same path in both stages, and copy `public/` across too — static files are read from that directory at runtime, never from `.mochi/`. The framework's own components are exempt, so `mochi-framework` moving between a workspace checkout and `node_modules/` across stages is fine.
+`bun run build` and `bun run start` must share a working directory. The template's single `WORKDIR /app` covers it. Watch a multi-stage build that copies `.mochi/` into a differently-shaped final image: keep the app at the same path in both stages, and copy `public/` across too — static files are read from that directory at runtime, never from `.mochi/`.
 
 </Callout>
 
-A one-route app lands at ~160 MB. ~87 MB of that is the Bun binary itself — the floor for any Bun-based image is around ~105 MB.
+A one-route app lands at about 160 MB. About 87 MB is the Bun binary. The floor for any Bun-based image is around 105 MB.
 
 ### `.dockerignore`
 
-Exclude artifacts and local state from the build context — they're regenerated inside the image and just inflate the upload:
+Exclude artifacts and local state from the build context. They are regenerated inside the image:
 
 ```
 # file: .dockerignore
@@ -52,7 +52,7 @@ node_modules
 .env*
 ```
 
-Don't add `public` to that list. Unlike `.mochi`, it isn't regenerated inside the image — the runtime reads it from disk on every boot. If it doesn't make it in, the server says so at startup instead of quietly 404ing:
+Do not add `public` to that list. Unlike `.mochi`, it is not regenerated inside the image — the runtime reads it from disk on every boot. If it does not make it in, the server warns at startup:
 
 ```
 [mochi] publicDir "public" is missing or empty, but the build found 12 file(s) there —
@@ -61,10 +61,10 @@ every static file will 404.
 
 ### `--production` and devDeps
 
-`bun install --production` omits everything under `devDependencies`. Keep `mochi-framework` and `svelte` in `dependencies`; move `svelte-check`, `typescript`, and build-time scripts to `devDependencies`.
+`bun install --production` omits everything under `devDependencies`. Keep `mochi-framework` and `svelte` in `dependencies`. Move `svelte-check`, `typescript`, and build-time scripts to `devDependencies`.
 
 <Callout type="info">
 
-`bun run start` runs your `start` script (typically `bun src/index.ts`). The port your app listens on is the one passed to `Mochi.serve({ port })`. Match it with `EXPOSE` and `-p` so the container's port is reachable from the host.
+`bun run start` runs your `start` script (typically `bun src/index.ts`). The port your app listens on is the one passed to `Mochi.serve({ port })`. Match it with `EXPOSE` and `-p`.
 
 </Callout>

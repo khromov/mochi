@@ -13,8 +13,11 @@ describe('MochiCookieJar — property-based fuzzing', () => {
   test('constructing from an arbitrary Cookie header never throws; peekAll is always an array', () => {
     fc.assert(
       fc.property(fc.string(), (header) => {
-        const jar = new MochiCookieJar(header);
-        expect(Array.isArray(jar.peekAll())).toBe(true);
+        let jar: MochiCookieJar | undefined;
+        expect(() => {
+          jar = new MochiCookieJar(header);
+        }).not.toThrow();
+        expect(Array.isArray(jar!.peekAll())).toBe(true);
       }),
       RUNS,
     );

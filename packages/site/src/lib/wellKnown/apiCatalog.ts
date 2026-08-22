@@ -13,7 +13,7 @@ export const routes: Record<string, MochiRouteValue> = {
         {
           anchor: `${origin}/mcp`,
           'service-doc': [{ href: `${origin}/llms.txt`, type: 'text/plain' }],
-          status: [{ href: `${origin}/health/`, type: 'application/json' }],
+          status: [{ href: `${origin}/health`, type: 'application/json' }],
         },
       ],
     };

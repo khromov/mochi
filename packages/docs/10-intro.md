@@ -1,6 +1,7 @@
 ---
 title: 'Welcome'
 slug: intro
+ogTitle: 'Welcome to Mochi'
 description: 'A lightweight, server-first Svelte 5 framework running on Bun that ships client-side JavaScript only for interactive islands.'
 ---
 
@@ -39,7 +40,7 @@ Want to know more? <ExpandComparison mochi:hydrate /> to see a full feature comp
 
 <Callout type="info">
 
-**Mochi is in early development.** Only use in production if you are brave.
+**Work in progress.** Mochi is a new framework and we're still working on features. Be one of the first ones to try it and report any issues you find!
 
 </Callout>
 

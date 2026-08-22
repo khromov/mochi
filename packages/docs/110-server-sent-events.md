@@ -11,7 +11,7 @@ description: 'Push real-time updates to clients over a single HTTP connection wi
 
 ## Server-Sent Events
 
-Register an SSE stream with `Mochi.sse(handler)`; the handler receives a `MochiSseStream` and the underlying `Request`, and runs once per client connection.
+Register an SSE stream with `Mochi.sse(handler)`. The handler receives a `MochiSseStream` and the underlying `Request`, and runs once per client connection.
 
 ```ts
 // file: src/index.ts
@@ -30,9 +30,15 @@ await Mochi.serve({
 });
 ```
 
+<Callout type="warning">
+
+[`trailingSlash`](/docs/trailing-slash/) does not apply to SSE routes, so connect to exactly the pattern you declared.
+
+</Callout>
+
 ### `stream.send(data, options?)`
 
-Push a single SSE frame to the client. `data` is a string; `options` accepts `event` (named event type) and `id` (last-event-id).
+Push one SSE frame to the client. `data` is a string. `options` accepts `event` (named event type) and `id` (last-event-id).
 
 ```ts
 stream.send(JSON.stringify({ ok: true }), { event: 'tick', id: '42' });
@@ -40,27 +46,17 @@ stream.send(JSON.stringify({ ok: true }), { event: 'tick', id: '42' });
 
 ### `stream.close()`
 
-End the stream from the server side. The connection terminates and any registered `onClose` callbacks fire.
-
-```ts
-stream.send('done');
-stream.close();
-```
+End the stream from the server. The connection terminates and every registered `onClose` callback fires.
 
 <Callout type="warning">
 
-**Call `close()` when an SSE stream is finished.** Leaving a long-running stream open keeps the client listening and holds resources. Call `close()` to release them and stop the client.
+**Call `close()` when a stream is finished.** Leaving a long-running stream open keeps the client listening and holds resources. Call `close()` to release them.
 
 </Callout>
 
 ### `stream.onClose(callback)`
 
 Register cleanup that runs when the stream ends — whether the server called `close()` or the client disconnected. Use it to clear timers, unsubscribe from event buses, and release per-connection state.
-
-```ts
-const interval = setInterval(() => stream.send('ping'), 1000);
-stream.onClose(() => clearInterval(interval));
-```
 
 <Callout type="warning">
 
@@ -75,7 +71,7 @@ stream.onClose(() => sub.unsubscribe());
 
 ### Events
 
-`Mochi.sse` emits `sse:open`, `sse:message`, and `sse:close` on `mochiEvents`. `logger()` prints them by default.
+`Mochi.sse` emits `sse:open`, `sse:message`, and `sse:close` on `mochiEvents`. `consoleLogger()` prints them by default.
 
 <SeeItInAction
 demos={[{ href: "/demos/streams/", title: "Real-time Streams", hook: "How server-sent events and WebSocket streaming work — live SSE and WebSocket clocks, lazily hydrated via mochi:hydrate:visible." }]}

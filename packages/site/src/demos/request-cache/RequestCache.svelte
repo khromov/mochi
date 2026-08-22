@@ -7,9 +7,7 @@
 
   const sources = await loadSources(files);
 
-  // Five independent consumers of the same book. Each helper wraps the memoized
-  // analysis, so these five calls parse the 124k-word text exactly once between
-  // them — the first is a cache miss, the rest are hits.
+  // Each helper wraps the same memoized analysis, so these five calls parse the book exactly once.
   const facetOverview = overview();
   const facetTopWords = topWords();
   const facetThemes = themes();
@@ -19,8 +17,7 @@
   const nf = new Intl.NumberFormat('en-US');
   const topMax = facetTopWords[0]?.[1] ?? 1;
 
-  // Each panel's snippet shows the real pipeline: one memoized analysis at module
-  // scope, then this panel pulling its slice out of the shared result.
+  // Snippets show the real pipeline so each panel's code matches what it renders.
   const snip = (pick) => highlightCode(`// parsed once per request, shared across panels\nconst analyzeCached = requestMemo(() => analyze(BOOK));\n${pick}`, 'ts');
   const codeOverview = await snip('const { words, unique, sentences } = analyzeCached();');
   const codeTopWords = await snip('const { topWords } = analyzeCached();');

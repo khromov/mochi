@@ -38,7 +38,8 @@ jobs:
 
       - name: Check every sitemap page
         env:
-          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+          # Bun.WebView reads BUN_CHROME_PATH, not CHROME_PATH.
+          BUN_CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
           BASE: ${{ inputs.base || 'https://mochi.fast' }}
         run: bun run check-site "$BASE"
 

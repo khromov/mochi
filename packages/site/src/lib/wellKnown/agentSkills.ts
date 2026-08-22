@@ -1,7 +1,9 @@
+import path from 'node:path';
 import { Mochi, getRequestContext } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
+import { SITE_ROOT } from '../siteRoot';
 
-const SKILL_PATH = './src/SKILL.md';
+const SKILL_PATH = path.join(SITE_ROOT, 'src', 'SKILL.md');
 const SCHEMA_URL = 'https://schemas.agentskills.io/discovery/0.2.0/schema.json';
 
 // SKILL.md is static at runtime, so hash it once on first request rather than

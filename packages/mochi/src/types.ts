@@ -7,11 +7,14 @@ import type { MochiProxyOptions } from './runtime/proxy';
 import type { LocalImageAsset, MochiImageOptions } from './image/types';
 import type { MochiEmailOptions } from './email/types';
 import type { MochiCaptchaOptions } from './captcha/types';
-import type { MochiProcessor, MochiQueue, MochiQueueListeners, MochiQueueRuntimeOptions } from './queue';
+import type { MochiProtectionOptions } from './protection/types';
+import type { MochiCronHandler, MochiCronRuntimeOptions } from './cron';
+import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions, MochiQueueStorage } from './queue';
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
+import type { SpeculationRules } from './runtime/speculationRules';
 
-export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | Promise<Record<string, unknown>>;
+export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | MochiRedirect | Promise<Record<string, unknown> | MochiRedirect>;
 
 export function isServerPropsResolver(serverProps: Record<string, unknown> | MochiServerPropsResolver | undefined): serverProps is MochiServerPropsResolver {
   return typeof serverProps === 'function';
@@ -114,9 +117,9 @@ export interface MochiFormFail<T extends Record<string, unknown> = Record<string
   readonly data: T;
 }
 
-/** Returned by `redirect()`; produces an HTTP redirect after the action runs. Use 303 for POST/Redirect/GET after a successful mutation. */
-export interface MochiFormRedirect {
-  readonly __mochiFormRedirect: true;
+/** Returned by `redirect()`; produces an HTTP redirect from a form action or a `serverProps` resolver. Use 303 for POST/Redirect/GET after a successful mutation. */
+export interface MochiRedirect {
+  readonly __mochiRedirect: true;
   readonly status: 301 | 302 | 303 | 307 | 308;
   readonly location: string;
 }
@@ -128,7 +131,7 @@ export interface MochiFormSuccess<T extends Record<string, unknown> = Record<str
 }
 
 /** Any return value allowed from a form action handler; a plain `Response` is the escape hatch. */
-export type MochiFormActionResult = MochiFormFail | MochiFormRedirect | MochiFormSuccess | Response | void | undefined;
+export type MochiFormActionResult = MochiFormFail | MochiRedirect | MochiFormSuccess | Response | void | undefined;
 
 /**
  * The event object passed to form action handlers, with the body already parsed into `formData`.
@@ -252,19 +255,53 @@ export function isMochiSse(value: unknown): value is MochiSseConfig {
 }
 
 /**
- * Inert descriptor returned by `Mochi.queue()`. Non-generic so a heterogeneous `queues` map type-checks;
- * the live producer/consumer pair is created only when `Mochi.serve({ queues })` mounts it.
+ * Descriptor returned by `Mochi.queue(name, …)`. Non-generic so a heterogeneous `queues` array type-checks; the
+ * `never` parameter slots keep a caller's typed processor/listeners assignable (contravariance) without casts.
  */
 export interface MochiQueueConfig {
   readonly __mochiQueue: true;
-  readonly process: MochiProcessor<unknown, unknown>;
+  readonly name: string;
+  readonly process?: MochiProcessor<never, unknown>;
   readonly options?: MochiQueueRuntimeOptions;
-  readonly on?: Partial<MochiQueueListeners<unknown, unknown>>;
-  readonly recover?: (queue: MochiQueue<never>) => void | Promise<void>;
+  readonly on?: Partial<MochiQueueListeners<never, never>>;
+  readonly storage?: MochiQueueStorage;
 }
 
 export function isMochiQueue(value: unknown): value is MochiQueueConfig {
   return typeof value === 'object' && value !== null && (value as MochiQueueConfig).__mochiQueue === true;
+}
+
+/** Structural twin of `MochiCronJob`, kept here so `types.ts` never has to import values from `cron.ts`. */
+export interface MochiCronConfig {
+  readonly __mochiCron: true;
+  readonly name: string;
+  readonly schedule: string;
+  readonly run: MochiCronHandler;
+  readonly options?: MochiCronRuntimeOptions;
+  nextRun(from?: number | Date): number | null;
+}
+
+export function isMochiCron(value: unknown): value is MochiCronConfig {
+  return typeof value === 'object' && value !== null && (value as MochiCronConfig).__mochiCron === true;
+}
+
+/** Options for `Mochi.worker()` — consume queues in a process that never calls `Mochi.serve()`. */
+export interface MochiWorkerOptions {
+  queues: MochiQueueConfig[];
+  /** The app's queue storage; may instead come from a `storage` declared on the descriptors. */
+  storage?: MochiQueueStorage;
+  /**
+   * `'verify'` (default): a stored queue whose config differs from its declaration is a start() error — code is
+   * authoritative. `'sync'`: write the declared config to storage instead, logging each change. `MOCHI_QUEUE_SYNC=1`
+   * forces `'sync'` process-wide and wins over this option.
+   */
+  queueConfig?: 'verify' | 'sync';
+  /**
+   * Grace period (ms) on shutdown for in-flight queue jobs to drain before the boss is stopped and the store closed.
+   * Default: `10000`. Raise it for handlers that legitimately run longer than 10s, so a job in flight at shutdown
+   * finishes and is not failed and re-run.
+   */
+  queueShutdownTimeout?: number;
 }
 
 export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | MochiFileConfig | BunRouteValue;
@@ -289,12 +326,12 @@ export interface MochiManifestComponent {
 
 export interface MochiManifest {
   /**
-   * Schema version of the on-disk build output; the runtime loads only the exact version it writes (currently 2)
+   * Schema version of the on-disk build output; the runtime loads only the exact version it writes (currently 3)
    * and throws on anything else, so build and serve must use the same `mochi-framework` version.
    *
    * Every manifest path is relative, in one of three families:
    * - **Artifacts** the runtime opens (`ssrModule`, `clientFiles`,
-   *   `localImageAssets[].diskPath`, `serverIslandScript`) — out-dir relative,
+   *   `localImageAssets[].diskPath`, `fontAssets[].diskPath`, `importCssAssets[].diskPath`, `serverIslandScript`) — out-dir relative,
    *   resolved against the manifest's own directory.
    * - **Sources** used as lookup keys (`components` keys, `hydratables[].resolvedPath`,
    *   `cssComponents`, `cssFileUrls` keys, `serverIslandPaths`, `importedCssUrls` keys,
@@ -333,6 +370,12 @@ export interface MochiManifest {
   localImageAssets?: Record<string, LocalImageAsset>;
   /** Maps encoded CSS-import source path (see `version`) → served URL (e.g. /import-css/inter-<hash>.css) */
   importedCssUrls?: Record<string, string>;
+  /** Maps served font URL → binary font extracted from imported CSS. `diskPath` is outDir-relative. */
+  fontAssets?: Record<string, { diskPath: string; contentType: string }>;
+  /** Maps served URL → non-font asset the bundler emitted beside a stylesheet. `diskPath` is outDir-relative. */
+  importCssAssets?: Record<string, { diskPath: string; contentType: string }>;
+  /** Maps encoded CSS-import source path (see `version`) → served URLs of its preload-worthy extracted fonts. */
+  importedCssFontPreloads?: Record<string, string[]>;
   /** Maps encoded page entry path (see `version`) → the CSS-import paths reachable from it, likewise encoded. */
   entryImportedCss?: Record<string, string[]>;
   /** Prebuilt, minified ServerIsland inline web-component script, emitted by `build()` so production loads it from disk in place of a startup `Bun.build`. */
@@ -394,9 +437,24 @@ export interface MochiWarmupOptions {
   enabledInDev: boolean;
 }
 
+/** Keys the framework sets on `Bun.serve()` itself; rejected under `bun` and stripped from `BunServeOverrides`. */
+export const FRAMEWORK_OWNED_BUN_KEYS = ['fetch', 'websocket', 'routes', 'error'] as const;
+
+/**
+ * Options spread directly into the underlying `Bun.serve()`. The framework owns
+ * the keys in {@link FRAMEWORK_OWNED_BUN_KEYS}; setting any of them here throws.
+ */
+export type BunServeOverrides = Omit<NonNullable<Parameters<typeof Bun.serve>[0]>, (typeof FRAMEWORK_OWNED_BUN_KEYS)[number]>;
+
 export interface MochiServeOptions {
   port?: number;
   hostname?: string;
+  /**
+   * Escape hatch for raw `Bun.serve()` options Mochi doesn't surface — e.g.
+   * `idleTimeout` (seconds; HTTP default 10, max 255, 0 disables), `maxRequestBodySize`,
+   * `reusePort`, `tls`. Spread into `Bun.serve()`; framework-owned keys are rejected.
+   */
+  bun?: BunServeOverrides;
   development?: boolean;
   /** Mount the dev-only debug toolbar. Default: `true`, and ignored entirely when `development` is `false`. */
   debugBar?: boolean;
@@ -415,12 +473,38 @@ export interface MochiServeOptions {
   manifest?: string;
   routes?: Record<string, MochiRouteValue>;
   /**
-   * Background job queues to start with the server, keyed by name; each value is a `Mochi.queue({ process, … })` descriptor.
-   * Add jobs from route code via `Mochi.getQueue(name).add(...)`. Queues drain gracefully on shutdown.
+   * Background job queues to start with the server: an array of `Mochi.queue(name, { process, … })` descriptors.
+   * Add jobs via the descriptor itself or `Mochi.getQueue(name)`. Queues drain gracefully on shutdown.
    */
-  queues?: Record<string, MochiQueueConfig>;
+  queues?: MochiQueueConfig[];
+  /**
+   * Where queue jobs live: `'memory'` (default — lost on restart), `{ sqlite: 'path/to.db' }` for a durable
+   * single-process store, `{ postgres: url }` for a shared multi-process store (installed into a `mochi_queue` schema),
+   * or `{ pglite: instance }` for an embedded in-process Postgres you construct and own (Mochi never closes it).
+   * Unset, it inherits a `storage` declared on the queue descriptors; an app has one queue storage, so conflicting
+   * declarations are a boot error.
+   */
+  queueStorage?: MochiQueueStorage;
+  /**
+   * `'verify'` (default): a stored queue whose config differs from its declaration is a boot error — code is
+   * authoritative. `'sync'`: write the declared config to storage instead, logging each change. `MOCHI_QUEUE_SYNC=1`
+   * forces `'sync'` process-wide and wins over this option.
+   */
+  queueConfig?: 'verify' | 'sync';
+  /**
+   * Grace period (ms) on shutdown for in-flight queue jobs to drain before the boss is stopped and the store closed.
+   * Default: `10000`. Distinct from `shutdownTimeout`, which bounds the HTTP server drain. Raise it for queues whose
+   * handlers legitimately run longer than 10s, so a job in flight at shutdown finishes and is not failed and re-run.
+   */
+  queueShutdownTimeout?: number;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
   htmlShell?: string;
+  /**
+   * Speculation Rules injected as a `<script type="speculationrules">` tag into every rendered page's `<head>`, so
+   * the browser can prefetch/prerender same-site URLs and make navigations feel instant. An omitted option — or an
+   * object whose `prefetch` and `prerender` are both empty or absent — injects nothing.
+   */
+  speculationRules?: SpeculationRules;
   /**
    * A middleware handle function (or a `sequence()` of them) wrapping every incoming request — authentication, logging, headers.
    *
@@ -441,6 +525,12 @@ export interface MochiServeOptions {
   /** Deflate-compress server island props when it reduces size. Default: true. */
   compressServerIslandProps?: boolean;
   /**
+   * Render nested `mochi:defer` islands in-process during an island fetch instead of emitting further client fetches,
+   * collapsing an N-level chain into one request. `mochi:defer:visible` children always keep their own lazy fetch, and a
+   * single call site opts out with `mochi:defer={{ inline: false }}`. Default: true.
+   */
+  inlineNestedIslands?: boolean;
+  /**
    * Built-in request logger, enabled by default. `{ enabled: false }` disables the formatter while events keep flowing
    * on the bus; `level` gates `log.*` output globally; `slowThreshold` / `verySlowThreshold` override the timing bands.
    */
@@ -452,6 +542,35 @@ export interface MochiServeOptions {
      */
     level?: import('./utils/log').LogLevel;
   } & import('./dev/consoleLogger').ConsoleLoggerOptions;
+  /**
+   * Durable scheduled jobs started with the server, from `Mochi.cron(name, schedule, handler)`; schedules persist in
+   * `cronStorage` and a single node is elected per firing, so a job runs once across a multi-node setup. Each run
+   * executes as a queue job named `cron-<name>` (surfacing through `queue:*` events), and a handler that throws is
+   * reported via `queue:failed` while the schedule keeps running.
+   */
+  cron?: MochiCronConfig[];
+  /**
+   * Storage for the durable cron scheduler (`memory` | `{ sqlite }` | `{ postgres }` | `{ pglite }`), defaulting to
+   * `memory` and independent of `queueStorage` — cron always runs on its own bun-boss instance. Point it at a shared
+   * store (Postgres, or a SQLite file on a shared volume) for a multi-node deployment.
+   */
+  cronStorage?: MochiQueueStorage;
+  /**
+   * Drain in-memory caches when the OS reports low memory, before the kernel starts killing processes: `'warning'`
+   * (macOS only) drops aged-out entries, `'critical'` drops everything, reported through the `cache:pressure` event.
+   * Default: `true`.
+   */
+  memoryPressure?: boolean;
+  /**
+   * Extra directory trees mounted under a URL prefix, as `{ "/assets": "./media" }`. Each becomes one Bun directory
+   * route, so a large tree costs one route instead of one per file, and Range, ETag, `If-None-Match`, `index.html`
+   * and sendfile streaming come from Bun.
+   *
+   * Unlike `publicDir` these mounts do no dotfile filtering, do not run the `publicDir:scan` filter, and cannot be
+   * gated by `protection.protectFiles`. A miss under the prefix answers with Bun's own 404 rather than the configured
+   * `errorPage`; paths outside the prefix are unaffected, which is why the site root cannot be mounted.
+   */
+  staticDirs?: import('./runtime/staticDirs').MochiStaticDirs;
   /** Directory served as static assets (cwd-relative). Default: `./public`. */
   publicDir?: string;
   /**
@@ -509,13 +628,28 @@ export interface MochiServeOptions {
    */
   proxy?: MochiProxyOptions;
   /**
-   * Trailing-slash policy. When set, every non-asset, non-root user route is registered under both `/foo` and `/foo/`,
+   * Trailing-slash policy for `Mochi.page()` routes. When set, each page is registered under both `/foo` and `/foo/`,
    * and the non-canonical form redirects:
    *
    * - `'never'` — `/foo/` → 301/308 → `/foo`
    * - `'always'` — `/foo` → 301/308 → `/foo/`
    *
-   * 301 for GET/HEAD, 308 otherwise, leaving root `/` and paths with file extensions alone. Default: unset.
+   * 301 for GET/HEAD, 308 for POST (the only other method a page registers, via `actions`), leaving root `/` and
+   * paths with file extensions alone.
+   *
+   * Every other route kind — `Mochi.api()`, `Mochi.sse()`, `Mochi.ws()`, `Mochi.file()` — is exempt: no mirroring and
+   * no redirect, so only the exact pattern you declared matches and the other slash form 404s. To answer on both,
+   * point two patterns at one route:
+   *
+   * ```ts
+   * const ping = Mochi.api(() => json({ ok: true }));
+   * routes = { '/api/ping': ping, '/api/ping/': ping };
+   * ```
+   *
+   * Paths that match no route are never redirected either — they 404 (or reach your `fetch`/middleware fallback) in
+   * whichever slash form they arrived.
+   *
+   * Default: unset — neither form redirects, and only the form you registered is matched.
    */
   trailingSlash?: 'never' | 'always';
   /**
@@ -553,6 +687,13 @@ export interface MochiServeOptions {
    */
   captcha?: MochiCaptchaOptions;
   /**
+   * Cloudflare-style browser verification: unverified clients get an interstitial that auto-solves the captcha
+   * proof-of-work and redeems it for a signed clearance cookie before any protected route answers. `protect` selects
+   * which requests are gated (default: all); `bits` and `maxAgeMs` tune difficulty and clearance lifetime; `page`
+   * swaps in a custom interstitial component, like `errorPage`. See `MochiProtectionOptions`. Default: disabled.
+   */
+  protection?: MochiProtectionOptions;
+  /**
    * Run the whole-program [svelte-shaker](https://github.com/baseballyama/svelte-shaker) pass before compiling, slimming
    * `.svelte` source (prop folding, dead-branch removal, CSS narrowing) so the Svelte compiler emits less code.
    *
@@ -560,6 +701,9 @@ export interface MochiServeOptions {
    * `./src`. `mochi-framework build` reads this straight from your entry's `Mochi.serve()` call, keeping the manifest in sync.
    *
    * Pass `true` to shake everything, or an object with `enabled: true` plus `exclude`. Default: `false`.
+   *
+   * Requires the optional `@mochi-framework/svelte-shaker` package (`bun add -d @mochi-framework/svelte-shaker`); without
+   * it Mochi warns once at boot and compiles from the original sources.
    */
   optimize?: boolean | MochiSvelteShakerOptions;
   /**
@@ -574,6 +718,13 @@ export interface MochiServeOptions {
    */
   barrelWarnings?: boolean | MochiBarrelWarningOptions;
   /**
+   * Font handling for side-effect CSS imports (`import '@fontsource/inter'`, `import './lobster.css'`): Bun's CSS bundler
+   * inlines every `url()` as a base64 `data:` URI, so Mochi extracts fonts above `inlineThreshold` into separate
+   * content-hashed files, drops legacy `woff` sources when `woff2` is offered, and preloads latin-visible woff2 faces.
+   * See `MochiFontOptions` for the knobs.
+   */
+  fonts?: MochiFontOptions;
+  /**
    * Output controls for `mochi-framework build`, read from your entry alongside `optimize` and `barrelWarnings`.
    * The runtime itself ignores this field.
    */
@@ -581,9 +732,27 @@ export interface MochiServeOptions {
   [key: string]: unknown;
 }
 
+/** Object form of `MochiServeOptions['fonts']`. See that field for semantics. */
+export interface MochiFontOptions {
+  /**
+   * Fonts at or below this byte size stay inlined in the bundled CSS as `data:` URIs; larger ones are emitted as
+   * separate content-hashed files. Default: 4096. Bun copies any `url()` asset of 128 KB or more to a file of its own
+   * regardless of this value, so fonts that large are always emitted — `Infinity` inlines everything below that
+   * ceiling, not everything.
+   */
+  inlineThreshold?: number;
+  /** Drop legacy `format('woff')` sources from `@font-face` `src:` lists that also offer `woff2`. Default: `true`. */
+  dropLegacyWoff?: boolean;
+  /**
+   * Inject `<link rel="preload" as="font">` for the page's extracted woff2 fonts whose `unicode-range` is absent or
+   * covers latin, capped at 8 per page. Default: `true`.
+   */
+  preload?: boolean;
+}
+
 /** Object form of `MochiServeOptions['build']`. See that field for semantics. */
 export interface MochiBuildReportOptions {
-  /** Print the emitted-resources list, one row per local image import with dimensions and size on disk. The summary line keeps its asset count either way. Default: enabled. */
+  /** Print the emitted-resources list, one row per local image import (with dimensions) and per font extracted from imported CSS, with size on disk. The summary line keeps its counts either way. Default: enabled. */
   resources?: boolean;
 }
 
