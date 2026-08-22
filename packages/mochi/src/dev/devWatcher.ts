@@ -9,6 +9,9 @@ import type { MochiFileChangeType } from '../events';
 import { logger } from '../utils/log';
 import { evictPreprocessCacheEntry } from '../compiler/preprocessCache';
 import { extractServeOptions } from '../cli/extractServeOptions';
+import { startCronRuntime, stopCronRuntime } from '../queue';
+import { cronSignature, type MochiCronJob } from '../cron';
+import type { MochiQueueStorage } from '../queue';
 import { buildPublicUrl } from '../runtime/proxy';
 import { resolvePublicFiles, registerPublicRoutes, type PublicRouteGuard } from '../runtime/publicDir';
 import { loadSvelteConfig } from '../compiler/svelteConfig';
@@ -88,6 +91,8 @@ export interface DevWatcherDeps {
   reloadShell?: () => Promise<void>;
   reloadSpeculationRules?: (rules: SpeculationRules | undefined) => void;
   publicRouteGuard?: PublicRouteGuard;
+  /** Signature of the cron array at boot, so a reload re-registers cron only when it actually changed. */
+  initialCronSignature?: string;
 }
 
 /**
@@ -301,6 +306,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       return null;
     }
     reloadSpeculationRules?.(serveOptions.speculationRules);
+    await reconcileCron(serveOptions as { cron?: MochiCronJob[]; cronStorage?: MochiQueueStorage });
     const freshRoutes = serveOptions.routes as Record<string, unknown>;
 
     const newComponentPaths = new Set<string>();
@@ -316,6 +322,28 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
 
   let knownEntryPatterns = new Set<string>();
   let routeComponentPaths: Set<string> = new Set();
+  let lastCronSignature = deps.initialCronSignature ?? cronSignature([]);
+
+  // Re-register durable cron when an entry edit changes the cron array — the schedule reconcile drops removed jobs and
+  // upserts the rest. Skipped when nothing changed, so a route-only edit doesn't churn the scheduler.
+  async function reconcileCron(serveOptions: { cron?: MochiCronJob[]; cronStorage?: MochiQueueStorage }): Promise<void> {
+    const cron = serveOptions.cron ?? [];
+    const signature = cronSignature(cron);
+    if (signature === lastCronSignature) {
+      return;
+    }
+    lastCronSignature = signature;
+    try {
+      if (cron.length === 0) {
+        await stopCronRuntime();
+      } else {
+        await startCronRuntime(cron, { cronStorage: serveOptions.cronStorage ?? 'memory', development: true, jitterMs: 0 });
+      }
+      logger.info(`[cron] re-registered ${cron.length} job(s) after edit`);
+    } catch (err) {
+      logger.warn(`[cron] reload failed, keeping the previous schedule: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   type DevRouteType = 'api' | 'ws' | 'sse' | 'page' | 'file' | null;
 

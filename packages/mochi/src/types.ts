@@ -544,23 +544,17 @@ export interface MochiServeOptions {
   } & import('./dev/consoleLogger').ConsoleLoggerOptions;
   /**
    * Durable scheduled jobs started with the server: descriptors from `Mochi.cron(name, schedule, handler)`. Schedules
-   * live in `cronStorage`, and each firing is claimed by exactly one instance, so a job runs once across a
-   * multi-node setup thanks to that atomic per-firing claim, rather than once per replica. A run executes as a queue job named after the cron (surfacing through `queue:*`
-   * events); a handler that throws is reported through `queue:failed`, and the schedule keeps running.
+   * are persisted in `cronStorage` and a single node is elected per firing, so a job runs once across a multi-node
+   * setup rather than once per node. A run executes internally as a queue job named `cron-<name>` (surfacing through
+   * `queue:*` events); a handler that throws is reported through `queue:failed`, and the schedule keeps running.
    */
   cron?: MochiCronConfig[];
   /**
    * Storage for the durable cron scheduler (`memory` | `{ sqlite }` | `{ postgres }` | `{ pglite }`). Defaults to
-   * `queueStorage`, so cron shares the queue store unless you point it elsewhere (e.g. sqlite for cron, postgres for
-   * queues). A different store than `queueStorage` runs cron on its own bun-boss instance.
+   * `memory`, independent of `queueStorage` — cron always runs on its own bun-boss instance. Point it at a shared
+   * store (Postgres, or a SQLite file on a shared volume) for a multi-node deployment.
    */
   cronStorage?: MochiQueueStorage;
-  /**
-   * Random 0..N-second delay before the cron scheduler starts, to stagger the timekeeper poll across replicas.
-   * Off (`0`) by default and unnecessary for correctness — bun-boss elects one winner per tick atomically. Honored
-   * only when cron runs on its own store (`cronStorage` differs from `queueStorage`); ignored otherwise.
-   */
-  cronJitterSeconds?: number;
   /**
    * Drain in-memory caches when the operating system reports low memory, before the kernel starts killing processes.
    * `'warning'` (macOS only) drops aged-out entries; `'critical'` drops everything. Reports through the `cache:pressure`

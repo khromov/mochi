@@ -74,3 +74,9 @@ export function createCronJob(name: string, schedule: string, config: MochiCronO
 
   return { __mochiCron: true, name, schedule, run, options, nextRun };
 }
+
+/** A stable string identifying a cron array by what actually matters — name, schedule, tz, dev — so the dev watcher can
+ * tell whether an entry edit changed the cron config and re-register only then. Works on the descriptor or its twin. */
+export function cronSignature(jobs: ReadonlyArray<{ name: string; schedule: string; options?: MochiCronRuntimeOptions }>): string {
+  return JSON.stringify(jobs.map((j) => [j.name, j.schedule, j.options?.tz ?? null, j.options?.dev ?? true]).sort());
+}

@@ -421,7 +421,7 @@ export function assertNoConflictingStandaloneRuntime(storage: MochiQueueStorage)
   }
 }
 
-export async function startQueueRuntime(storage: MochiQueueStorage, opts?: { kind?: 'serve' | 'standalone'; enableSpies?: boolean; schedule?: boolean }): Promise<void> {
+export async function startQueueRuntime(storage: MochiQueueStorage, opts?: { kind?: 'serve' | 'standalone'; enableSpies?: boolean }): Promise<void> {
   const kind = opts?.kind ?? 'serve';
   // Whoever booted first wins: waiting on the shared in-flight promise (each iteration a distinct one) is what keeps a
   // lazy standalone connect racing a serve boot from creating two BunBoss instances and leaking the loser.
@@ -444,7 +444,7 @@ export async function startQueueRuntime(storage: MochiQueueStorage, opts?: { kin
     }
     throw new Error('The Mochi queue runtime is already running — Mochi.serve() starts it once per process.');
   }
-  registry.starting = bootQueueRuntime(storage, kind, opts?.enableSpies ?? false, opts?.schedule ?? false).finally(() => {
+  registry.starting = bootQueueRuntime(storage, kind, opts?.enableSpies ?? false).finally(() => {
     registry.starting = null;
   });
   await registry.starting;
@@ -509,8 +509,9 @@ function attachBossLogging(boss: BunBoss, label: string): void {
   });
 }
 
-async function bootQueueRuntime(storage: MochiQueueStorage, kind: 'serve' | 'standalone', enableSpies: boolean, schedule: boolean): Promise<void> {
-  const { boss, ownedSql } = constructBoss(storage, { schema: 'mochi_queue', schedule, enableSpies });
+async function bootQueueRuntime(storage: MochiQueueStorage, kind: 'serve' | 'standalone', enableSpies: boolean): Promise<void> {
+  // Queues never schedule; durable cron always runs on its own bun-boss instance (see startCronRuntime).
+  const { boss, ownedSql } = constructBoss(storage, { schema: 'mochi_queue', schedule: false, enableSpies });
   // Registered before start() so the failure path in Mochi.serve (closeAllQueueResources) closes it too.
   registry.ownedSql = ownedSql;
   attachBossLogging(boss, 'queue');
@@ -860,11 +861,19 @@ async function verifyOrCreateQueue(boss: BunBoss, entry: DeclaredQueueEntry, con
   );
 }
 
+// Durable cron runs on its own bun-boss instance keyed by this schema/table-prefix, so it never touches the queue
+// tables even when pointed at the same store. Each cron becomes a queue named `cron-<name>`, reserving that prefix.
+const CRON_SCHEMA = 'mochi_cron';
+export const CRON_QUEUE_PREFIX = 'cron-';
+/** Fixed startup jitter (ms): a random 0..N delay staggers the timekeeper poll across nodes. Not user-configurable. */
+export const CRON_JITTER_MS = 3000;
+
+const cronQueueName = (name: string): string => `${CRON_QUEUE_PREFIX}${name}`;
+
 export interface StartCronOptions {
-  /** Ride the queue boss (cron shares queueStorage) rather than a dedicated cron boss on its own store. */
-  shared: boolean;
   cronStorage: MochiQueueStorage;
   development: boolean;
+  /** Random 0..jitterMs delay before the scheduler starts. Pass 0 in dev/tests. */
   jitterMs: number;
   enableSpies?: boolean;
   /** Test hooks: low intervals let a `* * * * *` schedule fire within seconds instead of up to a minute. */
@@ -877,74 +886,91 @@ function cronRunFrom(job: MochiCronJob): MochiCronRun {
   return { name: job.name, schedule: job.schedule, scheduledTime: Date.now(), ...(job.options?.tz ? { tz: job.options.tz } : {}) };
 }
 
-// A durable cron run is a queue job named after the cron, so reuse makeHandler — the run then emits
-// queue:active/completed/failed under the cron's name, and a throw is failed-and-logged, not process-fatal.
+// A durable cron run is a queue job named `cron-<name>`, so reuse makeHandler — the run then emits
+// queue:active/completed/failed under that queue name, and a throw is failed-and-logged, not process-fatal.
 function cronWorkHandler(job: MochiCronJob) {
-  return makeHandler<unknown, void>(job.name, async () => {
+  return makeHandler<unknown, void>(cronQueueName(job.name), async () => {
     await job.run(cronRunFrom(job));
   });
 }
 
+/** Stop the dedicated cron boss (if any) and release its SQL handle. Idempotent. Schedules stay in the store. */
+export async function stopCronRuntime(): Promise<void> {
+  const { cronBoss, cronOwnedSql, shutdownTimeout } = registry;
+  registry.cronBoss = null;
+  registry.cronOwnedSql = null;
+  if (cronBoss) {
+    try {
+      await cronBoss.stop({ graceful: true, timeout: shutdownTimeout });
+    } catch (err) {
+      logger.warn(`[cron] shutdown: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  if (cronOwnedSql) {
+    try {
+      await cronOwnedSql.close();
+    } catch {
+      // Already closed by a failed start; nothing to do.
+    }
+  }
+}
+
 /**
- * Register durable schedules with bun-boss's timekeeper. The single winner per tick is elected atomically in the
- * database, so exactly one instance enqueues each firing regardless of replica count. Skipped during a build.
+ * Register durable schedules on a dedicated bun-boss instance. The single winner per tick is elected atomically in the
+ * database, so exactly one node enqueues each firing regardless of node count. Skipped during a build. Re-running it
+ * replaces any prior cron boss, so the dev watcher can re-register when the cron array changes.
  */
 export async function startCronRuntime(jobs: MochiCronJob[], opts: StartCronOptions): Promise<void> {
   if (isBuildingEntry()) {
     return;
   }
+  await stopCronRuntime();
   const active = jobs.filter((job) => !(opts.development && job.options?.dev === false));
 
-  let boss: BunBoss;
-  if (opts.shared) {
-    // Started with schedule: true by the queue mount, so its timekeeper is running.
-    boss = requireBoss();
-  } else {
-    if (opts.jitterMs > 0) {
-      // Offset the timekeeper's poll phase per instance so N replicas don't all hit the atomic claim at once.
-      await Bun.sleep(Math.floor(Math.random() * opts.jitterMs));
-    }
-    const { boss: cronBoss, ownedSql } = constructBoss(opts.cronStorage, {
-      schema: 'mochi_cron',
-      schedule: true,
-      enableSpies: opts.enableSpies ?? false,
-      cronMonitorIntervalSeconds: opts.cronMonitorIntervalSeconds,
-      cronWorkerIntervalSeconds: opts.cronWorkerIntervalSeconds,
-    });
-    attachBossLogging(cronBoss, 'cron');
-    try {
-      await cronBoss.start();
-    } catch (err) {
-      await cronBoss.stop({ graceful: false }).catch(() => {});
-      if (ownedSql) {
-        await ownedSql.close().catch(() => {});
-      }
-      throw err;
-    }
-    registry.cronBoss = cronBoss;
-    registry.cronOwnedSql = ownedSql;
-    boss = cronBoss;
+  if (opts.jitterMs > 0) {
+    await Bun.sleep(Math.floor(Math.random() * opts.jitterMs));
   }
+  const { boss, ownedSql } = constructBoss(opts.cronStorage, {
+    schema: CRON_SCHEMA,
+    schedule: true,
+    enableSpies: opts.enableSpies ?? false,
+    cronMonitorIntervalSeconds: opts.cronMonitorIntervalSeconds,
+    cronWorkerIntervalSeconds: opts.cronWorkerIntervalSeconds,
+  });
+  attachBossLogging(boss, 'cron');
+  try {
+    await boss.start();
+  } catch (err) {
+    await boss.stop({ graceful: false }).catch(() => {});
+    if (ownedSql) {
+      await ownedSql.close().catch(() => {});
+    }
+    throw err;
+  }
+  registry.cronBoss = boss;
+  registry.cronOwnedSql = ownedSql;
 
   // Reconcile: drop any schedule this runtime owns that is no longer declared (a removed Mochi.cron line, or a
   // dev-skipped job) so an orphaned schedule can't keep enqueuing jobs no worker consumes.
-  const declaredNames = new Set(active.map((job) => job.name));
+  const declaredQueues = new Set(active.map((job) => cronQueueName(job.name)));
   for (const schedule of await boss.getSchedules()) {
-    if (!declaredNames.has(schedule.name)) {
+    if (!declaredQueues.has(schedule.name)) {
       await boss.unschedule(schedule.name);
     }
   }
 
+  const cronWorkOptions = {
+    batchSize: 1,
+    includeMetadata: true,
+    perJobResults: true,
+    ...(opts.workerPollingSeconds ? { pollingIntervalSeconds: opts.workerPollingSeconds } : {}),
+  } as WorkOptions & { includeMetadata: true; perJobResults: true };
+
   for (const job of active) {
-    await boss.createQueue(job.name); // idempotent (ON CONFLICT DO NOTHING); config-preserving on an existing queue.
-    const cronWorkOptions = {
-      batchSize: 1,
-      includeMetadata: true,
-      perJobResults: true,
-      ...(opts.workerPollingSeconds ? { pollingIntervalSeconds: opts.workerPollingSeconds } : {}),
-    } as WorkOptions & { includeMetadata: true; perJobResults: true };
-    await boss.work(job.name, cronWorkOptions, cronWorkHandler(job));
-    await boss.schedule(job.name, job.schedule, {}, job.options?.tz ? { tz: job.options.tz } : undefined);
+    const queueName = cronQueueName(job.name);
+    await boss.createQueue(queueName); // idempotent (ON CONFLICT DO NOTHING); config-preserving on an existing queue.
+    await boss.work(queueName, cronWorkOptions, cronWorkHandler(job));
+    await boss.schedule(queueName, job.schedule, {}, job.options?.tz ? { tz: job.options.tz } : undefined);
     const next = job.nextRun();
     mochiEvents.emit('cron:scheduled', {
       job: job.name,
@@ -955,13 +981,13 @@ export async function startCronRuntime(jobs: MochiCronJob[], opts: StartCronOpti
   }
 }
 
-/** Names of the durable cron jobs registered in this process. */
+/** Logical names (prefix stripped) of the durable cron jobs registered in this process. */
 export async function registeredCronNames(): Promise<string[]> {
-  const boss = registry.cronBoss ?? registry.boss;
+  const boss = registry.cronBoss;
   if (!boss) {
     return [];
   }
-  return (await boss.getSchedules()).map((schedule) => schedule.name);
+  return (await boss.getSchedules()).map((schedule) => schedule.name.slice(CRON_QUEUE_PREFIX.length));
 }
 
 /** Implements `Mochi.queue(name, config)` — see its JSDoc there. */
@@ -1196,13 +1222,11 @@ export async function closeAllQueueResources(): Promise<void> {
   while (registry.starting) {
     await registry.starting.catch(() => {});
   }
-  const { boss, ownedSql, cronBoss, cronOwnedSql, shutdownTimeout } = registry;
+  const { boss, ownedSql, shutdownTimeout } = registry;
   // Cleared first so a fresh serve in this process (e.g. a test that restarts) can re-mount its queues even if a
   // close below fails.
   registry.boss = null;
   registry.ownedSql = null;
-  registry.cronBoss = null;
-  registry.cronOwnedSql = null;
   registry.kind = null;
   registry.storage = null;
   registry.starting = null;
@@ -1226,20 +1250,5 @@ export async function closeAllQueueResources(): Promise<void> {
       // The handle may already be closed by a failed start; nothing to do.
     }
   }
-  // A dedicated cron boss (cron on a store other than queueStorage) is its own instance; schedules stay in the DB
-  // (that is the point of durable cron), so only the runtime is stopped, never unscheduled.
-  if (cronBoss) {
-    try {
-      await cronBoss.stop({ graceful: true, timeout: shutdownTimeout });
-    } catch (err) {
-      logger.warn(`[cron] shutdown: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-  if (cronOwnedSql) {
-    try {
-      await cronOwnedSql.close();
-    } catch {
-      // Already closed by a failed start; nothing to do.
-    }
-  }
+  await stopCronRuntime();
 }

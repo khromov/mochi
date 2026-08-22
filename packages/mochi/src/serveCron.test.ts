@@ -37,7 +37,7 @@ const serve = async (opts: Partial<Parameters<typeof Mochi.serve>[0]>): Promise<
 describe('Mochi.serve({ cron })', () => {
   // Only one Mochi.serve() may succeed per process (the __mochi_config__ singleton), so exactly one test boots a
   // server; the rest assert rejections, which throw in the prelude before the singleton pins.
-  test('starts durable schedules on the shared queue store and stops them on shutdown', async () => {
+  test('starts durable schedules and stops them on shutdown', async () => {
     server = await serve({ cron: [Mochi.cron('nightly', IDLE, () => {}), Mochi.cron('weekly', IDLE, () => {})] });
     expect((await registeredCronNames()).sort()).toEqual(['nightly', 'weekly']);
 
@@ -50,13 +50,10 @@ describe('Mochi.serve({ cron })', () => {
     expect(await registeredCronNames()).toEqual([]);
   });
 
-  test('rejects a cron job whose name collides with a queue', async () => {
-    await expect(
-      serve({
-        queues: [Mochi.queue('reports', { process: async () => null })],
-        cron: [Mochi.cron('reports', IDLE, () => {})],
-      }),
-    ).rejects.toThrow(/both a cron job and a queue/);
+  // A durable cron runs as a queue named `cron-<name>`, so that prefix is reserved for user queues instead of
+  // rejecting on a name-by-name overlap.
+  test('rejects a queue that uses the reserved cron- prefix', async () => {
+    await expect(serve({ queues: [Mochi.queue('cron-reports', { process: async () => null })] })).rejects.toThrow(/reserved "cron-" prefix/);
   });
 
   test('rejects anything that is not a Mochi.cron descriptor', async () => {
@@ -65,10 +62,6 @@ describe('Mochi.serve({ cron })', () => {
 
   test('rejects an invalid cronStorage', async () => {
     await expect(serve({ cron: [Mochi.cron('x', IDLE, () => {})], cronStorage: { sqlite: '' } as never })).rejects.toThrow(/expected 'memory'/);
-  });
-
-  test('rejects a negative cronJitterSeconds', async () => {
-    await expect(serve({ cron: [Mochi.cron('x', IDLE, () => {})], cronJitterSeconds: -1 })).rejects.toThrow(/non-negative number/);
   });
 
   test('the descriptor is recognised by isMochiCron', () => {

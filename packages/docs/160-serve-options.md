@@ -65,8 +65,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `staticDirs` — extra directory trees mounted under a URL prefix. See [Static directories](#static-directories).
 - `memoryPressure` — drain in-memory caches when the OS reports low memory. Default: `true`. See [Cache](/docs/cache/#memory-pressure).
 - `cron` — durable scheduled jobs to start with the server, from `Mochi.cron(name, schedule, handler)`. See [Scheduled jobs](/docs/scheduled-jobs/).
-- `cronStorage` — where the cron scheduler stores schedules and jobs. Defaults to `queueStorage`. See [Scheduled jobs](/docs/scheduled-jobs/#storage).
-- `cronJitterSeconds` — opt-in random startup delay for the cron scheduler. Default `0`. See [Scheduled jobs](/docs/scheduled-jobs/#staggering-startup-cronjitterseconds).
+- `cronStorage` — where the cron scheduler stores schedules and jobs. Defaults to `memory`, independent of `queueStorage`. See [Scheduled jobs](/docs/scheduled-jobs/#storage).
 - `outDir` — base directory for build artifacts and dev cache. Default: `./.mochi`.
 - `assetPrefix` — URL prefix for framework client assets and the server-island endpoint. Must start with `/`, must not be `/` or end with `/`. Default: `/_mochi`.
 - `additionalWatchPaths` — extra dev-mode watcher paths added to `src` and `public`. Default: `[]`.
