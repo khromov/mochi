@@ -274,8 +274,12 @@ export const routes: Record<string, MochiRouteValue> = {
     },
     { rateLimit: { limit: 30, window: '1m' } },
   ),
-  '/stickers': Mochi.page('./src/stickers/Sticker.svelte'),
-  '/stickers/logo': Mochi.page('./src/stickers/StickerLogo.svelte'),
+  ...(DEVELOPMENT
+    ? {
+        '/stickers': Mochi.page('./src/stickers/Sticker.svelte'),
+        '/stickers/logo': Mochi.page('./src/stickers/StickerLogo.svelte'),
+      }
+    : {}),
   '/sitemap.xml': Mochi.api(async () => {
     return new Response(await buildSitemapXml(), {
       headers: { 'Content-Type': 'application/xml; charset=utf-8' },
