@@ -11,21 +11,7 @@ await runTests({
     // its 30s timeout. Running it after the parallel batch removes the load.
     'src/liveReloadFilter.test.ts',
   ],
-  windowsSequential: [
-    // Its last case races three concurrent runners against one SQLite file, so it
-    // depends on the OS resolving writer-vs-writer lock contention inside the
-    // runner's 30s busy_timeout. Windows file locking is slow enough that four
-    // test files competing for the disk push it past that: the leg failed twice
-    // in a row here, once with SQLITE_BUSY and once hanging outright, while
-    // Linux/macOS settle the same race in ~15ms. Running it after the parallel
-    // batch removes the competing load; the test itself is unchanged.
-    'src/migrations/runnerSqlite.test.ts',
-    // Same lane for the same reason: it drives PGlite over a socket bridge that
-    // serves one backend, opening and closing a connection per migration run, and
-    // under parallel Windows load that churn stalls until the file deadline.
-    'src/migrations/runnerPostgres.test.ts',
-  ],
-  // See testing.ts `windowsSkip`. Both suites' logic is OS-agnostic and fully
+  // See testing.ts `windowsSkip`. Every suite's logic is OS-agnostic and fully
   // covered on Linux/macOS.
   windowsSkip: [
     // Passes every test but deterministically wedges in Bun's native post-test
@@ -38,5 +24,20 @@ await runTests({
     // There is no way to signal another process for it to observe, so the
     // shutdown path is only testable on Linux/macOS.
     'src/shutdownSignal.test.ts',
+    // Its concurrency case races three runners against one SQLite file, so what
+    // it really asserts is an OS property — how fast writer-vs-writer lock
+    // contention clears — not anything Mochi controls. Linux settles it in ~15ms;
+    // Windows repeatedly blew past the runner's 30s busy_timeout into
+    // SQLITE_BUSY. WAL does not help: the contention is between writers, which
+    // WAL still serializes. The one-at-a-time serial lane did not fix it either.
+    'src/migrations/runnerSqlite.test.ts',
+    // Hangs on Windows at the first test that aborts a transaction, until the
+    // 60s file deadline kills it. The stall is in @electric-sql/pglite-socket's
+    // QueryQueueManager: with the backend left in a transaction under a departed
+    // handler, processQueue finds no query from that handler, breaks, and never
+    // drains what other handlers queued behind it. Third-party, and only
+    // reachable through the socket bridge the fixture needs to speak the wire
+    // protocol; the serial lane did not fix this one either.
+    'src/migrations/runnerPostgres.test.ts',
   ],
 });
