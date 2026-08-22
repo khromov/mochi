@@ -4,9 +4,7 @@ const SITE_URL = 'https://demos.mochi.fast';
 const DEFAULT_OG_IMAGE = `${SITE_URL}/og-default.jpg`;
 const DEFAULT_DESCRIPTION = 'A small collection of real apps built on the Mochi framework — server-rendered Svelte with islands of hydration.';
 
-// No `titleTemplate` — each demo (HN, Admin, Todo) sets its own full title
-// rather than getting a "— Mochi Demos" suffix that conflicts with each demo's
-// own branding.
+// No `titleTemplate` — each demo sets its own full title rather than getting a "— Mochi Demos" suffix that'd conflict with its branding.
 export const baseMetaTags: MetaTagsProps = {
   description: DEFAULT_DESCRIPTION,
   canonical: `${SITE_URL}/`,

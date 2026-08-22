@@ -1,5 +1,50 @@
 import { describe, expect, test } from 'bun:test';
-import { resolveMochiVersionRange, retargetDockerignore, setDefaultPort, stripDockerfileEnvPort, transformPackageJson, transformTsconfig, validatePackageName } from './utils.ts';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  bunVersionWarning,
+  resolveMochiVersionRange,
+  retargetDockerignore,
+  setDefaultPort,
+  stringifyJson,
+  stripDockerfileEnvPort,
+  transformPackageJson,
+  transformTsconfig,
+  validatePackageName,
+} from './utils.ts';
+
+/** A scaffold dir whose `patches/` folder holds the given `name@version.patch` files (none → no `patches/` dir). */
+function scaffoldDir(patchFiles: string[] = []): string {
+  const dir = mkdtempSync(join(tmpdir(), 'create-mochi-test-'));
+  if (patchFiles.length > 0) {
+    const patchesDir = join(dir, 'patches');
+    mkdirSync(patchesDir);
+    for (const file of patchFiles) {
+      writeFileSync(join(patchesDir, file), '');
+    }
+  }
+  return dir;
+}
+
+describe('bunVersionWarning', () => {
+  test('warns below the recommended Bun 1.4', () => {
+    expect(bunVersionWarning('1.3.14')).toContain('1.4');
+    expect(bunVersionWarning('1.0.0')).toContain('1.4');
+    expect(bunVersionWarning('0.8.1')).toContain('1.4');
+  });
+
+  test('stays quiet on 1.4 and newer', () => {
+    expect(bunVersionWarning('1.4.0')).toBeNull();
+    expect(bunVersionWarning('1.4.2')).toBeNull();
+    expect(bunVersionWarning('1.10.0')).toBeNull();
+    expect(bunVersionWarning('2.0.0')).toBeNull();
+  });
+
+  test('stays quiet on an unparseable version rather than false-warning', () => {
+    expect(bunVersionWarning('unknown')).toBeNull();
+  });
+});
 
 describe('validatePackageName', () => {
   test('accepts simple names', () => {
@@ -43,16 +88,16 @@ describe('transformPackageJson', () => {
         svelte: '^5.55.1',
       },
       devDependencies: {
-        '@types/bun': '1.3.14',
+        '@types/bun': '1.4.0',
       },
     });
 
-    const out = JSON.parse(transformPackageJson(input, { name: 'my-app', mochiVersion: '^0.2.5' }));
+    const out = JSON.parse(transformPackageJson(input, { name: 'my-app', mochiVersion: '^0.2.5', dir: scaffoldDir() }));
     expect(out.name).toBe('my-app');
     expect(out.private).toBe(true);
     expect(out.dependencies['mochi-framework']).toBe('^0.2.5');
     expect(out.dependencies.svelte).toBe('^5.55.1');
-    expect(out.devDependencies['@types/bun']).toBe('1.3.14');
+    expect(out.devDependencies['@types/bun']).toBe('1.4.0');
   });
 
   test('replaces workspace:* deps for non-mochi packages with "latest"', () => {
@@ -60,30 +105,41 @@ describe('transformPackageJson', () => {
       name: 'pkg',
       dependencies: { 'some-internal-lib': 'workspace:*' },
     });
-    const out = JSON.parse(transformPackageJson(input, { name: 'p', mochiVersion: '^0.1.0' }));
+    const out = JSON.parse(transformPackageJson(input, { name: 'p', mochiVersion: '^0.1.0', dir: scaffoldDir() }));
     expect(out.dependencies['some-internal-lib']).toBe('latest');
   });
 
   test('handles missing dependency fields', () => {
     const input = JSON.stringify({ name: 'pkg' });
-    const out = JSON.parse(transformPackageJson(input, { name: 'my-app', mochiVersion: '^0.1.0' }));
+    const out = JSON.parse(transformPackageJson(input, { name: 'my-app', mochiVersion: '^0.1.0', dir: scaffoldDir() }));
     expect(out.name).toBe('my-app');
   });
 
   test('output ends with a newline', () => {
     const input = JSON.stringify({ name: 'x' });
-    expect(transformPackageJson(input, { name: 'y', mochiVersion: '^0.1.0' }).endsWith('\n')).toBe(true);
+    expect(transformPackageJson(input, { name: 'y', mochiVersion: '^0.1.0', dir: scaffoldDir() }).endsWith('\n')).toBe(true);
   });
 
-  test('wires up the svelte-check patch', () => {
-    const input = JSON.stringify({ name: 'mochi-minimal' });
-    const out = JSON.parse(transformPackageJson(input, { name: 'my-app', mochiVersion: '^0.1.0' }));
+  // Derived from the patch files the template ships — not a hardcoded list — so a
+  // published CLI never drifts behind a template's svelte-check bump.
+  test('derives patchedDependencies from the template patches/ dir', () => {
+    const dir = scaffoldDir(['svelte-check@4.7.3.patch', 'svelte-check@4.7.4.patch']);
+    const out = JSON.parse(transformPackageJson(JSON.stringify({ name: 'mochi-minimal' }), { name: 'my-app', mochiVersion: '^0.1.0', dir }));
     expect(out.patchedDependencies).toEqual({
-      'svelte-check@4.4.7': 'patches/svelte-check@4.4.7.patch',
-      'svelte-check@4.6.0': 'patches/svelte-check@4.6.0.patch',
-      'svelte-check@4.7.1': 'patches/svelte-check@4.7.1.patch',
       'svelte-check@4.7.3': 'patches/svelte-check@4.7.3.patch',
+      'svelte-check@4.7.4': 'patches/svelte-check@4.7.4.patch',
     });
+  });
+
+  test('omits patchedDependencies when the template ships no patches/ dir', () => {
+    const out = JSON.parse(transformPackageJson(JSON.stringify({ name: 'mochi-minimal' }), { name: 'my-app', mochiVersion: '^0.1.0', dir: scaffoldDir() }));
+    expect(out.patchedDependencies).toBeUndefined();
+  });
+
+  test('ignores non-.patch files in patches/', () => {
+    const dir = scaffoldDir(['svelte-check@4.7.4.patch', 'README.md']);
+    const out = JSON.parse(transformPackageJson(JSON.stringify({ name: 'mochi-minimal' }), { name: 'my-app', mochiVersion: '^0.1.0', dir }));
+    expect(out.patchedDependencies).toEqual({ 'svelte-check@4.7.4': 'patches/svelte-check@4.7.4.patch' });
   });
 });
 
@@ -115,6 +171,51 @@ describe('transformTsconfig', () => {
   });
 });
 
+describe('stringifyJson', () => {
+  test('collapses short primitive arrays onto one line, like prettier does', () => {
+    const out = stringifyJson({ lib: ['ESNext', 'DOM', 'DOM.Iterable'], strict: true });
+    expect(out).toContain('"lib": ["ESNext", "DOM", "DOM.Iterable"]');
+    expect(out.endsWith('\n')).toBe(true);
+  });
+
+  test('keeps arrays with object elements expanded', () => {
+    const out = stringifyJson({ overrides: [{ files: ['*.svelte'] }] });
+    expect(out).toContain('"overrides": [\n');
+    expect(out).toContain('"files": ["*.svelte"]');
+  });
+
+  test('keeps very long primitive arrays expanded', () => {
+    const out = stringifyJson({ items: Array.from({ length: 40 }, (_, i) => `entry-number-${i}`) });
+    expect(out).toContain('"items": [\n');
+  });
+
+  test('round-trips values and drops undefined like JSON.stringify', () => {
+    const value = { a: 1, b: 'x', c: null, d: undefined, e: [], f: {} };
+    expect(JSON.parse(stringifyJson(value))).toEqual(JSON.parse(JSON.stringify(value)));
+  });
+
+  test('serializes undefined array elements as null, like JSON.stringify', () => {
+    const out = stringifyJson({ a: [1, undefined, 3] });
+    expect(out).not.toContain('undefined');
+    expect(JSON.parse(out)).toEqual({ a: [1, null, 3] });
+  });
+
+  // The inline-vs-expand decision must mirror prettier's, which fits the whole `"key": […],` line into printWidth 180.
+  test('counts the key prefix when deciding whether an array fits inline', () => {
+    const shortKeyLongArray = stringifyJson({ k: Array.from({ length: 12 }, () => 'x'.repeat(10)) });
+    expect(shortKeyLongArray).toContain('"k": ["xxxxxxxxxx", ');
+    const longKeySameArray = stringifyJson({ ['k'.repeat(170)]: Array.from({ length: 12 }, () => 'x'.repeat(10)) });
+    expect(longKeySameArray).toContain('": [\n');
+  });
+
+  test('transformTsconfig output keeps the inlined base arrays prettier-clean', () => {
+    const out = transformTsconfig(JSON.stringify({ extends: '../../tsconfig.base.json', compilerOptions: { types: ['bun'] }, include: ['src/**/*'] }));
+    expect(out).toContain('"lib": ["ESNext", "DOM", "DOM.Iterable"]');
+    expect(out).toContain('"types": ["bun"]');
+    expect(out).toContain('"include": ["src/**/*"]');
+  });
+});
+
 describe('setDefaultPort', () => {
   test('replaces a non-3333 port and preserves surrounding context', () => {
     const input = `import { Mochi } from 'mochi-framework';\n\nconst PORT = Number(process.env.PORT) || 3335;\n\nawait Mochi.serve({ port: PORT });\n`;
@@ -138,16 +239,16 @@ describe('setDefaultPort', () => {
 
 describe('stripDockerfileEnvPort', () => {
   test('removes the ENV PORT line and preserves the rest', () => {
-    const input = `FROM oven/bun:1.3.14-alpine\nRUN bun run build\n\nENV PORT=3333\nEXPOSE 3333\nCMD ["bun", "run", "start"]\n`;
+    const input = `FROM oven/bun:1.4.0-alpine\nRUN bun run build\n\nENV PORT=3333\nEXPOSE 3333\nCMD ["bun", "run", "start"]\n`;
     const out = stripDockerfileEnvPort(input);
     expect(out).not.toContain('ENV PORT=3333');
     expect(out).toContain('EXPOSE 3333');
     expect(out).toContain('CMD ["bun", "run", "start"]');
-    expect(out).toContain('FROM oven/bun:1.3.14-alpine');
+    expect(out).toContain('FROM oven/bun:1.4.0-alpine');
   });
 
   test('is idempotent when no ENV PORT line is present', () => {
-    const input = `FROM oven/bun:1.3.14-alpine\nEXPOSE 3333\n`;
+    const input = `FROM oven/bun:1.4.0-alpine\nEXPOSE 3333\n`;
     expect(stripDockerfileEnvPort(input)).toBe(input);
   });
 });

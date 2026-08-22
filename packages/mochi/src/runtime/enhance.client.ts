@@ -32,7 +32,8 @@ function clone<T extends HTMLElement>(element: T): T {
  * - `success` → `form.reset()` (skip with `update({ reset: false })`)
  * - `failure` → no-op (provide a callback to update UI)
  * - `redirect` → `window.location.assign(result.location)`
- * - `error` → `console.error('[mochi] enhance:', error)`
+ * - `error` → logged via `console.error('[mochi] enhance:', error)` before any callback runs, so a
+ *   custom handler cannot silently swallow it
  *
  * To react to a failure, pass a `submit` callback returning a result handler — Mochi has no client-side `page.form`
  * store, `goto`, or `invalidateAll`.
@@ -60,10 +61,7 @@ export function enhance<Success extends MochiFormShape = MochiFormShape, Failure
         window.location.assign(result.location);
         return;
       }
-      if (result.type === 'error') {
-        logger.error('enhance:', result.error);
-        return;
-      }
+      // error: already logged in handleSubmit before any callback dispatch.
       // failure: no-op by default. The user can subscribe via the submit callback.
       void action;
     };
@@ -152,6 +150,12 @@ export function enhance<Success extends MochiFormShape = MochiFormShape, Failure
             return;
           }
           result = { type: 'error', error: err };
+        }
+
+        // Logged before the callback dispatch so a custom handler that only branches on
+        // success/failure can't turn a transport or server error into a silent no-op.
+        if (result.type === 'error') {
+          logger.error('enhance:', result.error);
         }
 
         await callback({

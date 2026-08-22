@@ -36,17 +36,32 @@ Arguments:
 
 Options:
   --template <name>   starter template (minimal | demos)
-  --name <name>       package.json `name` field (defaults to the directory name)
   --force             overwrite existing directory contents
+  --eslint            include ESLint setup (default)
+  --no-eslint         skip ESLint setup
+  --prettier          include Prettier setup (default)
+  --no-prettier       skip Prettier setup
+  --vercel            rename the Dockerfile to Vercel's Dockerfile.vercel convention
+  --no-vercel         keep the plain Dockerfile (default)
   -v, --version       show CLI version
   -h, --help          show this help
 ```
+
+The `package.json` `name` field defaults to the target directory's name.
 
 Run with no arguments for an interactive prompt:
 
 ```sh
 bunx create-mochi
 ```
+
+## Linting and formatting
+
+Scaffolds include ESLint and Prettier by default (skip either with `--no-eslint` / `--no-prettier`, or answer the interactive prompts):
+
+- **ESLint** adds an `eslint.config.js` flat config (`@eslint/js`, `typescript-eslint`, `eslint-plugin-svelte`) plus `lint` / `lint:fix` scripts.
+- **Prettier** adds `.prettierrc` and `.prettierignore` (with `prettier-plugin-svelte`) plus `format` / `format:check` scripts.
+- When both are enabled, `eslint-config-prettier` is included so ESLint defers formatting concerns to Prettier.
 
 ## Programmatic API
 
@@ -57,8 +72,15 @@ await create({
   dir: './my-app',
   template: 'minimal',
   name: 'my-app',
+  eslint: true, // default
+  prettier: true, // default
+  vercel: false, // default
 });
 ```
+
+## Deploying to Vercel
+
+Answering yes to the **"Are you planning to deploy to Vercel?"** prompt (or passing `--vercel`) renames the scaffolded `Dockerfile` to `Dockerfile.vercel`, strips its baked-in `ENV PORT` so the app honours Vercel's injected `$PORT`, and retargets the matching `.dockerignore` entry. See the [Mochi on Vercel](https://mochi.fast/docs/vercel/) guide.
 
 ## Requirements
 

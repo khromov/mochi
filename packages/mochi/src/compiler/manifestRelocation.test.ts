@@ -133,8 +133,8 @@ describe('manifest relocation (build → move → boot)', () => {
     rmSync(buildDir, RM_OPTS);
   });
 
-  test('manifest is v2 and contains no absolute artifact paths', () => {
-    expect(manifest.version).toBe(2);
+  test('manifest is v3 and contains no absolute artifact paths', () => {
+    expect(manifest.version).toBe(3);
     // Guard the categories that would otherwise pass this test vacuously — an
     // empty map has no absolute paths in it either.
     expect(Object.keys(manifest.components).length).toBeGreaterThan(0);
@@ -148,6 +148,8 @@ describe('manifest relocation (build → move → boot)', () => {
       ...Object.values(manifest.components).map((c) => c.ssrModule),
       ...Object.values(manifest.clientFiles),
       ...Object.values(manifest.localImageAssets ?? {}).map((a) => a.diskPath),
+      ...Object.values(manifest.fontAssets ?? {}).map((a) => a.diskPath),
+      ...Object.values(manifest.importCssAssets ?? {}).map((a) => a.diskPath),
       manifest.serverIslandScript!,
     ];
     for (const p of diskPaths) {
@@ -238,7 +240,7 @@ describe('manifest relocation (build → move → boot)', () => {
     writeFileSync(otherPath, JSON.stringify(other));
 
     const { ComponentRegistry } = await import('./ComponentRegistry');
-    await expect(ComponentRegistry.fromManifest(otherPath, false)).rejects.toThrow(`is version ${version}, but this mochi-framework runtime reads version 2`);
+    await expect(ComponentRegistry.fromManifest(otherPath, false)).rejects.toThrow(`is version ${version}, but this mochi-framework runtime reads version 3`);
   });
 });
 

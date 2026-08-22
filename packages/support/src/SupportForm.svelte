@@ -6,8 +6,7 @@
   let { captcha }: { captcha: MintedCaptcha } = $props();
 
   const hydratable = isHydratable();
-  // For SSR-only (plain HTML) renders, read the form action result so the
-  // confirmation / error survives the page re-render after a POST.
+  // For SSR-only (plain HTML) renders, read the form action result so confirmation/error survives the page re-render after a POST.
   const _form = !hydratable && isServer ? getRequestContext().form : null;
   const _failError = _form && !_form.ok && typeof _form.data?.error === 'string' ? _form.data.error : null;
 

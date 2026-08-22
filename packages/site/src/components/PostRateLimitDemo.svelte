@@ -3,9 +3,8 @@
   import Zap from '@lucide/svelte/icons/zap';
   import ZapOff from '@lucide/svelte/icons/zap-off';
 
-  // Purely illustrative — a local counter, no network. It clicks itself: five
-  // "requests" fill the meter, the sixth trips a mock 429 that cools down over a
-  // few seconds, then the loop starts over.
+  // Purely illustrative — a local counter, no network; it clicks itself in a loop that
+  // fills the meter, trips a mock 429, cools down, then repeats.
   const LIMIT = 5;
   const COOLDOWN = 5;
 
@@ -20,9 +19,8 @@
   let observer: IntersectionObserver | undefined;
 
   onMount(() => {
-    // Hold still until the demo first scrolls into view, then drive the button on
-    // a steady beat; send() no-ops while limited, so the loop naturally pauses for
-    // the cooldown and resumes once it clears.
+    // Hold still until the demo scrolls into view, then drive the button on a steady beat —
+    // send() no-ops while limited, so the loop pauses for the cooldown and resumes on its own.
     observer = new IntersectionObserver((entries) => {
       if (entries.some((e) => e.isIntersecting)) {
         observer?.disconnect();

@@ -1,6 +1,3 @@
-// Mochi brand animation: renders 900 satori frames -> PNG (resvg) -> MP4 (ffmpeg).
-// Run: bun run animate   (from packages/video-animations), or `bun run mochi:animate` at the repo root.
-// Frames render across VIDEO_WORKERS threads (default 4); set VIDEO_WORKERS=1 for a single-threaded run.
 import { resolve } from 'node:path';
 import { rmSync, mkdirSync, existsSync } from 'node:fs';
 import { prepareFonts } from './prepare-fonts';
@@ -35,8 +32,6 @@ async function renderInline() {
   }
 }
 
-// Fan out frame rendering across `WORKERS` worker threads, each handling a
-// round-robin slice. Resolves once every worker reports done.
 async function renderParallel() {
   const workerUrl = new URL('./render-worker.ts', import.meta.url).href;
   const started = Bun.nanoseconds();

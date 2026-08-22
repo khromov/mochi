@@ -5,12 +5,9 @@ import { demos } from './demos';
 
 const DEMOS_DIR = path.join(import.meta.dir, '..', 'demos');
 
-/**
- * The per-demo llms.txt routes are generated from this registry, so an entry
- * missing `slug`/`files` produces no route at all and the URL 404s — with
- * nothing failing at build time and nothing to test, since every other demo
- * test also iterates the registry. These two checks are the independent witness.
- */
+// The per-demo llms.txt routes are generated from this registry, so an entry missing
+// `slug`/`files` produces no route at all and the URL 404s silently — these checks are
+// the independent witness for that.
 describe('demo registry', () => {
   it('every internal demo declares a slug and a non-empty files list', () => {
     const incomplete = demos.filter((d) => d.href.startsWith('/')).filter((d) => !d.slug || !d.files || d.files.length === 0);

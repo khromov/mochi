@@ -18,7 +18,7 @@ Add a `Dockerfile.vercel` (a copy of the [production Dockerfile](/docs/docker/) 
 
 ```dockerfile
 # file: Dockerfile.vercel
-FROM oven/bun:1.3-alpine
+FROM oven/bun:1.4-alpine
 WORKDIR /app
 COPY . .
 RUN bun install --production
@@ -34,7 +34,7 @@ vercel deploy
 
 <Callout type="info">
 
-`create-mochi` sets this up for you — the **"Are you planning to deploy to Vercel?"** prompt (or the `--vercel` flag) renames the scaffolded `Dockerfile` to `Dockerfile.vercel` and strips its baked-in `ENV PORT` so it honours Vercel's injected port.
+`create-mochi` sets this up for you (create-mochi 0.4.0+) — the **"Are you planning to deploy to Vercel?"** prompt (or the `--vercel` flag) renames the scaffolded `Dockerfile` to `Dockerfile.vercel` and strips its baked-in `ENV PORT` so it honours Vercel's injected port.
 
 </Callout>
 

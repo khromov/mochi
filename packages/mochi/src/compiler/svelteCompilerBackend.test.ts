@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { compile as svelteCompile } from 'svelte/compiler';
+import { logger } from '../utils/log';
 import { backendId, isBackend, loadRsvelte, officialBackend, resetSvelteCompilerCache, resolveSvelteCompiler } from './svelteCompilerBackend';
 
 const ENV_VAR = 'MOCHI_SVELTE_COMPILER';
@@ -46,8 +47,21 @@ describe('resolveSvelteCompiler', () => {
   });
 
   it('memoizes resolution', async () => {
-    process.env[ENV_VAR] = 'rsvelte';
-    expect(await resolveSvelteCompiler('rsvelte')).toBe(await resolveSvelteCompiler('rsvelte'));
+    // Break the real adapter import so every underlying load is observable as one warn — a
+    // second warn would mean the second call re-ran loadRsvelte instead of hitting the cache.
+    mock.module('@mochi-framework/rsvelte', () => {
+      throw new Error('unavailable in this test');
+    });
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    try {
+      process.env[ENV_VAR] = 'rsvelte';
+      const first = await resolveSvelteCompiler('rsvelte');
+      expect(first).toBe(officialBackend);
+      expect(await resolveSvelteCompiler('rsvelte')).toBe(first);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 

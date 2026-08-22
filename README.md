@@ -2,7 +2,7 @@
 
 An SSR framework for [Svelte 5](https://svelte.dev/) + [Bun](https://bun.sh/) with islands-based selective hydration.
 
-> **Early prototype.** Only use in production if you are brave!
+> **Work in progress.** Mochi is a new framework and we're still working on features. Be one of the first ones to try it and report any issues you find!
 
 ## Quick start
 
@@ -10,7 +10,7 @@ An SSR framework for [Svelte 5](https://svelte.dev/) + [Bun](https://bun.sh/) wi
 bun create mochi@latest
 ```
 
-(Requires `Bun >= 1.3.14`, [Why Bun?](https://mochi.fast/docs/why-bun/))
+(Requires `Bun >= 1.4.0`, [Why Bun?](https://mochi.fast/docs/why-bun/))
 
 ## Documentation
 
@@ -30,7 +30,7 @@ bun i
 bun dev
 ```
 
-_Bun must be v1.3.14 or newer (see [`.bun-version`](./.bun-version))._
+_Bun must be v1.4.0 or newer (see [`.bun-version`](./.bun-version))._
 
 #### Available sites
 
