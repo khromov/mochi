@@ -1,12 +1,10 @@
 import type { HydratableComponent, PreprocessIslandError, ServerIslandComponent } from './svelteAstPreprocess';
 
 /**
- * The full result of compiling one `.svelte` / `.md` source for a given target:
- * the emitted JS the bundler consumes, the scoped CSS (server only — the client
- * build strips CSS), and the hydration metadata extracted by the preprocessor.
- * Everything a call site needs to replay its side effects on a cache hit —
- * including the preprocessor's island errors, so a hit on an unfixed file
- * re-reports them instead of silently clearing the compile error.
+ * The full result of compiling one `.svelte` / `.md` source for a target: the emitted JS the bundler consumes, the
+ * scoped CSS (server only, since the client build strips it), and the preprocessor's hydration metadata — everything a
+ * call site needs to replay its side effects on a cache hit. That includes the preprocessor's island errors, so a hit on
+ * an unfixed file re-reports them instead of silently clearing the compile error.
  */
 export interface CompiledFileOutput {
   js: string;
@@ -34,31 +32,24 @@ export function createCompileCacheStats(): CompileCacheStats {
 }
 
 /**
- * Compute the cache fingerprint for a build. Output depends on the merged Svelte
- * compiler options and the dev flag; `target` is already encoded in the key.
- * Functions in the options (e.g. `warningFilter`) are dropped by JSON — they
- * don't affect emitted code, so a collision on them is harmless.
+ * Compute the cache fingerprint for a build. Output depends on the merged Svelte compiler options, the dev flag, and
+ * which backend emitted it, with `target` already encoded in the key; JSON drops functions like `warningFilter`, which
+ * don't affect emitted code.
  *
- * The fingerprint deliberately does NOT cover the markdown/mdsvex config or the
- * user preprocessors: those aren't serializable (functions/plugins), and they're
- * fixed for the lifetime of a `CompileCache` instance — which is owned by a
- * single `ComponentRegistry`. Two registries with different markdown/preprocessor
- * config never share a cache, so they can't collide. See {@link CompileCache}.
+ * Markdown/mdsvex config and user preprocessors stay out of the fingerprint: they aren't serializable and are fixed for
+ * the lifetime of a `CompileCache` instance, which one `ComponentRegistry` owns, so registries with different config
+ * never share a cache. See {@link CompileCache}.
  */
-export function compileFingerprint(userCompilerOptions: unknown, development: boolean): string {
-  return `${JSON.stringify(userCompilerOptions ?? {})}|dev=${development}`;
+export function compileFingerprint(userCompilerOptions: unknown, development: boolean, backendId = 'svelte'): string {
+  return `${JSON.stringify(userCompilerOptions ?? {})}|dev=${development}|compiler=${backendId}`;
 }
 
 /**
- * Content-addressed cache of compiled component output, owned per
- * `ComponentRegistry` instance (NOT a module global). Per-instance scoping is
- * load-bearing for correctness: compiled output depends on the registry's
- * markdown/mdsvex config and user preprocessors, which the {@link compileFingerprint}
- * can't serialize. A module-global cache shared across registries could serve
- * registry B the output registry A produced for the same path under different
- * config — per-instance ownership makes that collision unrepresentable. (This is
- * why the compile cache is instance-scoped while `preprocessCache` can safely be
- * a module global: the directive scan it memoizes is config-independent.)
+ * Content-addressed cache of compiled component output, owned per `ComponentRegistry` instance. That scoping is
+ * load-bearing: compiled output depends on the registry's markdown/mdsvex config and user preprocessors, which
+ * {@link compileFingerprint} can't serialize, so a module-global cache could serve registry B the output registry A
+ * produced for the same path under different config. `preprocessCache` can be a module global because the directive
+ * scan it memoizes is config-independent.
  */
 export class CompileCache {
   // Keyed by `${target}\u0000${filePath}` so the server and client builds of the same
@@ -87,10 +78,7 @@ export class CompileCache {
     this.#entries.set(this.#key(target, filePath), { source, fingerprint, output });
   }
 
-  /**
-   * Drop both target entries for `filePath`. Called by the dev watcher on `unlink`
-   * so deleted files don't accumulate stale entries over a long dev session.
-   */
+  /** Drop both target entries for `filePath`; the dev watcher calls it on `unlink` so deleted files don't accumulate stale entries over a long session. */
   evict(filePath: string): void {
     this.#entries.delete(this.#key('server', filePath));
     this.#entries.delete(this.#key('client', filePath));

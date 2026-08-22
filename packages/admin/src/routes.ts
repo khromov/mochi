@@ -1,3 +1,4 @@
+import { Mochi } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
 import { routes as dashboardRoutes } from './routes/dashboard';
 import { routes as authRoutes } from './routes/auth';
@@ -9,4 +10,5 @@ export const routes: Record<string, MochiRouteValue> = {
   ...authRoutes,
   ...productRoutes,
   ...profileRoutes,
+  '/health': Mochi.api(() => Response.json({ status: 'ok' })),
 };

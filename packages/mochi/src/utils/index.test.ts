@@ -3,7 +3,10 @@ import type { Server } from 'bun';
 import type { BunRouteValue } from '../types';
 import {
   DEFAULT_ASSET_PREFIX,
+  error,
   headResponse,
+  httpStatusText,
+  MochiHttpError,
   negotiate,
   normalizeAssetPrefix,
   normalizeIslandHydrationMarkers,
@@ -13,6 +16,38 @@ import {
   withHead,
 } from './index';
 import path from 'node:path';
+
+describe('error / MochiHttpError', () => {
+  test('message defaults to the canonical status text', () => {
+    expect(new MochiHttpError(404).message).toBe('Not Found');
+    expect(new MochiHttpError(429).message).toBe('Too Many Requests');
+  });
+
+  test('unknown statuses fall back to Error <status>', () => {
+    expect(new MochiHttpError(299).message).toBe('Error 299');
+    expect(httpStatusText(299)).toBe('Error 299');
+  });
+
+  test('statuses outside the common set still get their canonical text', () => {
+    expect(httpStatusText(402)).toBe('Payment Required');
+    expect(httpStatusText(451)).toBe('Unavailable For Legal Reasons');
+  });
+
+  test('an explicit message wins over the default', () => {
+    expect(new MochiHttpError(404, 'No such fruit').message).toBe('No such fruit');
+  });
+
+  test('error(status) throws a MochiHttpError with the defaulted message', () => {
+    try {
+      error(404);
+      throw new Error('unreachable');
+    } catch (err) {
+      expect(err).toBeInstanceOf(MochiHttpError);
+      expect((err as MochiHttpError).status).toBe(404);
+      expect((err as MochiHttpError).message).toBe('Not Found');
+    }
+  });
+});
 
 describe('negotiate', () => {
   const types = ['application/json', 'text/html'];
@@ -88,10 +123,9 @@ describe('stripHydrationMarkers', () => {
     expect(stripHydrationMarkers(html)).toBe(html);
   });
 
-  // The tests below pin the lol-html dispatch invariants the flag-based
-  // implementation depends on (see the NOTE(bun<1.4.0) in utils.ts): the
-  // element-scoped comments handler must fire before the document handler for
-  // the same comment, and must cover descendant comments. If a Bun upgrade
+  // The tests below pin the onEndTag depth-counter invariant: an island's end
+  // tag must fire before the document handler sees the sibling comment that
+  // follows it, and island descendants must count as inside. If a Bun upgrade
   // ever breaks either, these fail loudly instead of hydration breaking
   // silently in production.
   test('does not touch <mochi-hydratable-island> contents', () => {

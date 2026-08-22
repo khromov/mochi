@@ -11,15 +11,19 @@
 
   const W = 720;
   const PAD = 6;
+  // svelte-ignore state_referenced_locally
   const ys = data.map((d) => d.v);
   const minY = Math.min(...ys);
   const spanY = Math.max(...ys) - minY || 1;
+  // svelte-ignore state_referenced_locally
   const n = data.length;
 
   const px = (i: number) => (n <= 1 ? 0 : (i / (n - 1)) * W);
   const py = (v: number) => PAD + (1 - (v - minY) / spanY) * (height - PAD * 2);
 
+  // svelte-ignore state_referenced_locally
   const line = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${px(i).toFixed(2)},${py(d.v).toFixed(2)}`).join(' ');
+  // svelte-ignore state_referenced_locally
   const area = `${line} L${W},${height} L0,${height} Z`;
 </script>
 

@@ -57,6 +57,12 @@ describe('admin template', () => {
     expect(await res.text()).toContain('Dashboard');
   }, 15_000);
 
+  test('GET /health reports ok', async () => {
+    const res = await fetch(`${base}/health`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: 'ok' });
+  });
+
   test('GET /products/ lists seeded products', async () => {
     const res = await fetch(`${base}/products/`);
     expect(res.status).toBe(200);

@@ -6,8 +6,7 @@
 
   let { initial, suggestedUser }: { initial: QueueStatus; suggestedUser: string } = $props();
 
-  // Seed from the serverProps snapshot; the SSE stream then owns all three. These
-  // are the server's global counters, identical in every connected browser.
+  // Seed from the serverProps snapshot; the SSE stream then owns these server-global counters.
   // svelte-ignore state_referenced_locally
   let pending = $state(initial.inFlight);
   // svelte-ignore state_referenced_locally
@@ -20,7 +19,7 @@
   let lastQueued = $state<string | null>(null);
 
   $effect(() => {
-    const source = new EventSource('/demos/queue/events/');
+    const source = new EventSource('/demos/queue/events');
     source.addEventListener('message', (e) => {
       const status = JSON.parse(e.data) as QueueStatus;
       pending = status.inFlight;

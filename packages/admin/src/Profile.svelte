@@ -18,11 +18,13 @@
   const values = failData?.values ?? {};
   const notice = form && form.ok && typeof (form.data as { notice?: string }).notice === 'string' ? (form.data as { notice: string }).notice : null;
 
+  // svelte-ignore state_referenced_locally
   const joined = new Date(profile.joinedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
+  // svelte-ignore state_referenced_locally
   const fields = [
-    { key: 'name' as const, label: 'Display name', type: 'text', value: values.name ?? profile.name, autocomplete: 'name' },
-    { key: 'email' as const, label: 'Email', type: 'email', value: values.email ?? profile.email, autocomplete: 'email' },
+    { key: 'name' as const, label: 'Display name', type: 'text', value: values.name ?? profile.name, autocomplete: 'name' as const },
+    { key: 'email' as const, label: 'Email', type: 'email', value: values.email ?? profile.email, autocomplete: 'email' as const },
   ];
 </script>
 

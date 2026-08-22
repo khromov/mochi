@@ -2,7 +2,7 @@
   <div class="hero-inner">
     <h1 class="logo">🍡 mochi</h1>
     <p class="lede">
-      An experimental SSR framework for <span class="nowrap">Svelte 5</span> and
+      Islands framework for <span class="nowrap">Svelte 5</span> and
       <span class="nowrap">Bun</span>.
     </p>
     <p class="dek">Render everything on the server; ship JavaScript only where it earns its place.</p>

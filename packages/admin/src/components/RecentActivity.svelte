@@ -1,5 +1,10 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import { isServer } from 'mochi-framework';
+
+  // Declared only so the fallback children in Dashboard.svelte type-check — a
+  // mochi:defer island never renders them itself.
+  let { children: _children }: { children?: Snippet } = $props();
 
   // Server island (mochi:defer): the page ships without this list, then fetches
   // it from /_mochi/island/RecentActivity after load. The artificial 2s delay

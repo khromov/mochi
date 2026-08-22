@@ -1,14 +1,13 @@
 <script lang="ts">
-  import { enhance, isServer, getRequestContext } from 'mochi-framework';
+  import { enhance, isServer, getRequestContext, isHydratable } from 'mochi-framework';
   import type { MochiEnhanceOptions, MochiSubmitFunction, MintedCaptcha } from 'mochi-framework';
   import { MochiCaptcha } from 'mochi-framework/components';
 
-  let { isHydratable, captcha }: { isHydratable?: boolean; captcha: MintedCaptcha } = $props();
+  let { captcha }: { captcha: MintedCaptcha } = $props();
 
-  // For SSR-only (plain HTML) renders, read the form action result so the
-  // confirmation / error survives the page re-render after a POST.
-  // svelte-ignore state_referenced_locally
-  const _form = !isHydratable && isServer ? getRequestContext().form : null;
+  const hydratable = isHydratable();
+  // For SSR-only (plain HTML) renders, read the form action result so confirmation/error survives the page re-render after a POST.
+  const _form = !hydratable && isServer ? getRequestContext().form : null;
   const _failError = _form && !_form.ok && typeof _form.data?.error === 'string' ? _form.data.error : null;
 
   type FailData = { error: string };

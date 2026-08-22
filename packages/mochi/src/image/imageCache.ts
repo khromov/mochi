@@ -37,11 +37,9 @@ export interface RegenResult {
   height: number;
   format: ImageFormat;
   /**
-   * `createdAt` of the original generation these bytes were encoded from. A regen
-   * that ran against a still-stale original honestly stamps the old generation, so
-   * the next request sees the mismatch and regenerates again once the original has
-   * refreshed — stamping the new generation onto bytes resized from the old one
-   * would serve stale content as fresh.
+   * `createdAt` of the original generation these bytes were encoded from. A regen against a still-stale original stamps
+   * the old generation honestly, so the next request sees the mismatch and regenerates once the original has refreshed;
+   * stamping the new generation onto bytes resized from the old one would serve stale content as fresh.
    */
   originalCreatedAt: number;
 }
@@ -55,11 +53,9 @@ export function srcHash(src: string): string {
 }
 
 /**
- * Identifies a variant by its source and the size's config hash. The config
- * hash already folds in every byte-affecting field (dims, ops, format, quality),
- * so a size redefinition changes the id — a new cache entry and ETag — while
- * two sizes with identical config correctly share one entry. Deliberately NOT
- * keyed by the TTLs.
+ * Identifies a variant by its source and the size's config hash, which already folds in every byte-affecting field
+ * (dims, ops, format, quality). A size redefinition therefore changes the id — a new cache entry and ETag — while two
+ * sizes with identical config share one entry. TTLs stay out of the key.
  */
 export function variantId(src: string, configHash: string): string {
   return hash(`variant:${configHash}:${src}`);
@@ -141,18 +137,14 @@ function pathForKey(storage: Storage, key: string): string {
 }
 
 /**
- * Image cache backed by {@link MochiCache} over {@link FileStorage}. Originals,
- * resized variants, and blur placeholders are each a cache entry under the
- * `MochiImage:Original:` / `MochiImage:Variant:` / `MochiImage:Placeholder:` key
- * convention; the SWR window, request coalescing, and binary persistence all come
- * from the shared cache primitives.
+ * Image cache backed by {@link MochiCache} over {@link FileStorage}. Originals, resized variants, and blur placeholders
+ * are each an entry under the `MochiImage:Original:` / `MochiImage:Variant:` / `MochiImage:Placeholder:` key convention,
+ * taking their SWR window, request coalescing, and binary persistence from the shared cache primitives.
  *
- * A variant has no window of its own — it serves fresh only while the shared
- * original is fresh and the variant's stamped generation (`originalCreatedAt`)
- * matches it; otherwise it serves stale and regenerates in the background. Hard
- * invalidation deletes the original key, whose `cache:delete` event cascades to
- * the source's variants and placeholder; everything else is reclaimed by the
- * age-based sweep.
+ * A variant has no window of its own: it serves fresh only while the shared original is fresh and its stamped
+ * `originalCreatedAt` matches, and otherwise serves stale while regenerating in the background. Hard invalidation
+ * deletes the original key, whose `cache:delete` cascades to that source's variants and placeholder; the age-based
+ * sweep reclaims the rest.
  */
 export class ImageCache {
   private readonly storage: Storage;
@@ -166,21 +158,16 @@ export class ImageCache {
     this.minTimeToStale = options.minTimeToStale;
     this.maxTimeToLive = options.maxTimeToLive;
     this.sizes = options.sizes;
-    // Eviction stays the backend's; only the schedule and the per-kind accounting
-    // live here. So FileStorage's own timer is off (`purgeInterval: 0`) and the image
-    // sweeper (`sweeper.ts`) calls `sweep()` instead — one janitor, on an interval the
-    // image config owns, reporting variants/originals separately. `maxAge >=
-    // maxTimeToLive`, so it never drops a servable entry. A caller-supplied `storage`
-    // keeps its own eviction policy (e.g. `MemoryStorage`'s `maxAge`); driving it from
-    // here is what puts every backend on that one schedule.
-    // offloadBinary: image bytes are exactly the large-binary case blob offloading
-    // exists for — metadata reads must never load the encoded bytes.
+    // Eviction stays the backend's; only the schedule and per-kind accounting live here. FileStorage's own timer is off
+    // (`purgeInterval: 0`) and `sweeper.ts` drives `sweep()` instead — one janitor, on an interval the image config
+    // owns, reporting variants and originals separately, with `maxAge >= maxTimeToLive` so a servable entry survives.
+    // A caller-supplied `storage` keeps its own eviction policy, and driving it from here puts every backend on that one
+    // schedule. `offloadBinary` is on because image bytes are the large-binary case blob offloading exists for.
     this.storage = options.storage ?? new FileStorage({ directory: options.cacheDir, maxAge: options.maxTimeToLive, purgeInterval: 0, offloadBinary: true });
-    // 60s in-flight timeout: an image regen (fetch upstream → decode → resize)
-    // should never hold the per-key coalescing lock for long, so a hung upstream
-    // fails fast instead of parking every waiter until the far larger default.
-    // crossProcessInflight: the cache dir is shared across load-balanced processes,
-    // so an advisory marker lets peers skip duplicate regens (lease = the 60s above).
+    // A regen (fetch upstream → decode → resize) holds the per-key coalescing lock only briefly, so a 60s timeout makes
+    // a hung upstream fail fast instead of parking every waiter until the far larger default. The cache dir is shared
+    // across load-balanced processes, so `crossProcessInflight` lets an advisory marker — leased to that same 60s — save
+    // peers a duplicate regen.
     this.cache = new MochiCache({
       minTimeToStale: this.minTimeToStale,
       maxTimeToLive: this.maxTimeToLive,
@@ -201,13 +188,9 @@ export class ImageCache {
   }
 
   /**
-   * Release this cache's bus subscription and stop its storage's own timers. For
-   * teardown (tests, or an explicitly owned instance).
-   *
-   * Not called on server stop: `getImageRuntime()` is a global singleton that
-   * outlives a `Mochi.serve()` cycle, so disposing it there would leave the next
-   * server with a live cache whose cascade no longer fires. `Mochi.serve` stops the
-   * sweeper's timers instead.
+   * Release this cache's bus subscription and stop its storage's timers, for teardown in tests or an explicitly owned
+   * instance. Server stop uses the sweeper's timers instead, since `getImageRuntime()` is a global singleton outliving a
+   * `Mochi.serve()` cycle and disposing it there would leave the next server a live cache whose cascade no longer fires.
    */
   dispose(): void {
     mochiEvents.removeHandler(this.cascadeHandlerName);
@@ -235,15 +218,11 @@ export class ImageCache {
   }
 
   /**
-   * Read a cached variant keyed by its `variantId` (source + size config hash).
-   * A variant has no window of its own: it is served fresh only while the shared
-   * original is fresh AND the variant was encoded from that exact original
-   * generation (`originalCreatedAt`). A stale original or a generation mismatch
-   * serves the in-hand bytes stale and regenerates in the background; the regen
-   * stamps the generation it actually encoded from, so a regen that raced a
-   * still-refreshing original converges on the next request instead of serving
-   * old bytes as fresh. Probing the original uses a lazy blob ref, so a fresh
-   * variant serve never loads the original's bytes.
+   * Read a cached variant keyed by its `variantId`. It serves fresh only while the shared original is fresh and the
+   * variant was encoded from that exact generation; a stale original or generation mismatch serves the in-hand bytes
+   * stale and regenerates in the background, stamping the generation it actually encoded from, so a regen racing a
+   * still-refreshing original converges on the next request. The original is probed through a lazy blob ref, so a fresh
+   * variant serve leaves its bytes on disk.
    */
   async getVariant(src: string, id: string, regenerate: () => Promise<RegenResult>): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
     const key = varKey(id);
@@ -296,11 +275,7 @@ export class ImageCache {
     return { entry: { bytes, meta: this.metaFrom(src, value) }, status: mapStatus(status) };
   }
 
-  /**
-   * Get-or-fetch the full-size original bytes for a source, shared across every
-   * variant and keyed by `src` alone. Every entry shares the one global
-   * stale/evict window configured on the cache.
-   */
+  /** Get-or-fetch the full-size original bytes for a source, keyed by `src` alone and shared across every variant under the cache's one global stale/evict window. */
   async getOriginal(src: string, fetchFn: () => Promise<{ bytes: Uint8Array; contentType: string | null }>): Promise<{ entry: CacheEntry; status: ImageCacheStatus }> {
     const key = origKey(src);
     const { value, status } = await this.cache.fetchWithStatus<StoredImage>(key, async () => {
@@ -334,10 +309,8 @@ export class ImageCache {
   }
 
   /**
-   * Immediately invalidate a source. `hard` deletes the original key — its
-   * `cache:delete` cascades to every variant and the placeholder; `soft` marks
-   * the original stale so the variant mirror serves stale-while-revalidate. No-op
-   * if nothing is cached.
+   * Immediately invalidate a source. `hard` deletes the original key, whose `cache:delete` cascades to every variant and
+   * the placeholder; `soft` marks the original stale so the variant mirror serves stale-while-revalidate.
    */
   async invalidateOriginal(src: string, hard: boolean): Promise<void> {
     const key = origKey(src);
@@ -364,20 +337,20 @@ export class ImageCache {
   }
 
   /**
-   * Empty the entire image cache — every original, resized variant, and blur
-   * placeholder — by clearing the backing storage in one shot. Unlike
-   * `invalidateOriginal`, this does not emit a per-entry `image:delete`; it's a
-   * wholesale reset intended for the dev debug bar. No-op on an empty cache.
+   * Empty the entire image cache — every original, resized variant, and blur placeholder — by clearing the backing
+   * storage in one shot. A wholesale reset for the dev debug bar, so it stays silent where `invalidateOriginal` emits a
+   * per-entry `image:delete`.
    */
   async clearAll(): Promise<void> {
     await this.cache.clearItems();
   }
 
-  /**
-   * Number of entries currently in the cache (originals + variants + placeholders,
-   * plus any transient in-flight markers) — a rough size indicator for the dev
-   * debug bar. Returns `0` if the backing storage can't report a count.
-   */
+  /** Resolves once in-flight regenerations — including the background ones a stale read starts — have settled. See {@link MochiCache.whenIdle}. */
+  async whenIdle(): Promise<void> {
+    await this.cache.whenIdle();
+  }
+
+  /** Entries currently cached — originals, variants, placeholders, and transient in-flight markers — as a rough size indicator for the dev debug bar. `0` when the backend can't count. */
   async count(): Promise<number> {
     return (await this.storage.count?.()) ?? 0;
   }

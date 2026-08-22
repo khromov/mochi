@@ -2,9 +2,13 @@ export type TrailingSlashPolicy = 'always' | 'never';
 
 const HAS_EXTENSION = /\.[^./]+$/;
 
+function isSlashExempt(pathname: string): boolean {
+  return pathname === '/' || HAS_EXTENSION.test(pathname);
+}
+
 export function trailingSlashRedirect(method: string, url: URL, policy: TrailingSlashPolicy): Response | null {
   const { pathname } = url;
-  if (pathname === '/' || HAS_EXTENSION.test(pathname)) {
+  if (isSlashExempt(pathname)) {
     return null;
   }
 
@@ -18,11 +22,6 @@ export function trailingSlashRedirect(method: string, url: URL, policy: Trailing
   return null;
 }
 
-/**
- * Removes trailing forward slashes if they exist.
- *
- * If the string doesn't end with a slash, we simply return it.
- */
 function unTrailingSlashIt(str: string): string {
   if (str.endsWith('/') || str.endsWith('\\')) {
     return unTrailingSlashIt(str.slice(0, -1));
@@ -32,11 +31,8 @@ function unTrailingSlashIt(str: string): string {
 }
 
 /**
- * Appends a trailing slash to the path portion of a string.
- *
- * Strips any slash the path already ends with first, so the result is never
- * double-slashed. A query string or `#fragment` is split off, left untouched,
- * and re-attached after the path so the slash always lands on the path itself.
+ * Appends a trailing slash to the path portion of a string, stripping any slash already there so the result never
+ * doubles up. A query string or `#fragment` is split off, left untouched, and re-attached, so the slash lands on the path.
  */
 export function trailingSlashIt(str: string): string {
   const boundary = str.search(/[?#]/);
@@ -47,10 +43,7 @@ export function trailingSlashIt(str: string): string {
 }
 
 export function alternateSlashPattern(pattern: string): string | null {
-  if (pattern === '/') {
-    return null;
-  }
-  if (HAS_EXTENSION.test(pattern)) {
+  if (isSlashExempt(pattern)) {
     return null;
   }
   return pattern.endsWith('/') ? pattern.slice(0, -1) : pattern + '/';

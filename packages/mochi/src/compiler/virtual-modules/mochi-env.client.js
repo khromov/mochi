@@ -1,4 +1,6 @@
 export const isServer = false; export const isBrowser = true; export const DEV = __MOCHI_DEV__; export const isDev = __MOCHI_DEV__;
+// Always false in the browser: a build never runs client-side, so nothing that executes here is ever mid-build.
+export const isBuilding = false;
 // Shared thrower for the server-only stubs below. Each stub stays a pure
 // declaration (tree-shaken when unused); this helper is pulled in only if one is.
 const __serverOnly = (n) => { throw new Error(n + " is only available on the server"); };
@@ -44,6 +46,9 @@ export { setLogLevel, getLogLevel };
 export const logger = __mochi_logger;
 if (typeof window !== "undefined" && window.__mochi_log_level) setLogLevel(window.__mochi_log_level);
 export function devWarn(msg) { if (typeof window !== "undefined" && window.__mochi_warn) window.__mochi_warn(msg); else __mochi_logger.warn(msg); }
+// Isomorphic: pins a value on globalThis (per realm in the browser). Real re-export,
+// not a server-only stub, so island code can dedupe singletons on the client too.
+export { pinGlobal } from "__MOCHI_GLOBAL_STATE__";
 export { stringify, parse } from "__MOCHI_DEVALUE__";
 export { trailingSlashIt } from "__MOCHI_TRAILING_SLASH__";
 // Server-only; the preprocessor never injects __mochi_emit_props__
@@ -67,6 +72,39 @@ export const mochiEvents = {
     );
   },
 };
+// The request cache is server-only, but an island's top-level code runs again
+// during hydration — so these degrade to uncached pass-through rather than
+// throwing and breaking the hydration pass. A one-time dev warning flags the
+// mismatch, since on the client they run uncached and see none of the server's
+// cached values (usually not what a hydrated component wants).
+let __warnedRequestCache = false;
+function __warnRequestCache(name) {
+  if (!DEV || __warnedRequestCache) return;
+  __warnedRequestCache = true;
+  devWarn(
+    name + " ran in the browser. The request cache is server-only; on the client it runs " +
+    "uncached and does not replay the server's values. Use it in server-only code or " +
+    "non-hydrated islands, or Svelte's hydratable() to reuse a server value after hydration."
+  );
+}
+export function requestCache(_key, fn) { __warnRequestCache("requestCache()"); return fn(); }
+export function requestMemo(fn) {
+  return (...args) => { __warnRequestCache("requestMemo()"); return fn(...args); };
+}
+export function getRequestCache() {
+  __warnRequestCache("getRequestCache()");
+  const m = new Map();
+  return {
+    get: (k) => m.get(k),
+    set: (k, v) => { m.set(k, v); },
+    has: (k) => m.has(k),
+    delete: (k) => m.delete(k),
+    clear: () => { m.clear(); },
+    getOrSet: (k, fn) => (m.has(k) ? m.get(k) : (m.set(k, fn()), m.get(k))),
+    get size() { return m.size; },
+    stats: () => ({ hits: 0, misses: 0 }),
+  };
+}
 // MochiCache + storage adapters are server-only; ship stubs that throw so
 // accidental client imports surface clearly instead of failing the bundle.
 export class MochiCache { constructor() { __serverOnly("MochiCache"); } }
@@ -87,7 +125,15 @@ export function getImage() { __serverOnly("getImage()"); }
 export function getImagePlaceholder() { return Promise.resolve(null); }
 export function imagePlaceholder() { return Promise.resolve(null); }
 export function invalidateImage() { __serverOnly("invalidateImage()"); }
+export { reloadDeferredIsland, reloadDeferredIslandAll } from "__MOCHI_DEFER_API__";
+export { deferReloadState, DeferReloadState } from "__MOCHI_DEFER_REACTIVE__";
 export function memoryStore() { __serverOnly("memoryStore()"); }
 export function sqliteStore() { __serverOnly("sqliteStore()"); }
 export function postgresStore() { __serverOnly("postgresStore()"); }
 export { enhance, deserialize } from "__MOCHI_ENHANCE_CLIENT__";
+// Constant by construction: client bundles are built only for islands, so
+// every component that executes in the browser is part of a hydrating (or
+// client-only mounting) subtree. No context lookup needed.
+export function isHydratable() { return true; }
+// Server filesystem path — meaningless in the browser.
+export const PROTECTION_SHELL_COMPONENT = undefined;

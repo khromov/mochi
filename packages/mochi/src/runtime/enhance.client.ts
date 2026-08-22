@@ -5,10 +5,7 @@ import { logger } from '../utils/log';
 
 const noop = (): void => {};
 
-/**
- * Decode an `ActionResult` JSON envelope produced by Mochi's enhanced POST flow.
- * Useful when rolling your own `onsubmit` instead of `{@attach enhance(...)}`.
- */
+/** Decode an `ActionResult` JSON envelope from Mochi's enhanced POST flow, for rolling your own `onsubmit` instead of `{@attach enhance(...)}`. */
 export function deserialize<Success extends MochiFormShape = MochiFormShape, Failure extends MochiFormShape = MochiFormShape>(text: string): MochiEnhanceResult<Success, Failure> {
   const parsed = JSON.parse(text) as MochiEnhanceResult<Success, Failure> & { data?: unknown };
   if (typeof parsed.data === 'string') {
@@ -17,19 +14,14 @@ export function deserialize<Success extends MochiFormShape = MochiFormShape, Fai
   return parsed;
 }
 
-/**
- * Shallow-clone a form so attribute-named inputs (e.g. `<input name="action">`)
- * can't shadow real form properties when we read them.
- */
+// Shallow-cloning keeps attribute-named inputs like `<input name="action">` from shadowing real form properties on read.
 function clone<T extends HTMLElement>(element: T): T {
   return HTMLElement.prototype.cloneNode.call(element) as T;
 }
 
 /**
- * Progressive-enhancement attachment for `<form method="POST">`. Returns a
- * Svelte attachment that intercepts the native submit, sends the form data
- * over `fetch` with `Accept: application/json`, and invokes either a
- * user-supplied result callback or a minimal default fallback.
+ * Progressive-enhancement attachment for `<form method="POST">`: it intercepts the native submit, sends the form data
+ * over `fetch` with `Accept: application/json`, and invokes a user-supplied result callback or the default fallback.
  *
  * ```svelte
  * <form method="POST" {@attach enhance()}>
@@ -40,11 +32,11 @@ function clone<T extends HTMLElement>(element: T): T {
  * - `success` → `form.reset()` (skip with `update({ reset: false })`)
  * - `failure` → no-op (provide a callback to update UI)
  * - `redirect` → `window.location.assign(result.location)`
- * - `error` → `console.error('[mochi] enhance:', error)`
+ * - `error` → logged via `console.error('[mochi] enhance:', error)` before any callback runs, so a
+ *   custom handler cannot silently swallow it
  *
- * Mochi has no client-side `page.form` store, no `goto`, and no
- * `invalidateAll` — components that need to react to failures should pass a
- * `submit` callback that returns a result handler.
+ * To react to a failure, pass a `submit` callback returning a result handler — Mochi has no client-side `page.form`
+ * store, `goto`, or `invalidateAll`.
  */
 export function enhance<Success extends MochiFormShape = MochiFormShape, Failure extends MochiFormShape = MochiFormShape>(
   options?: MochiSubmitFunction<Success, Failure> | MochiEnhanceOptions<Success, Failure>,
@@ -69,10 +61,7 @@ export function enhance<Success extends MochiFormShape = MochiFormShape, Failure
         window.location.assign(result.location);
         return;
       }
-      if (result.type === 'error') {
-        logger.error('enhance:', result.error);
-        return;
-      }
+      // error: already logged in handleSubmit before any callback dispatch.
       // failure: no-op by default. The user can subscribe via the submit callback.
       void action;
     };
@@ -93,10 +82,8 @@ export function enhance<Success extends MochiFormShape = MochiFormShape, Failure
       const enctype = submitter?.hasAttribute('formenctype') ? submitter.formEnctype : formClone.enctype;
       const formData = new FormData(formElement, submitter);
 
-      // A `<input type="file">` without `enctype="multipart/form-data"` would
-      // silently coerce the file to its filename (or empty string) on the wire,
-      // which is almost never what the author wanted. Surface it loudly.
-      // See https://github.com/sveltejs/kit/issues/9819.
+      // An `<input type="file">` without `enctype="multipart/form-data"` silently coerces the file to its filename, or
+      // an empty string, on the wire. See https://github.com/sveltejs/kit/issues/9819.
       if (enctype !== 'multipart/form-data') {
         for (const value of formData.values()) {
           if (typeof value !== 'string') {
@@ -163,6 +150,12 @@ export function enhance<Success extends MochiFormShape = MochiFormShape, Failure
             return;
           }
           result = { type: 'error', error: err };
+        }
+
+        // Logged before the callback dispatch so a custom handler that only branches on
+        // success/failure can't turn a transport or server error into a silent no-op.
+        if (result.type === 'error') {
+          logger.error('enhance:', result.error);
         }
 
         await callback({

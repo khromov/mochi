@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "bun": ">=1.3.14"
+    "bun": ">=1.4.0"
   },
   "scripts": {
     "build": "mochi-framework build",
@@ -11,18 +11,20 @@
     "dev": "MODE=development bun src/index.ts",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
     "test": "bun scripts/run-tests.ts",
-    "clean": "rimraf .mochi"
+    "clean": "rm -rf .mochi"
   },
   "dependencies": {
-    "@fontsource-variable/fraunces": "^5.2.9",
-    "@fontsource/public-sans": "^5.2.7",
+    "@fontsource-variable/fraunces": "^5.3.0",
+    "@fontsource/public-sans": "^5.3.0",
+    "@nprapps/sidechain": "^1.1.5",
     "mochi-framework": "workspace:*",
     "mochi-shared": "workspace:*",
-    "svelte": "^5.56.5"
+    "svelte": "^5.56.8"
   },
   "devDependencies": {
-    "@types/bun": "1.3.14",
-    "svelte-check": "4.7.3",
+    "@types/bun": "1.4.0",
+    "devalue": "^5.9.0",
+    "svelte-check": "4.7.4",
     "typescript": "^6.0.3"
   },
   "overrides": {

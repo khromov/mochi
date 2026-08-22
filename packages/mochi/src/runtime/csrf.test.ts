@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
-import { csrfCheck, isFormContentType } from './csrf';
+import { afterEach, beforeEach, describe, expect, spyOn, test, type Mock } from 'bun:test';
+import { csrfBootWarning, csrfCheck, isFormContentType } from './csrf';
 import { initExtensions } from '../extensions';
 
 const SAME = 'http://localhost:3333';
@@ -218,8 +218,14 @@ describe('csrfCheck with filtered formContentTypes / protectedMethods', () => {
 });
 
 describe('csrfCheck in development mode', () => {
+  // Hook-managed spy so a failed assertion can't leak it into later tests.
+  let warn: Mock<typeof console.warn>;
+  beforeEach(() => {
+    warn = spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => warn.mockRestore());
+
   test('cross-origin form POST returns null and warns', () => {
-    const warn = spyOn(console, 'warn').mockImplementation(() => {});
     const r = req('POST', {
       contentType: 'application/x-www-form-urlencoded',
       origin: 'http://evil.example',
@@ -229,38 +235,31 @@ describe('csrfCheck in development mode', () => {
     const message = warn.mock.calls[0]!.join(' ');
     expect(message).toContain('would be blocked in production');
     expect(message).toContain('http://evil.example');
-    warn.mockRestore();
   });
 
   test('missing Origin on form POST returns null and warns', () => {
-    const warn = spyOn(console, 'warn').mockImplementation(() => {});
     const r = req('POST', { contentType: 'application/x-www-form-urlencoded' });
     expect(csrfCheck(r, sameUrl, undefined, PROD_PROXY, true)).toBeNull();
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]!.join(' ')).toContain('<missing>');
-    warn.mockRestore();
   });
 
   test('same-origin form POST does not warn', () => {
-    const warn = spyOn(console, 'warn').mockImplementation(() => {});
     const r = req('POST', {
       contentType: 'application/x-www-form-urlencoded',
       origin: SAME,
     });
     expect(csrfCheck(r, sameUrl, undefined, PROD_PROXY, true)).toBeNull();
     expect(warn).not.toHaveBeenCalled();
-    warn.mockRestore();
   });
 
   test('checkOrigin: false short-circuits before any warning', () => {
-    const warn = spyOn(console, 'warn').mockImplementation(() => {});
     const r = req('POST', {
       contentType: 'application/x-www-form-urlencoded',
       origin: 'http://evil.example',
     });
     expect(csrfCheck(r, sameUrl, { checkOrigin: false }, PROD_PROXY, true)).toBeNull();
     expect(warn).not.toHaveBeenCalled();
-    warn.mockRestore();
   });
 
   test('production parity: development=false still returns 403', () => {
@@ -273,6 +272,13 @@ describe('csrfCheck in development mode', () => {
 });
 
 describe('csrfCheck with proxy options', () => {
+  // Hook-managed spy so a failed assertion can't leak it into later tests.
+  let warn: Mock<typeof console.warn>;
+  beforeEach(() => {
+    warn = spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => warn.mockRestore());
+
   test('passes when Origin matches the explicit proxy.origin', () => {
     const r = req('POST', {
       contentType: 'application/x-www-form-urlencoded',
@@ -311,7 +317,6 @@ describe('csrfCheck with proxy options', () => {
   });
 
   test('dev warning reflects the resolved expected origin', () => {
-    const warn = spyOn(console, 'warn').mockImplementation(() => {});
     const r = req('POST', {
       contentType: 'application/x-www-form-urlencoded',
       origin: 'http://evil.example',
@@ -319,11 +324,17 @@ describe('csrfCheck with proxy options', () => {
     expect(csrfCheck(r, sameUrl, undefined, { origin: 'https://my.site' }, true)).toBeNull();
     const message = warn.mock.calls[0]!.join(' ');
     expect(message).toContain('allowed: https://my.site');
-    warn.mockRestore();
   });
 });
 
 describe('csrfCheck safe-by-default (no proxy config)', () => {
+  // Hook-managed spy so a failed assertion can't leak it into later tests.
+  let warn: Mock<typeof console.warn>;
+  beforeEach(() => {
+    warn = spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => warn.mockRestore());
+
   test('prod + no proxy config + same-origin form POST → 403 with both messages', async () => {
     const r = req('POST', {
       contentType: 'application/x-www-form-urlencoded',
@@ -390,7 +401,6 @@ describe('csrfCheck safe-by-default (no proxy config)', () => {
   });
 
   test('dev + no proxy config + form POST → null and warns about missing config', () => {
-    const warn = spyOn(console, 'warn').mockImplementation(() => {});
     const r = req('POST', {
       contentType: 'application/x-www-form-urlencoded',
       origin: SAME,
@@ -400,18 +410,15 @@ describe('csrfCheck safe-by-default (no proxy config)', () => {
     const message = warn.mock.calls[0]!.join(' ');
     expect(message).toContain('would be blocked in production');
     expect(message).toContain('proxy.origin');
-    warn.mockRestore();
   });
 
   test('dev + proxy.origin set + same-origin POST → null and does not warn', () => {
-    const warn = spyOn(console, 'warn').mockImplementation(() => {});
     const r = req('POST', {
       contentType: 'application/x-www-form-urlencoded',
       origin: SAME,
     });
     expect(csrfCheck(r, sameUrl, undefined, { origin: SAME }, true)).toBeNull();
     expect(warn).not.toHaveBeenCalled();
-    warn.mockRestore();
   });
 });
 
@@ -464,5 +471,33 @@ describe('csrfCheck via csrf:check filter', () => {
     // delegating returns it unchanged.
     expect(captured.decision?.status).toBe(403);
     expect(out).toBe(captured.decision as Response);
+  });
+});
+
+describe('csrfBootWarning', () => {
+  const page = (actions?: Record<string, unknown>) => ({ __mochiPage: true, actions });
+  const routesWithActions = { '/contact': page({ default: async () => null }), '/about': page() };
+
+  test('warns when a route declares actions and no trusted origin is configured', () => {
+    const warning = csrfBootWarning({ routes: routesWithActions });
+    expect(warning).toContain('1 route(s) declare form actions (e.g. "/contact")');
+    expect(warning).toContain('blocked with 403 in production');
+    expect(warning).toContain("proxy: { origin: '...' }");
+  });
+
+  test('stays silent without action routes, and for pages with an empty actions map', () => {
+    expect(csrfBootWarning({ routes: { '/about': page(), '/empty': page({}) } })).toBeNull();
+    expect(csrfBootWarning({ routes: {} })).toBeNull();
+    expect(csrfBootWarning({})).toBeNull();
+  });
+
+  test('stays silent when a trusted origin is configured', () => {
+    expect(csrfBootWarning({ routes: routesWithActions, proxy: { origin: 'https://app.example' } })).toBeNull();
+    expect(csrfBootWarning({ routes: routesWithActions, proxy: { hostHeader: 'x-forwarded-host' } })).toBeNull();
+  });
+
+  test('stays silent when the check is disabled or overridden by a csrf:check filter', () => {
+    expect(csrfBootWarning({ routes: routesWithActions, csrf: { checkOrigin: false } })).toBeNull();
+    expect(csrfBootWarning({ routes: routesWithActions, filters: { 'csrf:check': () => null } })).toBeNull();
   });
 });

@@ -1,12 +1,15 @@
 import type { SourceSpec } from '../components/utils.ts';
 import { files as api } from '../demos/api/files.ts';
 import { files as cacheEvents } from '../demos/cache-events/files.ts';
+import { files as charts } from '../demos/charts/files.ts';
 import { files as chat } from '../demos/chat/files.ts';
 import { files as clientOnly } from '../demos/client-only/files.ts';
 import { files as cookieVaryTest } from '../demos/cookie-vary-test/files.ts';
 import { files as captcha } from '../demos/captcha/files.ts';
+import { files as protection } from '../demos/protection/files.ts';
 import { files as captchaStyling } from '../demos/captcha-styling/files.ts';
 import { files as cookies } from '../demos/cookies/files.ts';
+import { files as customTransitions } from '../demos/custom-transitions/files.ts';
 import { files as dataLoading } from '../demos/data-loading/files.ts';
 import { files as email } from '../demos/email/files.ts';
 import { files as entityProps } from '../demos/entity-props/files.ts';
@@ -21,6 +24,7 @@ import { files as formRedirects } from '../demos/form-redirects/files.ts';
 import { files as formReturnData } from '../demos/form-return-data/files.ts';
 import { files as helloWorld } from '../demos/hello-world/files.ts';
 import { files as hydratable } from '../demos/hydratable/files.ts';
+import { files as isHydratableFiles } from '../demos/is-hydratable/files.ts';
 import { files as hydration } from '../demos/hydration/files.ts';
 import { files as image } from '../demos/image/files.ts';
 import { files as imageInvalidation } from '../demos/image-invalidation/files.ts';
@@ -34,17 +38,27 @@ import { files as login } from '../demos/login/files.ts';
 import { files as mdsvex } from '../demos/mdsvex/files.ts';
 import { files as nestedComponents } from '../demos/nested-components/files.ts';
 import { files as nestedIslands } from '../demos/nested-islands/files.ts';
+import { files as portableText } from '../demos/portable-text/files.ts';
 import { files as propDedup } from '../demos/prop-dedup/files.ts';
 import { files as propsId } from '../demos/props-id/files.ts';
 import { files as queue } from '../demos/queue/files.ts';
+import { files as cron } from '../demos/cron/files.ts';
 import { files as rateLimit } from '../demos/rate-limit/files.ts';
 import { files as reloadFormData } from '../demos/reload-form-data/files.ts';
+import { files as requestCache } from '../demos/request-cache/files.ts';
 import { files as requestId } from '../demos/request-id/files.ts';
+import { files as modeWatcher } from '../demos/mode-watcher/files.ts';
+import { files as runed } from '../demos/runed/files.ts';
 import { files as serverIsland } from '../demos/server-island/files.ts';
+import { files as deferInvalidation } from '../demos/defer-invalidation/files.ts';
 import { files as serverProps } from '../demos/server-props/files.ts';
 import { files as sharedState } from '../demos/shared-state/files.ts';
+import { files as staticDirs } from '../demos/static-dirs/files.ts';
 import { files as streams } from '../demos/streams/files.ts';
+import { files as tanstackTable } from '../demos/tanstack-table/files.ts';
 import { files as url } from '../demos/url/files.ts';
+import { files as varlock } from '../demos/varlock/files.ts';
+import { files as viewTransitions } from '../demos/view-transitions/files.ts';
 
 export type DemoCategory = 'hydration' | 'data' | 'endpoints' | 'forms' | 'errors' | 'sites';
 
@@ -57,6 +71,8 @@ export interface Demo {
   slug?: string;
   /** Source files rendered on the demo page and bundled into its llms.txt. Keyed alongside `slug`. */
   files?: SourceSpec[];
+  /** Repo paths for the "view source" links, overriding the `packages/site/src/demos/<slug>` default — needed when a framework convention (e.g. prebuilt email templates living in `src/emails/`) forces part of a demo out of its own folder. */
+  sourcePaths?: string[];
 }
 
 export const categoryLabels: Record<DemoCategory, string> = {
@@ -76,7 +92,7 @@ export const demos: Demo[] = [
     slug: 'hello-world',
     files: helloWorld,
     title: 'Hello World',
-    hook: 'The simplest possible Mochi page — pure server-rendered Svelte.',
+    hook: 'How server-side rendering works — a Mochi.page() renders Svelte on the server and ships zero JavaScript.',
     category: 'hydration',
   },
   {
@@ -84,7 +100,7 @@ export const demos: Demo[] = [
     slug: 'server-props',
     files: serverProps,
     title: 'Server Props',
-    hook: 'Define serverProps on Mochi.page() to pass fresh data into a Svelte page on every request.',
+    hook: 'How server props work — pass fresh per-request data into a page via serverProps on Mochi.page().',
     category: 'data',
   },
   {
@@ -92,7 +108,15 @@ export const demos: Demo[] = [
     slug: 'hydration',
     files: hydration,
     title: 'Hydration Modes',
-    hook: 'The same component rendered five ways — eager, lazy, visible, rootMargin-tuned, and deferred server island.',
+    hook: 'How the hydration modes work — mochi:hydrate, mochi:hydrate:visible, rootMargin tuning, and mochi:defer server islands side by side.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/charts/',
+    slug: 'charts',
+    files: charts,
+    title: 'Charts with LayerChart',
+    hook: 'How a third-party Svelte component library works in Mochi — LayerChart server-rendered to plain SVG with zero JavaScript, then the same library as mochi:hydrate and mochi:clientOnly islands.',
     category: 'hydration',
   },
   {
@@ -100,7 +124,7 @@ export const demos: Demo[] = [
     slug: 'data-loading',
     files: dataLoading,
     title: 'Data Loading',
-    hook: 'Server-side fetch from PokéAPI cached via MochiCache and rendered at request time.',
+    hook: 'How server-side data loading works — fetch on the server, cache with MochiCache, and render at request time.',
     category: 'data',
   },
   {
@@ -108,15 +132,23 @@ export const demos: Demo[] = [
     slug: 'hydratable',
     files: hydratable,
     title: 'Hydratable',
-    hook: 'Compute a value once on the server with hydratable(); the hydrated island reads it from <head> instead of re-running the async work.',
-    category: 'data',
+    hook: 'How hydratable() works — compute a value once on the server and reuse it on the client instead of re-running async work during hydration.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/is-hydratable/',
+    slug: 'is-hydratable',
+    files: isHydratableFiles,
+    title: 'isHydratable()',
+    hook: 'How isHydratable() works — detect from any depth whether the current subtree will hydrate, for SSR-only fallbacks without prop forwarding.',
+    category: 'hydration',
   },
   {
     href: '/demos/cookies/',
     slug: 'cookies',
     files: cookies,
     title: 'Cookies',
-    hook: 'Read and write cookies on the server and the client through one MochiCookieJar API.',
+    hook: 'How cookies work — read and write on the server and the client through one MochiCookieJar API (cookies.get/set/delete).',
     category: 'data',
   },
   {
@@ -124,19 +156,31 @@ export const demos: Demo[] = [
     slug: 'url',
     files: url,
     title: 'Isomorphic URL',
-    hook: 'One import for the current URL — reads from the request on the server, window.location on the client.',
+    hook: 'How the isomorphic URL helper works — one import that reads the request URL on the server and window.location on the client.',
+    category: 'data',
+  },
+  {
+    href: '/demos/varlock/',
+    slug: 'varlock',
+    files: varlock,
+    title: 'Varlock env schemas',
+    hook: 'How schema-validated env works — load a typed .env.schema with Varlock and read coerced, expanded, redacted config through the ENV proxy on every SSR render.',
     category: 'data',
   },
   {
     href: '/demos/view-transitions/',
+    slug: 'view-transitions',
+    files: viewTransitions,
     title: 'View Transitions',
-    hook: 'Drop <ViewTransitions /> into a shared layout to animate full-page navigations with zero JavaScript.',
+    hook: 'How view transitions work — drop <ViewTransitions /> into a layout to animate full-page navigations with zero JavaScript.',
     category: 'hydration',
   },
   {
     href: '/demos/custom-transitions/',
+    slug: 'custom-transitions',
+    files: customTransitions,
     title: 'Custom Transitions',
-    hook: 'Bring your own @keyframes to <ViewTransitions /> via custom={{ in, out }} — here, a funky 3D spin.',
+    hook: 'How custom view transitions work — supply your own @keyframes to <ViewTransitions /> via custom={{ in, out }}.',
     category: 'hydration',
   },
   {
@@ -144,7 +188,15 @@ export const demos: Demo[] = [
     slug: 'cache-events',
     files: cacheEvents,
     title: 'Cache Events',
-    hook: 'Subscribe to MochiCache lifecycle events through mochiEvents and log them to the server console.',
+    hook: 'How cache events work — subscribe to MochiCache lifecycle events (hit, miss, set, evict) through mochiEvents for observability.',
+    category: 'data',
+  },
+  {
+    href: '/demos/request-cache/',
+    slug: 'request-cache',
+    files: requestCache,
+    title: 'Request Cache',
+    hook: 'How the request cache works — requestMemo and requestCache run an expensive computation once per request no matter how many components call it, then discard it at the request boundary.',
     category: 'data',
   },
   {
@@ -152,7 +204,7 @@ export const demos: Demo[] = [
     slug: 'image',
     files: image,
     title: 'Image: Component',
-    hook: 'The <Image> component — named sizes, ThumbHash blur-up placeholders, a gallery, and island usage. It only mints an encrypted URL; the endpoint does the work.',
+    hook: 'How the <Image> component works — named sizes, ThumbHash blur-up placeholders, and encrypted deferred URLs whose transforms run lazily on the endpoint.',
     category: 'data',
   },
   {
@@ -160,7 +212,7 @@ export const demos: Demo[] = [
     slug: 'image-invalidation',
     files: imageInvalidation,
     title: 'Image: Invalidation',
-    hook: 'Clear a cached image on demand with invalidateImage() — hard-evict the shared original and watch every named size re-fetch in lockstep.',
+    hook: 'How image invalidation works — invalidateImage() hard-evicts the shared original so every named size re-fetches in lockstep.',
     category: 'data',
   },
   {
@@ -168,7 +220,7 @@ export const demos: Demo[] = [
     slug: 'image-pipeline',
     files: imagePipeline,
     title: 'Image: Named sizes',
-    hook: 'Declare resize / rotate / flip / modulate / format transforms once as named sizes; getImageUrl mints a deferred URL and getImage runs one inline for bytes + metadata.',
+    hook: 'How the image transform pipeline works — declare resize / rotate / flip / modulate / format as named sizes; getImageUrl mints a deferred URL, getImage runs one inline.',
     category: 'data',
   },
   {
@@ -176,7 +228,7 @@ export const demos: Demo[] = [
     slug: 'image-events',
     files: imageEvents,
     title: 'Image: Events',
-    hook: 'Subscribe to image:store / image:delete on mochiEvents to mirror the <Image> cache to durable storage like S3.',
+    hook: 'How image events work — subscribe to image:store / image:delete on mochiEvents to mirror the <Image> cache to durable storage like S3.',
     category: 'data',
   },
   {
@@ -184,7 +236,7 @@ export const demos: Demo[] = [
     slug: 'request-id',
     files: requestId,
     title: 'Request ID',
-    hook: 'Every request gets a UUID v7 — read it server-side via getRequestContext().requestId; the same id rides every lifecycle event for correlation.',
+    hook: 'How request IDs work — every request gets a UUID v7 on getRequestContext().requestId that rides every lifecycle event for correlation.',
     category: 'data',
   },
   {
@@ -192,7 +244,7 @@ export const demos: Demo[] = [
     slug: 'cookie-vary-test',
     files: cookieVaryTest,
     title: 'Cookie Vary Test',
-    hook: 'A page that sets Vary: Cookie on its response — useful for testing cookie-partitioned cache keys.',
+    hook: 'How cookie-partitioned caching works — a page that sets Vary: Cookie so responses key on cookies.',
     category: 'data',
   },
   {
@@ -200,7 +252,7 @@ export const demos: Demo[] = [
     slug: 'chat',
     files: chat,
     title: 'Real-time Chat',
-    hook: 'A hydrated island over a Mochi.ws() route, with pub/sub broadcast and in-memory history.',
+    hook: 'How WebSocket routes work — a hydrated island over Mochi.ws() with pub/sub broadcast and in-memory history.',
     category: 'endpoints',
   },
   {
@@ -208,7 +260,7 @@ export const demos: Demo[] = [
     slug: 'api',
     files: api,
     title: 'API Endpoints',
-    hook: 'JSON routes defined with Mochi.api(), tested live against the running server.',
+    hook: 'How API routes work — define JSON endpoints with Mochi.api(), tested live against the running server.',
     category: 'endpoints',
   },
   {
@@ -216,7 +268,7 @@ export const demos: Demo[] = [
     slug: 'rate-limit',
     files: rateLimit,
     title: 'Rate Limiting',
-    hook: 'A rateLimit config on the route — 5 requests per minute per IP; reload past the limit to hit the 429 error page.',
+    hook: 'How rate limiting works — a rateLimit config on the route caps requests per IP per minute and serves the 429 error page past the limit.',
     category: 'endpoints',
   },
   {
@@ -224,7 +276,7 @@ export const demos: Demo[] = [
     slug: 'file',
     files: file,
     title: 'File Routes',
-    hook: 'Serve a file from disk with Mochi.file() — static path or a per-request resolver.',
+    hook: 'How file routes work — serve a file from disk with Mochi.file(), as a static path or a per-request resolver.',
     category: 'endpoints',
   },
   {
@@ -232,7 +284,7 @@ export const demos: Demo[] = [
     slug: 'shared-state',
     files: sharedState,
     title: 'Shared State',
-    hook: 'Two separate islands sharing the same reactive $state.',
+    hook: 'How shared state across islands works — two separate islands driving the same reactive $state.',
     category: 'hydration',
   },
   {
@@ -240,7 +292,7 @@ export const demos: Demo[] = [
     slug: 'streams',
     files: streams,
     title: 'Real-time Streams',
-    hook: 'WebSocket and SSE clocks, lazily hydrated via mochi:hydrate:visible.',
+    hook: 'How server-sent events and WebSocket streaming work — live SSE and WebSocket clocks, lazily hydrated via mochi:hydrate:visible.',
     category: 'endpoints',
   },
   {
@@ -248,7 +300,23 @@ export const demos: Demo[] = [
     slug: 'queue',
     files: queue,
     title: 'Background jobs with queues',
-    hook: 'Offload work to a Mochi.queue() with an embedded worker — no Redis.',
+    hook: 'How background job queues work — offload work to a Mochi.queue() with an embedded worker, no Redis.',
+    category: 'endpoints',
+  },
+  {
+    href: '/demos/cron/',
+    slug: 'cron',
+    files: cron,
+    title: 'Scheduled jobs with cron',
+    hook: 'How scheduled jobs work — a Mochi.cron() job writes to an in-memory log every minute and the browser streams each new entry over a WebSocket.',
+    category: 'endpoints',
+  },
+  {
+    href: '/demos/static-dirs/',
+    slug: 'static-dirs',
+    files: staticDirs,
+    title: 'Static Directories',
+    hook: 'How staticDirs works — mount a whole directory tree under a URL prefix as one Bun route, with Content-Type / ETag / Range / index.html from Bun and no per-file registration.',
     category: 'endpoints',
   },
   {
@@ -256,7 +324,15 @@ export const demos: Demo[] = [
     slug: 'server-island',
     files: serverIsland,
     title: 'Server Islands',
-    hook: 'Components marked mochi:defer render server-side on demand after the initial page is delivered.',
+    hook: 'How server islands work — components marked mochi:defer render server-side on demand after the initial page is delivered.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/defer-invalidation/',
+    slug: 'defer-invalidation',
+    files: deferInvalidation,
+    title: 'Invalidate mochi:defer islands',
+    hook: 'How to reload server islands on demand — name a mochi:defer island and call reloadDeferredIsland(name) from the browser to re-fetch its server HTML.',
     category: 'hydration',
   },
   {
@@ -264,7 +340,7 @@ export const demos: Demo[] = [
     slug: 'island-props',
     files: islandProps,
     title: 'Crossing the server-client boundary with props',
-    hook: 'How props travel from a server-rendered parent into a hydrated island — Date, Map, Set, BigInt, URL, typed arrays, and even cyclic refs survive devalue’s round-trip.',
+    hook: "How props cross the server-client boundary — Date, Map, Set, BigInt, URL, typed arrays, and even cyclic refs survive devalue's round-trip into a hydrated island.",
     category: 'hydration',
   },
   {
@@ -272,7 +348,7 @@ export const demos: Demo[] = [
     slug: 'client-only',
     files: clientOnly,
     title: 'Client-only Islands',
-    hook: 'Components marked mochi:clientOnly skip SSR entirely and mount in the browser — a fallback snippet fills in until then.',
+    hook: 'How client-only islands work — components marked mochi:clientOnly skip SSR and mount in the browser, with a fallback snippet until then.',
     category: 'hydration',
   },
   {
@@ -280,7 +356,7 @@ export const demos: Demo[] = [
     slug: 'lazy',
     files: lazy,
     title: 'Lazy Islands',
-    hook: 'Islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view.',
+    hook: 'How lazy hydration works — islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view.',
     category: 'hydration',
   },
   {
@@ -288,7 +364,7 @@ export const demos: Demo[] = [
     slug: 'lazy-server-island',
     files: lazyServerIsland,
     title: 'Lazy Server Islands',
-    hook: 'Server islands marked mochi:defer:visible only fetch when the wrapper scrolls into view.',
+    hook: 'How lazy server islands work — server islands marked mochi:defer:visible only fetch when the wrapper scrolls into view.',
     category: 'hydration',
   },
   {
@@ -296,7 +372,7 @@ export const demos: Demo[] = [
     slug: 'font-loading',
     files: fontLoading,
     title: 'Font loading',
-    hook: 'Ship fonts via @fontsource packages or standalone .woff2 files — automatically bundled and linked from the page head.',
+    hook: 'How font loading works — ship fonts via @fontsource packages or standalone .woff2 files, automatically bundled and linked from the page head.',
     category: 'hydration',
   },
   {
@@ -304,15 +380,23 @@ export const demos: Demo[] = [
     slug: 'mdsvex',
     files: mdsvex,
     title: 'MdSvex',
-    hook: 'A .md file compiled through mdsvex and rendered as a Svelte component, with an embedded <script> block.',
+    hook: 'How mdsvex works — a .md file compiled through mdsvex and rendered as a Svelte component, embedded <script> and all.',
     category: 'hydration',
+  },
+  {
+    href: '/demos/portable-text/',
+    slug: 'portable-text',
+    files: portableText,
+    title: 'Portable Text',
+    hook: 'How Portable Text rendering works — @portabletext/svelte maps a JSON block array onto your own Svelte components for types, marks, block styles and lists.',
+    category: 'data',
   },
   {
     href: '/demos/nested-components/',
     slug: 'nested-components',
     files: nestedComponents,
     title: 'Nested Components',
-    hook: 'A five-level recursive tree — hydrating the root carries the whole subtree in one island.',
+    hook: 'How whole-subtree hydration works — a five-level recursive tree where hydrating the root carries the entire subtree in one island.',
     category: 'hydration',
   },
   {
@@ -320,7 +404,7 @@ export const demos: Demo[] = [
     slug: 'nested-islands',
     files: nestedIslands,
     title: 'Nested Islands',
-    hook: 'Islands inside islands — a mochi:defer server island wrapping mochi:hydrate components, and a server island nesting both a deferred and a deferred-hydrated server island.',
+    hook: 'How nested islands work — a mochi:defer server island wrapping mochi:hydrate components, and server islands nesting more server islands.',
     category: 'hydration',
   },
   {
@@ -328,7 +412,7 @@ export const demos: Demo[] = [
     slug: 'island-depth',
     files: islandDepth,
     title: 'Nested Island Max Depth',
-    hook: 'A chain of mochi:defer server islands nested four levels deep — each fetches the next on demand, and the prebuild precompiles the whole chain.',
+    hook: 'How deeply nested server islands work — a four-level mochi:defer chain where each level fetches the next on demand and the prebuild precompiles the whole chain.',
     category: 'hydration',
   },
   {
@@ -336,7 +420,7 @@ export const demos: Demo[] = [
     slug: 'prop-dedup',
     files: propDedup,
     title: 'Shared Props',
-    hook: 'Nine islands, three unique payloads — each set serialized once and referenced via props-ref.',
+    hook: 'How island prop deduplication works — nine islands share three unique payloads, each serialized once and referenced via props-ref.',
     category: 'hydration',
   },
   {
@@ -344,7 +428,7 @@ export const demos: Demo[] = [
     slug: 'props-id',
     files: propsId,
     title: 'Unique IDs',
-    hook: "Svelte's native $props.id() inside islands — SSR-consistent, unique per instance, namespaced in server islands.",
+    hook: "How stable island IDs work — Svelte's native $props.id() gives SSR-consistent, per-instance ids, namespaced inside server islands.",
     category: 'hydration',
   },
   {
@@ -352,15 +436,16 @@ export const demos: Demo[] = [
     slug: 'login',
     files: login,
     title: 'Form Actions',
-    hook: 'A login form rendered twice — plain HTML POST and intercepted with {@attach enhance(...)}.',
+    hook: 'How form actions work — a form rendered twice, as a plain HTML POST and intercepted with {@attach enhance(...)}.',
     category: 'forms',
   },
   {
     href: '/demos/email/',
     slug: 'email',
     files: email,
+    sourcePaths: ['packages/site/src/demos/email', 'packages/site/src/emails'],
     title: 'Send Email',
-    hook: 'Send a pre-written email through Mochi.email() and read it back in the /_mochi/email dev outbox.',
+    hook: 'How sending email works — dispatch through Mochi.email() and read it back in the /_mochi/email dev outbox.',
     category: 'forms',
   },
   {
@@ -368,7 +453,7 @@ export const demos: Demo[] = [
     slug: 'form-return-data',
     files: formReturnData,
     title: 'Using form return data',
-    hook: 'An action returns data via success({...}); {@attach enhance(...)} updates the UI in place, plain HTML re-renders the page.',
+    hook: 'How form action return data works — an action returns success({...}); {@attach enhance(...)} updates the UI in place, plain HTML re-renders.',
     category: 'forms',
   },
   {
@@ -376,7 +461,7 @@ export const demos: Demo[] = [
     slug: 'form-errors',
     files: formErrors,
     title: 'Form Errors',
-    hook: 'A thrown action error shown inline via {@attach enhance(...)}, or as the Mochi error page on plain submit.',
+    hook: 'How form action errors work — a thrown action error shows inline via {@attach enhance(...)}, or as the Mochi error page on a plain submit.',
     category: 'forms',
   },
   {
@@ -384,7 +469,7 @@ export const demos: Demo[] = [
     slug: 'form-redirects',
     files: formRedirects,
     title: 'Form Redirects',
-    hook: 'redirect(303, …) intercepted as a JSON envelope by {@attach enhance(...)}, or followed natively by the browser.',
+    hook: 'How form action redirects work — redirect(303, …) is intercepted as a JSON envelope by {@attach enhance(...)} or followed natively by the browser.',
     category: 'forms',
   },
   {
@@ -392,7 +477,7 @@ export const demos: Demo[] = [
     slug: 'file-upload',
     files: fileUpload,
     title: 'File Uploads via form actions',
-    hook: 'multipart/form-data submission, validated with fail() and success(), shown enhanced and plain.',
+    hook: 'How file uploads through form actions work — multipart/form-data validated with fail() and success(), shown enhanced and plain.',
     category: 'forms',
   },
   {
@@ -400,7 +485,7 @@ export const demos: Demo[] = [
     slug: 'reload-form-data',
     files: reloadFormData,
     title: 'Reloading associated form data',
-    hook: 'After a successful submit, refetch the related list inside enhance() — or rely on the post-POST re-render.',
+    hook: 'How reloading associated data works — after a successful submit, refetch the related list inside enhance(), or rely on the post-POST re-render.',
     category: 'forms',
   },
   {
@@ -408,7 +493,15 @@ export const demos: Demo[] = [
     slug: 'captcha',
     files: captcha,
     title: 'Captcha',
-    hook: 'Slide-to-verify with a hash chain and proof-of-work — no third party, no tracking.',
+    hook: 'How the captcha works — slide-to-verify backed by a hash chain and proof-of-work, with no third party and no tracking.',
+    category: 'forms',
+  },
+  {
+    href: '/demos/protection/',
+    slug: 'protection',
+    files: protection,
+    title: 'Protection Mode',
+    hook: 'How protection mode works — a Cloudflare-style browser check where an interstitial auto-solves the captcha proof-of-work and redeems it for a clearance cookie.',
     category: 'forms',
   },
   {
@@ -416,7 +509,7 @@ export const demos: Demo[] = [
     slug: 'captcha-styling',
     files: captchaStyling,
     title: 'Captcha Styling',
-    hook: 'The same captcha four ways — every colour is a CSS custom property with a built-in fallback.',
+    hook: 'How captcha theming works — the same captcha four ways, every colour a CSS custom property with a built-in fallback.',
     category: 'forms',
   },
   {
@@ -424,7 +517,7 @@ export const demos: Demo[] = [
     slug: 'form-cancel',
     files: formCancel,
     title: 'Cancelling form submissions',
-    hook: 'cancel() prevents the fetch from firing; controller.abort() stops one mid-flight.',
+    hook: 'How cancelling form submissions works — cancel() stops the fetch before it fires; controller.abort() stops one mid-flight.',
     category: 'forms',
   },
   {
@@ -432,7 +525,7 @@ export const demos: Demo[] = [
     slug: 'error',
     files: error,
     title: 'Error Handling',
-    hook: 'Catch render errors and unmatched routes via Mochi.serve()’s errorPage option and the handleError hook.',
+    hook: "How error handling works — catch render errors and unmatched routes via Mochi.serve()'s errorPage option and the handleError hook.",
     category: 'errors',
   },
   {
@@ -440,7 +533,7 @@ export const demos: Demo[] = [
     slug: 'error-boundaries',
     files: errorBoundaries,
     title: 'Error Boundaries',
-    hook: 'Contain island failures with <svelte:boundary> so one broken component does not crash the page.',
+    hook: "How error boundaries work — contain island failures with <svelte:boundary> so one broken component doesn't crash the page.",
     category: 'errors',
   },
   {
@@ -466,7 +559,31 @@ export const demos: Demo[] = [
     slug: 'entity-props',
     files: entityProps,
     title: 'HTML Entities in Props',
-    hook: 'HTML entities in a static island prop (label="Tom &amp; Jerry") decode to their characters — identical on the server and after hydration.',
+    hook: 'How HTML entities in island props work — an entity in a static prop (label="Tom &amp; Jerry") decodes identically on the server and after hydration.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/mode-watcher/',
+    slug: 'mode-watcher',
+    files: modeWatcher,
+    title: 'Mode Watcher',
+    hook: "Light/dark mode in an island — mode-watcher's <ModeWatcher />, toggleMode/setMode, and the mode / userPrefersMode / systemPrefersMode runes driving the global <html> theme.",
+    category: 'hydration',
+  },
+  {
+    href: '/demos/runed/',
+    slug: 'runed',
+    files: runed,
+    title: 'Runed Utilities',
+    hook: "How third-party Svelte 5 libraries run in islands — Runed's reactive utilities (Debounced, StateHistory, PersistedState, PressedKeys, AnimationFrames, FiniteStateMachine, resource…) hydrated inside Mochi.",
+    category: 'hydration',
+  },
+  {
+    href: '/demos/tanstack-table/',
+    slug: 'tanstack-table',
+    files: tanstackTable,
+    title: 'Tables with TanStack Table',
+    hook: 'How a headless table library works in Mochi — TanStack Table server-rendered to a read-only table with zero JavaScript, then a mochi:hydrate island for interactive sorting.',
     category: 'hydration',
   },
 ];

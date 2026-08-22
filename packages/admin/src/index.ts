@@ -20,7 +20,7 @@ if (process.env.MODE === 'development') {
 // and bun:sqlite are wired in). See tasks/migrations.md.
 runMigrations();
 
-const PORT = Number(process.env.PORT) || 3336;
+const PORT = Number(process.env.PORT) || 3338;
 
 await Mochi.serve({
   port: PORT,

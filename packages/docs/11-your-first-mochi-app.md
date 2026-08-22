@@ -17,7 +17,7 @@ By the end we'll have a greeting card with a live like button and a personalized
 
 ### Set up
 
-You'll need [Bun installed](https://bun.com/docs/installation) (>=1.3.14). Scaffold a new project with the official CLI and pick the **minimal** template when prompted:
+You'll need [Bun installed](https://bun.com/docs/installation) (>=1.4.0). Scaffold a new project with the official CLI and pick the **minimal** template when prompted:
 
 ```sh
 bun create mochi@latest my-app
@@ -27,7 +27,7 @@ bun install
 bun run dev
 ```
 
-The scaffold gives you a working app on `http://localhost:3333`. Its entry point is `src/index.ts`, which boots the server and declares your routes inline in the `Mochi.serve()` call:
+The scaffold gives you a working app on `http://localhost:3333`, with ESLint and Prettier preconfigured (`bun run lint`, `bun run format`; create-mochi 0.4.0+) — opt out with `--no-eslint` / `--no-prettier`. Its entry point is `src/index.ts`, which boots the server and declares your routes inline in the `Mochi.serve()` call:
 
 ```ts
 // file: src/index.ts (scaffolded)
@@ -186,14 +186,14 @@ The finished app is running on this site at [**/docs/your-first-mochi-app/hello/
 ### What's next
 
 - [Defining routes](/docs/defining-routes/) — `Mochi.page`, `Mochi.api`, `Mochi.ws`, `Mochi.sse`, and the full `serverProps` contract
-- [Selective hydration](/docs/selective-hydration/) — `mochi:hydrate`, `isHydratable`, `$props.id()`
+- [Selective hydration](/docs/selective-hydration/) — `mochi:hydrate`, `isHydratable()`, `$props.id()`
 - [Lazy hydration](/docs/lazy-hydration/) — `mochi:hydrate:visible` for below-the-fold islands
 - [Server islands](/docs/server-islands/) — `mochi:defer`, encrypted props, and `MOCHI_KEY`
 - [Passing props to islands](/docs/island-props/) — every type `devalue` can round-trip
 
 <SeeItInAction
 demos={[
-{ href: "/demos/hello-world/", title: "Hello World", hook: "The simplest possible Mochi page — pure server-rendered Svelte." },
-{ href: "/demos/server-props/", title: "Server Props", hook: "Define serverProps on Mochi.page() to pass fresh data into a Svelte page on every request." },
+{ href: "/demos/hello-world/", title: "Hello World", hook: "How server-side rendering works — a Mochi.page() renders Svelte on the server and ships zero JavaScript." },
+{ href: "/demos/server-props/", title: "Server Props", hook: "How server props work — pass fresh per-request data into a page via serverProps on Mochi.page()." },
 ]}
 />

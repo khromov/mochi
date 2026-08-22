@@ -1,6 +1,7 @@
 ---
 title: 'Testing'
 slug: testing
+ogTitle: 'Testing a Mochi app'
 description: 'Unit-test with bun:test and run full-app tests in isolated processes with the runTests helper.'
 ---
 
@@ -12,13 +13,13 @@ description: 'Unit-test with bun:test and run full-app tests in isolated process
 
 <Callout type="warning">
 
-Testing support is **experimental**. The `bun test` runner works well for plain unit tests today, but the full-app helper below is new and its API may change.
+Testing support is **experimental**. The `bun test` runner works well for plain unit tests today. The full-app helper below is new, and its API may change.
 
 </Callout>
 
 ### Unit tests
 
-Pure functions, stores, and any non-server logic test directly with [`bun test`](https://bun.sh/docs/cli/test) — no Mochi-specific setup:
+Test pure functions, stores, and any non-server logic directly with [`bun test`](https://bun.sh/docs/cli/test) — no Mochi-specific setup:
 
 ```ts
 // src/lib/slugify.test.ts
@@ -36,9 +37,9 @@ bun test
 
 ### Full-app tests
 
-Tests that boot a real server with `Mochi.serve()` — to fetch a page, hit an API route, or assert on rendered HTML — must run **one file per process**. `Mochi.serve()` allows only one instance per process (it pins config on `globalThis.__mochi_config__`), so two server-booting test files in the same `bun test` run throw `Mochi.serve() has already been called.`
+A test that boots a real server with `Mochi.serve()` must run **one file per process**. `Mochi.serve()` allows one instance per process, so two server-booting test files in the same `bun test` run throw `Mochi.serve() has already been called.`
 
-`runTests` solves this: it globs `src/**/*.test.ts` and runs each file in its own `bun test` process, parallelised across CPU cores. Add a small script to your package:
+`runTests` solves this. It globs `src/**/*.test.ts` and runs each file in its own `bun test` process, parallelised across CPU cores. Add a small script:
 
 ```ts
 // scripts/run-tests.ts
@@ -57,10 +58,6 @@ Point your `test` script at it:
     "test": "bun scripts/run-tests.ts"
   }
 }
-```
-
-```sh
-bun run test
 ```
 
 Each file gets a fresh process, so every test can call `Mochi.serve({ port: 0 })` without colliding:
@@ -91,23 +88,19 @@ test('GET / renders', async () => {
 `runTests(options?)` accepts:
 
 - **`dir`** — package root to scan and run tests from. Defaults to the current working directory.
-- **`sequential`** — files (relative to `dir`) that must run on their own, after the parallel batch — for tests that can't share machine state with others:
+- **`sequential`** — files (relative to `dir`) that must run on their own, after the parallel batch, for tests that cannot share machine state:
 
 ```ts
 await runTests({ sequential: ['src/liveReload.test.ts'] });
 ```
 
-`runTests` exits the process with code `1` if any file fails, so it drops straight into CI.
+`runTests` reprints a recap at the end — every failed file, the failing test names, and their error output — and exits with code `1` if any file failed.
 
 ### Bun workspaces: use the hoisted linker
 
 <Callout type="warning">
 
-In Bun **workspaces**, `bun install` defaults to the isolated linker (a symlinked `node_modules/.bun` store). Combined with `bun test`, this trips a Bun bug: a second `Bun.build()` in the test process — e.g. `Mochi.serve()` compiling after your test file imported `mochi-framework` — fails with `EISDIR reading file` (or `Unexpected reading file`) on a dependency inside `node_modules/.bun`. See the [minimal reproduction](https://github.com/khromov/bun-second-build-eisdir-repro).
-
-</Callout>
-
-Fix: pin the hoisted linker in your workspace root `bunfig.toml`, then delete `node_modules` and reinstall:
+In Bun **workspaces**, `bun install` defaults to the isolated linker. Combined with `bun test`, this trips a Bun bug: a second `Bun.build()` in the test process fails with `EISDIR reading file` on a dependency inside `node_modules/.bun`. Pin the hoisted linker in your workspace root `bunfig.toml`:
 
 ```toml
 # bunfig.toml
@@ -115,4 +108,6 @@ Fix: pin the hoisted linker in your workspace root `bunfig.toml`, then delete `n
 linker = "hoisted"
 ```
 
-Single-package apps — including everything scaffolded by `create-mochi` — install hoisted by default and are unaffected.
+Then delete `node_modules` and reinstall. Single-package apps — including everything scaffolded by `create-mochi` — install hoisted by default and are unaffected.
+
+</Callout>

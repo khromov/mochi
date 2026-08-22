@@ -31,15 +31,23 @@ export function renderMochiEnvServer(development: boolean): string {
   return fill(SERVER_TEMPLATE, {
     __MOCHI_DEV__: String(development),
     __MOCHI_LOG__: frameworkFile('utils/log.ts'),
+    __MOCHI_GLOBAL_STATE__: frameworkFile('utils/globalState.ts'),
     __MOCHI_DEVALUE__: toPosixPath(Bun.resolveSync('devalue', FRAMEWORK_DIR)),
     __MOCHI_TRAILING_SLASH__: frameworkFile('runtime/trailingSlash.ts'),
     __MOCHI_ISLAND_PROPS__: frameworkFile('islands/islandPropsRegistry.ts'),
+    __MOCHI_IS_HYDRATABLE__: frameworkFile('islands/isHydratable.ts'),
     __MOCHI_MITT__: toPosixPath(Bun.resolveSync('mitt', FRAMEWORK_DIR)),
     __MOCHI_CACHE__: frameworkFile('cache/cache.ts'),
+    __MOCHI_REQUEST_CACHE__: frameworkFile('runtime/requestCache.ts'),
     __MOCHI_CACHE_STORAGE__: frameworkFile('cache/cache-storage.ts'),
     __MOCHI_IMAGE_API__: frameworkFile('image/imageApi.ts'),
+    __MOCHI_DEFER_API__: frameworkFile('islands/deferInvalidation.ts'),
+    __MOCHI_DEFER_REACTIVE__: frameworkFile('islands/deferReloadState.svelte.ts'),
     __MOCHI_ENHANCE_SSR__: frameworkFile('runtime/enhance.ssr.ts'),
     __MOCHI_RATE_LIMIT__: frameworkFile('runtime/rateLimit.ts'),
+    // A baked literal, not a module re-export: config.ts computes the path off `import.meta.url`,
+    // which inside a compiled SSR chunk would point into the build dir instead of the framework src.
+    __MOCHI_PROTECTION_SHELL_PATH__: frameworkFile('templates/ProtectionShell/ProtectionShell.svelte'),
   });
 }
 
@@ -48,8 +56,11 @@ export function renderMochiEnvClient(development: boolean, cookiesClientPath: st
     __MOCHI_DEV__: String(development),
     __MOCHI_COOKIES_CLIENT__: cookiesClientPath,
     __MOCHI_LOG__: frameworkFile('utils/log.ts'),
+    __MOCHI_GLOBAL_STATE__: frameworkFile('utils/globalState.ts'),
     __MOCHI_DEVALUE__: toPosixPath(Bun.resolveSync('devalue', FRAMEWORK_DIR)),
     __MOCHI_TRAILING_SLASH__: frameworkFile('runtime/trailingSlash.ts'),
+    __MOCHI_DEFER_API__: frameworkFile('islands/deferInvalidation.ts'),
+    __MOCHI_DEFER_REACTIVE__: frameworkFile('islands/deferReloadState.svelte.ts'),
     __MOCHI_ENHANCE_CLIENT__: enhanceClientPath,
   });
 }
