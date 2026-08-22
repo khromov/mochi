@@ -66,6 +66,16 @@ describe('consoleLogger:level changes where a line is written', () => {
     expect(request('/boom', 500)?.method).toBe('info');
   });
 
+  test('a no-op cache sweep is written at the most verbose level', () => {
+    mochiEvents.emit('cache:sweep', { removed: 0, durationMs: 1 });
+    expect(calls.find((c) => c.text.includes('nothing expired'))?.method).toBe('debug');
+  });
+
+  test('a cache sweep that removed entries is written at info', () => {
+    mochiEvents.emit('cache:sweep', { removed: 3, durationMs: 1 });
+    expect(calls.find((c) => c.text.includes('expired removed'))?.method).toBe('info');
+  });
+
   test('consoleLogger:line sees the remapped level, not the default', () => {
     let seen: string | undefined;
     initExtensions({
@@ -79,5 +89,35 @@ describe('consoleLogger:level changes where a line is written', () => {
     });
     request('/promoted');
     expect(seen).toBe('warn');
+  });
+
+  // Queue lifecycle must be visible at the production default level ('warn'),
+  // not just under the dev default — see the queue subscribers in consoleLogger.ts.
+  describe('queue lifecycle at the production level', () => {
+    beforeAll(() => {
+      setLogLevel('warn');
+    });
+
+    afterAll(() => {
+      setLogLevel('debug');
+    });
+
+    test('queue:added is written through console.warn', () => {
+      mochiEvents.emit('queue:added', { queue: 'emails', jobId: 'j1' });
+      const line = calls.find((c) => c.text.includes('emails'));
+      expect(line?.method).toBe('warn');
+    });
+
+    test('a fast queue:completed still prints, without relying on slow-escalation', () => {
+      mochiEvents.emit('queue:completed', { queue: 'emails', jobId: 'j1', attempt: 1, duration: 5 });
+      const line = calls.find((c) => c.text.includes('emails'));
+      expect(line?.method).toBe('warn');
+      expect(line?.text).toContain('done');
+    });
+
+    test('queue:active stays debug-gated and prints nothing', () => {
+      mochiEvents.emit('queue:active', { queue: 'emails', jobId: 'j1', attempt: 1 });
+      expect(calls).toEqual([]);
+    });
   });
 });

@@ -1,11 +1,13 @@
 import { highlightCode } from '../lib/highlight.server';
+import { isDemoIndex, stripImageConfig, stripLocalDirs, stripStaticDirs, type SourceSpec } from './sourceUtils';
+
+export { isDemoIndex, stripImageConfig, stripLocalDirs, stripStaticDirs, type SourceSpec } from './sourceUtils';
 
 export function delay(minMs: number, maxMs: number = minMs): Promise<void> {
   const ms = minMs + Math.random() * (maxMs - minMs);
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export type SourceSpec = { label: string; path: string; lang?: string; showImageConfig?: boolean; showLocalDirs?: boolean };
 type Source = { label: string; lang: string; html: string; styleHtml?: string };
 
 const cache = new Map<string, string>();
@@ -22,13 +24,18 @@ async function read(path: string): Promise<string> {
 
 export async function loadSources(specs: SourceSpec[]): Promise<Source[]> {
   return Promise.all(
-    specs.map(async ({ label, path, lang, showImageConfig, showLocalDirs }) => {
+    specs.map(async ({ label, path, lang, showImageConfig, showStaticDirs, showLocalDirs }) => {
       let code = stripDemoWrapper(await read(path));
-      if (isDemoIndex(path) && !showImageConfig) {
-        code = stripTopLevelBlock(code, /^\s*image:\s*\{/);
-      }
-      if (isDemoIndex(path) && !showLocalDirs) {
-        code = stripTopLevelBlock(code, /^\s*localDirs:\s*\{/);
+      if (isDemoIndex(path)) {
+        if (!showImageConfig) {
+          code = stripImageConfig(code);
+        }
+        if (!showStaticDirs) {
+          code = stripStaticDirs(code);
+        }
+        if (!showLocalDirs) {
+          code = stripLocalDirs(code);
+        }
       }
       const resolvedLang = inferLang(label, lang);
       if (resolvedLang === 'svelte') {
@@ -47,40 +54,6 @@ export async function loadSources(specs: SourceSpec[]): Promise<Source[]> {
       };
     }),
   );
-}
-
-export function isDemoIndex(path: string): boolean {
-  return path.endsWith('demoIndex.ts');
-}
-
-// The shared demoIndex example carries the site's full image-sizes and localDirs
-// config, which is noise in demos that don't showcase them. Drop the matched
-// top-level `key: {…}` block (and its leading comment) so other demos show a
-// clean minimal Mochi.serve() call.
-export function stripTopLevelBlock(code: string, keyPattern: RegExp): string {
-  const lines = code.split('\n');
-  const out: string[] = [];
-  let depth = 0;
-  let skipping = false;
-  for (const line of lines) {
-    if (skipping) {
-      depth += (line.match(/\{/g)?.length ?? 0) - (line.match(/\}/g)?.length ?? 0);
-      if (depth <= 0) {
-        skipping = false;
-      }
-      continue;
-    }
-    if (keyPattern.test(line)) {
-      while (out.length && /^\s*\/\//.test(out[out.length - 1]!)) {
-        out.pop();
-      }
-      depth = (line.match(/\{/g)?.length ?? 0) - (line.match(/\}/g)?.length ?? 0);
-      skipping = depth > 0;
-      continue;
-    }
-    out.push(line);
-  }
-  return out.join('\n');
 }
 
 const STYLE_RE = /\n<style(?:\s[^>]*)?>[\s\S]*?<\/style>\s*$/;

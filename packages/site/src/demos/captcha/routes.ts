@@ -14,11 +14,8 @@ export const routes: Record<string, MochiRouteValue> = {
         return success({ message: `Verified — nice to meet you, ${name || 'stranger'}.` });
       },
 
-      // Verifies the same token twice: the first call burns the nonce, so the
-      // second is a genuine replay rather than a faked message. Lets one click
-      // reach the `reason === 'replay'` branch without solving two captchas.
-      // An unsolved token fails both calls and lands on 'rejected' instead,
-      // which is the other half of what this demonstrates.
+      // Verifies the token twice: the first call burns the nonce, so the second is a genuine replay.
+      // An unsolved token instead fails both calls and lands on 'rejected'.
       replay: async ({ formData }) => {
         await verifyCaptcha(formData);
         const captcha = await verifyCaptcha(formData);

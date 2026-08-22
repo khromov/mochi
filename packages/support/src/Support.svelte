@@ -49,8 +49,7 @@
 </div>
 
 <style>
-  /* Stands in for PageShell's .main-col, which `.body { flex: 1 }` relied on to
-     push the footer to the bottom on short pages. */
+  /* Stands in for PageShell's .main-col, which `.body { flex: 1 }` relied on to push the footer to the bottom on short pages. */
   .page {
     display: flex;
     flex-direction: column;
@@ -189,6 +188,12 @@
   @media (max-width: 768px) {
     .hero-minimal {
       padding: 1rem 1.25rem;
+    }
+
+    .back {
+      position: static;
+      display: inline-flex;
+      margin-bottom: 0.75rem;
     }
 
     .logo {

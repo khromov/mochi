@@ -1,10 +1,8 @@
 import path from 'node:path';
 import { mkdirSync } from 'node:fs';
 
-// Bun's query-string module-cache busting (`import(url + '?t=…')`) is not honored on
-// every platform (notably Windows), so a rebuilt module can keep returning the stale
-// version. Import a uniquely *named* artifact instead: a new specifier path is always a
-// cache miss.
+// Bun's query-string module-cache busting (`import(url + '?t=…')`) goes unhonoured on Windows, so a rebuilt module can
+// keep returning the stale version; importing a uniquely *named* artifact makes every specifier path a cache miss.
 const lastArtifact = new Map<string, string>();
 let epoch = 0;
 

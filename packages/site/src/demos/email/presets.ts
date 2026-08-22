@@ -32,8 +32,7 @@ export const EMAIL_PRESETS: EmailPreset[] = [
 
 export const presetById = (id: string): EmailPreset | undefined => EMAIL_PRESETS.find((p) => p.id === id);
 
-// The attachment demo sends this fixed image. Server-side path resolved in the
-// route action; the client only needs the display filename and preview URL.
+// `path` resolves server-side in the route action; the client only needs `filename` and `previewUrl`.
 export const ATTACHMENT = {
   subject: 'A photo for you 🍡',
   filename: 'mochi.jpg',

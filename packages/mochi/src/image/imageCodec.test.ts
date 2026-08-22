@@ -32,8 +32,9 @@ describe('packImageRequest + unpackImageRequest', () => {
     expect(roundTrip(r)).toEqual(r);
   });
 
-  test('round-trips a src containing bytes that look like control flags', () => {
-    const r: ImageRequest = { src: 'https://example.com/a.png?x=1&y=2#frag', size: 'p' };
+  test('round-trips a size name containing bytes that look like control flags', () => {
+    // \x01\x02\x04\x08 mirror ORIGINAL/HAS_SIZE/HTTPS_PREFIX/HTTP_PREFIX inside the length-prefixed field.
+    const r: ImageRequest = { src: 'https://example.com/a.png?x=1&y=2#frag', size: 'p\x01\x02\x04\x08q' };
     expect(roundTrip(r)).toEqual(r);
   });
 

@@ -2,7 +2,7 @@
 // a read failure on a file inside the symlinked node_modules/.bun store — and
 // never on ordinary build errors, so real diagnostics stay uncluttered.
 import { describe, expect, test } from 'bun:test';
-import { formatBuildMessages } from './ComponentRegistry';
+import { formatBuildMessages } from './formatBuildMessages';
 
 describe('formatBuildMessages isolated-linker hint', () => {
   test('appends the hint for a read failure inside the .bun store', () => {

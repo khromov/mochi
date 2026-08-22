@@ -1,0 +1,30 @@
+{
+  "name": "mochi-minimal-rsvelte",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "build:raw": "mochi-framework build",
+    "start": "bun src/index.ts",
+    "dev": "MODE=development bun src/index.ts",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
+    "test": "bun test",
+    "clean": "rm -rf .mochi"
+  },
+  "dependencies": {
+    "mochi-framework": "workspace:*",
+    "svelte": "^5.56.8"
+  },
+  "devDependencies": {
+    "@mochi-framework/rsvelte": "workspace:*",
+    "@types/bun": "1.4.0",
+    "svelte-check": "4.7.4",
+    "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*"
+  }
+}

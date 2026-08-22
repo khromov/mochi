@@ -10,6 +10,7 @@ import { variantId } from './imageCache';
 import { computePlaceholder, runPipeline } from './resize';
 import { buildImageFilename, buildOriginalFilename } from './slug';
 import { requestContext, type ImageDebugEntry } from '../runtime/requestContext';
+import { requestMemo } from '../runtime/requestCache';
 import { applyFilter } from '../extensions';
 import { logger } from '../utils/log';
 import type { ImageCache, ImageCacheStatus } from './imageCache';
@@ -41,12 +42,10 @@ function mintFor(src: string, size: string | undefined, options: ResolvedImageOp
 }
 
 /**
- * Build a signed, cacheable URL for `src` transformed through a named size.
- * Server-side only (it reads the signing secret). Synchronous and near-instant —
- * no fetch, decode, or encode happens here; the endpoint applies the size lazily
- * on the browser's request. Omitting the size serves the full-size original; an
- * unknown size name does too, with a one-time server-log warning. Path:
- * `/_mochi/image/my-image-thumbnail.webp?p=<token>`.
+ * Build a signed, cacheable URL for `src` transformed through a named size, e.g.
+ * `/_mochi/image/my-image-thumbnail.webp?p=<token>`. Server-side only, since it reads the signing secret, and
+ * synchronous: the endpoint applies the size lazily on the browser's request. Omitting the size serves the full-size
+ * original, as does an unknown size name, with a one-time server-log warning.
  */
 export function getImageUrl(src: string, size?: string): string {
   return mintFor(src, size, getImageRuntime().options).url;
@@ -60,10 +59,7 @@ export interface ImageAttrs {
   height?: number;
 }
 
-/**
- * The signed URL plus the size's declared dimensions — used by `<Image>` to
- * set the `<img>` `src`/`width`/`height` in one server-side pass. Server-only.
- */
+/** The signed URL plus the size's declared dimensions, letting `<Image>` set `src`/`width`/`height` in one server-side pass. Server-only. */
 export function getImageAttrs(src: string, size?: string): ImageAttrs {
   const { url, resolved } = mintFor(src, size, getImageRuntime().options);
   return { url, width: resolved?.width, height: resolved?.height };
@@ -71,9 +67,8 @@ export function getImageAttrs(src: string, size?: string): ImageAttrs {
 
 let warnedDisabled = false;
 
-// Mint the signed URL and let the `image:url` filter rewrite it (e.g. prepend a
-// CDN origin) before it's recorded/returned — so the debug bar logs what the
-// caller actually gets.
+// The `image:url` filter rewrites the minted URL (e.g. prepending a CDN origin) before it's recorded and returned, so
+// the debug bar logs what the caller actually gets.
 function mintImageUrl(req: ImageRequest, filename: string, size: ResolvedImageSize | undefined, options: ResolvedImageOptions): string {
   // The endpoint isn't registered when the feature is off, so a minted URL
   // would silently 404. Degrade to the raw source URL instead.
@@ -100,18 +95,18 @@ export interface ResolvedImage {
 }
 
 /**
- * Run a named size inline and return the transformed bytes + metadata for
- * server-side use (OG images, inlining, dimension probes). Shares the same disk
- * cache as `getImageUrl`/`<Image>`, so a warm variant skips the fetch/decode/encode.
- * Prefer `getImageUrl` for anything that ends up in an `<img src>` — it defers all
- * work to the endpoint. An unknown/omitted size returns the original bytes.
- * Server-side only.
+ * Run a named size inline and return the transformed bytes plus metadata, for server-side use — OG images, inlining,
+ * dimension probes. It shares the disk cache with `getImageUrl`/`<Image>`, so a warm variant skips fetch/decode/encode.
+ * Prefer `getImageUrl` for anything landing in an `<img src>`, since that defers all work to the endpoint. An unknown or
+ * omitted size returns the original bytes. Server-side only.
  */
 export async function getImage(src: string, size?: string): Promise<ResolvedImage> {
   const { options, cache } = getImageRuntime();
   const resolved = resolveNamed(size, options);
 
   if (!resolved) {
+    // `bytes` is the request-cached original, shared by every caller this
+    // request — treat it as read-only; mutating it corrupts the shared entry.
     const { bytes, contentType } = await getCachedOriginal(src, options, cache);
     let meta = { width: 0, height: 0, format: '' };
     try {
@@ -126,6 +121,8 @@ export async function getImage(src: string, size?: string): Promise<ResolvedImag
 
   const id = variantId(src, resolved.configHash);
   const { entry } = await cache.getVariant(src, id, async () => {
+    // Shared request-cached original — read-only. `runPipeline` decodes without
+    // mutating its input, so passing the shared buffer is safe.
     const { bytes, createdAt } = await getCachedOriginal(src, options, cache);
     const out = await runPipeline(bytes, resolved, options);
     return { bytes: out.bytes, contentType: out.contentType, width: out.width, height: out.height, format: out.format, originalCreatedAt: createdAt };
@@ -136,11 +133,25 @@ export async function getImage(src: string, size?: string): Promise<ResolvedImag
 }
 
 /**
- * Fetch-or-serve the cached full-size original for `src`. Backs both the size
- * path (so every variant reuses one origin download) and the original path of
- * `getImageUrl`/`getImage`.
+ * Fetch-or-serve the cached full-size original for `src`, backing both the size path — so every variant reuses one
+ * origin download — and the original path of `getImageUrl`/`getImage`.
+ *
+ * It's request-cached because a warm original still costs a sidecar parse plus a full binary read off disk per call,
+ * and `MochiCache` coalesces only on the miss path, so N variants over one source would re-read the same bytes N times.
+ * Keying on `src` alone is safe since `resolved` and `cache` both come from the `getImageRuntime()` process singleton.
+ * `quiet` covers the image endpoint, which runs outside a request context and legitimately falls through uncached.
  */
-export async function getCachedOriginal(
+export const getCachedOriginal: (
+  src: string,
+  resolved: ResolvedImageOptions,
+  cache: ImageCache,
+) => Promise<{ bytes: Uint8Array; contentType: string; status: ImageCacheStatus; createdAt: number }> = requestMemo(readCachedOriginal, {
+  namespace: 'mochi:image:original',
+  key: (src) => src,
+  quiet: true,
+});
+
+async function readCachedOriginal(
   src: string,
   resolved: ResolvedImageOptions,
   cache: ImageCache,
@@ -240,8 +251,20 @@ const INLINE_PREVIEW_BYTE_CAP = 1_048_576;
  * Return a tiny ThumbHash blur-placeholder data URL for a source, computing and
  * caching it on first use. Returns `null` if the source can't be fetched or
  * decoded, so callers can degrade gracefully.
+ *
+ * Request-cached, so repeated calls for one source in a single render share the
+ * blocking compute rather than each paying the placeholder/original cache reads.
  */
-export async function getImagePlaceholder(src: string): Promise<string | null> {
+export const getImagePlaceholder: (src: string) => Promise<string | null> = requestMemo(computeImagePlaceholder, {
+  // Deliberately its own namespace, never shared with `imagePlaceholder` below:
+  // that one returns `null` on a miss by design, and a shared entry would let
+  // its `null` short-circuit a later blocking call in the same request.
+  namespace: 'mochi:image:placeholder:blocking',
+  // `quiet` because background warms + the image endpoint call this outside a request, where it legitimately falls through uncached.
+  quiet: true,
+});
+
+async function computeImagePlaceholder(src: string): Promise<string | null> {
   const { options, cache } = getImageRuntime();
   const cached = await cache.getPlaceholder(src);
   if (cached) {
@@ -254,6 +277,9 @@ export async function getImagePlaceholder(src: string): Promise<string | null> {
     return dataUrl;
   } catch (err) {
     logger.warn(`Could not compute image placeholder for ${src}: ${err instanceof Error ? err.message : String(err)}`);
+    // Resolving `null` rather than throwing means the request cache keeps this
+    // entry instead of evicting it — deliberate, so one unreachable source costs
+    // a single failed fetch per request rather than one per caller.
     return null;
   }
 }
@@ -280,8 +306,14 @@ export function warmImagePlaceholder(src: string): void {
  * Non-blocking placeholder read for `<Image placeholder>`: returns the cached
  * ThumbHash blur if present, otherwise `null` and kicks off a background warm so
  * a later render has it. Never blocks SSR on a fetch/decode. Server-only.
+ *
+ * Request-cached, so a gallery of N `<Image placeholder>` over the same source
+ * resolves to one cache read instead of N. The entry dies with the request, so
+ * an invalidation is still picked up by the next render.
  */
-export async function imagePlaceholder(src: string): Promise<string | null> {
+export const imagePlaceholder: (src: string) => Promise<string | null> = requestMemo(readPlaceholder, { namespace: 'mochi:image:placeholder', quiet: true });
+
+async function readPlaceholder(src: string): Promise<string | null> {
   const { cache } = getImageRuntime();
   const cached = await cache.getPlaceholder(src);
   if (cached) {

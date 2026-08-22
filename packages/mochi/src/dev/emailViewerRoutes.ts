@@ -6,9 +6,8 @@ import type { MochiApiConfig, MochiPageConfig } from '../types';
 
 export const EMAIL_VIEWER_COMPONENT = Bun.fileURLToPath(new URL('../templates/EmailViewer/EmailViewer.svelte', import.meta.url));
 
-// Attachments can additionally be these raster/document types without risking
-// same-origin XSS (unlike an upstream image original, these are always
-// served with `nosniff` + this exact allowlist, never trusted as-is).
+// Attachments may additionally be these raster/document types without risking same-origin XSS, since they're served
+// under `nosniff` and this exact allowlist rather than trusted as-is like an upstream image original.
 const EMAIL_INLINE_SAFE_EXTRA_TYPES = new Set(['image/bmp', 'image/x-icon', 'application/pdf', 'text/plain']);
 
 /** Light list projection — full bodies are only sent for the selected message. */
@@ -44,9 +43,8 @@ function toClientEmail(e: StoredEmail): StoredEmail {
   return { ...e, attachments: e.attachments.map(({ filename, contentType, size }) => ({ filename, contentType, size })) };
 }
 
-// Built as a `__mochiPage` literal rather than via `Mochi.page()` because
-// Mochi.ts already imports from this module — going through the helper would
-// create a circular import. Same dodge as `clientStatsRoutes.ts`.
+// A `__mochiPage` literal rather than `Mochi.page()`, since Mochi.ts already imports from this module and the helper
+// would close a circular import. Same dodge as `clientStatsRoutes.ts`.
 export function buildEmailViewerRoutes(registry: ComponentRegistry): Record<string, MochiPageConfig | MochiApiConfig> {
   const path = `${registry.assetPrefix}/email`;
   const config: MochiPageConfig = {
@@ -85,11 +83,9 @@ export function buildEmailViewerRoutes(registry: ComponentRegistry): Record<stri
       // type widens to Uint8Array<ArrayBufferLike>, which Response rejects).
       const body: BodyInit = typeof att.content === 'string' ? att.content : new Uint8Array(att.content);
       const contentType = att.contentType || 'application/octet-stream';
-      // An attachment's bytes and type are attacker-controlled when the app
-      // relays a user-supplied file. Only render known-inert types inline (in the
-      // dev-server origin); everything else — HTML, SVG, XML — downloads, so a
-      // malicious attachment can't execute script against the dev origin. `nosniff`
-      // stops the browser from second-guessing the declared type.
+      // An attachment's bytes and type are attacker-controlled when the app relays a user-supplied file, so only
+      // known-inert types render inline in the dev-server origin while HTML, SVG, and XML download instead. `nosniff`
+      // keeps the browser from second-guessing the declared type.
       const base = baseContentType(contentType);
       const inlineSafe = INLINE_SAFE_IMAGE_TYPES.has(base) || EMAIL_INLINE_SAFE_EXTRA_TYPES.has(base);
       return new Response(body, {

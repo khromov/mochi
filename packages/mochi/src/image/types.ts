@@ -6,9 +6,8 @@ export type ImageFormat = 'webp' | 'jpeg' | 'png' | 'avif';
 export const IMAGE_FILE_FILTER = /\.(png|jpe?g|webp|avif|gif)$/i;
 
 /**
- * Decoded formats a local image import can carry — the `Bun.Image` formats the
- * build-time loader accepts. Broader than {@link ImageFormat} (the transform
- * *output* formats): gif can be imported and served, but not transformed into.
+ * Decoded formats a local image import can carry — the `Bun.Image` formats the build-time loader accepts. Broader than
+ * {@link ImageFormat}, the transform output formats: gif imports and serves, while transforms target the narrower set.
  */
 export const IMPORTED_IMAGE_FORMATS = ['png', 'jpeg', 'webp', 'avif', 'gif'] as const;
 export type ImportedImageFormat = (typeof IMPORTED_IMAGE_FORMATS)[number];
@@ -42,11 +41,9 @@ export const IMAGE_FORMAT_BY_EXT: Record<string, ImportedImageFormat> = {
 };
 
 /**
- * The object a local image import resolves to (`import hero from './hero.png'`).
- * `src` is a content-hashed, same-origin URL served from disk; `width`/`height`
- * are the image's intrinsic pixel dimensions and `format` its decoded format
- * (e.g. `'jpeg'`). Pass it to `<Image src={hero} …>` or drop `hero.src` into a
- * plain `<img>`.
+ * What a local image import resolves to (`import hero from './hero.png'`): `src` is a content-hashed, same-origin URL
+ * served from disk, `width`/`height` the intrinsic pixel dimensions, `format` the decoded format. Pass it to
+ * `<Image src={hero} …>` or drop `hero.src` into a plain `<img>`.
  */
 export interface ImportedImage {
   src: string;
@@ -57,6 +54,7 @@ export interface ImportedImage {
 
 /** An `ImportedImage` plus the build-time details needed to serve/transform it from disk. */
 export interface LocalImageAsset extends ImportedImage {
+  /** Absolute in memory/at runtime; serialized outDir-relative into the manifest. */
   diskPath: string;
   contentType: string;
 }
@@ -65,12 +63,10 @@ export interface LocalImageAsset extends ImportedImage {
 export type ImageFit = 'inside' | 'fill';
 
 /**
- * The request payload baked (encrypted) into every image URL. It carries only the
- * source URL and the *name* of a size declared in `Mochi.serve({ image: { sizes } })`
- * — never the transform config itself, which lives server-side. The payload is
- * packed into a compact binary token (see `imageCodec.ts`) then sealed with
- * authenticated encryption (see `payloadCrypto.ts`), so the source URL is neither
- * readable nor tamperable and callers can only reference sizes the server defined.
+ * The request payload encrypted into every image URL, carrying the source URL and the *name* of a size declared in
+ * `Mochi.serve({ image: { sizes } })` while the transform config itself stays server-side. It is packed into a compact
+ * binary token (`imageCodec.ts`) then sealed with authenticated encryption (`payloadCrypto.ts`), leaving the source URL
+ * unreadable and untamperable and confining callers to sizes the server defined.
  */
 export interface ImageRequest {
   src: string;
@@ -81,10 +77,9 @@ export interface ImageRequest {
 }
 
 /**
- * A named image size, declared under `Mochi.serve({ image: { sizes: { … } } })`.
- * Transforms apply in a fixed order: resize → rotate → flip → flop → modulate →
- * format-encode. Callers reference the size by name; changing a size's
- * definition re-renders every URL that uses it (the config hash busts caches).
+ * A named image size, declared under `Mochi.serve({ image: { sizes: { … } } })`. Transforms apply in a fixed order:
+ * resize → rotate → flip → flop → modulate → format-encode. Redefining a size re-renders every URL using it, since the
+ * config hash busts caches.
  */
 export interface ImageSize {
   /** Target width in px. */
@@ -138,24 +133,15 @@ export interface InvalidateImageOptions {
   hard?: boolean;
 }
 
-/**
- * Image API configuration, set under `Mochi.serve({ image: { … } })`.
- * Every field is optional; see `resolveImageOptions` for defaults.
- */
+/** Image API configuration, set under `Mochi.serve({ image: { … } })`. Every field is optional; see `resolveImageOptions` for defaults. */
 export interface MochiImageOptions {
   /** Mount the `/_mochi/image/*` endpoint. Default: `true`. */
   enabled?: boolean;
-  /**
-   * Named transform sizes, referenced by name from `<Image size>`,
-   * `getImageUrl(src, name)`, and `getImage(src, name)`. Validated at startup.
-   */
+  /** Named transform sizes, referenced from `<Image size>`, `getImageUrl(src, name)`, and `getImage(src, name)`. Validated at startup. */
   sizes?: Record<string, ImageSize>;
   /** Disk cache directory. Must NOT be under `publicDir`. Default: `./.mochi/image-cache`. Ignored when `storage` is set. */
   cacheDir?: string;
-  /**
-   * Override the default `FileStorage(cacheDir)` cache backend — e.g. `new MemoryStorage({ maxAge })`
-   * for an in-memory cache. See the "Custom cache storage" docs section for trade-offs.
-   */
+  /** Override the default `FileStorage(cacheDir)` backend, e.g. `new MemoryStorage({ maxAge })`. See the "Custom cache storage" docs section for trade-offs. */
   storage?: Storage;
   /** Output format when the caller doesn't specify one. Default: `webp`. */
   defaultFormat?: ImageFormat;

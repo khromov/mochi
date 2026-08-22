@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 /// <reference lib="dom.iterable" />
-import { hydrate, mount } from 'svelte';
+import { hydrate, mount, unmount } from 'svelte';
 import type { Component } from 'svelte';
 import { parse as devalueParse } from 'devalue';
 import { isDev, logger } from 'mochi-framework';
@@ -17,6 +17,10 @@ export function registerComponent(name: string, component: Component) {
 
 class HydratableIsland extends HTMLElement {
   _hydrated = false;
+  // Bumped (as a plain field, cross-bundle like `_unmount`) by an enclosing server island when it
+  // discards this subtree, so an in-flight hydration bails instead of mounting onto detached DOM.
+  _generation = 0;
+  _unmount: (() => void) | undefined;
 
   connectedCallback() {
     const name = this.getAttribute('component-name');
@@ -63,10 +67,9 @@ class HydratableIsland extends HTMLElement {
     if (!name) {
       return;
     }
-    // Page islands carry a `props-ref` pointing at a
-    // <script type="application/json" id="<propsRef>"> block emitted just before
-    // them. The server-island also-hydrate path instead inlines `props=...`
-    // directly, so fall back to that attribute when no ref is present.
+    const generation = this._generation;
+    // Page islands carry a `props-ref` pointing at a `<script type="application/json">` block emitted just before them,
+    // while the server-island also-hydrate path inlines `props=...` — hence the fallback when no ref is present.
     const propsRef = this.getAttribute('props-ref');
     let propsRaw: string | null;
     if (propsRef) {
@@ -104,6 +107,11 @@ class HydratableIsland extends HTMLElement {
       await import(componentUrl);
     }
 
+    // Everything past here is synchronous, so one check after the awaits covers the whole method.
+    if (generation !== this._generation) {
+      return;
+    }
+
     const Component = componentRegistry[name];
     if (!Component) {
       return;
@@ -125,12 +133,9 @@ class HydratableIsland extends HTMLElement {
       }
       throw err;
     }
-    props.isHydratable = true;
-    // `transformError` makes <svelte:boundary> work for client-side errors
-    // (e.g. throws inside $effect / $derived after hydration). Returns an
-    // Error instance — same shape as the SSR transformError — so user-written
-    // `failed` snippets can rely on `error instanceof Error`. `message` is
-    // made enumerable to match SSR (see ComponentRegistry transformError).
+    // `transformError` makes `<svelte:boundary>` work for client-side errors, like a throw inside `$effect` after
+    // hydration. It returns an Error in the same shape as the SSR transformError, `message` enumerable to match, so
+    // user-written `failed` snippets can rely on `error instanceof Error`.
     const transformError = (err: unknown): Error => {
       const e = err instanceof Error ? err : new Error(String(err));
       logger.error(`Island "${name}" runtime error:`, e);
@@ -144,14 +149,22 @@ class HydratableIsland extends HTMLElement {
       return out;
     };
     const clientOnly = this.hasAttribute('client-only');
+    let instance: Record<string, unknown>;
     if (clientOnly) {
       // mochi:clientOnly islands have no SSR HTML — the wrapper holds optional
       // fallback content. Remove it exactly when the real component mounts.
       this.innerHTML = '';
-      mount(Component, { target: this, props, transformError });
+      instance = mount(Component, { target: this, props, transformError });
     } else {
-      hydrate(Component, { target: this, props, transformError });
+      instance = hydrate(Component, { target: this, props, transformError });
     }
+    // On the element rather than an import because the reloading island that calls it ships in
+    // a separate, Svelte-free bundle. Deliberately not `disconnectedCallback`: a DOM move
+    // disconnects too, and unmounting there would destroy state on every reparent.
+    this._unmount = () => {
+      this._unmount = undefined;
+      void unmount(instance);
+    };
     logger.log(clientOnly ? 'Mounted' : 'Hydrated', name);
   }
 }

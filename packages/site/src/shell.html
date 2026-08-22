@@ -21,8 +21,20 @@
       })();
     </script>
     <style>
+      /* Pin the cascade layer order before any stylesheet can imply one. Libraries that
+         layer their styles (LayerChart, Tailwind) otherwise inherit whatever order the
+         bundler happened to emit, which can differ between dev and production. */
+      @layer reset, theme, base, components, utilities;
+
       :root {
         color-scheme: light dark;
+
+        /* Bun downlevels `light-dark(a, b)` in dependency CSS to `var(--buncss-light, a) var(--buncss-dark, b)`
+           and emits these definitions onto whichever selector declares `color-scheme` in the same stylesheet.
+           Component CSS is bundled per file, so a dependency that uses light-dark() but never declares
+           color-scheme ships the usage without the definitions and the declaration resolves to nothing. */
+        --buncss-light: initial;
+        --buncss-dark: ;
 
         --bg: #f5f3ec;
         --surface: #fffdf8;
@@ -51,8 +63,8 @@
         --badge-success-text: var(--accent-soft-text);
         --badge-warning-bg: #f5ecd7;
         --badge-warning-text: #7a5a20;
-        --badge-info-bg: #e3ece0;
-        --badge-info-text: #2f5235;
+        --badge-info-bg: #dde7ec;
+        --badge-info-text: #2c4d61;
         --badge-danger-bg: #f4dcd6;
         --badge-danger-text: #7a2e20;
         --badge-tip-bg: #dde7ec;
@@ -78,6 +90,9 @@
          query via higher specificity, so it works on dark-preferring systems too. */
       @media (prefers-color-scheme: dark) {
         :root:not([data-theme='light']) {
+          --buncss-light: ;
+          --buncss-dark: initial;
+
           --bg: #171914;
           --surface: #1f221c;
           --surface-muted: #1a1d17;
@@ -103,8 +118,8 @@
           --badge-success-text: #c7e0cd;
           --badge-warning-bg: #2f281a;
           --badge-warning-text: #d5b982;
-          --badge-info-bg: #233028;
-          --badge-info-text: #b8d5be;
+          --badge-info-bg: #1e2b33;
+          --badge-info-text: #b6cdd8;
           --badge-danger-bg: #351f1a;
           --badge-danger-text: #e9a89a;
           --badge-tip-bg: #1e2b33;
@@ -118,6 +133,9 @@
 
       /* Explicit dark choice — wins regardless of system preference. */
       :root[data-theme='dark'] {
+        --buncss-light: ;
+        --buncss-dark: initial;
+
         --bg: #171914;
         --surface: #1f221c;
         --surface-muted: #1a1d17;
@@ -143,8 +161,8 @@
         --badge-success-text: #c7e0cd;
         --badge-warning-bg: #2f281a;
         --badge-warning-text: #d5b982;
-        --badge-info-bg: #233028;
-        --badge-info-text: #b8d5be;
+        --badge-info-bg: #1e2b33;
+        --badge-info-text: #b6cdd8;
         --badge-danger-bg: #351f1a;
         --badge-danger-text: #e9a89a;
         --badge-tip-bg: #1e2b33;
@@ -155,12 +173,18 @@
         --code-chrome-border: #000000;
       }
 
-      *,
-      *::before,
-      *::after {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
+      /* Layered so it still beats the UA defaults but loses to layered library styles —
+         unlayered, this `padding: 0` would win over every cascade layer regardless of
+         specificity and strip the spacing off things like LayerChart's tooltips. Every
+         other stylesheet on the site is unlayered and so still beats it, as before. */
+      @layer reset {
+        *,
+        *::before,
+        *::after {
+          box-sizing: border-box;
+          margin: 0;
+          padding: 0;
+        }
       }
 
       html {

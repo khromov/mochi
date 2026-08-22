@@ -4,7 +4,7 @@ import type { ImageFormat, ResolvedImageOptions, ResolvedImageSize } from './typ
 function imageCtor(): typeof Bun.Image {
   const ctor = (Bun as { Image?: typeof Bun.Image }).Image;
   if (!ctor) {
-    throw new ImageError(500, 'Bun.Image is unavailable; Bun >= 1.3.14 is required');
+    throw new ImageError(500, 'Bun.Image is unavailable; Bun >= 1.4.0 is required');
   }
   return ctor;
 }

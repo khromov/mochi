@@ -1,22 +1,28 @@
 ---
 title: 'Captcha'
 slug: captcha
-description: 'Slide-to-verify captcha with proof-of-work, replay protection and no third-party service.'
+ogTitle: 'Slide-to-verify captcha, no third party'
+description: 'Slide-to-verify captcha with proof-of-work, replay protection, and no third-party service.'
 ---
 
 <script>
+  import { Image } from 'mochi-framework/image';
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import PersistenceTable from './_components/PersistenceTable.svelte';
+  import captchaShot from './images/captcha.png';
 </script>
 
 ## Captcha
 
 <figure>
-  <img src="/docs/captcha.png" alt="The MochiCaptcha slide-to-verify widget in its default styling" />
+  <Image src={captchaShot} size="doc" width={captchaShot.width} height={captchaShot.height} alt="The MochiCaptcha slide-to-verify widget in its default styling" />
   <figcaption>The widget with no CSS applied — every colour falls back to a built-in default.</figcaption>
 </figure>
 
-`<MochiCaptcha />` is a slide-to-verify widget that gates form submissions without a third-party service, a tracker, or a network round-trip. Mint a challenge in `serverProps`, render the component, verify in the action.
+`<MochiCaptcha />` is a slide-to-verify widget that gates form submissions without a third-party service or tracker. Mint a challenge in `serverProps`, render the component, verify in the action. To gate whole routes instead of forms, the same proof-of-work backs [Protection Mode](/docs/protection/).
+
+<PersistenceTable feature="captcha" />
 
 ```ts
 // src/routes.ts
@@ -38,7 +44,7 @@ export const routes = {
 };
 ```
 
-`mintCaptcha()` returns `{ token, bits }` — spread it straight onto the component. The widget adds its own `captcha_token` and `captcha_pow` hidden inputs to the surrounding form, so `verifyCaptcha(formData)` needs nothing else.
+`mintCaptcha()` returns `{ token, bits, solveBudgetMs }`. Spread it onto the component. The widget adds its own `captcha_token` and `captcha_pow` hidden inputs to the surrounding form, so `verifyCaptcha(formData)` needs nothing else.
 
 ```svelte
 <script lang="ts">
@@ -57,17 +63,12 @@ export const routes = {
 
 ### Hydration
 
-The captcha runs entirely in the browser — the slider, the hash chain and the proof-of-work are all client-side — so it renders **nothing on the server** and appears only once it hydrates. Wire it up one of two ways:
+The captcha runs entirely in the browser — the slider, the hash chain, and the proof-of-work. The server renders only a blank spacer the size of the widget, and the slider appears in its place once it hydrates. Wire it up one of two ways:
 
-- **Hydrate the captcha itself** — put `mochi:hydrate` on it, as above, and it becomes its own island.
-- **Hydrate the surrounding subtree** — if the captcha sits inside a component you hydrate, it hydrates with it, no directive on the captcha needed.
+- **Hydrate the captcha itself** — put `mochi:hydrate` on it, as above.
+- **Hydrate the surrounding subtree** — if the captcha sits inside a component you hydrate, it hydrates with it.
 
-The subtree route is the common one: the moment you attach [`enhance`](/docs/progressively-enhancing-forms-with-enhance/) to the form or bind `verified` to gate the submit button, you're hydrating the form component anyway (`enhance` only runs client-side), and the captcha rides along. A binding can't cross an island boundary, so `bind:verified` **only** works this way — the captcha and the code binding it must hydrate together.
-
-```svelte
-<!-- src/Contact.svelte (the page) — hydrate the form so enhance and the captcha run -->
-<ContactForm mochi:hydrate {captcha} />
-```
+The subtree route is the common one. The moment you attach [`enhance`](/docs/progressively-enhancing-forms-with-enhance/) to the form or bind `verified` to gate the submit button, you hydrate the form component anyway, and the captcha rides along. A binding cannot cross an island boundary, so `bind:verified` works only this way — the captcha and the code binding it must hydrate together.
 
 ```svelte
 <!-- src/ContactForm.svelte -->
@@ -87,57 +88,57 @@ The subtree route is the common one: the moment you attach [`enhance`](/docs/pro
 </form>
 ```
 
-`bind:verified` is optional — bind it to disable submit until the challenge is solved. The server rejects unsolved submissions either way.
-
-A captcha that hydrates by neither route stays empty — an empty slot rather than a dead slider that looks interactive but can never verify.
+`bind:verified` is optional. The server rejects an unsolved submission either way. With JavaScript off, the spacer shows a `<noscript>` message, overridable with `noscriptLabel`.
 
 #### Props
 
-| Prop             | Default                | Description                                                                                   |
-| ---------------- | ---------------------- | --------------------------------------------------------------------------------------------- |
-| `token`          | —                      | The sealed challenge from `mintCaptcha()`.                                                    |
-| `bits`           | `16`                   | Difficulty the widget solves at. Comes from `mintCaptcha()`; don't set it by hand.            |
-| `emoji`          | `🧩`                   | The character on the handle.                                                                  |
-| `label`          | `'Slide to verify'`    | The hint shown in the track. Doubles as the handle's accessible name, so keep it descriptive. |
-| `verifyingLabel` | `'Verifying…'`         | Replaces the hint while the proof-of-work runs.                                               |
-| `verifiedLabel`  | `'Verified — thanks!'` | Replaces the hint once the proof-of-work lands.                                               |
-| `verified`       | `false`                | `$bindable` — true once solved and the proof-of-work has landed.                              |
+| Prop             | Default                | Description                                                               |
+| ---------------- | ---------------------- | ------------------------------------------------------------------------- |
+| `token`          | —                      | The sealed challenge from `mintCaptcha()`.                                |
+| `bits`           | `19`                   | Difficulty the widget solves at. Comes from `mintCaptcha()`.              |
+| `solveBudgetMs`  | `60_000`               | Active solve time before the widget gives up. Comes from `mintCaptcha()`. |
+| `emoji`          | `🧩`                   | The character on the handle.                                              |
+| `label`          | `'Slide to verify'`    | The hint shown in the track, also the handle's accessible name.           |
+| `verifyingLabel` | `'Verifying…'`         | Replaces the hint while the proof-of-work runs.                           |
+| `verifiedLabel`  | `'Verified — thanks!'` | Replaces the hint once the proof-of-work lands.                           |
+| `errorLabel`     | see below              | Shown if the widget cannot complete the challenge.                        |
+| `noscriptLabel`  | see above              | The `<noscript>` message.                                                 |
+| `verified`       | `false`                | `$bindable` — true once solved.                                           |
 
 ```svelte
 <MochiCaptcha {...captcha} emoji="🍡" label="Slide the mochi to the right" />
 ```
 
-All three hints are yours, so the widget can stay in your app's voice from the first frame to the last:
+### When it fails
 
-```svelte
-<MochiCaptcha {...captcha} emoji="▶" label="SLIDE TO PROVE HUMANITY" verifyingLabel="VERIFYING…" verifiedLabel="ACCESS GRANTED" />
-```
+Every failure is logged through the [logger](/docs/logging/) at `error` level, so it reaches production consoles. What the visitor sees depends on whether trying again could help.
+
+- **A proof-of-work that ran out of budget, or a hash that threw** — the track becomes a retry button showing `errorLabel`. The nonce search resumes where it stopped.
+- **A missing `token` or a `bits` value outside 1–32** — a configuration mistake, caught at mount, not retryable. In development the widget renders the cause. In production it falls back to a blank spacer, and the cause stays in the console.
+
+Nothing is submitted from an errored widget: `captcha_token` and `captcha_pow` stay empty, so the server rejects it as unsolved.
 
 ### How it works
 
-Sliding the handle advances a SHA-256 hash chain one link per step. The final link is the proof-of-work challenge, and the widget then brute-forces a nonce whose digest has `bits` leading zeros.
+Sliding the handle advances a SHA-256 hash chain one link per step. The final link is the proof-of-work challenge. The widget then brute-forces a nonce whose digest has `bits` leading zeros. Hashing is synchronous pure JS (`@noble/hashes`), so it works over plain `http`.
 
-The challenge is never in the page — it only exists once the slide progression has actually run. A bot that reads the token out of the HTML and solves a proof-of-work against it directly fails, because the server re-derives the chain and checks the work against its final link.
+The token is encrypted and authenticated (AES-256-SIV, keyed from `MOCHI_KEY`) and seals the mint time, a one-time nonce, and the difficulty. A passing submission proves the page was fetched, the widget ran, and real hashing work was spent.
 
-The token itself is encrypted and authenticated (AES-256-SIV, keyed from `MOCHI_KEY`) and seals the mint time, a one-time nonce, and the difficulty. So a passing submission proves the page was really fetched, the widget really ran, and real hashing work was really spent.
+<Callout type="info">
 
-Difficulty is sealed **inside** the token, not passed alongside it: `verifyCaptcha()` always checks the difficulty a token was minted at, so raising `bits` can never silently invalidate or weaken tokens already in flight.
-
-#### The token is not a secret
-
-It's a bearer token, and the client is meant to have it — it's rendered into the page, seeds the hash chain, and is posted back as a hidden field. Nothing about the design assumes it's hidden.
-
-What it relies on instead is that a client can't **forge** one. It's sealed with AES-256-SIV under your `MOCHI_KEY`, so the mint time, nonce and difficulty inside it can't be edited or fabricated — the AEAD tag fails and `verifyCaptcha()` rejects it. The contents are encrypted rather than merely signed, but that's a property of the primitive; confidentiality isn't doing the work here. Authenticity is.
-
-<Callout type="warning">
-
-**This raises the cost of spam; it does not prove humanity.** An attacker can fetch a page, take the token, and solve the proof-of-work headlessly — `solveCaptcha()` is that program, in fifteen lines. What the captcha buys you is that every submission costs real CPU, must execute JavaScript, and can be used exactly once inside a short window. That's enough to make bulk spam expensive and to stop naive form-posting bots. It is not a defence against a determined, targeted attacker, and it isn't a substitute for rate limiting.
+The token is a bearer token, not a secret. The client is meant to have it. Security rests on the fact that a client cannot **forge** one — the AEAD tag fails and `verifyCaptcha()` rejects it. Authenticity does the work, not confidentiality.
 
 </Callout>
 
 <Callout type="warning">
 
-**Set `MOCHI_KEY` in production.** Tokens are sealed with a key derived from it. Without it Mochi generates a random key per boot, so every in-flight challenge breaks on restart and no two instances accept each other's tokens. Generate one with `bunx mochi-framework generate-key`.
+**This raises the cost of spam. It does not prove humanity.** An attacker can fetch a page, take the token, and solve the proof-of-work headlessly. What the captcha buys you is that every submission costs real CPU, must run JavaScript, and can be used once inside a short window. It is not a defence against a determined attacker and is not a substitute for rate limiting.
+
+</Callout>
+
+<Callout type="warning">
+
+**Set `MOCHI_KEY` in production.** Tokens are sealed with a key derived from it. Without it, Mochi generates a random key per boot, so every in-flight challenge breaks on restart and no two instances accept each other's tokens. Generate one with `bunx mochi-framework generate-key`.
 
 </Callout>
 
@@ -148,7 +149,7 @@ Configure defaults on `Mochi.serve()`:
 ```ts
 await Mochi.serve({
   captcha: {
-    bits: 16,
+    bits: 19,
     minAgeMs: 2000,
     maxAgeMs: 900_000,
     store: 'memory',
@@ -157,58 +158,41 @@ await Mochi.serve({
 });
 ```
 
-| Option      | Default                        | Description                                                                     |
-| ----------- | ------------------------------ | ------------------------------------------------------------------------------- |
-| `bits`      | `16`                           | Proof-of-work difficulty in leading zero bits. Each extra bit doubles the work. |
-| `minAgeMs`  | `2000`                         | Reject tokens younger than this — the timing floor. See below.                  |
-| `maxAgeMs`  | `900_000`                      | Reject tokens older than this (15 minutes).                                     |
-| `store`     | `'memory'`                     | One-time nonce store: `'memory'`, `'sqlite'`, or your own `NonceStore`.         |
-| `storePath` | `.mochi/captcha-nonces.sqlite` | SQLite file when `store: 'sqlite'`.                                             |
+| Option      | Default                        | Description                                                                 |
+| ----------- | ------------------------------ | --------------------------------------------------------------------------- |
+| `bits`      | `19`                           | Proof-of-work difficulty in leading zero bits. Each extra bit doubles work. |
+| `minAgeMs`  | `2000`                         | Reject tokens younger than this — the timing floor.                         |
+| `maxAgeMs`  | `900_000`                      | Reject tokens older than this (15 minutes).                                 |
+| `store`     | `'memory'`                     | One-time nonce store: `'memory'`, `'sqlite'`, or your own `NonceStore`.     |
+| `storePath` | `.mochi/captcha-nonces.sqlite` | SQLite file when `store: 'sqlite'`.                                         |
 
-Every token failure returns the same message, so a probing bot can't tell "too fast" from "tampered" and learn where the limits are.
+`'memory'` and `'sqlite'` are the only built-in nonce backends; anything else — Redis, Postgres, your own database — is a custom `NonceStore`. See [Persistence](/docs/persistence/) for how that compares across Mochi.
+
+Every token failure returns the same message, so a probing bot cannot tell "too fast" from "tampered".
 
 ### The timing floor
 
-`minAgeMs` is the only check enforcing that a submission took human time, and `2000` suits a form the visitor has to type into. It is worth setting deliberately rather than inheriting, because the proof-of-work does not back it up: `bits` bounds an attacker's **cost** — ~2^`bits` hashes per token, on average — not any individual solver's latency. Solve time is geometrically distributed with no lower bound, so a fair share of real visitors clear a 16-bit challenge in a few hundred milliseconds and some clear it in one attempt. On a form with nothing to fill in, the slide plus the proof-of-work can land under two seconds and a genuine visitor gets refused.
-
-Tune it per form with the [`captcha:minAgeMs`](/docs/extensions/#captchaminagems) filter rather than lowering it globally.
+`minAgeMs` is the only check that a submission took human time. The proof-of-work bounds an attacker's **cost** (~2^`bits` hashes per token), not any single solver's latency. A form with fields to type into runs past the 2s default. A form with nothing to fill in may not, so tune it per form with the [`captcha:minAgeMs`](/docs/extensions/#captchaminagems) filter.
 
 ### Clock skew
 
-A token's age is `Date.now()` at verify minus the mint time sealed into the token. On one instance that's one clock and the subtraction is exact. Across a multi-instance deploy the two reads come off different machines, so the difference also carries that pair's clock skew — a verifier running behind the minter understates the age and can refuse a real submission as too fast.
+A token's age is `Date.now()` at verify minus the mint time sealed into the token. On one instance that is one clock, and the subtraction is exact. Across a multi-instance deploy the two reads come off different machines, so the difference also carries that pair's clock skew. A verifier that runs behind the minter understates the age and can refuse a real submission as too fast.
 
-`maxAgeMs` is padded by a 30s allowance to absorb this, adjustable via the [`captcha:driftAllowanceMs`](/docs/extensions/#captchadriftallowancems) filter. The floor is **not** padded: padding a floor means subtracting from it, so any allowance wider than `minAgeMs` would delete the too-fast check rather than soften it. Keep instances NTP-synced — a fleet skewed by seconds has no usable elapsed-time signal to floor in the first place, and `MOCHI_KEY` and the nonce store already have to be shared there anyway.
+To absorb this, Mochi adds a 30s allowance to `maxAgeMs`, adjustable with the [`captcha:driftAllowanceMs`](/docs/extensions/#captchadriftallowancems) filter. It does not add one to `minAgeMs`.
 
 <Callout type="info">
 
-A **negative** `ageMs` on the [`captcha:verify` event](#watching-it-work) means a token was verified before it was minted, which is impossible on a single clock. It's an unambiguous skew alarm, and it fires in the direction that quietly weakens the floor rather than the one visitors complain about.
+A **negative** `ageMs` on the [`captcha:verify` event](/docs/events/#captchaverify) means a token was verified before it was minted, which is impossible on a single clock. It is an unambiguous skew alarm, and it fires in the direction that quietly weakens the floor rather than the one visitors complain about.
 
 </Callout>
 
-### Custom messages
-
-`captcha.error` is ready to render, but a failure also carries a `reason` so you can write your own copy:
-
-```ts
-const captcha = await verifyCaptcha(formData);
-if (!captcha.ok) {
-  return fail(400, {
-    error: captcha.reason === 'replay' ? 'You already sent this one — reload for a fresh form.' : captcha.error,
-  });
-}
-```
-
-`reason` is only ever `'replay'` or `'rejected'`. Tampered, too-fast, expired and bad-proof-of-work all collapse into `'rejected'`, so branching on it can't reintroduce the probing surface the single generic message closes. Replay stays separate because it's already public — it's the one failure a real visitor can hit and act on, and reaching it costs a genuinely solved captcha.
-
-To distinguish the rest, listen for the [`captcha:verify` event](#watching-it-work) — operators get the true cause there, the client never does.
-
 ### Replay protection
 
-A solved token is single-use. `verifyCaptcha()` burns its nonce on success; a second submission of the same token is rejected.
+A solved token is single-use. `verifyCaptcha()` burns its nonce on success. A second submission of the same token is rejected.
 
 <Callout type="warning">
 
-**The default `'memory'` store is per-process.** It gives no replay protection across a multi-instance deploy. Use `store: 'sqlite'` with shared storage, or supply your own `NonceStore` backed by Redis or your database.
+**The default `'memory'` store is per-process.** It gives no replay protection across a multi-instance deploy. Use `store: 'sqlite'` with shared storage, or supply your own `NonceStore` backed by Redis or your database — there is no built-in Postgres store. See [Persistence](/docs/persistence/).
 
 </Callout>
 
@@ -221,11 +205,7 @@ const store: NonceStore = {
 };
 ```
 
-There's no background sweeper to configure or shut down. Both built-in stores prune expired entries inline on every `consume`, which is sound because an entry can only be added by a `consume` — nothing accumulates while nothing is being spent, so the store stays bounded by what was consumed inside the expiry window. The SQLite store indexes `expires_at` so that prune is a lookup rather than a table scan.
-
-If you supply your own store, give entries a TTL and let your backend expire them — the `expiresAt` argument is passed for exactly that (Redis `PXAT` above).
-
-Pass `{ consume: false }` when other validation could still reject the submission, then burn the nonce yourself once you commit. This way a fixable mistake — a typo'd email — doesn't cost the visitor their solved captcha, while a retried failure downstream can't double-submit:
+Pass `{ consume: false }` when other validation could still reject the submission, then burn the nonce yourself once you commit. This way a fixable mistake does not cost the visitor their solved captcha:
 
 ```ts
 send: async ({ formData }) => {
@@ -244,9 +224,22 @@ send: async ({ formData }) => {
 },
 ```
 
+### Custom messages
+
+`captcha.error` is ready to render. A failure also carries a `reason`, which is only ever `'replay'` or `'rejected'` (tampered, too-fast, expired, and bad proof-of-work all collapse into `'rejected'`). To distinguish the rest, listen for the [`captcha:verify` event](/docs/events/#captchaverify) — operators get the true cause, the client never does.
+
+```ts
+const captcha = await verifyCaptcha(formData);
+if (!captcha.ok) {
+  return fail(400, {
+    error: captcha.reason === 'replay' ? 'You already sent this one — reload for a fresh form.' : captcha.error,
+  });
+}
+```
+
 ### Theming
 
-Every colour is a CSS custom property whose default lives in the `var()` fallback, so the widget looks finished with no CSS at all. Set any of them on an ancestor and they inherit down:
+Every colour is a CSS custom property whose default lives in the `var()` fallback, so the widget looks finished with no CSS. Set any of them on an ancestor and they inherit down:
 
 ```css
 .my-form {
@@ -259,42 +252,21 @@ Every colour is a CSS custom property whose default lives in the `var()` fallbac
   --mochi-captcha-handle-text: var(--mochi-captcha-accent);
   --mochi-captcha-hint-text: #6e756d;
   --mochi-captcha-radius: 999px;
+  --mochi-captcha-error-bg: #fdf3f2;
+  --mochi-captcha-error-border: #e9c9c4;
+  --mochi-captcha-error-text: #8a3324;
 }
 ```
 
-`--mochi-captcha-handle-text` colours the `emoji` glyph, and follows the accent unless you set it. It only bites for glyphs with a text presentation — `▶`, `→` — since colour-font emoji like `🍡` paint themselves and ignore CSS colour entirely.
+The three `error` properties apply only in the [failure state](#when-it-fails).
 
-The defaults are light-mode only. In a dark or themed app, point these at your own tokens — `--mochi-captcha-track-bg: var(--surface-muted)` and so on — so the widget follows your theme instead of sitting there as a bright slab.
+`--mochi-captcha-handle-text` colours the `emoji` glyph and follows the accent unless you set it. It applies only to glyphs with a text presentation, such as `▶` or `→`. Colour-font emoji like `🍡` paint themselves and ignore CSS colour.
 
-The track is 44px tall and the handle 44px wide, and the drag maths depends on both, so neither is themeable.
-
-### Watching it work
-
-The widget logs each link of the chain as it's minted, then the proof-of-work solve, through Mochi's [logger](/docs/logging/) — so it's level-gated. `log` is the dev default, which means you get this in the browser console for free while developing, and nothing in production (where the default level is `warn`):
-
-```
-[mochi] captcha: link 1/10 minted — 4f2c9a1b7e3d8056…
-[mochi] captcha: link 2/10 minted — b81e04ff2a6c9d31…
-…
-[mochi] captcha: chain complete, solving 16-bit proof-of-work over 0d47ba91c3e58f22…
-[mochi] captcha: solved in 512ms — nonce 64918 after 64919 attempts
-```
-
-Raise or silence it per app with `setLogLevel()`.
-
-Server-side, every verification emits a [`captcha:verify`](/docs/events/#captchaverify) event carrying the **real** reason — `'malformed'`, `'expired'`, `'too-fast'`, `'bad-pow'` or `'replay'` — rather than the single generic message the client is given. `consoleLogger()` prints it, and it's the hook to graph rejections or alert on a spam spike:
-
-```ts
-mochiEvents.on('captcha:verify', ({ ok, reason }) => {
-  if (!ok) {
-    metrics.increment('captcha.rejected', { reason });
-  }
-});
-```
+The defaults are light-mode only. In a dark or themed app, point these at your own tokens — `--mochi-captcha-track-bg: var(--surface-muted)` and so on — so the widget follows your theme. The track height (44px) and handle width (44px) drive the drag maths and are not themeable.
 
 ### Testing
 
-`solveCaptcha()` returns the exact fields the widget would submit, so form tests don't need a browser. Lower `bits` in the test server — solving at the production default costs real work.
+`solveCaptcha()` returns the exact fields the widget would submit, so form tests need no browser. Lower `bits` in the test server.
 
 ```ts
 import { mintCaptcha, solveCaptcha } from 'mochi-framework';
@@ -310,24 +282,18 @@ const res = await fetch(`${base}/contact/?/send`, {
 
 ### API
 
-| Export                              | Returns                          | Description                                                                      |
-| ----------------------------------- | -------------------------------- | -------------------------------------------------------------------------------- |
-| `mintCaptcha(options?)`             | `{ token, bits }`                | Mint a single-use challenge. `options.bits` overrides the configured difficulty. |
-| `verifyCaptcha(formData, options?)` | `Promise<CaptchaResult>`         | Verify and (unless `consume: false`) burn the nonce.                             |
-| `consumeCaptcha(result)`            | `Promise<boolean>`               | Burn a deferred nonce; `false` if already spent.                                 |
-| `solveCaptcha(minted)`              | `{ captcha_token, captcha_pow }` | Solve server-side, for tests.                                                    |
+| Export                              | Returns                          | Description                                          |
+| ----------------------------------- | -------------------------------- | ---------------------------------------------------- |
+| `mintCaptcha(options?)`             | `{ token, bits, solveBudgetMs }` | Mint a single-use challenge.                         |
+| `verifyCaptcha(formData, options?)` | `Promise<CaptchaResult>`         | Verify and (unless `consume: false`) burn the nonce. |
+| `consumeCaptcha(result)`            | `Promise<boolean>`               | Burn a deferred nonce; `false` if already spent.     |
+| `solveCaptcha(minted)`              | `{ captcha_token, captcha_pow }` | Solve server-side, for tests.                        |
 
-`CaptchaResult` is `{ ok: true; nonce: string; expiresAt: number }` or `{ ok: false; reason: 'replay' | 'rejected'; error: string }` — `error` is safe to show to the visitor, and `reason` lets you [swap in your own copy](#custom-messages).
-
-<Callout type="info">
-
-Solving requires JavaScript: the widget is a hydrated island, and it renders nothing until it hydrates. Give non-JS visitors another route to you — a `<noscript>` block with a mailto link — since the form can't be completed without it.
-
-</Callout>
+`CaptchaResult` is `{ ok: true; nonce: string; expiresAt: number }` or `{ ok: false; reason: 'replay' | 'rejected'; error: string }`.
 
 <SeeItInAction
 demos={[
-{ href: "/demos/captcha/", title: "Captcha", hook: "Slide-to-verify with a hash chain and proof-of-work — no third party, no tracking." },
-{ href: "/demos/captcha-styling/", title: "Captcha Styling", hook: "The same captcha four ways — every colour is a CSS custom property with a built-in fallback." },
+{ href: "/demos/captcha/", title: "Captcha", hook: "Slide-to-verify backed by a hash chain and proof-of-work, no third party." },
+{ href: "/demos/captcha-styling/", title: "Captcha Styling", hook: "The same captcha four ways, every colour a CSS custom property." },
 ]}
 />

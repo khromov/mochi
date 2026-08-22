@@ -14,11 +14,9 @@ export interface FetchedSource {
 const DEFAULT_MAX_REDIRECTS = 5;
 
 export async function fetchImageSource(src: string, opts: ResolvedImageOptions): Promise<FetchedSource> {
-  // Locally-imported asset (`import hero from './hero.png'`): its `src` is a
-  // same-origin `/_mochi/asset/…` URL that `assertPublicUrl` would reject, so
-  // read the bytes straight from disk. Only URLs the build registered are
-  // readable — request input is a Map key, never a filesystem path — and the
-  // src arrives decrypted from an authenticated token, so it can't be forged.
+  // A locally-imported asset's `src` is a same-origin `/_mochi/asset/…` URL that `assertPublicUrl` would reject, so the
+  // bytes are read straight from disk. Only build-registered URLs are readable, since request input acts as a Map key
+  // rather than a filesystem path, and the src arrives decrypted from an authenticated token.
   const local = getLocalImageAsset(src);
   if (local) {
     return { bytes: await Bun.file(local.diskPath).bytes(), contentType: local.contentType };

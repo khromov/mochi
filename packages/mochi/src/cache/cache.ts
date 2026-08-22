@@ -12,20 +12,13 @@ export interface SweepOptions {
 export interface SweepResult {
   /** Entries removed by this sweep. */
   removed: number;
-  /**
-   * The removed keys, when `reportKeys` was requested and the backend supports it.
-   * May be shorter than `removed`: `FileStorage` counts `.tmp` writes and corrupt
-   * files it cannot name. Absent entirely when `reportKeys` wasn't asked for.
-   */
+  /** The removed keys, when `reportKeys` was requested and the backend supports it. May be shorter than `removed`, since `FileStorage` counts `.tmp` writes and corrupt files it cannot name. */
   removedKeys?: string[];
 }
 
 /**
- * Pluggable key/value backend. Defaults to an in-memory Map.
- *
- * Methods may be synchronous (in-memory `Map`, `bun:sqlite`) or asynchronous
- * (Redis, network-backed stores) — the cache awaits every call, so returning a
- * `Promise` is fully supported.
+ * Pluggable key/value backend, defaulting to an in-memory Map. The cache awaits every call, so methods may be
+ * synchronous (`Map`, `bun:sqlite`) or return a `Promise` (Redis, network-backed stores).
  */
 export interface Storage {
   getItem(key: string): unknown | Promise<unknown>;
@@ -34,13 +27,10 @@ export interface Storage {
   /** Remove every entry from the backend. */
   clear(): void | Promise<void>;
   /**
-   * Optional age-based eviction, callable on demand by a caller-driven janitor (e.g. `ImageCache`).
-   * `FileStorage` and `MemoryStorage` both implement it.
-   *
-   * `reportKeys` asks the backend to also return the plaintext keys it removed, so a janitor can
-   * attribute removals without re-enumerating the whole backend. Opt-in because it can cost the
-   * backend extra work (`FileStorage` must read each expired entry's envelope before unlinking).
-   * `removedKeys` may be shorter than `removed` — a backend reports only the removals it can name.
+   * Optional age-based eviction, driven on demand by a caller's janitor (e.g. `ImageCache`) and implemented by both
+   * `FileStorage` and `MemoryStorage`. `reportKeys` additionally returns the plaintext keys removed, letting a janitor
+   * attribute removals without re-enumerating the backend; it's opt-in because it costs extra work — `FileStorage` reads
+   * each expired entry's envelope before unlinking.
    */
   sweep?(now?: number, options?: SweepOptions): SweepResult | Promise<SweepResult>;
   /** Optional entry count, for observability (e.g. the dev debug bar). `FileStorage` and `MemoryStorage` both implement it. */
@@ -61,22 +51,16 @@ export interface MochiCacheOptions {
   /** Deserialize a cache entry read back from storage. Defaults to identity. */
   deserialize?: (raw: unknown) => unknown;
   /**
-   * Max ms a single recompute may hold the per-key in-flight lock. If `fn` hasn't
-   * settled by then the lock is released and coalesced callers reject with a
-   * timeout error, so a hung upstream can't trap every waiter forever. The
-   * abandoned run keeps executing but its result is discarded (the stored-write
-   * guard already drops superseded runs). Default 1 hour; `<= 0` or non-finite
-   * disables the timeout.
+   * Max ms a single recompute may hold the per-key in-flight lock; past it the lock releases and coalesced callers reject
+   * with a timeout error, so a hung upstream can't trap every waiter. The abandoned run keeps executing, and the
+   * stored-write guard discards its result. Default 1 hour; `<= 0` or non-finite disables the timeout.
    */
   inflightTimeout?: number;
   /**
-   * Best-effort cross-process request coalescing over a shared `storage` backend.
-   * A recompute writes an advisory `mochi:inflight:<key>` marker; a peer process
-   * that hits a stale/expired entry while the marker is fresh serves its in-hand
-   * value instead of piling on a duplicate regeneration. Advisory only (no atomic
-   * lock), leased to `inflightTimeout` so a crashed peer's marker self-expires, and
-   * a no-op unless `inflightTimeout` is finite and `> 0`. Pointless with the default
-   * process-local `MemoryStorage`; intended for a shared `FileStorage`. Default false.
+   * Best-effort cross-process request coalescing over a shared `storage` backend: a recompute writes an advisory
+   * `mochi:inflight:<key>` marker, and a peer hitting a stale entry while that marker is fresh serves its in-hand value
+   * instead of piling on a duplicate regeneration. The marker is advisory rather than an atomic lock and leases to
+   * `inflightTimeout`, so a crashed peer's marker self-expires. Meant for a shared `FileStorage`. Default false.
    */
   crossProcessInflight?: boolean;
 }
@@ -94,10 +78,9 @@ interface CacheEntry {
 
 const identity = (value: unknown) => value;
 
-// Race a recompute against a timeout so a hung `fn` can't hold the per-key
-// in-flight lock forever. `Promise.race` attaches a reaction to `work`, so a late
-// rejection after the timeout wins the race is still considered handled (no
-// unhandled-rejection warning); `run`'s stored-write guard discards its result.
+// Racing against a timeout keeps a hung `fn` from holding the per-key in-flight lock forever. `Promise.race` attaches a
+// reaction to `work`, so a rejection arriving after the timeout wins still counts as handled and `run`'s stored-write
+// guard discards its result.
 function withTimeout<T>(work: Promise<T>, ms: number, key: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -156,9 +139,8 @@ export class MochiCache {
       if (await this.deferToPeer(key)) {
         return this.emitRead(key, cached, 'stale');
       }
-      // Serve the stale value immediately and refresh in the background. A
-      // failing upstream would otherwise keep us serving stale silently until
-      // maxTimeToLive — surface it so logging/metrics can see the degradation.
+      // Serving stale while refreshing in the background would hide a failing upstream until `maxTimeToLive`, so the
+      // event surfaces the degradation to logging and metrics.
       mochiEvents.emit('cache:revalidate', { key });
       void this.run(key, fn).catch((error) => {
         mochiEvents.emit('cache:revalidate:failed', { key, error });
@@ -166,10 +148,9 @@ export class MochiCache {
       return this.emitRead(key, cached, 'stale');
     }
 
-    // Past maxTimeToLive: recompute. But if a peer is already refreshing (fresh
-    // marker) and we're within a bounded grace window, serve the old value rather
-    // than pile on a duplicate synchronous regen; past the bound, recompute anyway
-    // so a wedged fleet never serves arbitrarily ancient bytes.
+    // Past `maxTimeToLive`, a fresh peer marker within the grace window still serves the old value instead of piling on
+    // a duplicate synchronous regen; past the bound it recomputes regardless, so a wedged fleet can't serve
+    // arbitrarily ancient bytes.
     if (age < this.maxTimeToLive + this.inflightTimeout && (await this.deferToPeer(key))) {
       return this.emitRead(key, cached, 'stale');
     }
@@ -186,17 +167,14 @@ export class MochiCache {
       mochiEvents.emit('cache:error', { key, operation: 'remove', error });
       throw error;
     }
-    // Drop any advisory marker so a just-invalidated key doesn't briefly make
-    // peers defer to a regeneration that will no longer happen.
+    // Dropping the advisory marker keeps a just-invalidated key from making peers defer to a regeneration that will no longer happen.
     await this.removeMarker(key);
     mochiEvents.emit('cache:delete', { key });
   }
 
   /**
-   * Read a key's current status and value WITHOUT running `fn` or revalidating —
-   * a pure probe. Returns `null` on a miss (nothing cached). Unlike
-   * `fetchWithStatus` this never recomputes, emits no `cache:read`, and reports
-   * `'expired'` for an entry past `maxTimeToLive` rather than refreshing it.
+   * A pure probe of a key's current status and value, returning `null` on a miss. It leaves `fn` unrun and emits no
+   * `cache:read`, reporting `'expired'` for an entry past `maxTimeToLive` where `fetchWithStatus` would refresh it.
    */
   async peek<T>(key: string): Promise<CacheResult<T> | null> {
     const entry = await this.read(key);
@@ -209,19 +187,16 @@ export class MochiCache {
   }
 
   /**
-   * Write `value` to `key` unconditionally, stamped fresh — overwriting whatever is
-   * there. The counterpart to `fetch`, which only computes on a miss/stale and so
-   * can't replace a still-present entry.
+   * Write `value` to `key` unconditionally, stamped fresh — the counterpart to `fetch`, which computes only on a
+   * miss or stale read and so can't replace a still-present entry.
    *
-   * Use this rather than `delete` + `fetch`: that sequence leaves the key absent for
-   * the whole write, during which concurrent readers see a miss and each start their
-   * own recompute. `setItem` is a single atomic replace on `FileStorage` (temp file +
-   * rename), so a reader sees either the old value or the new one, never nothing.
+   * Prefer this to `delete` + `fetch`, which leaves the key absent for the whole write while concurrent readers see a
+   * miss and each start their own recompute; on `FileStorage` this is a single atomic replace, so a reader sees the old
+   * value or the new one.
    *
-   * Drops the key's in-flight run, so a recompute already underway settles without
-   * writing. As with `delete`/`markStale`, that only covers a run that has already
-   * registered: a `fetch` still awaiting its initial storage read hasn't claimed the
-   * slot yet, and its write will land after this one.
+   * It drops the key's in-flight run, so a recompute already underway settles without writing. As with `delete` and
+   * `markStale`, that reaches only a run that has registered: a `fetch` still awaiting its initial storage read hasn't
+   * claimed the slot, and its write lands after this one.
    */
   async set<T>(key: string, value: T): Promise<void> {
     this.inflight.delete(key);
@@ -235,12 +210,9 @@ export class MochiCache {
   }
 
   /**
-   * Backdate a key so its next read is served stale-while-revalidate: rewrite the
-   * stored entry's `createdAt` to `now - minTimeToStale`, landing its age in the
-   * stale window `[minTimeToStale, maxTimeToLive)`. A no-op if the key is missing
-   * or already at-or-past that age (never makes an entry look fresher, never
-   * un-expires one). Works through the `Storage` interface, so it applies equally
-   * to `MemoryStorage` and `FileStorage`.
+   * Backdate a key so its next read is served stale-while-revalidate, rewriting the stored entry's `createdAt` to
+   * `now - minTimeToStale` so its age lands in `[minTimeToStale, maxTimeToLive)`. A no-op for a missing key or one
+   * already at-or-past that age, so an entry can only move staler. Runs through the `Storage` interface, covering both backends.
    */
   async markStale(key: string): Promise<void> {
     // Drop any in-flight run first so its supersession guard trips and a pending
@@ -266,6 +238,22 @@ export class MochiCache {
       await this.storage.setItem(key, next);
     } catch (error) {
       mochiEvents.emit('cache:error', { key, operation: 'set', error });
+    }
+  }
+
+  /**
+   * Resolves once every compute this cache is currently running has settled, including the fire-and-forget background
+   * revalidations a stale read starts. A run is tracked from before its `fn` is invoked until after its storage write,
+   * so an awaited `whenIdle()` guarantees the refreshed value is readable — unlike waiting on `cache:revalidate`, which
+   * only marks the start.
+   *
+   * Each pass also picks up work a settling run started, so this drains a chain of revalidations rather than one level.
+   * It waits for whatever is in flight: under continuous writes it keeps waiting, so treat it as a shutdown/quiescence
+   * primitive rather than something to await on a hot request path. A failed run settles it like any other.
+   */
+  async whenIdle(): Promise<void> {
+    while (this.inflight.size > 0) {
+      await Promise.allSettled([...this.inflight.values()]);
     }
   }
 
@@ -306,19 +294,16 @@ export class MochiCache {
     // late must not delete the marker a newer run has since written.
     const runId = randomUUID();
     const work = (async () => {
-      // Publish the advisory cross-process marker before the expensive `fn` so a
-      // peer that starts moments later sees it and defers (best-effort; no-op
-      // unless crossProcessInflight is on). Removed once this run settles.
+      // Published before the expensive `fn` so a peer starting moments later sees it and defers, and removed once this run settles.
       await this.writeMarker(key, runId);
       try {
         const value = await fn();
         const serialized = this.serialize({ value, createdAt: this.now() } satisfies CacheEntry);
-        // Skip the write if this run was superseded while `fn` was pending — by an
-        // inflight takeover/timeout or a delete/markStale/clear that cleared the
-        // slot — so a late revalidation can't resurrect a key the caller removed.
+        // A run superseded while `fn` was pending — by an inflight takeover, a timeout, or a delete/markStale/clear —
+        // skips its write, so a late revalidation can't resurrect a key the caller removed.
         if (this.inflight.get(key) === ref.current) {
-          // A storage write failure must not discard the freshly computed value
-          // the caller is waiting on — emit and continue, the next read recomputes.
+          // Emitting and continuing keeps a storage write failure from discarding the freshly computed value the caller
+          // is waiting on; the next read recomputes.
           try {
             await this.storage.setItem(key, serialized);
           } catch (error) {
@@ -355,11 +340,9 @@ export class MochiCache {
     return this.crossProcessInflight && this.inflightTimeout > 0 && Number.isFinite(this.inflightTimeout);
   }
 
-  // True when a *remote* process is refreshing this key — a fresh advisory marker
-  // exists and we aren't already computing it locally (local coalescing already
-  // hands those callers the fresh value). The signal to serve our in-hand value
-  // instead of piling on a duplicate regen. Any read failure degrades to false
-  // (recompute as usual), so the marker can only ever remove work, never block it.
+  // True when a fresh advisory marker exists and this process isn't already computing the key locally, where local
+  // coalescing would hand callers the fresh value anyway — the signal to serve our in-hand value instead of piling on a
+  // duplicate regen. A read failure degrades to false, so the marker can only remove work.
   private async deferToPeer(key: string): Promise<boolean> {
     if (!this.markerLeaseEnabled() || this.inflight.has(key)) {
       return false;

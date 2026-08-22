@@ -27,11 +27,8 @@ function canonicalStringify(value: unknown): string {
   });
 }
 
-/**
- * Resolve one named size against the global defaults and stamp a config hash.
- * The hash covers every byte-affecting field so redefining a size changes the
- * cache key + ETag and re-renders its already-minted URLs.
- */
+// The stamped hash covers every byte-affecting field, so redefining a size changes the cache key and ETag and
+// re-renders its already-minted URLs.
 function resolveSize(
   name: string,
   p: ImageSize,
@@ -114,9 +111,8 @@ interface ImageRuntime {
   cache: ImageCache;
 }
 
-// Pinned on globalThis like __mochi_config__: compiled Svelte components get
-// their own bundled copy of this module, but must share one cache instance and
-// the same resolved config as the endpoint handler in the main bundle.
+// Pinned on globalThis like `__mochi_config__`: compiled Svelte components each get their own bundled copy of this
+// module yet must share one cache instance and the endpoint handler's resolved config.
 const GLOBAL_KEY = '__mochi_image_runtime__';
 
 export function getImageRuntime(): ImageRuntime {
