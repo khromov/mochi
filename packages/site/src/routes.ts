@@ -161,6 +161,9 @@ export const routes: Record<string, MochiRouteValue> = {
   ...(HEAP_SNAPSHOTS_ENABLED
     ? {
         '/_heapsnapshot': Mochi.api(() => {
+          // Bun.generateHeapSnapshot() does not collect first, so without this the dump mixes live
+          // objects with uncollected garbage and every size read off it comes out high.
+          Bun.gc(true);
           const snapshot = Bun.generateHeapSnapshot('v8');
           const filename = `mochi-${Date.now()}.heapsnapshot`;
           return new Response(snapshot, {
