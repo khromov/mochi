@@ -6,18 +6,20 @@ description: 'Render components after initial page load by fetching their HTML f
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Server islands with `mochi:defer`
 
-Mark a component with `mochi:defer` to skip it during the initial SSR pass and render it on-demand from a dedicated endpoint after the page loads. Use this for personalized fragments (avatars, cart counts) that would otherwise block the surrounding HTML from being cached.
+Mark a component with `mochi:defer` to skip it during the initial SSR pass and render it on demand from a dedicated endpoint after the page loads. Use it for personalized fragments such as avatars and cart counts that would otherwise block the surrounding HTML from being cached.
 
 ```svelte
 <!-- file: src/Page.svelte -->
 <UserAvatar mochi:defer userId={123} />
 ```
 
-Children of a deferred component become the fallback shown until the island resolves:
+Children of a deferred component become the fallback shown until the island resolves.
 
 ```svelte
 <UserAvatar mochi:defer userId={123}>
@@ -25,72 +27,235 @@ Children of a deferred component become the fallback shown until the island reso
 </UserAvatar>
 ```
 
-Server island components are normal Svelte components with full access to the request context via `getRequestContext()` — cookies are forwarded automatically because the fetch is same-origin.
+Import a deferred component statically from a relative `.svelte` / `.md` / `.svx` path. See [Supported import forms](/docs/selective-hydration/#supported-import-forms).
+
+A server island is a normal Svelte component with full access to the request context through `getRequestContext()`. Cookies are forwarded automatically because the fetch is same-origin.
 
 ```svelte
 <!-- file: src/UserAvatar.svelte -->
-<script>
+<script lang="ts">
   import { getRequestContext } from 'mochi-framework';
+
   const { cookies } = getRequestContext();
-  const session = cookies.get('session');
+  const userName = cookies.get('user') ?? 'friend';
 </script>
 
 <p>Welcome back, {userName}!</p>
 ```
 
-### Fetch flow
+### How it renders
 
-1. SSR emits a `<mochi-server-island>` custom element holding the fallback content; the component itself is **not** rendered.
-2. Props are serialized with `devalue`, HMAC-signed, and stamped onto the element as `signed-props`.
-3. On `connectedCallback`, the element fetches `/_mochi/island/{ComponentName}?props={signedProps}` (the `/_mochi` prefix follows `assetPrefix`).
-4. The server verifies the signature, decodes the props, renders the component, and returns the HTML.
-5. The HTML replaces the fallback inside the custom element.
+The page ships with the fallback in place of the island, plus an encrypted token carrying the island's props. The browser then fetches the rendered HTML from a per-island endpoint under `assetPrefix` (default `/_mochi/island/...`), and Mochi swaps it in over the fallback. A failed fetch retries with exponential backoff (default 9 retries, 1s–5s). Pass `mochi:defer={{ retries: 10 }}` to override.
 
-Failed fetches are retried with exponential backoff (default 5 retries, 1s–10s); pass `mochi:defer={{ retries: 10 }}` to override.
+<Callout type="info">
+
+`mochi-framework build` precompiles every server island, so production renders them from the prebuilt bundle instead of compiling on first fetch.
+
+</Callout>
 
 ### Combining with hydration
 
-Apply `mochi:hydrate` alongside `mochi:defer` to fetch the island on-demand and then hydrate it for client-side interactivity:
+Apply `mochi:hydrate` alongside `mochi:defer` to fetch the island on demand and then hydrate it for client-side interactivity.
 
 ```svelte
 <ShoppingCart mochi:defer mochi:hydrate items={initialItems} />
 ```
 
-### Lazy server islands with `mochi:defer:visible`
+<Callout type="warning">
 
-Defer the _fetch_ until the wrapper scrolls into view, mirroring [`mochi:hydrate:visible`](lazy-hydration/):
+**Adding `mochi:hydrate` makes the props client-visible.** A pure `mochi:defer` island keeps its props on the server — the token on the wire is opaque and the endpoint returns only HTML. Hydration needs the raw props on the client, so `mochi:defer mochi:hydrate` echoes the decrypted props back as plaintext. Do not pass server-only secrets to an island you also hydrate.
+
+</Callout>
+
+### Reloading an island with `reloadDeferredIsland`
+
+<VersionNote since="0.10.0" message="Named defers and reloadDeferredIsland were added in 0.10.0." />
+
+Give a defer a `name`, then re-fetch its server HTML from the browser by calling `reloadDeferredIsland(name)`. Use it to refresh server-rendered content after a mutation without a full page reload. A `name` must be a non-empty string — anything else warns and leaves the island unnamed.
 
 ```svelte
-<UserAvatar mochi:defer:visible userId={123}>
+<Cart mochi:defer={{ name: 'cart' }}>
   <div class="skeleton">Loading...</div>
-</UserAvatar>
-
-<UserAvatar mochi:defer:visible={{ rootMargin: '200px' }} userId={123} />
+</Cart>
 ```
 
-Pass `rootMargin` to start fetching before the island enters the viewport. `rootMargin` and `retries` can be combined: `mochi:defer:visible={{ rootMargin: '200px', retries: 10 }}`. Combinable with `mochi:hydrate` / `mochi:hydrate:visible` for interactive lazy islands.
+```ts
+import { reloadDeferredIsland, reloadDeferredIslandAll } from 'mochi-framework';
 
-Provide fallback children when using `:visible` so the user has something to scroll past while waiting.
+await reloadDeferredIsland('cart'); // re-fetches, resolves once swapped in
+await reloadDeferredIslandAll(); // reloads every named defer on the page
+```
+
+`deferReloadState(name)` returns reactive state for that island, for UI that follows along:
+
+```svelte
+<script>
+  import { deferReloadState } from 'mochi-framework';
+
+  const cart = deferReloadState('cart');
+</script>
+
+<button disabled={cart.reloading} onclick={() => reloadDeferredIsland('cart')}>Refresh</button>
+{#if cart.reloading}<Spinner />{/if}
+{#if cart.lastReloadOk === false}<p>Last refresh failed.</p>{/if}
+<p>
+  Refreshed {cart.count} times{#if cart.lastReloaded}, last at {cart.lastReloaded.toLocaleTimeString()}{/if}
+</p>
+```
+
+| Field          |                                                                                     |
+| -------------- | ----------------------------------------------------------------------------------- |
+| `reloading`    | `true` while that island has a fetch in flight — its first load as well as a reload |
+| `count`        | completed reload rounds, successful or not                                          |
+| `lastReloadOk` | whether the last reload round _fetched_ successfully, `null` before the first       |
+| `lastReloaded` | `Date` the last reload completed, `null` before the first                           |
+
+Islands sharing a name reload together and settle as one round: `count` adds one per round, and `lastReloadOk` is `true` only when every island in the round fetched successfully. You get one shared instance per name, so reading it repeatedly is free — and reading a field outside a component just gives you its current value.
+
+`lastReloadOk` reports the fetch, not the render: an island whose component throws still answers with a 200, so it reads `true` while the island shows its `<svelte:boundary>` fallback. Render failures are the boundary's job, not the reload's.
+
+<Callout type="warning">
+
+**`deferReloadState` must be called from a `.svelte` or `.svelte.ts` file.** Its fields are runes, so Svelte has to compile the call site; calling it from plain server code throws `$state is not defined`.
+
+</Callout>
+
+Both return a promise that settles once every matching island has finished re-fetching. Islands sharing a `name` reload together, and a `mochi:defer mochi:hydrate` island unmounts its old component and re-hydrates when the new HTML lands. Reloads on the same island queue behind one another, so a reload issued after a mutation always observes it.
+
+`name` works on `mochi:defer:visible` too. A reload fetches immediately regardless of viewport. The viewport trigger queues behind any reload already in flight and stands down once either has delivered content, so the two can never race or double-fetch.
+
+Naming an island also opts it out of [nested inlining](#nesting-islands-inside-a-server-island): a reloadable island needs its own placeholder to fetch into. An explicit `inline: true` on a named island is ignored, with a warning.
+
+<Callout type="info">
+
+`reloadDeferredIsland` runs in the browser — call it from a hydrated island or other client code. During SSR no islands are mounted, so it resolves immediately and does nothing.
+
+</Callout>
+
+<Callout type="warning">
+
+**A reload resolves even if the fetch failed.** It reuses the same retry-and-backoff policy as the initial load, so a hard failure only resolves once the retry budget is spent, leaving the previous content in place. Watch `lastReloadOk`, and lower `retries` on islands you invalidate interactively.
+
+</Callout>
+
+#### Loading state while reloading
+
+A reloading island keeps showing its current content — the fallback children only ever show before the first load — and carries two attributes for the duration:
+
+```html
+<mochi-server-island data-reloading aria-busy="true"></mochi-server-island>
+```
+
+Style `data-reloading` to mark the wait. Island wrappers are `display: contents`, so they generate no box of their own — put the styles on the children:
+
+```css
+mochi-server-island[data-reloading] > * {
+  opacity: 0.6;
+}
+```
+
+The old content is swapped out only when the new HTML lands, so hydrated children keep their client state for the whole wait, and a failed fetch leaves the island exactly as it was.
+
+Size the fallback to match the loaded content, or the swap shifts the page. The wrapper is `display: contents`, so it holds no space of its own while the content is away — the fallback's own box is the only thing keeping the layout still. Giving both a shared `min-height` is usually enough:
+
+```css
+.card,
+.card-skeleton {
+  min-height: 3.5rem;
+}
+```
+
+### Nesting islands inside a server island
+
+A server island's content is a full render, so it can contain `mochi:hydrate` islands and further `mochi:defer` server islands. Hydratable children hydrate once the deferred HTML lands.
+
+```svelte
+<!-- file: src/Dashboard.svelte (rendered via mochi:defer) -->
+<Chart mochi:hydrate {data} />
+<Notifications mochi:defer />
+```
+
+Mochi **inlines** nested `mochi:defer` islands into the parent's fetch. When the island endpoint renders `Dashboard`, it renders `Notifications` in-process too, so one request returns the whole chain no matter how deep it nests. The decision happens at render time. A nested island inside `{#if}` or `{#each}` inlines when its branch renders, with the same props the placeholder would seal, so Mochi never renders an unreachable island. If an inlined child throws, it degrades to a fetch placeholder and fetches on its own. The parent's content stays intact.
+
+Inlining is capped at 32 expansions per island fetch. A recursive chain and a long `{#each}` list draw from the same budget. Past the cap, children fall back to fetching. Tune the cap per fetch with the `serverIsland:inlineBudget` filter (see [Extensions](/docs/extensions/)).
+
+Opt out per call site to keep a child on its own fetch. This helps when a slow child must not delay the parent's content:
+
+```svelte
+<Notifications mochi:defer={{ inline: false }} />
+```
+
+Opt out globally with `inlineNestedIslands`:
+
+```ts
+Mochi.serve({ inlineNestedIslands: false });
+```
+
+`mochi:defer:visible` children are always exempt. Laziness is their point, so they keep their own viewport-triggered fetch.
+
+Mochi delivers CSS for nested islands with the fetched HTML. The host page cannot link it ahead of time, because the island content does not render until the island resolves. Styles apply as soon as the island appears.
+
+<Callout type="warning">
+
+**`mochi:defer` inside a hydratable subtree is a compile error.** A component marked `mochi:hydrate*` or `mochi:clientOnly` re-renders on the client, where a server island cannot exist. Remove `mochi:defer` from the child — it already renders as part of the parent's island fetch — or remove the hydrate directive from the parent.
+
+</Callout>
+
+### Lazy server islands with `mochi:defer:visible`
+
+Defer the fetch until the wrapper scrolls into view, mirroring [`mochi:hydrate:visible`](/docs/lazy-hydration/).
+
+```svelte
+<UserAvatar mochi:defer:visible={{ rootMargin: '200px' }} userId={123}>
+  <div class="skeleton">Loading...</div>
+</UserAvatar>
+```
+
+Combine `rootMargin` and `retries`: `mochi:defer:visible={{ rootMargin: '200px', retries: 10 }}`. Combine with `mochi:hydrate` for interactive lazy islands. Provide fallback children so the user has something to scroll past while waiting.
 
 ### Props
 
-Props are serialized with `devalue` — see [Passing props to islands](island-props/) for the full list of supported types. Server islands additionally HMAC-sign the payload and pass it as a query parameter; if the signed props exceed URL length limits (~1800 bytes), a warning is emitted.
+Mochi serializes props with `devalue` — see [Passing props to islands](/docs/island-props/). Server islands also encrypt the payload and pass it as a query parameter. The island's component name is bound as authenticated data, so a token sealed for one island cannot be replayed against another.
 
-Do **NOT** ship large blobs through server-island props; instead, fetch the data inside the component using `getRequestContext()`. Signed-prop URLs over 1800 chars trigger a runtime warning.
+<Callout type="warning">
 
-### Signing key
+**Fetch data inside the island, not through props.** Large props inflate the encrypted URL until it trips a runtime warning at ~1800 characters. Use `getRequestContext()` inside the island to fetch data server-side, and pass only identifiers such as ids as props.
 
-Props are signed with a 32-byte key resolved at startup from `process.env.MOCHI_KEY` (base64url-encoded). If `MOCHI_KEY` is unset, Mochi generates a random key and logs a warning — fine for local dev, broken across restarts and multi-instance deploys.
+</Callout>
+
+<Callout type="warning">
+
+**Treat server-island rendering as idempotent. Never trigger mutable actions from it.** Tokens are encrypted, not single-use. Once a client has seen a prop permutation, it can re-fetch that island any number of times. A side effect inside the component — incrementing a counter, charging an account, sending an email — fires again on every replay.
+
+</Callout>
+
+### Encryption key
+
+Mochi encrypts props with a key derived from `process.env.MOCHI_KEY` (base64url-encoded, any length). Without `MOCHI_KEY`, Mochi generates a random key and logs a warning — fine for local dev, broken across restarts and multi-instance deploys.
+
+Generate a key and write it to `.env`:
 
 ```sh
-# .env
-MOCHI_KEY=<base64url-encoded 32-byte secret>
+bunx mochi-framework generate-key
 ```
 
 <Callout type="warning">
 
-**Set `MOCHI_KEY` for any deployment that runs more than one process or survives restarts.** Without a shared key, signatures minted by one instance won't verify on another and deferred islands will fail to load after a restart or rolling deploy.
+**Set `MOCHI_KEY` for any deployment that runs more than one process or survives restarts.** Without a shared key, tokens minted by one instance fail to decrypt on another, and deferred islands fail to load after a restart or rolling deploy.
 
 </Callout>
 
-Do **NOT** commit `MOCHI_KEY` to version control; instead, supply it through your platform's secret store. Generate one with `openssl rand -base64 32 | tr '+/' '-_' | tr -d '='`.
+<Callout type="danger">
+
+**Never commit `MOCHI_KEY`.** It signs server-island prop URLs. A leak lets attackers forge them. Supply it through your platform's secret store.
+
+</Callout>
+
+<SeeItInAction
+demos={[
+{ href: "/demos/server-island/", title: "Server Islands", hook: "How server islands work — components marked mochi:defer render server-side on demand after the initial page is delivered." },
+{ href: "/demos/defer-invalidation/", title: "Invalidate mochi:defer islands", hook: "How to reload server islands on demand — name a mochi:defer island and call reloadDeferredIsland(name) from the browser to re-fetch its server HTML." },
+{ href: "/demos/nested-islands/", title: "Nested Islands", hook: "How nested islands work — a mochi:defer server island wrapping mochi:hydrate components, and server islands nesting more server islands." },
+{ href: "/demos/lazy-server-island/", title: "Lazy Server Islands", hook: "How lazy server islands work — server islands marked mochi:defer:visible only fetch when the wrapper scrolls into view." },
+]}
+/>

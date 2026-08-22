@@ -1,22 +1,26 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
+  import CodeSnippet from '../../components/CodeSnippet.svelte';
   import ClientRenderedChild from './ClientRenderedChild.svelte';
   import { typeOf } from './devalueTypeOf.ts';
   import { loadSources } from '../../components/utils.ts';
+  import { highlightCode } from '../../lib/highlight.server';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    {
-      label: 'ServerRenderedParent.svelte',
-      path: './src/demos/island-props/ServerRenderedParent.svelte',
-    },
-    {
-      label: 'ClientRenderedChild.svelte',
-      path: './src/demos/island-props/ClientRenderedChild.svelte',
-    },
-    { label: 'devalueTypeOf.ts', path: './src/demos/island-props/devalueTypeOf.ts' },
-    { label: 'routes.ts', path: './src/demos/island-props/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
+
+  const codeProps = await highlightCode(
+    `const dateVal = new Date('2025-01-15T12:00:00Z');
+const mapVal = new Map([['a', 1], ['b', 2], ['c', 3]]);
+const setVal = new Set([10, 20, 30]);
+const bigintVal = 9007199254740993n;
+const urlVal = new URL('https://mochi.dev/docs?version=5');
+// ...
+const cyclic: { name: string; self?: unknown } = { name: 'cyclic' };
+cyclic.self = cyclic;
+const cyclicRef = cyclic;`,
+    'ts',
+  );
 
   const shared = { x: 1 };
   const cyclic: { name: string; self?: unknown } = { name: 'cyclic' };
@@ -73,17 +77,7 @@
         <code>Client type</code> column is resolved after hydration. Matching values prove the round-trip preserved each type.
       </p>
     </header>
-    <pre><code
-        >{`const dateVal = new Date('2025-01-15T12:00:00Z');
-const mapVal = new Map([['a', 1], ['b', 2], ['c', 3]]);
-const setVal = new Set([10, 20, 30]);
-const bigintVal = 9007199254740993n;
-const urlVal = new URL('https://mochi.dev/docs?version=5');
-// ...
-const cyclic: { name: string; self?: unknown } = { name: 'cyclic' };
-cyclic.self = cyclic;
-const cyclicRef = cyclic;`}</code
-      ></pre>
+    <CodeSnippet html={codeProps} />
   </section>
 
   <div class="arrow" aria-hidden="true">
@@ -152,25 +146,6 @@ const cyclicRef = cyclic;`}</code
     padding: 0.1em 0.35em;
     border-radius: 4px;
     font-size: 0.85em;
-  }
-
-  pre {
-    margin: 0;
-    padding: 0.75rem 0.85rem;
-    background: var(--surface-muted);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    overflow-x: auto;
-    font-size: 0.85rem;
-    line-height: 1.5;
-  }
-
-  pre code {
-    background: transparent;
-    border: none;
-    padding: 0;
-    font-family: var(--font-mono);
-    color: var(--text);
   }
 
   .arrow {

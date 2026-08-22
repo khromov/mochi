@@ -1,14 +1,18 @@
 ---
 title: 'Script'
 slug: script
+ogTitle: 'Bundling a client script with Script'
 description: 'Bundle and load a client-side script through dynamic import(), addressed by a path relative to the component.'
 ---
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Script
+
+<VersionNote since="0.10.0" message="The Script component is new in 0.10.0." />
 
 <Callout type="warning">
 
@@ -36,13 +40,13 @@ Load several at once with `scripts`:
 
 <Callout type="info">
 
-`src` / `scripts` must be **static string literals** — they're read at build time so the files can become bundle entrypoints. A dynamic path (`src={someVar}`) throws at compile time, as does a path that doesn't resolve to a file on disk. The build fails loudly rather than shipping a broken `import()`.
+`src` / `scripts` must be **static string literals** — they're read at build time so the files can become bundle entrypoints. A dynamic path (`src={someVar}`) fails the build, as does a path that doesn't resolve to a file on disk. The build fails loudly rather than shipping a broken `import()`.
 
 </Callout>
 
 <Callout type="warning">
 
-`<Script />` is **SSR-only** — it emits a module script that loads its own bundle. Don't put it inside a hydrated island (`mochi:hydrate*` / `mochi:defer*`); it throws if hydrated.
+`<Script />` is **SSR-only** — it emits a module script that loads its own bundle. Don't put it inside a hydrated island (`mochi:hydrate*` / `mochi:defer*` / `mochi:clientOnly*`); a directive on it is a compile error.
 
 </Callout>
 
@@ -54,4 +58,4 @@ Load several at once with `scripts`:
 
 ### How it differs from `RawScript`
 
-[`RawScript`](/raw-script) inlines a file's bytes verbatim with no build step, addressed from the working directory. `Script` bundles its target through `Bun.build()` and loads it with `import()`, addressed relative to the component. Use `RawScript` for pre-authored inline blobs; use `Script` when the source needs transpiling or has imports of its own.
+[`RawScript`](/docs/raw-script/) inlines a file's bytes verbatim with no build step, addressed from the working directory. `Script` bundles its target through `Bun.build()` and loads it with `import()`, addressed relative to the component. Use `RawScript` for pre-authored inline blobs; use `Script` when the source needs transpiling or has imports of its own.

@@ -4,15 +4,9 @@
   import AbortDemo from './AbortDemo.svelte';
   import PlainDemo from './PlainDemo.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'FormCancel.svelte', path: './src/demos/form-cancel/FormCancel.svelte' },
-    { label: 'CancelDemo.svelte', path: './src/demos/form-cancel/CancelDemo.svelte' },
-    { label: 'AbortDemo.svelte', path: './src/demos/form-cancel/AbortDemo.svelte' },
-    { label: 'PlainDemo.svelte', path: './src/demos/form-cancel/PlainDemo.svelte' },
-    { label: 'routes.ts', path: './src/demos/form-cancel/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 </script>
 
 <DemoPage

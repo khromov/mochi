@@ -1,0 +1,92 @@
+import type { HydratableComponent, PreprocessIslandError, ScriptEntry, ServerIslandComponent } from './svelteAstPreprocess';
+
+/**
+ * The full result of compiling one `.svelte` / `.md` source for a target: the emitted JS the bundler consumes, the
+ * scoped CSS (server only, since the client build strips it), and the preprocessor's hydration metadata — everything a
+ * call site needs to replay its side effects on a cache hit. That includes the preprocessor's island errors, so a hit on
+ * an unfixed file re-reports them instead of silently clearing the compile error.
+ */
+export interface CompiledFileOutput {
+  js: string;
+  css: string | null;
+  hydratables: HydratableComponent[];
+  serverIslands: ServerIslandComponent[];
+  scriptEntries: ScriptEntry[];
+  preprocessErrors: PreprocessIslandError[];
+}
+
+interface CacheEntry {
+  /** Raw source the output was derived from — `===` compared, so any byte change misses. */
+  source: string;
+  /** Compiler-options + dev-flag fingerprint, so a config reload misses too. */
+  fingerprint: string;
+  output: CompiledFileOutput;
+}
+
+export interface CompileCacheStats {
+  hits: number;
+  misses: number;
+}
+
+export function createCompileCacheStats(): CompileCacheStats {
+  return { hits: 0, misses: 0 };
+}
+
+/**
+ * Compute the cache fingerprint for a build. Output depends on the merged Svelte compiler options, the dev flag, and
+ * which backend emitted it, with `target` already encoded in the key; JSON drops functions like `warningFilter`, which
+ * don't affect emitted code.
+ *
+ * Markdown/mdsvex config and user preprocessors stay out of the fingerprint: they aren't serializable and are fixed for
+ * the lifetime of a `CompileCache` instance, which one `ComponentRegistry` owns, so registries with different config
+ * never share a cache. See {@link CompileCache}.
+ */
+export function compileFingerprint(userCompilerOptions: unknown, development: boolean, backendId = 'svelte'): string {
+  return `${JSON.stringify(userCompilerOptions ?? {})}|dev=${development}|compiler=${backendId}`;
+}
+
+/**
+ * Content-addressed cache of compiled component output, owned per `ComponentRegistry` instance. That scoping is
+ * load-bearing: compiled output depends on the registry's markdown/mdsvex config and user preprocessors, which
+ * {@link compileFingerprint} can't serialize, so a module-global cache could serve registry B the output registry A
+ * produced for the same path under different config. `preprocessCache` can be a module global because the directive
+ * scan it memoizes is config-independent.
+ */
+export class CompileCache {
+  // Keyed by `${target}\u0000${filePath}` so the server and client builds of the same
+  // file get independent entries (different `generate` / `dev` compiler options).
+  #entries: Map<string, CacheEntry> = new Map();
+
+  #key(target: 'server' | 'client', filePath: string): string {
+    return `${target}\u0000${filePath}`;
+  }
+
+  get(target: 'server' | 'client', filePath: string, source: string, fingerprint: string, stats?: CompileCacheStats): CompiledFileOutput | undefined {
+    const entry = this.#entries.get(this.#key(target, filePath));
+    if (entry && entry.source === source && entry.fingerprint === fingerprint) {
+      if (stats) {
+        stats.hits++;
+      }
+      return entry.output;
+    }
+    if (stats) {
+      stats.misses++;
+    }
+    return undefined;
+  }
+
+  set(target: 'server' | 'client', filePath: string, source: string, fingerprint: string, output: CompiledFileOutput): void {
+    this.#entries.set(this.#key(target, filePath), { source, fingerprint, output });
+  }
+
+  /** Drop both target entries for `filePath`; the dev watcher calls it on `unlink` so deleted files don't accumulate stale entries over a long session. */
+  evict(filePath: string): void {
+    this.#entries.delete(this.#key('server', filePath));
+    this.#entries.delete(this.#key('client', filePath));
+  }
+
+  /** Drop everything — used on `svelte.config` reload, when every entry's config basis may have changed. */
+  reset(): void {
+    this.#entries.clear();
+  }
+}

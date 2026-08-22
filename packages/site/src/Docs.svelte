@@ -14,6 +14,7 @@
     description,
     docsNav,
     toc,
+    html,
     prev,
     next,
   }: {
@@ -22,6 +23,8 @@
     description?: string;
     docsNav: TocEntry[];
     toc: TocEntry[];
+    // Pre-rendered markup for synthetic docs (the changelog) that have no barrel component.
+    html?: string;
     prev: DocNeighbor | null;
     next: DocNeighbor | null;
   } = $props();
@@ -42,7 +45,7 @@
     canonical: `https://mochi.fast/docs/${slug}`,
   }}
 >
-  <header class="hero">
+  <header class="hero-minimal">
     <div class="hero-inner">
       <a class="logo" href="/">🍡 mochi</a>
       <p class="tagline">SSR framework for Svelte 5 + Bun with islands-based selective hydration</p>
@@ -55,6 +58,9 @@
       <DocsToc {toc} />
       {#if DocComponent}
         <DocComponent />
+      {:else if html}
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -- first-party markdown (our own CHANGELOG.md), rendered server-side -->
+        {@html html}
       {:else}
         <p>Doc not found.</p>
       {/if}
@@ -82,8 +88,8 @@
 </PageShell>
 
 <style>
-  .hero {
-    padding: 3rem 1.5rem;
+  .hero-minimal {
+    padding: 1.5rem 1.5rem;
   }
 
   .hero-inner {
@@ -184,6 +190,32 @@
   .readme :global(p) {
     margin: 0 0 0.75rem;
     color: var(--text-muted);
+  }
+
+  /* Doc images are authored at their natural pixel size (e.g. the 1280x720 shots from
+     /shot/:name), so they must be held to the prose column rather than overflow it. */
+  .readme :global(img) {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0 0 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+  }
+
+  .readme :global(figure) {
+    margin: 0 0 0.75rem;
+  }
+
+  /* Pull the caption up against its image; the bare-img margin is meant for prose. */
+  .readme :global(figure img) {
+    margin-bottom: 0.4rem;
+  }
+
+  .readme :global(figcaption) {
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--text-subtle);
   }
 
   .readme :global(blockquote) {
@@ -318,8 +350,8 @@
   }
 
   @media (max-width: 768px) {
-    .hero {
-      padding: 1.5rem 1.25rem;
+    .hero-minimal {
+      padding: 1rem 1.25rem;
     }
 
     .logo {

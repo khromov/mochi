@@ -1,20 +1,14 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
   import Field from './Field.svelte';
   import LabeledField from './LabeledField.svelte';
   import ServerStamp from './ServerStamp.svelte';
   import ServerHydratedStamp from './ServerHydratedStamp.svelte';
+  import ClientStamp from './ClientStamp.svelte';
 
-  const sources = await loadSources([
-    { label: 'PropsId.svelte', path: './src/demos/props-id/PropsId.svelte' },
-    { label: 'Field.svelte', path: './src/demos/props-id/Field.svelte' },
-    { label: 'LabeledField.svelte', path: './src/demos/props-id/LabeledField.svelte' },
-    { label: 'ServerStamp.svelte', path: './src/demos/props-id/ServerStamp.svelte' },
-    { label: 'ServerHydratedStamp.svelte', path: './src/demos/props-id/ServerHydratedStamp.svelte' },
-    { label: 'routes.ts', path: './src/demos/props-id/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 </script>
 
 <DemoPage
@@ -43,6 +37,15 @@
     the value survived from the deferred render into the hydrated client.
   </p>
   <ServerHydratedStamp mochi:defer mochi:hydrate />
+
+  <h3>Two client-only islands, two ids</h3>
+  <p class="hint">
+    Client-only islands are never server-rendered, so each <code>$props.id()</code> is minted in the browser at mount. Svelte draws these from a global counter — unique even across
+    separate
+    <code>mount()</code> calls — so two independently-mounted islands still get distinct ids (e.g. <code>c1</code> and <code>c2</code>) without any SSR pass to keep them apart.
+  </p>
+  <ClientStamp mochi:clientOnly />
+  <ClientStamp mochi:clientOnly />
 </DemoPage>
 
 <style>

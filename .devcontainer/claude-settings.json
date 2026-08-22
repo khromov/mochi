@@ -1,0 +1,13 @@
+{
+  "model": "opus",
+  "effortLevel": "high",
+  "attribution": { "commit": "", "pr": "" },
+  "promptSuggestionEnabled": false,
+  "autoCompactEnabled": false,
+  "switchModelsOnFlag": false,
+  "fileCheckpointingEnabled": false,
+  "remoteControlAtStartup": false,
+  "skipAutoPermissionPrompt": true,
+  "skipDangerousModePermissionPrompt": true,
+  "skipWorkflowUsageWarning": true
+}

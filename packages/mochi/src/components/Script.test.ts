@@ -1,12 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { ComponentRegistry } from '../ComponentRegistry';
+import { ComponentRegistry } from '../compiler/ComponentRegistry';
+import { HYDRATABLE_CONTEXT_KEY } from '../islands/isHydratable';
 
 const FIXTURES = path.join(import.meta.dir, '..', '__fixtures__', 'script');
 const PAGE = path.join(FIXTURES, 'Page.svelte');
 const MULTI_PAGE = path.join(FIXTURES, 'MultiPage.svelte');
-const COMPONENT = path.join(import.meta.dir, 'Script.svelte');
+const COMPONENT = path.join(import.meta.dir, 'Script.server.svelte');
 
 describe('<Script>', () => {
   let outDir: string;
@@ -49,7 +50,8 @@ describe('<Script>', () => {
   });
 
   test('refuses to hydrate', async () => {
-    await expect(registry.renderComponent(COMPONENT, { __mochiScriptUrls: ['/x.js'], isHydratable: true })).rejects.toThrow('must not be hydrated');
+    const context = new Map<unknown, unknown>([[HYDRATABLE_CONTEXT_KEY, true]]);
+    await expect(registry.renderComponent(COMPONENT, { __mochiScriptUrls: ['/x.js'] }, { context })).rejects.toThrow('must not be hydrated');
   });
 
   test('throws when used without a resolvable static path', async () => {

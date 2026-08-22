@@ -2,14 +2,9 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import CounterButton from './CounterButton.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'SharedState.svelte', path: './src/demos/shared-state/SharedState.svelte' },
-    { label: 'CounterButton.svelte', path: './src/demos/shared-state/CounterButton.svelte' },
-    { label: 'likes.svelte.ts', path: './src/stores/likes.svelte.ts' },
-    { label: 'routes.ts', path: './src/demos/shared-state/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 </script>
 
 <DemoPage

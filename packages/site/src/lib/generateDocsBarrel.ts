@@ -42,7 +42,18 @@ export async function generateDocsBarrel(): Promise<void> {
   if (existing === content) {
     return;
   }
-  await Bun.write(OUT_PATH, content);
+  try {
+    await Bun.write(OUT_PATH, content);
+  } catch (err) {
+    // The barrel is a generated dev convenience; if the write fails (e.g. a read-only or
+    // foreign-owned filesystem in a deployed container) but a usable file already exists,
+    // warn and keep running instead of taking the server down — only a genuinely missing
+    // barrel is fatal.
+    if (existing === null) {
+      throw err;
+    }
+    console.warn(`generateDocsBarrel: could not rewrite ${OUT_PATH}, keeping existing file:`, err);
+  }
 }
 
 if (import.meta.main) {

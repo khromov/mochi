@@ -1,3 +1,4 @@
+<!-- Mounted once per page: a single delegated click listener replaces a per-block copy handler. -->
 <script lang="ts">
   import { onMount } from 'svelte';
   import { isBrowser } from 'mochi-framework';

@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import DebugPanel from './DebugPanel.svelte';
   import X from '../icons/x.svelte';
-  import type { DebugBarConfig } from '../requestContext';
+  import type { DebugBarConfig } from '../runtime/requestContext';
 
   let { open, onclose }: { open: boolean; onclose: () => void } = $props();
 
@@ -55,8 +55,10 @@
       ...(config.assetPrefix ? [{ key: 'Asset prefix', value: config.assetPrefix, muted: false }] : []),
       { key: 'Middleware', value: onOff(config.middleware), muted: !config.middleware },
       { key: 'CSRF', value: onOff(config.csrf), muted: !config.csrf },
+      { key: 'Protection', value: onOff(config.protection), muted: !config.protection },
       { key: 'Proxy', value: onOff(config.proxy), muted: !config.proxy },
       { key: 'Markdown', value: onOff(config.markdown), muted: !config.markdown },
+      { key: 'Email', value: config.email, muted: config.email === 'log' },
       { key: 'Routes', value: String(config.routeCount), muted: false },
     ];
     return rows;

@@ -1,5 +1,5 @@
-import type { DebugBarRuntimeData } from '../requestContext';
-import type { LogLevel } from '../log';
+import type { DebugBarRuntimeData } from '../runtime/requestContext';
+import type { LogLevel } from '../utils/log';
 
 declare global {
   interface Window {
@@ -8,6 +8,7 @@ declare global {
     __mochi_debug?: DebugBarRuntimeData;
     __mochi_asset_prefix?: string;
     __mochi_reload_ws?: WebSocket;
+    __mochi_live_reload_status?: 'connected' | 'reconnecting' | 'disconnected';
     __mochi_log_level?: LogLevel;
     __mochi_page_entry?: string;
   }
@@ -16,7 +17,10 @@ declare global {
 export interface IslandInfo {
   /** The wrapper element itself — the stable identity for keying and locating. */
   element: HTMLElement;
+  /** Raw `component-name` (`<localName>_<hash>`) — used for element matching, not display. */
   name: string;
+  /** The bare local component name, recovered from `name` for a human-readable label. */
+  displayName: string;
   type: 'hydrated' | 'server';
   mode: string;
   propsSize: number;
