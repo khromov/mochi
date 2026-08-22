@@ -21,20 +21,14 @@ export function parseTemplateSource(source: string): TemplateSource {
   return { owner: owner!, repo: repo!, subdir: rest.join('/'), ref };
 }
 
-/**
- * codeload rather than `api.github.com/repos/…/tarball`: it needs no authentication, is not rate-limited per IP, and
- * measured ~25x faster on this repo. `HEAD` resolves to the default branch.
- */
+/** codeload, not `api.github.com/…/tarball`: no auth, no per-IP rate limit, ~25x faster here. */
 export function tarballUrl({ owner, repo, ref }: TemplateSource): string {
   return `https://codeload.github.com/${owner}/${repo}/tar.gz/${ref}`;
 }
 
 /**
- * Write a repo subdirectory out of an in-memory tarball, stripping GitHub's `<repo>-<ref>/` wrapper and the subdir
- * prefix so the template lands at the root of `dir`. Returns the number of files written.
- *
- * The wrapper name is read off the archive rather than predicted: GitHub derives it from the ref, and a short commit
- * sha does not round-trip to the string that was requested.
+ * Extract the repo subdirectory from an in-memory tarball into `dir`, stripping GitHub's `<repo>-<ref>/` wrapper.
+ * The wrapper is read off the archive, not predicted — a short sha doesn't round-trip to the requested ref.
  */
 export async function extractTemplate(tarball: Blob | Uint8Array, source: TemplateSource, dir: string): Promise<number> {
   const files = await new Bun.Archive(tarball).files(`*/${source.subdir}/**`);
