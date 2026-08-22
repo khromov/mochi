@@ -4,6 +4,7 @@
   import { isExternal } from '../lib/isExternal';
   import { getLocationHash, getLocationPathname } from '../stores/hash.svelte';
   import ThemeToggle from './ThemeToggle.svelte';
+  import GitHubButton from './GitHubButton.svelte';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
 
   const MAX_VISIBLE_CHILDREN = 4;
@@ -76,8 +77,11 @@
   <div class="drawer">
     <div class="drawer-inner">
       <div class="drawer-head">
-        <span class="drawer-label">Appearance</span>
-        <ThemeToggle />
+        <span class="drawer-label">🍡 mochi</span>
+        <div class="head-actions">
+          <GitHubButton onNavigate={close} />
+          <ThemeToggle />
+        </div>
       </div>
 
       <div class="search">
@@ -87,6 +91,18 @@
       <ul class="toc-list toc-fixed">
         <li class="toc-item level-2">
           <a href="/" onclick={close}>Home</a>
+        </li>
+        <li class="toc-item level-2">
+          <a href="/blog/" onclick={close}>Blog</a>
+        </li>
+        <li class="toc-item level-2">
+          <a href="/support" onclick={close}>Support</a>
+        </li>
+        <li class="toc-item level-2">
+          <a href="/docs/changelog/" onclick={close}>Changelog</a>
+        </li>
+        <li class="toc-item level-2">
+          <a href="/ci/" onclick={close}>CI Status</a>
         </li>
       </ul>
 
@@ -132,7 +148,7 @@
           <ul class="toc-list">
             {#each filteredDemos as demo (demo.href)}
               {@const external = isExternal(demo.href)}
-              <li class="toc-item level-2" class:active={!external && (activePathname === demo.href || activePathname.startsWith(demo.href + '/'))}>
+              <li class="toc-item level-2" class:active={!external && activePathname.startsWith(demo.href)}>
                 <a href={demo.href} target={external ? '_blank' : undefined} onclick={close}>{demo.title}</a>
               </li>
             {/each}
@@ -233,7 +249,7 @@
   }
 
   .drawer-inner {
-    padding: 4rem 1rem 2rem;
+    padding: 1.5rem 1rem 2rem;
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
@@ -247,14 +263,18 @@
     gap: 0.75rem;
   }
 
+  .head-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
   .drawer-label {
     font-family: var(--font-serif);
-    font-variant-caps: all-small-caps;
-    font-feature-settings: 'smcp';
-    font-size: 0.95rem;
+    font-size: 1.25rem;
     font-weight: 500;
-    color: var(--text-subtle);
-    letter-spacing: 0.08em;
+    color: var(--text);
+    letter-spacing: -0.01em;
   }
 
   .search input {

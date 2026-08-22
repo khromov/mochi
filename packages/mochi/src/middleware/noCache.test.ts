@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Server } from 'bun';
-import type { MochiEvent, MochiEventKind } from '../hooks';
+import type { MochiEvent, MochiEventKind } from '../runtime/hooks';
 import { noCache } from './noCache';
 
 function makeEvent(req: Request, kind: MochiEventKind): MochiEvent {
@@ -10,6 +10,7 @@ function makeEvent(req: Request, kind: MochiEventKind): MochiEvent {
     server: {} as Server<undefined>,
     locals: {},
     kind,
+    isWarmup: false,
   };
 }
 

@@ -33,6 +33,9 @@
   .code-viewer {
     margin-top: 1rem;
     max-width: 100%;
+    /* Persist the viewer across cross-document view transitions so it doesn't blink on nav;
+       assumes at most one CodeViewer per page since view-transition-names must be unique. */
+    view-transition-name: code-viewer;
   }
 
   .cv-tabs {
@@ -76,19 +79,14 @@
     box-shadow: var(--focus-ring);
   }
 
-  /* The panel renders the same `<div class="code-block"><pre class="hljs">…</pre></div>`
-     markup that mdsvex emits, so the global rules in shell.html handle padding,
-     radius, and background. Zero the prose-flow bottom margin and tighten the
-     font for the demo viewer specifically. */
+  /* Padding/radius/background come from shell.html; just zero the prose margin and tighten the font. */
   .cv-panel :global(pre),
   .cv-style :global(pre) {
     margin: 0;
     font-size: 0.82rem;
   }
 
-  /* When a styles section follows the main panel, fuse them visually into one
-     continuous code box: square the seam between them and let the styles
-     section carry the rounded bottom corners. */
+  /* Fuse a following styles section into one continuous code box: square the shared seam. */
   .code-viewer:has(.cv-style) .cv-panel :global(pre) {
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;

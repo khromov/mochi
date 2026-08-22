@@ -1,0 +1,14 @@
+.mochi
+.mochi*
+.mochi-*
+reports
+.claude
+*.tsbuildinfo
+*.test.ts
+__fixtures__
+docs
+CHANGELOG.md
+README.md
+scripts/leak
+LICENSE*
+scripts/

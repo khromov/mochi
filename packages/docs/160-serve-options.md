@@ -1,140 +1,227 @@
 ---
 title: 'Serve options'
 slug: serve-options
-description: 'Reference for every configuration option available on Mochi.serve().'
+ogTitle: 'Every Mochi.serve() option'
+description: 'Reference for every configuration option on Mochi.serve().'
 ---
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Serve options
 
-`Mochi.serve(options)` boots the Bun server and registers routes. Pass a single `MochiServeOptions` object — every field below is optional except `routes`.
+`Mochi.serve(options)` boots the Bun server and registers routes. Pass one `MochiServeOptions` object. Every field is optional except `routes`.
 
 ```ts
 // file: src/index.ts
 import { Mochi } from 'mochi-framework';
-import { routes } from './routes';
 
 await Mochi.serve({
   port: 3333,
-  routes,
+  routes: {
+    '/': Mochi.page('./src/Home.svelte'),
+  },
 });
 ```
 
-Response compression is opt-in via the [`compress()` middleware](/docs/middleware/#compress) — add it to `handle: sequence(...)` to negotiate brotli or gzip per client.
+Response compression is opt-in through the [`compress()` middleware](/docs/middleware/#compress).
 
 ### Asset caching
 
-In production (`development: false`), prebuilt JS/CSS bundles served from `assetPrefix` (default `/_mochi`) get `Cache-Control: public, max-age=31536000, immutable` automatically. Filenames are content-hashed, so any change yields a new URL — there's nothing to invalidate. In development the header is omitted so live-reload edits aren't pinned in the browser cache. Public-dir files (`./public/...`) keep Bun's default static-route headers; their URLs are stable, so don't mark them immutable. To override, mutate `response.headers` in a `handle` middleware.
+In production (`development: false`), prebuilt JS/CSS bundles served from `assetPrefix` (default `/_mochi`) get `Cache-Control: public, max-age=31536000, immutable`. Filenames are content-hashed, so any change yields a new URL. In development the header is omitted so live-reload edits are not pinned in the browser cache. Public-dir files (`./public/...`) are read from `publicDir` on disk in both modes and keep Bun's default static-route headers. To override, mutate `response.headers` in a `handle` middleware.
 
-Do **NOT** call `Mochi.serve()` more than once per process; instead, run a second site as a separate process on a different port. A second call throws `Mochi.serve() has already been called. Only one instance is allowed.`
+<Callout type="warning">
+
+**One `serve()` call per process.** To run multiple sites, spawn separate processes on different ports. A second call in the same process throws `Mochi.serve() has already been called.`
+
+</Callout>
 
 <Callout type="info">
 
-**Shutdown signals.** `Mochi.serve()` installs `SIGTERM` and `SIGINT` listeners that fire the [`mochi:shutdown`](/docs/extensions/#mochishutdown) hook and call `server.stop()`. A second signal force-exits with code 1. Existing user listeners on those signals are not displaced — Node.js dispatches signals to every registered listener.
+**Shutdown signals.** `Mochi.serve()` installs `SIGTERM` and `SIGINT` listeners that fire the [`mochi:shutdown`](/docs/extensions/#mochishutdown) hook, drain queues, then stop the server and exit with code 0. In-flight requests get `shutdownTimeout` ms to finish. Anything still connected is force-closed. A second signal exits immediately with code 1. An open WebSocket never drains, so shutdown waits the full `shutdownTimeout` before force-closing. Keep the timeout tight enough for your orchestrator's grace period. A finite-lifetime embedder (script, test) can run the same teardown without exiting via [`Mochi.stop()`](/docs/queues/#mochistop).
 
 </Callout>
 
 ### Options reference
 
-- `port`: TCP port to listen on. No default — set it explicitly.
-- `hostname`: Interface to bind. Defaults to Bun's default (`0.0.0.0`).
-- `development`: Enables live reload, debug bar, and the dev error overlay. Default: `true`.
-- `liveReload`: Enable the dev-mode live-reload WebSocket (`/__mochi_live_reload` + the `mochi-live-reload` web component). Default: matches `development`. Set to `false` to keep the debug bar but skip the WS — useful behind a proxy where the socket is flaky.
-- `routes`: `Record<string, MochiRouteValue>` of route paths to `Mochi.page` / `Mochi.api` / `Mochi.ws` / `Mochi.sse` registrations.
-- `fetch`: `(req, server) => Response` fallback handler invoked when no route matches. Default: built-in 404.
-- `manifest`: Path to a prebuilt manifest JSON. Default: `<outDir>/manifest.json`.
-- `htmlShell`: Path to an `.html` template or an inline template string. Default: built-in shell. See `Custom HTML shell`.
-- `handle`: A `Handle` (or `sequence(...)` of them) that wraps every request. See `Middleware (hooks)`.
-- `errorPage`: Path to a Svelte component rendered for uncaught page errors and unmatched routes. Default: built-in minimal error page. See `Error handling`.
-- `handleError`: `HandleError` hook invoked before the error page renders; may override status/message or return a `Response`. See `Error handling`.
-- `compressServerIslandProps`: Deflate-compress server-island props when it reduces size. Default: `true`.
-- `logger`: Built-in request logger. Default: `{ enabled: true }`. Pass `{ enabled: false }` to disable, or override `slowThreshold` / `verySlowThreshold`.
-- `publicDir`: Directory served as static assets (cwd-relative). Default: `./public`.
-- `outDir`: Directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`.
-- `assetPrefix`: URL prefix for framework client assets and the server-island endpoint. Must start with `/`, must not be `/`, must not end with `/`, must not contain whitespace or `..`. Default: `/_mochi`.
-- `additionalWatchPaths`: Extra dev-mode watcher paths added to the defaults `src` and `public`. Default: `[]`.
-- `svelteConfigPath`: Path to a Svelte config file. Default: `./svelte.config.js`. See `Svelte config`.
-- `csrf`: `MochiCsrfOptions` controlling the origin-header check. See `CSRF` below.
-- `proxy`: `MochiProxyOptions` describing trusted reverse-proxy headers. See `Proxy` below.
-- `hooks`: `MochiHooks` map of named lifecycle hooks. See `Extensions (hooks & filters)`.
-- `filters`: `MochiFilters` map of named value-replacement filters. See `Extensions (hooks & filters)`.
+- `port` — TCP port. No default, so set it explicitly.
+- `hostname` — interface to bind. Defaults to Bun's default (`0.0.0.0`).
+- `development` — enables live reload, debug bar, and dev error overlay. Default: `true`.
+- `liveReload` — enable the dev-mode live-reload WebSocket. Default: matches `development`. Set `false` to keep the debug bar but skip the socket.
+- `shutdownTimeout` — grace period (ms) for in-flight requests on `SIGTERM`/`SIGINT`. Default: `5000` in production, `0` in development.
+- `routes` — `Record<string, MochiRouteValue>` of route paths to `Mochi.page` / `Mochi.api` / `Mochi.ws` / `Mochi.sse`.
+- `fetch` — `(req, server) => Response` fallback when no route matches. Default: built-in 404.
+- `manifest` — path to a prebuilt manifest JSON. Default: `<outDir>/manifest.json`.
+- `htmlShell` — path to an `.html` template or an inline string. Default: built-in shell. See [Custom HTML shell](/docs/custom-html-shell/).
+- `handle` — a `Handle` (or `sequence(...)`) wrapping every request. See [Middleware](/docs/middleware/).
+- `errorPage` — component rendered for uncaught page errors and unmatched routes. Default: built-in. See [Error handling](/docs/error-handling/).
+- `handleError` — `HandleError` hook run before the error page renders. See [Error handling](/docs/error-handling/).
+- `compressServerIslandProps` — deflate server-island props when it reduces size. Default: `true`.
+- `inlineNestedIslands` — render nested `mochi:defer` islands in-process during an island fetch instead of emitting more client fetches. `mochi:defer:visible` children keep their own fetch; one call site opts out with `mochi:defer={{ inline: false }}`. Default: `true`. See [Server islands](/docs/server-islands/).
+- `logger` — built-in request logger. Default: `{ enabled: true }`.
+- `publicDir` — directory served as static assets. Default: `./public`. Scanned from disk at startup in every mode, so it must ship with a production deploy.
+- `staticDirs` — extra directory trees mounted under a URL prefix. See [Static directories](#static-directories).
+- `memoryPressure` — drain in-memory caches when the OS reports low memory. Default: `true`; always off in development. See [Cache](/docs/cache/#memory-pressure).
+- `cron` — durable scheduled jobs to start with the server, from `Mochi.cron(name, schedule, handler)`. See [Scheduled jobs](/docs/scheduled-jobs/).
+- `cronStorage` — where the cron scheduler stores schedules and jobs. Defaults to `memory`. See [Scheduled jobs](/docs/scheduled-jobs/#storage).
+- `outDir` — base directory for build artifacts and dev cache. Default: `./.mochi`.
+- `assetPrefix` — URL prefix for framework client assets and the server-island endpoint. Must start with `/`, must not be `/` or end with `/`. Default: `/_mochi`.
+- `additionalWatchPaths` — extra dev-mode watcher paths added to `src` and `public`. Default: `[]`.
+- `barrelWarnings` — warn when a dependency drags a large, tree-shaken module into the build graph. Default: enabled. See [Development mode](/docs/development-mode/).
+- `build` — output controls for `mochi-framework build`. The runtime ignores it. See [CLI](/docs/cli/).
+- `svelteConfigPath` — path to a Svelte config file. Default: `./svelte.config.js`. See [Svelte config](/docs/svelte-config/).
+- `svelteCompiler` — which compiler emits component JS. Default: `'svelte'`. `'rsvelte'` needs `@mochi-framework/rsvelte`. See [rsvelte](/docs/rsvelte/).
+- `optimize` — run the whole-program svelte-shaker pass over `.svelte` source before compiling, so the compiler emits less code. **Production only**, and needs `@mochi-framework/svelte-shaker`. `true` shakes everything; `{ enabled, exclude }` gives finer control. Default: `false`. See [Svelte Shaker](/docs/svelte-shaker/).
+- `protection` — Cloudflare-style browser verification: unverified clients get an interstitial that auto-solves the captcha proof-of-work and redeems it for a signed clearance cookie. Default: disabled. See [Protection Mode](/docs/protection/).
+- `csrf` — `MochiCsrfOptions` for the origin-header check. See below.
+- `proxy` — `MochiProxyOptions` for trusted reverse-proxy headers. See below.
+- `hooks` / `filters` — named lifecycle hooks and value filters. See [Extensions](/docs/extensions/).
+- `warmup` — warm the SSR pipeline at startup by invoking every static page route once. `boolean | { enabledInProd, enabledInDev }`. Default: `false`. See below.
+- `bun` — escape hatch for raw `Bun.serve()` options Mochi does not surface — `idleTimeout`, `maxRequestBodySize`, `reusePort`, `tls`. `fetch` / `websocket` / `routes` / `error` are framework-owned and throw if set. See below.
 
-Do **NOT** set `assetPrefix` only at runtime when running against a prebuilt manifest; instead, also pass it to the `build()` call (or `--asset-prefix`) so the manifest's baked-in URLs match. The manifest value wins at runtime when the two disagree.
+<Callout type="info">
+
+**Sync `assetPrefix` between build and runtime.** When using a prebuilt manifest, pass `assetPrefix` to the `build()` call (or `--asset-prefix`) so the baked-in URLs match. The manifest's URLs take precedence at runtime if the two disagree.
+
+</Callout>
+
+### Static directories
+
+<VersionNote since="0.10.0" message="staticDirs ships in the next Mochi release (0.10.0). This section describes the upcoming API." />
+
+Mount a directory tree under a URL prefix. Each entry becomes one Bun directory route, so a large tree costs one route rather than one per file, and `Content-Type`, `ETag`, `If-None-Match`, `Range`, `index.html` and sendfile streaming all come from Bun.
+
+```ts
+// file: src/index.ts
+await Mochi.serve({
+  staticDirs: { '/assets': './media' },
+  routes,
+});
+```
+
+This is for **large or generated** trees — a media library, a docs export, a build directory from another tool. For ordinary site assets keep using `publicDir`, which scans and registers each file individually.
+
+<Callout type="warning">
+
+A mount is a native Bun directory route, matched **before** Mochi's request pipeline — so your middleware never sees it. `handle` hooks, `filterResponseHeaders`, `transformPage`, rate limiting, CSRF, trailing-slash normalization and the `request` event all skip `/prefix/*`, and a miss returns Bun's bare 404 rather than your `errorPage`. If you need any of that — auth, custom headers, logging — serve those files through `publicDir` (which can be gated with `protection.protectFiles`) or your own `Mochi.api` / `Mochi.file` route instead.
+
+</Callout>
+
+### Raw Bun.serve options
+
+`bun` is spread straight into the underlying `Bun.serve()`, so any option Mochi doesn't expose is reachable through it:
+
+```ts
+Mochi.serve({
+  port: 3333,
+  routes,
+  bun: {
+    idleTimeout: 30, // seconds; HTTP default is 10, max 255, 0 disables
+    maxRequestBodySize: 1024 * 1024 * 256,
+  },
+});
+```
+
+Bun times a connection out after `idleTimeout` seconds of inactivity, so a response that stays quiet for longer than the default 10 seconds dies with `request timed out after 10 seconds`. Mochi already disables the idle timer for page renders and SSE streams (`Mochi.sse`), so raising it mainly matters for quiet or long-lived `Mochi.api` responses (chunked streams) and slow request bodies.
+
+<Callout type="info">
+
+`fetch`, `websocket`, `routes`, and `error` are owned by the framework — setting them under `bun` throws at startup. Use the top-level `Mochi.serve()` options instead. To lift the timeout for one route without raising the global value, call `server.timeout(request, seconds)` (seconds, or `0` to disable) inside the handler — the `server` and `request` are on the API event.
+
+</Callout>
+
+### Route warmup
+
+The render pipeline stays cold until a route is first visited, so the first request to each page pays a one-time penalty. Set `warmup: true` to invoke every static page route once, in the background, right after the server starts listening:
+
+```ts
+await Mochi.serve({
+  warmup: true, // warms in production only
+  routes,
+});
+```
+
+`warmup: true` warms in **production only**. For per-mode control, pass an object:
+
+```ts
+await Mochi.serve({
+  warmup: { enabledInProd: true, enabledInDev: false },
+  routes,
+});
+```
+
+Warmup is fire-and-forget. The server accepts real traffic immediately, and a [`warmup:complete`](/docs/events/) event fires when the batch finishes. Warmup requests carry `warmup: true` on their `request` event and log under a `WARM` label. Routes with parameter segments (`/docs/:slug`) and `*` catch-alls are skipped, since they have no single canonical URL.
+
+Detect warmup hits with `event.isWarmup` (in [middleware](/docs/middleware/)) and `getRequestContext().isWarmup` (in `serverProps`, components, API handlers) to skip side effects that should not fire for synthetic traffic:
+
+```ts
+const analytics: Handle = async ({ event, resolve }) => {
+  if (!event.isWarmup) track(event.url.pathname); // skip warmup hits
+  return resolve(event);
+};
+```
 
 ### CSRF
 
-`csrf` gates state-mutating form submissions (`POST` / `PUT` / `PATCH` / `DELETE` with `application/x-www-form-urlencoded`, `multipart/form-data`, or `text/plain`) against an origin-header check; the request's `Origin` must match the expected origin or appear in `csrf.trustedOrigins`. JSON endpoints rely on the browser's CORS preflight and aren't checked.
+`csrf` gates state-mutating form submissions (`POST`/`PUT`/`PATCH`/`DELETE` with a form content type) against an origin-header check. The request's `Origin` must match the expected origin or appear in `csrf.trustedOrigins`. JSON endpoints rely on the browser's CORS preflight and are not checked.
 
-- `checkOrigin`: Compare `Origin` against the resolved expected origin. Default: `true`.
-- `trustedOrigins`: Extra origins to allow even when they don't match. Default: `[]`.
+- `checkOrigin` — compare `Origin` against the resolved expected origin. Default: `true`.
+- `trustedOrigins` — extra origins to allow. Default: `[]`.
 
 ```ts
 await Mochi.serve({
-  proxy: {
-    origin: 'https://app.example.com',
-  },
-  csrf: {
-    trustedOrigins: ['https://embed.partner.com'],
-    // checkOrigin: false, // disable the check entirely
-  },
+  proxy: { origin: 'https://app.example.com' },
+  csrf: { trustedOrigins: ['https://embed.partner.com'] },
   routes,
 });
 ```
 
-In production the check refuses every form mutation until `proxy.origin` (or `proxy.hostHeader`) is set, so the deployment break is loud rather than silent. In development the same request is allowed through with a `[mochi]` warning so local work isn't blocked.
-
-Do **NOT** disable `checkOrigin` to silence a 403 in production; instead, configure `proxy.origin` so the framework knows what origin to trust.
+In production, the check refuses every form mutation until `proxy.origin` (or `proxy.hostHeader`) is set, so the deployment break is loud. In development the request is allowed through with a `[mochi]` warning. Routes declaring form `actions` without either option also warn once at boot — in both modes — so the misconfiguration is visible before deploy, not first discovered as a production 403.
 
 ### Proxy
 
-`proxy` tells the framework how to recover the public origin (used by the CSRF check) and the real client IP (returned by `getClientAddress()` on the request context) from forwarded headers. Behind a load balancer, CDN, or tunnel, the connection Bun sees is the proxy, not the client.
+`proxy` tells the framework how to recover the public origin (for the CSRF check) and the real client IP (for `getClientAddress()`) from forwarded headers.
 
-- `origin`: Explicit public origin (e.g. `'https://my.site'`). Wins over the header options.
-- `protocolHeader`: Forwarded-protocol header (typically `'x-forwarded-proto'`).
-- `hostHeader`: Forwarded-host header (typically `'x-forwarded-host'`).
-- `portHeader`: Forwarded-port header (typically `'x-forwarded-port'`). Only needed when the public port differs.
-- `addressHeader`: Forwarded client-IP header (e.g. `'true-client-ip'`, `'x-forwarded-for'`).
-- `xffDepth`: Number of trusted proxies in front of the server when `addressHeader` is `'x-forwarded-for'`. Default: `1`.
-- `requestIdHeader`: Forwarded correlation-id header (typically `'x-request-id'`). Seeds `getRequestContext().requestId` when set on the inbound request.
+- `origin` — explicit public origin. Wins over the header options.
+- `protocolHeader` — forwarded-protocol header (`'x-forwarded-proto'`).
+- `hostHeader` — forwarded-host header (`'x-forwarded-host'`).
+- `portHeader` — forwarded-port header (`'x-forwarded-port'`).
+- `addressHeader` — forwarded client-IP header (`'true-client-ip'`, `'x-forwarded-for'`).
+- `xffDepth` — number of trusted proxies in front of the server when `addressHeader` is `'x-forwarded-for'`. Default: `1`.
+- `requestIdHeader` — forwarded correlation-id header (`'x-request-id'`). Seeds `getRequestContext().requestId`.
 
 ```ts
 await Mochi.serve({
   proxy: {
-    // Either pin the public origin…
     origin: 'https://my.site',
-    // …or derive it from forwarded headers.
-    protocolHeader: 'x-forwarded-proto',
-    hostHeader: 'x-forwarded-host',
-    portHeader: 'x-forwarded-port',
-
-    // Client IP for getClientAddress():
     addressHeader: 'x-forwarded-for',
-    xffDepth: 3, // 3 trusted proxies in front of the server
+    xffDepth: 3,
   },
   routes,
 });
 ```
 
-Do **NOT** set the header options when the proxy is not trusted to overwrite them; instead, leave them unset. Clients can spoof these headers when reaching the app directly.
+<Callout type="danger">
+
+**Only trust forwarded headers behind a trusted proxy.** Leave the header options unset unless a proxy you control overwrites them. When the app is reachable directly, clients can spoof these headers.
+
+</Callout>
 
 #### `xffDepth` and spoofing
 
-`X-Forwarded-For` is comma-separated — each proxy appends the address it saw. With three trusted proxies and no spoofing:
-
-```
-client, proxy1, proxy2
-```
-
-The framework reads from the **right**, skipping `xffDepth - 1` trusted proxies, so `xffDepth: 3` returns `client`. Reading from the right blocks spoofing: a client setting its own `X-Forwarded-For` gets pushed leftward by each trusted proxy.
+`X-Forwarded-For` is comma-separated. Each proxy appends the address it saw. The framework reads from the **right**, skipping `xffDepth - 1` trusted proxies, so `xffDepth: 3` returns the real client:
 
 ```
 spoofed, client, proxy1, proxy2   # xffDepth: 3 → "client" (spoofed entry ignored)
 ```
 
-Do **NOT** read `request.headers.get('x-forwarded-for')` directly when you want a trusted client IP; instead, use `getClientAddress()` with the right `xffDepth`. Read the raw header only when you want the leftmost address (e.g. geolocation where realness matters more than trust).
+<Callout type="warning">
+
+**Use `getClientAddress()` for a trusted client IP.** Reading `x-forwarded-for` directly could return a spoofable address. Pass the right `xffDepth`.
+
+</Callout>
 
 #### `getClientAddress()`
 

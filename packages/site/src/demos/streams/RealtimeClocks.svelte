@@ -1,5 +1,5 @@
 <script lang="ts">
-  let { islandId } = $props();
+  const islandId = $props.id();
 
   let wsTime = $state('--:--:--');
   let sseTime = $state('--:--:--');
@@ -21,7 +21,7 @@
       wsStatus = 'disconnected';
     });
 
-    const timeSse = new EventSource(`/sse/time/`);
+    const timeSse = new EventSource('/sse/time');
     timeSse.addEventListener('open', () => {
       sseStatus = 'connected';
     });
@@ -62,9 +62,7 @@
     <span class="time">{sseTime}</span>
     <span class="endpoint">/sse/time</span>
   </div>
-  {#if islandId}
-    <div class="island-id">island-id: {islandId}</div>
-  {/if}
+  <div class="island-id">$props.id(): {islandId}</div>
 </div>
 
 <style>

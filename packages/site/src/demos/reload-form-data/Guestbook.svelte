@@ -4,7 +4,7 @@
 
   type GuestbookEntry = { id: string; name: string; at: number };
 
-  let { entries: initialEntries } = $props<{ entries: GuestbookEntry[] }>();
+  let { entries: initialEntries }: { entries: GuestbookEntry[] } = $props();
 
   // svelte-ignore state_referenced_locally
   let entries = $state<GuestbookEntry[]>(initialEntries);

@@ -3,12 +3,7 @@ import { decode as decodeHtmlEntities } from 'html-entities';
 const allowedTags = new Set(['p', 'a', 'i', 'b', 'code', 'pre']);
 const removeTags = new Set(['script', 'style', 'iframe', 'object', 'embed']);
 
-/**
- * Returns a normalized URL only if it parses and uses an http(s) scheme;
- * otherwise null. Parsing through `URL` percent-encodes whitespace and
- * attribute-breaking characters, so `javascript:`, `data:`, and tricks like
- * `http://evil.example "onclick=...` cannot survive into an `href`.
- */
+/** Normalizes to an http(s) URL or null; parsing through `URL` neutralizes `javascript:`/`data:` and attribute-breaking payloads before they reach an `href`. */
 export function safeUrl(url: string | undefined | null): string | null {
   if (!url) {
     return null;
@@ -21,13 +16,7 @@ export function safeUrl(url: string | undefined | null): string | null {
   }
 }
 
-/**
- * Sanitizes HTML from the HN API using Bun's HTMLRewriter.
- * - Allows only safe formatting tags (p, a, i, b, code, pre)
- * - Removes dangerous tags (script, style, iframe, etc.) entirely
- * - Unwraps other tags, keeping their text content
- * - Strips all attributes except href on <a> (http/https only)
- */
+/** Sanitizes HN API HTML with an allowlist `HTMLRewriter` pass, since HN comments are user-authored and must never carry executable content into the page. */
 export function sanitizeHtml(html: string): string {
   return new HTMLRewriter()
     .on('*', {
@@ -62,13 +51,7 @@ export function sanitizeHtml(html: string): string {
     .transform(html);
 }
 
-/**
- * Converts HN-flavoured HTML into a plain-text string suitable for previews.
- * Uses `HTMLRewriter` to drop tags, suppress the contents of removed elements
- * (script/style/etc.) via an `onEndTag` skip-scope, and inserts spaces around
- * block-level tags so paragraphs don't collide. Bun's text chunks don't decode
- * entities, so the final pass runs the output through `html-entities`.
- */
+/** Converts HN HTML to plain text for previews; a final `html-entities` decode pass is needed since Bun's `HTMLRewriter` text chunks arrive undecoded. */
 export function htmlToText(html: string): string {
   let out = '';
   let skipDepth = 0;

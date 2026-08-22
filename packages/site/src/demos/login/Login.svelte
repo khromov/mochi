@@ -2,16 +2,11 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import EnhancedLoginForm from './EnhancedLoginForm.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'Login.svelte', path: './src/demos/login/Login.svelte' },
-    { label: 'EnhancedLoginForm.svelte', path: './src/demos/login/EnhancedLoginForm.svelte' },
-    { label: 'session.ts', path: './src/demos/login/session.ts' },
-    { label: 'routes.ts', path: './src/demos/login/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 
-  let { currentUser } = $props<{ currentUser: string | null }>();
+  let { currentUser }: { currentUser: string | null } = $props();
 </script>
 
 <DemoPage

@@ -1,14 +1,11 @@
 <script>
-  import { highlightCode } from '../../lib/highlightCode';
+  import { highlightCode } from '../../lib/highlight.server';
   import DemoPage from '../../components/DemoPage.svelte';
+  import CodeSnippet from '../../components/CodeSnippet.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'ErrorDemo.svelte', path: './src/demos/error/ErrorDemo.svelte' },
-    { label: 'Error500.svelte', path: './src/demos/error/Error500.svelte' },
-    { label: 'routes.ts', path: './src/demos/error/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 
   const handleErrorSnippet = `const handleError: HandleError = ({ error, event, status, message }) => {
   logger.info(
@@ -23,7 +20,7 @@
     return Response.redirect(new URL('/demos/error', event.url), 302);
   }
 };`;
-  const handleErrorHtml = highlightCode(handleErrorSnippet, 'ts');
+  const handleErrorHtml = await highlightCode(handleErrorSnippet, 'ts');
 </script>
 
 <DemoPage title="Error Handling" description="You can route render errors and unmatched routes through Mochi.serve()'s errorPage option and the handleError hook." {sources}>
@@ -65,8 +62,7 @@
 
     <p class="lead">This site's <code>handleError</code>:</p>
 
-    <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-    {@html handleErrorHtml}
+    <CodeSnippet html={handleErrorHtml} />
 
     <p>
       Watch your dev server output while clicking the links above — each visit logs one

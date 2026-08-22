@@ -17,7 +17,6 @@ export const routes: Record<string, MochiRouteValue> = {
       message(ws, message) {
         const text = String(message);
         history.push(text);
-        // send to all subscribers including the sender
         ws.publish(TOPIC, text);
         ws.send(text);
       },

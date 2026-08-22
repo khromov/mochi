@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
-import { type Dirent, readdirSync, readFileSync, statSync } from 'node:fs';
+import { type Dirent, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 interface PkgJson {
   name?: string;
   dependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
 }
 
 interface IndexEntry {
@@ -16,6 +17,33 @@ interface IndexEntry {
 const ROOT = join(import.meta.dir, '..');
 const REPO_ROOT = join(ROOT, '..', '..');
 const BUN_STORE = join(REPO_ROOT, 'node_modules', '.bun');
+
+/**
+ * The set of names bun actually installed — the source of truth for "present in
+ * the tree", since optional deps bun skipped (e.g. wrong-platform native
+ * binaries) never appear in `bun.lock`. The lock is JSONC, so strip trailing
+ * commas before `JSON.parse` rather than pulling in a JSONC dependency.
+ */
+function loadInstalledFromLock(): Set<string> {
+  const installed = new Set<string>();
+  try {
+    const raw = readFileSync(join(REPO_ROOT, 'bun.lock'), 'utf8').replace(/,(\s*[}\]])/g, '$1');
+    const lock = JSON.parse(raw) as {
+      packages?: Record<string, [string, ...unknown[]]>;
+    };
+    for (const entry of Object.values(lock.packages ?? {})) {
+      const id = entry[0];
+      if (typeof id !== 'string') {
+        continue;
+      }
+      const at = id.lastIndexOf('@');
+      installed.add(at > 0 ? id.slice(0, at) : id);
+    }
+  } catch {
+    // No/unreadable lock — degrade to current behavior (no optional deps shown).
+  }
+  return installed;
+}
 
 /**
  * Bun's isolated install layout is `node_modules/.bun/<name>@<version>/node_modules/<name>/package.json`.
@@ -31,16 +59,18 @@ async function indexPackages(): Promise<Map<string, IndexEntry>> {
     new Bun.Glob('*/node_modules/*/package.json'), // unscoped
     new Bun.Glob('*/node_modules/@*/*/package.json'), // scoped
   ];
-  for (const glob of globs) {
-    for await (const rel of glob.scan({ cwd: BUN_STORE })) {
-      const full = join(BUN_STORE, rel);
-      try {
-        const pkg = JSON.parse(readFileSync(full, 'utf8')) as PkgJson;
-        if (pkg.name && !index.has(pkg.name)) {
-          index.set(pkg.name, { pkg, dir: dirname(full) });
+  if (existsSync(BUN_STORE)) {
+    for (const glob of globs) {
+      for await (const rel of glob.scan({ cwd: BUN_STORE })) {
+        const full = join(BUN_STORE, rel);
+        try {
+          const pkg = JSON.parse(readFileSync(full, 'utf8')) as PkgJson;
+          if (pkg.name && !index.has(pkg.name)) {
+            index.set(pkg.name, { pkg, dir: dirname(full) });
+          }
+        } catch {
+          // Skip unreadable/invalid package.json files
         }
-      } catch {
-        // Skip unreadable/invalid package.json files
       }
     }
   }
@@ -49,17 +79,34 @@ async function indexPackages(): Promise<Map<string, IndexEntry>> {
     new Bun.Glob('*/package.json'), // unscoped
     new Bun.Glob('@*/*/package.json'), // scoped
   ];
-  for (const glob of topGlobs) {
-    for await (const rel of glob.scan({ cwd: join(REPO_ROOT, 'node_modules') })) {
-      const full = join(REPO_ROOT, 'node_modules', rel);
-      try {
-        const pkg = JSON.parse(readFileSync(full, 'utf8')) as PkgJson;
-        if (pkg.name && !index.has(pkg.name)) {
-          index.set(pkg.name, { pkg, dir: dirname(full) });
+  const topNodeModules = join(REPO_ROOT, 'node_modules');
+  if (existsSync(topNodeModules)) {
+    for (const glob of topGlobs) {
+      for await (const rel of glob.scan({ cwd: topNodeModules })) {
+        const full = join(topNodeModules, rel);
+        try {
+          const pkg = JSON.parse(readFileSync(full, 'utf8')) as PkgJson;
+          if (pkg.name && !index.has(pkg.name)) {
+            index.set(pkg.name, { pkg, dir: dirname(full) });
+          }
+        } catch {
+          // skip
         }
-      } catch {
-        // skip
       }
+    }
+  }
+  // Workspace packages (`packages/*`) resolve locally rather than into node_modules,
+  // so deps satisfied by an override (e.g. the msgpackr-extract stub) are only sizable here.
+  const wsGlob = new Bun.Glob('packages/*/package.json');
+  for await (const rel of wsGlob.scan({ cwd: REPO_ROOT })) {
+    const full = join(REPO_ROOT, rel);
+    try {
+      const pkg = JSON.parse(readFileSync(full, 'utf8')) as PkgJson;
+      if (pkg.name && !index.has(pkg.name)) {
+        index.set(pkg.name, { pkg, dir: dirname(full) });
+      }
+    } catch {
+      // skip
     }
   }
   return index;
@@ -102,8 +149,13 @@ async function readPkg(path: string): Promise<PkgJson> {
   return JSON.parse(await Bun.file(path).text());
 }
 
-/** Walk `dependencies` (production only) starting from a direct dep. Returns the set of unique package names reached (excluding the root itself). */
-function transitiveDeps(rootName: string, index: Map<string, IndexEntry>): Set<string> {
+/**
+ * Walk `dependencies` (production) plus any `optionalDependencies` that bun actually
+ * installed (`installed`), starting from a direct dep. Returns the set of unique package
+ * names reached (excluding the root itself). Names reached via an optional edge are
+ * recorded in the shared `optionalNames` set so the report can tag them.
+ */
+function transitiveDeps(rootName: string, index: Map<string, IndexEntry>, installed: Set<string>, optionalNames: Set<string>): Set<string> {
   const seen = new Set<string>();
   const queue = [rootName];
   let first = true;
@@ -117,12 +169,20 @@ function transitiveDeps(rootName: string, index: Map<string, IndexEntry>): Set<s
     }
     first = false;
     const entry = index.get(name);
-    if (!entry?.pkg.dependencies) {
+    if (!entry?.pkg) {
       continue;
     }
-    for (const dep of Object.keys(entry.pkg.dependencies)) {
+    for (const dep of Object.keys(entry.pkg.dependencies ?? {})) {
       if (!seen.has(dep)) {
         queue.push(dep);
+      }
+    }
+    for (const dep of Object.keys(entry.pkg.optionalDependencies ?? {})) {
+      if (installed.has(dep)) {
+        optionalNames.add(dep);
+        if (!seen.has(dep)) {
+          queue.push(dep);
+        }
       }
     }
   }
@@ -146,6 +206,9 @@ const peerDeps = Object.keys((mochiPkg as { peerDependencies?: Record<string, st
 const devDeps = Object.keys((mochiPkg as { devDependencies?: Record<string, string> }).devDependencies ?? {});
 
 const index = await indexPackages();
+const installed = loadInstalledFromLock();
+const optionalNames = new Set<string>();
+const label = (name: string): string => (optionalNames.has(name) ? `${name} [optional]` : name);
 
 const sizeCache = new Map<string, number>();
 function sizeOf(name: string): number {
@@ -169,7 +232,7 @@ interface Row {
 const rows: Row[] = [];
 const union = new Set<string>(directDeps);
 for (const dep of directDeps) {
-  const t = transitiveDeps(dep, index);
+  const t = transitiveDeps(dep, index, installed, optionalNames);
   const selfSize = sizeOf(dep);
   let totalSize = selfSize;
   for (const name of t) {
@@ -194,13 +257,14 @@ const totalTransitive = union.size;
 console.log(`Direct: ${totalProd}`);
 console.log(`Peer:   ${peerDeps.length} (${peerDeps.join(', ')})`);
 console.log(`Dev:    ${devDeps.length}`);
+console.log(`Optional (installed, folded in): ${optionalNames.size}${optionalNames.size ? ` (${[...optionalNames].sort().join(', ')})` : ''}`);
 console.log(`Total unique packages reachable from production deps (roots + transitive): ${totalTransitive}`);
 console.log(`Total on-disk size of those packages: ${formatBytes(unionSize)}`);
 console.log('');
 console.log('Toplist — direct deps ranked by total size (self + transitive):');
 console.log(`  ${'total'.padStart(9)}  ${'self'.padStart(9)}  ${'count'.padStart(5)}  package`);
 for (const r of rows) {
-  const cells = [formatBytes(r.totalSize).padStart(9), formatBytes(r.selfSize).padStart(9), r.transitive.size.toString().padStart(5), r.dep];
+  const cells = [formatBytes(r.totalSize).padStart(9), formatBytes(r.selfSize).padStart(9), r.transitive.size.toString().padStart(5), label(r.dep)];
   console.log(`  ${cells.join('  ')}`);
 }
 console.log('');
@@ -209,6 +273,6 @@ for (const r of rows) {
   if (r.transitive.size === 0) {
     continue;
   }
-  const parts = [...r.transitive].sort().map((n) => `${n} (${formatBytes(sizeOf(n))})`);
+  const parts = [...r.transitive].sort().map((n) => `${label(n)} (${formatBytes(sizeOf(n))})`);
   console.log(`\n  ${r.dep} (${r.transitive.size}, ${formatBytes(r.totalSize - r.selfSize)} transitive): ${parts.join(', ')}`);
 }

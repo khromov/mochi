@@ -1,11 +1,8 @@
 <script lang="ts">
   import { hydratable } from 'svelte';
 
-  // Same key as the page. During SSR, Svelte memoises by key so this body
-  // never runs (the page populated the cache first). During client hydration,
-  // hydratable() returns the value from window.__svelte.h without invoking
-  // fn(). The throw is an executable assertion: if the contract ever broke,
-  // the page would crash visibly instead of silently regressing performance.
+  // Same key as the page's `hydratable()` call, so this closure never actually runs — the throw
+  // is an assertion that fires loudly if that invariant ever breaks.
   const fact = await hydratable<{ sqliteVersion: string; computedAt: string }>('mochi-demo:fact', () => {
     throw new Error('hydratable fallback should never run on this page');
   });
@@ -31,6 +28,7 @@
     border-radius: var(--radius-sm);
     border: 1px solid var(--border);
     background: var(--surface-2, var(--surface));
+    color: var(--text);
     cursor: pointer;
   }
   code {

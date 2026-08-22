@@ -1,7 +1,6 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
-    {{mochi.dog}}
     <meta charset="utf-8" />
     {{mochi.head}}
     <link rel="icon" href="/favicon.ico" sizes="any" />
@@ -22,8 +21,20 @@
       })();
     </script>
     <style>
+      /* Pin the cascade layer order before any stylesheet can imply one. Libraries that
+         layer their styles (LayerChart, Tailwind) otherwise inherit whatever order the
+         bundler happened to emit, which can differ between dev and production. */
+      @layer reset, theme, base, components, utilities;
+
       :root {
         color-scheme: light dark;
+
+        /* Bun downlevels `light-dark(a, b)` in dependency CSS to `var(--buncss-light, a) var(--buncss-dark, b)`
+           and emits these definitions onto whichever selector declares `color-scheme` in the same stylesheet.
+           Component CSS is bundled per file, so a dependency that uses light-dark() but never declares
+           color-scheme ships the usage without the definitions and the declaration resolves to nothing. */
+        --buncss-light: initial;
+        --buncss-dark: ;
 
         --bg: #f5f3ec;
         --surface: #fffdf8;
@@ -52,14 +63,14 @@
         --badge-success-text: var(--accent-soft-text);
         --badge-warning-bg: #f5ecd7;
         --badge-warning-text: #7a5a20;
-        --badge-info-bg: #e3ece0;
-        --badge-info-text: #2f5235;
+        --badge-info-bg: #dde7ec;
+        --badge-info-text: #2c4d61;
         --badge-danger-bg: #f4dcd6;
         --badge-danger-text: #7a2e20;
         --badge-tip-bg: #dde7ec;
         --badge-tip-text: #2c4d61;
 
-        --code-bg: #1f2a24;
+        --code-bg: #10140f;
         --code-chrome-bg: #18201b;
         --code-chrome-border: #0f1511;
         --code-muted: rgba(232, 230, 221, 0.58);
@@ -79,6 +90,9 @@
          query via higher specificity, so it works on dark-preferring systems too. */
       @media (prefers-color-scheme: dark) {
         :root:not([data-theme='light']) {
+          --buncss-light: ;
+          --buncss-dark: initial;
+
           --bg: #171914;
           --surface: #1f221c;
           --surface-muted: #1a1d17;
@@ -104,8 +118,8 @@
           --badge-success-text: #c7e0cd;
           --badge-warning-bg: #2f281a;
           --badge-warning-text: #d5b982;
-          --badge-info-bg: #233028;
-          --badge-info-text: #b8d5be;
+          --badge-info-bg: #1e2b33;
+          --badge-info-text: #b6cdd8;
           --badge-danger-bg: #351f1a;
           --badge-danger-text: #e9a89a;
           --badge-tip-bg: #1e2b33;
@@ -119,6 +133,9 @@
 
       /* Explicit dark choice — wins regardless of system preference. */
       :root[data-theme='dark'] {
+        --buncss-light: ;
+        --buncss-dark: initial;
+
         --bg: #171914;
         --surface: #1f221c;
         --surface-muted: #1a1d17;
@@ -126,7 +143,7 @@
         --border-strong: #434836;
         --text: #e8e6dd;
         --text-muted: #a8ada0;
-        --text-subtle: #72786c;
+        --text-subtle: #8e9488;
         --accent: #8ab79a;
         --accent-hover: #a2cfb1;
         --accent-text: #1a1d17;
@@ -144,8 +161,8 @@
         --badge-success-text: #c7e0cd;
         --badge-warning-bg: #2f281a;
         --badge-warning-text: #d5b982;
-        --badge-info-bg: #233028;
-        --badge-info-text: #b8d5be;
+        --badge-info-bg: #1e2b33;
+        --badge-info-text: #b6cdd8;
         --badge-danger-bg: #351f1a;
         --badge-danger-text: #e9a89a;
         --badge-tip-bg: #1e2b33;
@@ -156,12 +173,18 @@
         --code-chrome-border: #000000;
       }
 
-      *,
-      *::before,
-      *::after {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
+      /* Layered so it still beats the UA defaults but loses to layered library styles —
+         unlayered, this `padding: 0` would win over every cascade layer regardless of
+         specificity and strip the spacing off things like LayerChart's tooltips. Every
+         other stylesheet on the site is unlayered and so still beats it, as before. */
+      @layer reset {
+        *,
+        *::before,
+        *::after {
+          box-sizing: border-box;
+          margin: 0;
+          padding: 0;
+        }
       }
 
       html {
@@ -176,72 +199,6 @@
         line-height: 1.55;
         -webkit-font-smoothing: antialiased;
         text-rendering: optimizeLegibility;
-      }
-
-      /* Warm syntax theme. Used by <pre><code class="hljs"> output from svelte-highlight
-         (both CodeViewer.svelte tabs and Docs.svelte markdown blocks). */
-      .hljs {
-        color: var(--code-text);
-      }
-      .hljs-comment,
-      .hljs-quote {
-        color: #72786c;
-        font-style: italic;
-      }
-      .hljs-keyword,
-      .hljs-selector-tag,
-      .hljs-literal,
-      .hljs-type {
-        color: #a7c9a8;
-      }
-      .hljs-string,
-      .hljs-regexp,
-      .hljs-addition {
-        color: #d5b982;
-      }
-      .hljs-number,
-      .hljs-meta {
-        color: #e9a89a;
-      }
-      .hljs-built_in,
-      .hljs-class .hljs-title,
-      .hljs-title.class_,
-      .hljs-title.class_.inherited__,
-      .hljs-symbol {
-        color: #c7e0cd;
-      }
-      .hljs-function,
-      .hljs-title.function_,
-      .hljs-title {
-        color: #e8e6dd;
-      }
-      .hljs-attr,
-      .hljs-variable,
-      .hljs-template-variable {
-        color: #b8d5be;
-      }
-      .hljs-tag,
-      .hljs-name,
-      .hljs-selector-id,
-      .hljs-selector-class {
-        color: #8fb097;
-      }
-      .hljs-attribute,
-      .hljs-property {
-        color: #b8d5be;
-      }
-      .hljs-params,
-      .hljs-punctuation {
-        color: var(--code-text);
-      }
-      .hljs-deletion {
-        color: #e9a89a;
-      }
-      .hljs-emphasis {
-        font-style: italic;
-      }
-      .hljs-strong {
-        font-weight: 700;
       }
 
       /* Shared code-block markup. Produced by `highlightCode()` in src/lib/highlightCode.ts
@@ -299,8 +256,7 @@
         border-color: var(--accent-hover);
       }
 
-      pre code,
-      pre code.hljs {
+      pre code {
         display: block;
         padding: 0;
         background: transparent;
@@ -310,7 +266,8 @@
         font-size: inherit;
       }
 
-      .hero {
+      .hero,
+      .hero-minimal {
         position: relative;
         background-color: #2b3d33;
         background-image:
@@ -327,7 +284,6 @@
     {{mochi.css}}
   </head>
   <body>
-    {{mochi.body}} {{mochi.script}}
-    <script defer src="https://u.khromov.se/u.js" data-website-id="8dceb8f5-6533-4c03-9cd6-1ce74accd63a"></script>
+    {{mochi.body}} {{mochi.script}} {{mochi.analytics}} {{mochi.dog}}
   </body>
 </html>

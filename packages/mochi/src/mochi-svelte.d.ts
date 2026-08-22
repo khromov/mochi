@@ -9,11 +9,18 @@ declare module 'svelte/elements' {
 
   interface MochiDeferOptions {
     retries?: number;
+    name?: string;
+    inline?: boolean;
   }
 
   interface MochiDeferVisibleOptions {
     rootMargin?: string;
     retries?: number;
+    name?: string;
+  }
+
+  interface MochiClientOnlyVisibleOptions {
+    rootMargin?: string;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -22,6 +29,8 @@ declare module 'svelte/elements' {
     'mochi:hydrate:visible'?: boolean | MochiHydrateVisibleOptions;
     'mochi:defer'?: boolean | MochiDeferOptions;
     'mochi:defer:visible'?: boolean | MochiDeferVisibleOptions;
+    'mochi:clientOnly'?: boolean;
+    'mochi:clientOnly:visible'?: boolean | MochiClientOnlyVisibleOptions;
   }
 }
 

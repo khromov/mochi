@@ -5,6 +5,7 @@
   import { isExternal } from '../lib/isExternal';
   import { getLocationHash, getLocationPathname } from '../stores/hash.svelte';
   import ThemeToggle from './ThemeToggle.svelte';
+  import GitHubButton from './GitHubButton.svelte';
   import Slash from '@lucide/svelte/icons/slash';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
 
@@ -18,9 +19,8 @@
   let sidebarInner: HTMLDivElement;
   let searchInput: HTMLInputElement;
 
-  // localStorage isn't readable during SSR, so we always emit a tiny inline
-  // <script> right after .sidebar-inner that reads localStorage and applies
-  // the scroll position synchronously while the HTML is being parsed (before paint).
+  // localStorage isn't readable during SSR, so emit an inline script that restores
+  // scroll synchronously while the HTML parses, before paint.
   const restoreScript =
     `<script>(function(){var el=document.currentScript.previousElementSibling;if(el&&el.classList.contains('sidebar-inner')){var v=Number(localStorage.getItem('${SCROLL_KEY}')||0);if(v>0){el.scrollTop=v;}}})();</` +
     `script>`;
@@ -113,7 +113,10 @@
   <div class="sidebar-inner" bind:this={sidebarInner}>
     <div class="sidebar-head">
       <a class="sidebar-brand" href="/">🍡 mochi</a>
-      <ThemeToggle />
+      <div class="head-actions">
+        <GitHubButton />
+        <ThemeToggle />
+      </div>
     </div>
 
     <div class="search">
@@ -124,6 +127,18 @@
     <ul class="toc-list toc-fixed">
       <li class="toc-item level-2">
         <a href="/">Home</a>
+      </li>
+      <li class="toc-item level-2">
+        <a href="/blog/">Blog</a>
+      </li>
+      <li class="toc-item level-2">
+        <a href="/support">Support</a>
+      </li>
+      <li class="toc-item level-2">
+        <a href="/docs/changelog/">Changelog</a>
+      </li>
+      <li class="toc-item level-2">
+        <a href="/ci/">CI Status</a>
       </li>
     </ul>
 
@@ -169,7 +184,7 @@
         <ul class="toc-list">
           {#each filteredDemos as demo (demo.href)}
             {@const external = isExternal(demo.href)}
-            <li class="toc-item level-2" class:active={!external && (activePathname === demo.href || activePathname.startsWith(demo.href + '/'))}>
+            <li class="toc-item level-2" class:active={!external && activePathname.startsWith(demo.href)}>
               <a href={demo.href} target={external ? '_blank' : undefined}>{demo.title}</a>
             </li>
           {/each}
@@ -220,6 +235,12 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
+  }
+
+  .head-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
   }
 
   .sidebar-brand {

@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { enhance, isServer, getRequestContext } from 'mochi-framework';
+  import { enhance, isServer, getRequestContext, isHydratable } from 'mochi-framework';
   import type { MochiSubmitFunction } from 'mochi-framework';
   import Paperclip from '@lucide/svelte/icons/paperclip';
 
   type UploadResult = { filename: string; content: string; size: number };
 
-  let { label, isHydratable } = $props<{ label: string; isHydratable?: boolean }>();
+  let { label }: { label: string } = $props();
 
-  // svelte-ignore state_referenced_locally
-  const _form = !isHydratable && isServer ? getRequestContext().form : null;
+  const hydratable = isHydratable();
+  const _form = !hydratable && isServer ? getRequestContext().form : null;
   const initialResult: UploadResult | null = _form?.ok && _form.action === 'uploadFile' ? (_form.data as UploadResult) : null;
   const initialError: string | null = !_form?.ok && _form?.action === 'uploadFile' ? String(_form.data.error ?? '') : null;
 
@@ -57,7 +57,7 @@
         Choose file
         <input type="file" name="file" accept=".txt,.md" required onchange={onFileChange} />
       </label>
-      {#if isHydratable}
+      {#if hydratable}
         <span class="file-name" class:chosen={selectedName}>{selectedName ?? 'No file chosen'}</span>
       {/if}
     </div>
@@ -107,7 +107,7 @@
     margin: 0;
     padding: 0.75rem;
     background: var(--code-bg);
-    color: var(--text);
+    color: var(--code-text);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     font-family: var(--font-mono);

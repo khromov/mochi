@@ -1,27 +1,32 @@
 ---
 title: 'Why Bun?'
 slug: why-bun
-description: 'Why Mochi chose Bun as its runtime and which Bun APIs the framework relies on.'
+description: 'Why Mochi chose Bun as its runtime and which Bun APIs the framework uses.'
 ---
+
+<script>
+  import ComparisonTable from './_components/ComparisonTable.svelte';
+</script>
 
 ## Why Bun?
 
-Mochi targets the [Bun](https://bun.sh/) runtime. The framework leans on Bun's standard library instead of pulling in a bundler, file API, server, glob, hash, and compression as separate dependencies. Mochi will not run on plain Node.
+Mochi delegates subsystem complexity to the Bun runtime. Instead of maintaining a bundler, an HTML parser, a router, database drivers, compression, and hashing as separate packages, Mochi calls Bun's standard library. Bun maintains those components. Mochi calls them.
 
-### What Mochi uses Bun for
+Mochi ships about 10 runtime dependencies. It uses an external dependency when the dependency earns its place and improves the developer experience. The goal is an opinionated, batteries-included toolkit for building complex web apps.
 
-- `Bun.serve()` — backs the HTTP and WebSocket server in `Mochi.serve()`.
-- `Bun.build()` and `Bun.Transpiler` — bundle client islands and transpile `.ts` / `.svelte` on demand during SSR.
-- `Bun.file()` and `Bun.write()` — read the HTML shell and component sources, write built assets, serve static files.
-- `Bun.Glob` — discovers routes, docs, and raw CSS files.
-- `Bun.hash` — generates content-hashed filenames for cache-busted bundles and CSS.
-- `Bun.gzipSync` and `Bun.deflateSync` / `Bun.inflateSync` — compress HTTP responses and pack signed server-island prop payloads into URLs.
-- `Bun.resolveSync` — resolves `devalue` and `mitt` injected into generated client code.
-- Native `.ts` execution and auto-loaded `.env` — sources run directly under `bun run`.
+### What Mochi uses from Bun
 
-### Rules for app code
+- `Bun.build()` — Mochi's fast bundler, which builds sites with hundreds of routes in seconds.
+- `Bun.serve()` — the HTTP and WebSocket server behind `Mochi.serve()`.
+- `bun:sqlite` and `bun:sql` — zero-dependency SQLite and PostgreSQL for app data.
+- Native `.ts` execution and auto-loaded `.env` — TypeScript runs directly under `bun run`.
 
-- Use `Bun.serve` for HTTP, `bun:sqlite` for SQLite, `Bun.file` for filesystem reads.
-- Do **NOT** add `dotenv`; instead, rely on Bun's built-in `.env` loading.
-- Do **NOT** add `ts-node` or a separate transpile step; instead, run `.ts` files with `bun run`.
-- Do **NOT** install `express` or `better-sqlite3`; instead, use the Bun built-ins above.
+### Batteries included
+
+Building on Bun's standard library lets Mochi ship this much out of the box. Here is how the surface compares to SvelteKit:
+
+<ComparisonTable mochi:hydrate />
+
+### On the horizon
+
+As Bun adds features, Mochi gains new abilities. For example, `Bun.Image()` powers on-the-fly image resizing.

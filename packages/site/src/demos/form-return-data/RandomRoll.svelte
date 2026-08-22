@@ -1,11 +1,10 @@
 <script lang="ts">
-  import { enhance, isServer, getRequestContext } from 'mochi-framework';
+  import { enhance, isServer, getRequestContext, isHydratable } from 'mochi-framework';
   import type { MochiSubmitFunction } from 'mochi-framework';
 
-  let { label, isHydratable } = $props<{ label: string; isHydratable?: boolean }>();
+  let { label }: { label: string } = $props();
 
-  // svelte-ignore state_referenced_locally
-  const _form = !isHydratable && isServer ? getRequestContext().form : null;
+  const _form = !isHydratable() && isServer ? getRequestContext().form : null;
   const initialValue = _form?.ok && _form.action === 'random' && typeof _form.data.value === 'number' ? _form.data.value : null;
 
   let currentValue = $state<number | null>(initialValue);

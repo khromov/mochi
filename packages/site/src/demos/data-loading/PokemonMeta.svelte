@@ -21,12 +21,20 @@
     steel: '#B8B8D0',
     fairy: '#EE99AC',
   };
+
+  function textOn(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    const r = (n >> 16) & 255,
+      g = (n >> 8) & 255,
+      b = n & 255;
+    return (r * 299 + g * 587 + b * 114) / 1000 >= 140 ? '#1f2a24' : '#fff';
+  }
 </script>
 
 <div class="meta">
   <div class="types">
     {#each types as t (t)}
-      <span class="type-badge" style="background:{typeColors[t] ?? '#888'}">{t}</span>
+      <span class="type-badge" style="background:{typeColors[t] ?? '#888'};color:{textOn(typeColors[t] ?? '#888')}">{t}</span>
     {/each}
   </div>
 
@@ -67,7 +75,6 @@
   .type-badge {
     padding: 0.25rem 0.9rem;
     border-radius: 999px;
-    color: #fff;
     font-size: 0.78rem;
     font-weight: 600;
     text-transform: capitalize;

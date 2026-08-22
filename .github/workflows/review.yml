@@ -4,6 +4,12 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel superseded runs for the same PR/branch so a new push doesn't leave the
+# old run churning (or hanging) on stale code.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   pull-requests: write
@@ -20,6 +26,14 @@ jobs:
         with:
           bun-version-file: .bun-version
 
+      - name: Cache Bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
       - name: Count LOC on PR branch
         run: bun .github/scripts/loc-report.ts --json > pr.json
 
@@ -30,8 +44,39 @@ jobs:
           (cd ../main-tree && bun .github/scripts/loc-report.ts --json) > main.json
           git worktree remove --force ../main-tree
 
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Dependency report
+        run: bun packages/mochi/scripts/dep-report.ts > dep-report.txt
+
+      # Advisory only, folded into the review comment: `bun audit` exits non-zero whenever anything is outstanding, and
+      # a PR must not go red for a vulnerability it did not introduce. `|| true` keeps the step green; a reviewer reads
+      # the comment and runs `bun audit fix` deliberately.
+      - name: Security advisories and licenses
+        run: |
+          bun audit > audit.txt 2>&1 || true
+          bun pm licenses --prod > licenses.txt 2>&1 || true
+
+      - name: Pack mochi-framework
+        run: |
+          cd packages/mochi
+          bun pm pack
+          mv mochi-framework-*.tgz ../../mochi-framework-pr.tgz
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v7
+        with:
+          name: mochi-framework-pr
+          path: mochi-framework-pr.tgz
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Collect changed paths
+        run: git diff --name-only origin/main...HEAD > changed.txt
+
       - name: Render comment
-        run: bun .github/scripts/loc-comment.ts main.json pr.json > comment.md
+        run: bun .github/scripts/loc-comment.ts main.json pr.json --repo ${{ github.repository }} --run-id ${{ github.run_id }} --dep-report dep-report.txt --changed-paths changed.txt --audit audit.txt --licenses licenses.txt > comment.md
 
       - name: Post or update sticky comment
         uses: actions/github-script@v9

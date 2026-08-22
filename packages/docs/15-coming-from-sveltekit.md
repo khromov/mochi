@@ -1,44 +1,52 @@
 ---
 title: 'Coming from SvelteKit'
 slug: coming-from-sveltekit
-description: 'A mapping of SvelteKit concepts to their Mochi equivalents for developers switching frameworks.'
+description: 'Map each SvelteKit concept to its Mochi equivalent.'
 ---
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
+  import ComparisonTable from './_components/ComparisonTable.svelte';
 </script>
 
 ## Coming from SvelteKit
 
-You have likely already been using SvelteKit as your main framework for Svelte. Here is a quick list of most of the SvelteKit features and how they map to equivalent concepts in Mochi, so you can be up and running quickly.
+This page maps SvelteKit features to their Mochi equivalents so you can start quickly. Read the feature table first, or [skip to the feature list](#routing).
+
+### Feature comparison
+
+<ComparisonTable mochi:hydrate />
 
 ### Routing
 
-SvelteKit's file-based router (`src/routes/foo/+page.svelte`) is replaced by a programmatic routes record passed to `Mochi.serve({ routes })`. Each pattern is a Bun router string; each value is built with `Mochi.page`, `Mochi.api`, `Mochi.ws`, or `Mochi.sse`.
+SvelteKit uses a file-based router. Mochi uses a programmatic `routes` record passed to `Mochi.serve({ routes })`. Each key is a Bun router pattern. Each value is built with `Mochi.page`, `Mochi.api`, `Mochi.ws`, or `Mochi.sse`.
 
 ```
 // SvelteKit
-src/routes/+page.svelte           → /
+src/routes/+page.svelte              → /
 src/routes/posts/[slug]/+page.svelte → /posts/:slug
-src/routes/health/+server.ts      → /health
+src/routes/health/+server.ts         → /health
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
+// file (Mochi): src/index.ts
 import { Mochi } from 'mochi-framework';
 import Home from './Home.svelte';
 import Post from './Post.svelte';
 
-export const routes = {
-  '/': Mochi.page(Home),
-  '/posts/:slug': Mochi.page(Post),
-  '/health': Mochi.api(() => Response.json({ status: 'ok' })),
-};
+await Mochi.serve({
+  routes: {
+    '/': Mochi.page(Home),
+    '/posts/:slug': Mochi.page(Post),
+    '/health': Mochi.api(() => Response.json({ status: 'ok' })),
+  },
+});
 ```
 
 ### Advanced routing
 
-Mochi uses Bun's router patterns — `:slug` for required params, `*` for catch-all. There is no SvelteKit-style `[[optional]]` segment, no `[param=matcher]` syntax, and no `src/params/` directory. Validate the shape of a parameter inline.
+Mochi uses Bun router patterns: `:slug` for a required parameter, `*` for a catch-all. There is no SvelteKit-style `[[optional]]` segment, no `[param=matcher]` syntax, and no `src/params/` directory. Validate a parameter's shape inline.
 
 ```ts
 // file (SvelteKit): src/params/fruit.ts
@@ -49,38 +57,49 @@ export function match(param: string): param is 'apple' | 'orange' {
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
+// file (Mochi): src/index.ts
 import { Mochi, error } from 'mochi-framework';
 import Fruit from './Fruit.svelte';
 import Files from './Files.svelte';
 
-export const routes = {
-  '/fruits/:name': Mochi.page(Fruit, {
-    serverProps: ({ params }) => {
-      if (params.name !== 'apple' && params.name !== 'orange') error(404, 'Unknown fruit');
-      return { name: params.name };
-    },
-  }),
-  '/files/*': Mochi.page(Files),
-};
+await Mochi.serve({
+  routes: {
+    '/fruits/:name': Mochi.page(Fruit, {
+      serverProps: (_req, params) => {
+        if (params.name !== 'apple' && params.name !== 'orange') error(404, 'Unknown fruit');
+        return { name: params.name };
+      },
+    }),
+    '/files/*': Mochi.page(Files),
+  },
+});
+```
+
+A `:param` always captures the whole segment — you can't put literal text beside it. SvelteKit's `profile/@[user]` has no direct equivalent: Bun treats `@:user` as literal text, so `/profile/@:user` never matches. Match `/profile/:user` instead — the param captures the whole segment, sigil included (`params.user === '@bob'`) — and note it _also_ matches `/profile/bob`, silently serving the page at two URLs unless you guard:
+
+```ts
+// file (Mochi): the SvelteKit route profile/@[user]
+import Profile from './Profile.svelte';
+
+'/profile/:user': Mochi.page(Profile, {
+  serverProps: (_req, params) => {
+    if (!params.user.startsWith('@')) error(404); // /profile/bob must not alias /profile/@bob
+    return { username: params.user.slice(1) };
+  },
+}),
 ```
 
 <Callout type="tip">
 
-Register the most specific patterns first — Bun matches in declaration order, not by file-name sort.
+Register the most specific patterns first. Bun matches in declaration order.
 
 </Callout>
 
 ### Layouts
 
-SvelteKit's `+layout.svelte` / `+layout.server.ts` have no Mochi equivalent. Compose Svelte components yourself — each page imports the shell it needs, and shared `serverProps` resolvers can call a common helper.
+SvelteKit's `+layout.svelte` / `+layout.server.ts` have no Mochi equivalent. In SvelteKit, layouts persist across navigations: the client-side router keeps the layout component mounted and only swaps the page slot. That also lets `+layout.server.ts` skip refetching data that is still valid. Mochi has no client-side router, so every navigation is a full page load. There is no component tree to persist and no data to revalidate selectively.
 
-```ts
-// file (SvelteKit): src/routes/+layout.server.ts
-export async function load() {
-  return { user: await loadCurrentUser() };
-}
-```
+Instead, create a wrapper component that accepts `children`, then import it from each page.
 
 ```svelte
 <!-- file (SvelteKit): src/routes/+layout.svelte -->
@@ -92,6 +111,48 @@ export async function load() {
 {@render children()}
 ```
 
+```svelte
+<!-- file (Mochi): src/lib/Layout.svelte -->
+<script>
+  let { user, children } = $props();
+</script>
+
+<nav>Hi {user.name}</nav>
+{@render children()}
+```
+
+There is nothing special about the layout — it is a plain component. SvelteKit applies it for you; in Mochi you import it into the page and wrap the markup yourself:
+
+```svelte
+<!-- file (Mochi): src/Home.svelte -->
+<script>
+  import Layout from './lib/Layout.svelte';
+  let { user, posts } = $props();
+</script>
+
+<Layout {user}>
+  <h1>Posts</h1>
+  {#each posts as post}
+    <a href="/posts/{post.slug}">{post.title}</a>
+  {/each}
+</Layout>
+```
+
+<Callout type="warning">
+
+Hydrated islands cannot take `children` — it is a [compile error](/docs/selective-hydration/#no-children-on-hydrate-islands). So never put `mochi:hydrate*` on a layout wrapper; hydrate the interactive components inside it instead.
+
+</Callout>
+
+Share the data that SvelteKit's `+layout.server.ts` would have loaded through a common helper, then spread the result into each route's `serverProps`:
+
+```ts
+// file (SvelteKit): src/routes/+layout.server.ts
+export async function load() {
+  return { user: await loadCurrentUser() };
+}
+```
+
 ```ts
 // file (Mochi): src/lib/baseProps.ts
 export async function baseProps() {
@@ -100,21 +161,29 @@ export async function baseProps() {
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
+// file (Mochi): src/index.ts
 import { Mochi } from 'mochi-framework';
-import Home from './Home.svelte';
 import { baseProps } from './lib/baseProps';
+import Home from './Home.svelte';
 
-export const routes = {
-  '/': Mochi.page(Home, {
-    serverProps: async () => ({ ...(await baseProps()), posts: await loadPosts() }),
-  }),
-};
+await Mochi.serve({
+  routes: {
+    '/': Mochi.page(Home, {
+      serverProps: async () => ({ ...(await baseProps()), posts: await loadPosts() }),
+    }),
+  },
+});
 ```
+
+<Callout type="tip">
+
+Every page that shares a shell imports the layout component explicitly. There is no automatic nesting. This is more verbose than SvelteKit, but it makes the component tree visible at each call site.
+
+</Callout>
 
 ### Load functions
 
-SvelteKit's `load` export becomes `serverProps` on your `Mochi.page` call. It's either a plain object or a `(req, params) => props` resolver (sync or async); the result is passed to the component as `$props`.
+SvelteKit's `load` becomes `serverProps` on your `Mochi.page` call. It is a plain object or a `(req, params) => props` resolver (sync or async). The result reaches the component as `$props`.
 
 ```ts
 // file (SvelteKit): src/routes/posts/[slug]/+page.server.ts
@@ -124,16 +193,21 @@ export async function load({ params }) {
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
+// file (Mochi): src/index.ts
+import { Mochi } from 'mochi-framework';
 import Post from './Post.svelte';
 
-'/posts/:slug': Mochi.page(Post, {
-  serverProps: async (_req, params) => ({ post: await loadPost(params.slug) }),
-}),
+await Mochi.serve({
+  routes: {
+    '/posts/:slug': Mochi.page(Post, {
+      serverProps: async (_req, params) => ({ post: await loadPost(params.slug) }),
+    }),
+  },
+});
 ```
 
 ```svelte
-<!-- file: src/Post.svelte -->
+<!-- file (Mochi): src/Post.svelte -->
 <script>
   let { post } = $props();
 </script>
@@ -141,13 +215,22 @@ import Post from './Post.svelte';
 <h1>{post.title}</h1>
 ```
 
-The page component passed to Mochi.page() renders on the server, so you can also call data helpers directly inside the component instead of threading every value through props. Client-side interactivity is opt-in per child component via `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, or `mochi:defer:visible`.
+The `Mochi.page()` entry component renders on the server, so you can also call data helpers directly inside the component instead of threading every value through props. Client-side interactivity is opt-in per child component with `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, or `mochi:defer:visible`.
 
-You don't need to thread `params` through `serverProps`; instead, you can call `getRequestContext().params` directly anywhere on the server.
+You can read `getRequestContext().params` anywhere on the server instead of threading `params` through `serverProps`.
+
+A guard redirect inside `load` ports directly: return `redirect(status, location)` from `serverProps` and the page render is skipped (see [Redirecting from serverProps](/docs/defining-routes/#redirecting-from-serverprops); requires mochi-framework 0.10.0).
+
+```ts
+serverProps: (req) => {
+  if (!currentUser(req)) return redirect(303, '/login');
+  return { settings: loadSettings() };
+},
+```
 
 ### Form actions
 
-SvelteKit's `actions` export becomes the `actions` field on `Mochi.page`. The helpers are named the same: `fail`, `redirect`, `success`, imported from `mochi-framework`. POST submissions match an `?/<name>` query (or `default` when absent), and the action's return value populates a `form` prop on re-render. The action callback receives `{ request, url, server, locals, kind, method, formData, actionName, cookies, params }`.
+SvelteKit's `actions` export becomes the `actions` field on `Mochi.page`. The helpers `fail`, `redirect`, and `success` import from `mochi-framework`. A POST matches an `?/<name>` query (or `default` when absent). The action's return value populates a `form` prop on re-render. The action callback receives `{ request, url, server, locals, kind, method, formData, actionName, cookies, params }`.
 
 ```ts
 // file (SvelteKit): src/routes/login/+page.server.ts
@@ -165,43 +248,51 @@ export const actions = {
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
+// file (Mochi): src/index.ts
 import { Mochi, fail, success, redirect } from 'mochi-framework';
 import Login from './Login.svelte';
 
-export const routes = {
-  '/login': Mochi.page(Login, {
-    actions: {
-      default: ({ formData, cookies }) => {
-        const username = String(formData.get('username') ?? '');
-        if (!username) return fail(400, { error: 'Username required' });
-        cookies.set('user', username, { httpOnly: true, path: '/' });
-        return success({ username });
+await Mochi.serve({
+  routes: {
+    '/login': Mochi.page(Login, {
+      actions: {
+        default: ({ formData, cookies }) => {
+          const username = String(formData.get('username') ?? '');
+          if (!username) return fail(400, { error: 'Username required' });
+          cookies.set('user', username, { httpOnly: true, path: '/' });
+          return success({ username });
+        },
+        logout: () => redirect(303, '/'),
       },
-      logout: () => redirect(303, '/'),
-    },
-  }),
-};
+    }),
+  },
+});
 ```
 
 ```svelte
-<!-- file: src/Login.svelte -->
+<!-- file (Mochi): src/Login.svelte -->
 <script>
   let { form } = $props();
 </script>
 
-{#if form?.error}<p>{form.error}</p>{/if}
+{#if form?.data?.error}<p>{form.data.error}</p>{/if}
 ```
+
+<Callout type="warning">
+
+**`form.data`, not `form`.** SvelteKit spreads the `fail()` payload onto the `form` prop itself; Mochi nests it — `form = { ok, action, status?, data }`. Every `form?.error` read in ported code must become `form?.data?.error`, or the value is silently `undefined`.
+
+</Callout>
 
 <Callout type="tip">
 
-When `actions` is declared, leave `form` reserved for the action result — don't return it from `serverProps`. See [Defining routes](/docs/defining-routes/).
+When `actions` is declared, `form` is reserved for the action result. Do not return `form` from `serverProps`. See [Defining routes](/docs/defining-routes/).
 
 </Callout>
 
 ### `use:enhance`
 
-SvelteKit's `use:enhance` action becomes Mochi's `enhance` attachment from `mochi-framework`. The wire format and `submit` callback semantics match closely (`MochiEnhanceResult` mirrors SvelteKit's `ActionResult`).
+SvelteKit's `use:enhance` becomes Mochi's `enhance` attachment from `mochi-framework`. The wire format and `submit` callback semantics match closely — `MochiEnhanceResult` mirrors SvelteKit's `ActionResult`.
 
 ```svelte
 <!-- file (SvelteKit): src/routes/login/+page.svelte -->
@@ -229,13 +320,13 @@ SvelteKit's `use:enhance` action becomes Mochi's `enhance` attachment from `moch
 
 <Callout type="tip">
 
-Mark the surrounding component with `mochi:hydrate*` so the attachment can attach in the browser — attachments can only run when Svelte hydrates a component. See [Progressively enhancing forms with enhance](/docs/progressively-enhancing-forms-with-enhance/).
+Mark the surrounding component with `mochi:hydrate*` so the attachment runs in the browser. Attachments run only when Svelte hydrates a component. See [Progressive enhancement](/docs/progressively-enhancing-forms-with-enhance/).
 
 </Callout>
 
 ### API routes (`+server.ts`)
 
-SvelteKit's `+server.ts` with `GET` / `POST` exports becomes `Mochi.api(handler)` — one handler per route, branch on `method` inside. The handler receives `{ request, url, server, locals, kind, method, params, cookies }`.
+SvelteKit's `+server.ts` with `GET` / `POST` exports becomes `Mochi.api(handler)`. One handler per route. Branch on `method` inside. The handler receives `{ request, url, server, locals, kind, method, params, cookies }`.
 
 ```ts
 // file (SvelteKit): src/routes/api/users/[id]/+server.ts
@@ -249,27 +340,29 @@ export async function POST({ params, request }) {
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
+// file (Mochi): src/index.ts
 import { Mochi, error } from 'mochi-framework';
 
-export const routes = {
-  '/api/users/:id': Mochi.api(async ({ method, request, params }) => {
-    if (method === 'GET') return Response.json(await loadUser(params.id));
-    if (method === 'POST') return Response.json(await createUser(params.id, await request.json()));
-    error(405, 'Method not allowed');
-  }),
-};
+await Mochi.serve({
+  routes: {
+    '/api/users/:id': Mochi.api(async ({ method, request, params }) => {
+      if (method === 'GET') return Response.json(await loadUser(params.id));
+      if (method === 'POST') return Response.json(await createUser(params.id, await request.json()));
+      error(405, 'Method not allowed');
+    }),
+  },
+});
 ```
 
 <Callout type="tip">
 
-Use `Mochi.page` for normal HTML routes — `Mochi.api` never goes through the error page or `handleError`. See [API routes](/docs/api-routes/).
+Use `Mochi.page` for normal HTML routes. `Mochi.api` never goes through the error page or `handleError`. See [API routes](/docs/api-routes/).
 
 </Callout>
 
 ### `error()`, `redirect()`, `fail()`
 
-Same names, imported from `mochi-framework`. `error(status, message)` throws `MochiHttpError`; `redirect(status, location)` returns from an action; `fail(status, data)` and `success(data?)` round-trip via the `form` prop or the `enhance` envelope.
+Same names, imported from `mochi-framework`. `error(status, message?)` throws `MochiHttpError`, defaulting the message to the canonical status text when omitted. `redirect(status, location)` returns from an action or a `serverProps` resolver. `fail(status, data)` and `success(data?)` round-trip through the `form` prop (under `form.data`) or the `enhance` envelope.
 
 ```ts
 // SvelteKit
@@ -283,13 +376,13 @@ import { error, redirect, fail, success } from 'mochi-framework';
 
 <Callout type="tip">
 
-Call `error(status, message)` to signal an HTTP status — a bare `throw new Error()` becomes a 500.
+Call `error(status, message)` to signal an HTTP status. A bare `throw new Error()` becomes a 500.
 
 </Callout>
 
 ### Error pages (`+error.svelte`)
 
-SvelteKit's `+error.svelte` becomes the `errorPage` option on `Mochi.serve()` — a single component for the whole app (defaults to `DefaultError.svelte`). The component receives a single `error: MochiErrorProps` prop with `status`, `message`, and `stack` (dev only).
+SvelteKit's `+error.svelte` becomes the `errorPage` option on `Mochi.serve()` — one component for the whole app, defaulting to `DefaultError.svelte`. It receives one `error: MochiErrorProps` prop with `status`, `message`, and `stack` (dev only).
 
 ```svelte
 <!-- file (SvelteKit): src/routes/+error.svelte -->
@@ -302,9 +395,6 @@ SvelteKit's `+error.svelte` becomes the `errorPage` option on `Mochi.serve()` �
 
 ```ts
 // file (Mochi): src/index.ts
-import { Mochi } from 'mochi-framework';
-import { routes } from './routes';
-
 await Mochi.serve({ errorPage: './src/Error.svelte', routes });
 ```
 
@@ -318,11 +408,11 @@ await Mochi.serve({ errorPage: './src/Error.svelte', routes });
 <h1>{error.status}</h1><p>{error.message}</p>
 ```
 
-See also [Error handling](/docs/error-handling/).
+See [Error handling](/docs/error-handling/).
 
 ### Hooks (`handle`)
 
-SvelteKit's `hooks.server.ts` `handle` export becomes the `handle` option on `Mochi.serve()`. The shape matches: `async ({ event, resolve }) => Response`, `event` carries `{ request, url, server, locals, kind }`, and `sequence(...handles)` composes them. Unlike SvelteKit, `event` itself does not carry `cookies`, `params`, or `getClientAddress` — read those from `getRequestContext()` inside the handler.
+SvelteKit's `hooks.server.ts` `handle` export becomes the `handle` option on `Mochi.serve()`. The shape matches: `async ({ event, resolve }) => Response`. `event` carries `{ request, url, server, locals, kind }`. Compose handles with `sequence(...)`. Unlike SvelteKit, `event` itself does not carry `cookies`, `params`, or `getClientAddress` — read those from `getRequestContext()` inside the handler.
 
 ```ts
 // file (SvelteKit): src/hooks.server.ts
@@ -353,15 +443,9 @@ import { auth } from './handle';
 await Mochi.serve({ handle: sequence(auth), routes });
 ```
 
-<Callout type="tip">
-
-Wrap multiple handles in `sequence()` — `handle` takes a single function. See [Middleware (hooks)](/docs/middleware/).
-
-</Callout>
-
 ### `resolve` options
 
-SvelteKit's `resolve(event, { transformPageChunk, filterSerializedResponseHeaders })` maps to Mochi's `resolve(event, { transformPage, filterResponseHeaders })`. `transformPage({ html, done })` rewrites the HTML body; `filterResponseHeaders(name, value)` keeps or drops a header.
+SvelteKit's `resolve(event, { transformPageChunk, filterSerializedResponseHeaders })` maps to Mochi's `resolve(event, { transformPage, filterResponseHeaders })`. `transformPage({ html, done })` rewrites the HTML body. `filterResponseHeaders(name, value)` keeps or drops a header.
 
 ```ts
 // file (SvelteKit): src/hooks.server.ts
@@ -385,7 +469,7 @@ export const stripServer: Handle = ({ event, resolve }) =>
 
 ### `handleError`
 
-Same name. Configure as a `Mochi.serve()` option; the hook receives `{ error, event, status, message }` and may return `{ status, message }`, a `Response`, or `void`.
+Same name. Configure it as a `Mochi.serve()` option. The hook receives `{ error, event, status, message }` and may return `{ status, message }`, a `Response`, or `void`.
 
 ```ts
 // file (SvelteKit): src/hooks.server.ts
@@ -410,13 +494,13 @@ await Mochi.serve({ handleError, routes });
 
 <Callout type="tip">
 
-`handleError` is never called for `Mochi.api` failures — return an error envelope inside the handler instead.
+`handleError` never runs for `Mochi.api` failures. Return an error envelope inside the handler instead.
 
 </Callout>
 
 ### `event.locals`
 
-Same surface. Set `event.locals.x` from middleware; read it from any server-side code via `getRequestContext().locals`.
+Same surface. Set `event.locals.x` from middleware. Read it from any server-side code with `getRequestContext().locals`.
 
 ```ts
 // file (SvelteKit): src/routes/profile/+page.server.ts
@@ -431,7 +515,7 @@ const { locals } = getRequestContext();
 
 ### Observability
 
-SvelteKit's experimental OpenTelemetry tracing has no direct equivalent. Instead, Mochi emits structured lifecycle events through `mochiEvents` — `request`, `ws:*`, `sse:*`, `cache:*`, `action:*`, `server:start`, `server:stop`, and the compile-time events. Subscribe to hook tracing, metrics, or a custom logger in front of them.
+SvelteKit's experimental OpenTelemetry tracing has no direct equivalent. Mochi emits structured lifecycle events on `mochiEvents` — `request`, `ws:*`, `sse:*`, `cache:*`, `action:*`, `server:start`, `server:stop`, and compile-time events. Subscribe to feed tracing, metrics, or a custom logger.
 
 ```js
 // file (SvelteKit): svelte.config.js
@@ -475,7 +559,7 @@ Set `proxy.xffDepth` so `getClientAddress()` picks the correct hop, instead of p
 
 ### CSRF protection
 
-Like SvelteKit, Mochi rejects cross-origin form POSTs by default (Origin header check on `POST`/`PUT`/`PATCH`/`DELETE` when the body is a form content type). Configure via the `csrf` option on `Mochi.serve()` and the `csrf:trustedOrigins`, `csrf:protectedMethods`, `csrf:formContentTypes`, `csrf:check` filters.
+Like SvelteKit, Mochi rejects cross-origin form POSTs by default. It checks the Origin header on `POST` / `PUT` / `PATCH` / `DELETE` when the body is a form content type. Configure it with the `csrf` option on `Mochi.serve()` and the `csrf:trustedOrigins`, `csrf:protectedMethods`, `csrf:formContentTypes`, and `csrf:check` filters.
 
 ```js
 // file (SvelteKit): svelte.config.js
@@ -494,13 +578,13 @@ await Mochi.serve({
 
 <Callout type="tip">
 
-Pin trusted origins via `csrf.trustedOrigins` or the `csrf:trustedOrigins` filter instead of disabling CSRF on a state-mutating endpoint.
+Pin trusted origins through `csrf.trustedOrigins` instead of disabling CSRF on a state-mutating endpoint.
 
 </Callout>
 
 ### Cookies
 
-`event.cookies` becomes `getRequestContext().cookies` (also surfaced on the form-action callback as `event.cookies`). Same `get` / `set` / `delete` API and `CookieSerializeOptions`. App-wide defaults live on the `cookie:defaults` filter rather than per-call.
+`event.cookies` becomes `getRequestContext().cookies` (also on the form-action callback as `event.cookies`). Same `get` / `set` / `delete` API and `CookieSerializeOptions`. App-wide defaults live on the `cookie:defaults` filter rather than per call.
 
 ```ts
 // file (SvelteKit): src/routes/login/+page.server.ts
@@ -521,7 +605,7 @@ cookies.set('session', token, { httpOnly: true, sameSite: 'Lax', path: '/' });
 
 ### `$app/state` and the `page` store
 
-There is no reactive `page` store. Server-side, `getRequestContext()` returns `{ requestId, request, url, params, locals, cookies, islandProps, getClientAddress, form?, debugBarData? }`. Client-side, hydrated islands receive `islandId` and (where applicable) `isHydratable` as implicit props; if you need the current URL after hydration, read `location` directly.
+There is no reactive `page` store. Import `url`, `params`, `cookies`, and `locals` directly from `mochi-framework`. `url` is isomorphic — it reads the request context on the server and `window.location` on the client. `params` and `locals` are server-only.
 
 ```svelte
 <!-- file (SvelteKit): src/routes/+page.svelte -->
@@ -535,8 +619,7 @@ There is no reactive `page` store. Server-side, `getRequestContext()` returns `{
 ```svelte
 <!-- file (Mochi): src/Some.svelte -->
 <script>
-  import { getRequestContext } from 'mochi-framework';
-  const { url, params } = getRequestContext();
+  import { url, params } from 'mochi-framework';
 </script>
 
 <p>{url.pathname} — {params.slug}</p>
@@ -544,13 +627,13 @@ There is no reactive `page` store. Server-side, `getRequestContext()` returns `{
 
 <Callout type="tip">
 
-Call `getRequestContext()` on the server and use `location` / `window` on the client — there is no `$app/state` or `$app/stores` like in SvelteKit.
+`url` works on server and client. Guard `params` and `locals` with `isServer`. See [Request context](/docs/request-context/).
 
 </Callout>
 
 ### `$app/navigation` (`goto`, `invalidate`, `preloadData`)
 
-No equivalent. Mochi has no client-side router, so there is nothing to `goto` into and nothing to `invalidate` — every navigation is a full HTML round-trip. For form submissions, use `enhance()`; for anything else, set `window.location.href` or call `history.pushState` from a hydrated island.
+No equivalent. Mochi has no client-side router, so there is nothing to `goto` into and nothing to `invalidate`. Every navigation is a full HTML round-trip. For form submissions, use `enhance()`. For anything else, set `window.location.href` or call `history.pushState` from a hydrated island.
 
 ```svelte
 <!-- file (SvelteKit): src/routes/+page.svelte -->
@@ -569,13 +652,13 @@ No equivalent. Mochi has no client-side router, so there is nothing to `goto` in
 
 <Callout type="tip">
 
-Listen for `beforeunload` or `popstate` directly — there is no `beforeNavigate` / `afterNavigate` / `onNavigate`.
+Listen for `beforeunload` or `popstate` directly. There is no `beforeNavigate` / `afterNavigate` / `onNavigate`.
 
 </Callout>
 
 ### Link options (`data-sveltekit-preload-*`)
 
-No equivalent. There is no client router to preload code or data into — the browser handles `<a>` clicks natively. `data-sveltekit-reload`, `data-sveltekit-replacestate`, `data-sveltekit-keepfocus`, and `data-sveltekit-noscroll` likewise have no Mochi attribute.
+Planned, but not yet available. Mochi has no client router today, so there is nothing to preload code or data into. The browser handles `<a>` clicks natively, and link preloading is on the roadmap. `data-sveltekit-reload`, `data-sveltekit-replacestate`, `data-sveltekit-keepfocus`, and `data-sveltekit-noscroll` likewise have no Mochi attribute.
 
 ```html
 <!-- SvelteKit -->
@@ -591,7 +674,7 @@ No equivalent. There is no client router to preload code or data into — the br
 
 ### Snapshots
 
-No equivalent. SvelteKit's `snapshot` exists because its client router reuses page components across navigation; Mochi does full-page reloads, so the browser's bfcache restores native `<input>` / `<textarea>` / scroll state on `Back` / `Forward` when the page is bfcache-eligible (no `Cache-Control: no-store`, no unfinished requests). For component state, or anything that must survive forward navigation or a hard reload, write to `sessionStorage` from a hydrated island, or use a cookie / query param.
+No equivalent. SvelteKit's `snapshot` exists because its client router reuses page components across navigation. Mochi does full page reloads, so the browser's bfcache restores native `<input>` / `<textarea>` / scroll state on `Back` / `Forward` when the page is bfcache-eligible (no `Cache-Control: no-store`, no unfinished requests). For component state, or anything that must survive forward navigation or a hard reload, write to `sessionStorage` from a hydrated island, or use a cookie or query parameter.
 
 ```svelte
 <!-- file (SvelteKit): src/routes/comment/+page.svelte -->
@@ -618,7 +701,7 @@ No equivalent. SvelteKit's `snapshot` exists because its client router reuses pa
 
 ### Shallow routing (`pushState` / `replaceState`)
 
-No framework helper. Call `history.pushState` / `history.replaceState` directly from a hydrated island; there is no `page.state` to read back, so store the value alongside the URL or in component state.
+No framework helper. Call `history.pushState` / `history.replaceState` directly from a hydrated island. There is no `page.state` to read back, so store the value alongside the URL or in component state.
 
 ```svelte
 <!-- file (SvelteKit): src/routes/photos/+page.svelte -->
@@ -638,7 +721,7 @@ No framework helper. Call `history.pushState` / `history.replaceState` directly 
 
 ### Service workers
 
-No equivalent. There is no `src/service-worker.ts` convention and no `$service-worker` virtual module. Register one yourself from a hydrated island if you need offline support.
+Planned, but not yet available. There is no `src/service-worker.ts` convention and no `$service-worker` virtual module. Built-in service worker integration is on the roadmap. Register one yourself from a hydrated island if you need offline support today.
 
 ```ts
 // file (SvelteKit): src/service-worker.ts
@@ -655,9 +738,32 @@ if ('serviceWorker' in navigator) {
 // then ship /public/sw.js yourself
 ```
 
+### Image optimization (`@sveltejs/enhanced-img`)
+
+Supported, with a different split of the work. SvelteKit optimizes at build time through `@sveltejs/enhanced-img`, with runtime transformations available at extra cost through a CDN. Mochi imports local images the same Vite-style way — the import returns `{ src, width, height, format }` and copies the file to a content-hashed URL. Declare the transforms once as [named sizes](/docs/images/) on `Mochi.serve()`. They run on demand in `Bun.Image` behind an encrypted URL, cached to disk with stale-while-revalidate. The same `<Image>` works for remote sources, and `placeholder` adds a ThumbHash blur-up with no client JavaScript.
+
+```svelte
+<!-- file (SvelteKit): src/routes/+page.svelte -->
+<script>
+  import hero from './hero.png?enhanced';
+</script>
+
+<enhanced:img src={hero} alt="Hero" />
+```
+
+```svelte
+<!-- file (Mochi): src/Home.svelte — `hero` size declared in Mochi.serve({ image: { sizes } }) -->
+<script>
+  import { Image } from 'mochi-framework/image';
+  import hero from './hero.png';
+</script>
+
+<Image src={hero} size="hero" alt="Hero" />
+```
+
 ### Remote functions
 
-No equivalent. SvelteKit's type-safe `query` / `command` RPC has no built-in counterpart. The closest patterns are `Mochi.api(handler)` + hand-rolled `fetch()` for arbitrary calls, or `Mochi.page` actions + `enhance()` for form-driven mutations.
+No equivalent. SvelteKit's type-safe `query` / `command` RPC has no built-in counterpart. Use `Mochi.api(handler)` with a hand-rolled `fetch()`, or `Mochi.page` actions with `enhance()` for form-driven mutations.
 
 ```ts
 // file (SvelteKit): src/routes/likes.remote.ts
@@ -670,18 +776,24 @@ export const addLike = command(v.string(), async (id) => {
 ```
 
 ```ts
-// file (Mochi): src/routes.ts
-'/api/like/:id': Mochi.api(async ({ method, params }) => {
-  if (method !== 'POST') error(405, 'POST only');
-  await db.sql`UPDATE item SET likes = likes + 1 WHERE id = ${params.id}`;
-  return Response.json({ ok: true });
-}),
-// then on the client: await fetch(`/api/like/${id}`, { method: 'POST' })
+// file (Mochi): src/index.ts
+import { Mochi, error } from 'mochi-framework';
+
+await Mochi.serve({
+  routes: {
+    '/api/like/:id': Mochi.api(async ({ method, params }) => {
+      if (method !== 'POST') error(405, 'POST only');
+      await db.sql`UPDATE item SET likes = likes + 1 WHERE id = ${params.id}`;
+      return Response.json({ ok: true });
+    }),
+  },
+});
+// on the client: await fetch(`/api/like/${id}`, { method: 'POST' })
 ```
 
 ### `$env/static/*` and `$env/dynamic/*`
 
-None of these virtual modules exist. Bun auto-loads `.env`; read everything via `process.env.FOO`. The `mochi` virtual module (`isServer`, `isBrowser`, `isDev`) covers the SSR-only / browser-only branching that `$env/static/private` solved by import-time errors.
+None of these virtual modules exist. Bun auto-loads `.env`, so read everything through `process.env.FOO`. The `mochi` virtual module (`isServer`, `isBrowser`, `isDev`) covers the SSR-only / browser-only branching that `$env/static/private` solved with import-time errors.
 
 ```ts
 // SvelteKit
@@ -697,13 +809,13 @@ const publicApiUrl = process.env.PUBLIC_API_URL;
 
 <Callout type="tip">
 
-Rely on Bun's built-in `.env` loading — no need for `dotenv`. If you need to beam an environment variable to the client, pass it as a prop to a hydrated island.
+Bun loads `.env` for you. To send an environment variable to the client, pass it as a prop to a hydrated island.
 
 </Callout>
 
 ### `$app/paths` (`asset`, `base`, `resolve`)
 
-No equivalent. Mochi does not support sub-path deployments via configuration — write your app links as absolute paths (`/about`). The `assetPrefix` option on `Mochi.serve()` only rewrites the URL prefix for framework-internal bundles (default `/_mochi`), not for your own routes or static files.
+No equivalent. Mochi does not support sub-path deployments through configuration. Write your app links as absolute paths (`/about`). The `assetPrefix` option on `Mochi.serve()` rewrites the URL prefix for framework-internal bundles only (default `/_mochi`), not for your own routes or static files.
 
 ```svelte
 <!-- SvelteKit -->
@@ -723,7 +835,7 @@ No equivalent. Mochi does not support sub-path deployments via configuration —
 
 ### Server-only modules
 
-SvelteKit's `.server.ts` suffix carries over — Mochi uses the same convention. There is no `$lib/server` directory equivalent; the suffix is the entire mechanism, applied per-file anywhere in your source tree. Every named and default export of a `*.server.ts` file is replaced with a throwing `Proxy` on the client, so the real module body is only compiled for SSR.
+SvelteKit's `.server.ts` suffix carries over — Mochi uses the same convention. There is no `$lib/server` directory equivalent. The suffix is the entire mechanism, applied per file anywhere in your source tree. Every named and default export of a `*.server.ts` file is replaced with a throwing `Proxy` on the client, so the real module body compiles for SSR only.
 
 ```ts
 // file (SvelteKit): src/lib/server/db.ts
@@ -771,9 +883,9 @@ No virtual `$lib` alias. Add the path to `tsconfig.json` if you want the same er
 
 ### Page options (`ssr`, `csr`, `prerender`)
 
-Not configurable per page. Mochi always renders on the server; client-side JavaScript is opt-in per component via `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, or `mochi:defer:visible`. There is no prerender / SSG mode — every request renders fresh.
+Not configurable per page. Mochi always renders on the server. Client-side JavaScript is opt-in per component with `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, or `mochi:defer:visible`. There is no prerender / SSG mode — every request renders fresh.
 
-Trailing-slash policy is global, not per-page: set `trailingSlash: 'never' | 'always'` on `Mochi.serve()` and Mochi registers both forms and redirects to the canonical one. See [Trailing slash](/docs/trailing-slash/).
+Trailing-slash policy is global, not per page. Set `trailingSlash: 'never' | 'always'` on `Mochi.serve()` and Mochi registers both forms of every page route, then redirects to the canonical one. Only page routes follow it — `Mochi.api()`, `Mochi.sse()`, `Mochi.ws()` and `Mochi.file()` match the pattern you declared. See [Trailing slash](/docs/trailing-slash/).
 
 ```ts
 // file (SvelteKit): src/routes/about/+page.ts
@@ -790,35 +902,13 @@ await Mochi.serve({ trailingSlash: 'always', routes });
 
 <Callout type="tip">
 
-Control hydration with the `mochi:hydrate*` directives at each call site — there is no per-page `ssr` / `csr` / `prerender` export.
+Control hydration with the `mochi:hydrate*` directives at each call site. There is no per-page `ssr` / `csr` / `prerender` export.
 
 </Callout>
 
 ### Streaming / deferred data
 
-SvelteKit's pattern of returning promises from `load` to stream after the shell is replaced by `mochi:defer` server islands. The deferred component renders out-of-band against `${assetPrefix}/island/:componentName` (default `/_mochi/island/:componentName`) and swaps in once ready; its fallback children stay visible until then.
-
-```ts
-// file (SvelteKit): src/routes/+page.server.ts
-export const load = () => ({
-  streamed: { recommendations: slowFetchRecommendations() },
-});
-```
-
-```svelte
-<!-- file (SvelteKit): src/routes/+page.svelte -->
-<script>
-  let { data } = $props();
-</script>
-
-{#await data.streamed.recommendations}
-  <p>Loading…</p>
-{:then recs}
-  <ul>
-    {#each recs as r}<li>{r.title}</li>{/each}
-  </ul>
-{/await}
-```
+Stream slow work with `mochi:defer` server islands. The deferred component renders out-of-band and swaps in once ready. Its fallback children stay visible until then.
 
 ```svelte
 <!-- file (Mochi): src/Home.svelte -->
@@ -831,18 +921,11 @@ See [Server islands](/docs/server-islands/).
 
 ### Adapters
 
-There is no adapter abstraction in Mochi. Instead, Mochi uses the bun standard `Bun.serve()` router - Bun is the only target. Containerise the Bun runtime or use a supported serverless platform to deploy.
+Mochi targets Bun through `Bun.serve()`. Containerize the Bun runtime or deploy to a supported serverless platform. See [Deployment](/docs/deployment-options/).
 
 ### `vite.config.ts`
 
-Mochi does not use Vite. It compiles `.svelte` via Bun's own bundler using Svelte 5's compiler internally. Pass preprocessors through the `compile:preprocessors` filter; tweak the compiler via a `svelte.config.js` (Mochi auto-loads `./svelte.config.js`, override with the `svelteConfigPath` option). See [Svelte config](/docs/svelte-config/).
-
-```ts
-// file (SvelteKit): vite.config.ts
-import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
-export default defineConfig({ plugins: [sveltekit()] });
-```
+Mochi uses Bun's bundler and Svelte 5's compiler. Pass preprocessors through the `compile:preprocessors` filter. Tweak the compiler in `svelte.config.js`, which loads automatically (override it with the `svelteConfigPath` option). See [Svelte config](/docs/svelte-config/).
 
 ```js
 // file (Mochi): svelte.config.js
@@ -851,23 +934,22 @@ export default {
 };
 ```
 
-```ts
-// file (Mochi): src/index.ts
-await Mochi.serve({
-  filters: { 'compile:preprocessors': () => [vitePreprocess()] },
-  routes,
-});
-```
-
 ### See also
 
 - [Defining routes](/docs/defining-routes/) — the four `Mochi.*` route helpers.
 - [Middleware (hooks)](/docs/middleware/) — `Handle`, `sequence`, `resolve` options.
 - [Error handling](/docs/error-handling/) — `errorPage`, `handleError`, API error envelope.
-- [Error boundaries](/docs/error-boundaries/) — auto-wrapped islands and `<mochi-island-failure>`.
 - [Server islands](/docs/server-islands/) — `mochi:defer` and deferred rendering.
-- [Hydratable values](/docs/hydratable/) — `hydratable(key, fn)` SSR→client value reuse.
-- [Extensions (hooks & filters)](/docs/extensions/) — `eventHooks` and `filters`.
-- [Events](/docs/events/) — `mochiEvents` lifecycle bus for observability and logging.
-- [Cache](/docs/cache/) — `MochiCache` SWR caching for arbitrary computations.
-- [Trailing slash](/docs/trailing-slash/) — global `trailingSlash` policy on `Mochi.serve()`.
+- [Hydratable values](/docs/hydratable/) — `hydratable(key, fn)`.
+- [Extensions](/docs/extensions/) — `eventHooks` and `filters`.
+- [Events](/docs/events/) — the `mochiEvents` bus.
+- [Cache](/docs/cache/) — `MochiCache` SWR caching.
+- [Trailing slash](/docs/trailing-slash/) — global `trailingSlash` policy.
+
+<SeeItInAction
+demos={[
+{ href: "/demos/server-props/", title: "Server Props", hook: "How server props work — pass fresh per-request data into a page via serverProps on Mochi.page()." },
+{ href: "/demos/login/", title: "Form Actions", hook: "How form actions work — a form rendered twice, as a plain HTML POST and intercepted with {@attach enhance(...)}." },
+{ href: "/demos/api/", title: "API Endpoints", hook: "How API routes work — define JSON endpoints with Mochi.api(), tested live against the running server." },
+]}
+/>

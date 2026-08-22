@@ -1,5 +1,5 @@
 <script lang="ts">
-  let { initialLikes } = $props<{ initialLikes: number }>();
+  let { initialLikes }: { initialLikes: number } = $props();
   let likes = $state(initialLikes);
 </script>
 

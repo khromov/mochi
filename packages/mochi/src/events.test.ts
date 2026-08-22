@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { MochiEmitter } from './events';
+import type { MochiEmitter, MochiCaptchaVerifyEvent } from './events';
 import { hasSubscribers, mochiEvents } from './events';
 
 const globalSlot = () => (globalThis as unknown as Record<string, unknown>).__mochi_events__ as MochiEmitter;
@@ -11,9 +11,19 @@ describe('mochiEvents', () => {
 
   test('re-importing the module returns the same instance', async () => {
     const a = (await import('./events')).mochiEvents;
-    const b = (await import('./events')).mochiEvents;
-    expect(a).toBe(b);
     expect(a).toBe(mochiEvents);
+    expect(a).toBe(globalSlot());
+  });
+
+  test('roundtrip emit/subscribe works for captcha:verify', () => {
+    let received: MochiCaptchaVerifyEvent | null = null;
+    const handler = (e: MochiCaptchaVerifyEvent) => {
+      received = e;
+    };
+    mochiEvents.on('captcha:verify', handler);
+    mochiEvents.emit('captcha:verify', { ok: false, reason: 'replay', bits: 16, ageMs: 4200 });
+    mochiEvents.off('captcha:verify', handler);
+    expect(received as MochiCaptchaVerifyEvent | null).toEqual({ ok: false, reason: 'replay', bits: 16, ageMs: 4200 });
   });
 
   test('roundtrip emit/subscribe works', () => {
@@ -27,6 +37,33 @@ describe('mochiEvents', () => {
     expect(received as { path: string; type: string } | null).toEqual({
       path: '/tmp/a.md',
       type: 'change',
+    });
+  });
+
+  test('recompile:module-churn is part of the event map', () => {
+    let received: unknown = null;
+    const handler = (e: unknown) => {
+      received = e;
+    };
+    mochiEvents.on('recompile:module-churn', handler);
+    mochiEvents.emit('recompile:module-churn', { reloadCount: 10 });
+    mochiEvents.off('recompile:module-churn', handler);
+    expect(received).toEqual({ reloadCount: 10 });
+  });
+
+  test('queue:completed is part of the event map', () => {
+    let received: unknown = null;
+    const handler = (e: unknown) => {
+      received = e;
+    };
+    mochiEvents.on('queue:completed', handler);
+    mochiEvents.emit('queue:completed', { queue: 'emails', jobId: 'j1', attempt: 1, duration: 12 });
+    mochiEvents.off('queue:completed', handler);
+    expect(received).toEqual({
+      queue: 'emails',
+      jobId: 'j1',
+      attempt: 1,
+      duration: 12,
     });
   });
 });
@@ -80,6 +117,32 @@ describe('mochiEvents.setHandler', () => {
     const subscribers = mochiEvents.all.get('file:change') ?? [];
     expect(subscribers.length).toBe(1);
   });
+
+  test('removeHandler unregisters the named handler', () => {
+    const calls: string[] = [];
+    mochiEvents.setHandler('gone', 'file:change', () => calls.push('gone'));
+    mochiEvents.setHandler('kept', 'file:change', () => calls.push('kept'));
+
+    mochiEvents.removeHandler('gone');
+    mochiEvents.emit('file:change', { path: '/tmp/a.md', type: 'change' });
+
+    expect(calls).toEqual(['kept']);
+    expect(mochiEvents.all.get('file:change')?.length).toBe(1);
+  });
+
+  test('removeHandler frees the name for reuse and is a no-op when unknown', () => {
+    const calls: string[] = [];
+    expect(() => mochiEvents.removeHandler('never-registered')).not.toThrow();
+
+    mochiEvents.setHandler('reused', 'file:change', () => calls.push('first'));
+    mochiEvents.removeHandler('reused');
+    // The name table entry is gone, so this registers cleanly rather than
+    // re-removing a stale handler.
+    mochiEvents.setHandler('reused', 'file:change', () => calls.push('second'));
+    mochiEvents.emit('file:change', { path: '/tmp/a.md', type: 'change' });
+
+    expect(calls).toEqual(['second']);
+  });
 });
 
 describe('hasSubscribers', () => {
@@ -119,13 +182,13 @@ describe('new event payloads round-trip', () => {
       port: 3333,
       hostname: 'localhost',
       development: true,
-      routes: { page: 2, api: 1, ws: 0, sse: 0 },
+      routes: { page: 2, api: 1, ws: 0, sse: 0, file: 0 },
     });
     expect(received).toEqual({
       port: 3333,
       hostname: 'localhost',
       development: true,
-      routes: { page: 2, api: 1, ws: 0, sse: 0 },
+      routes: { page: 2, api: 1, ws: 0, sse: 0, file: 0 },
     });
   });
 
@@ -208,6 +271,58 @@ describe('new event payloads round-trip', () => {
       durationMs: 12,
     });
     expect(seen).toEqual(['start:/p/Foo.svelte', 'done:/p/Foo.svelte']);
+  });
+
+  test('image:store', () => {
+    let received: unknown;
+    mochiEvents.on('image:store', (e) => {
+      received = e;
+    });
+    mochiEvents.emit('image:store', {
+      kind: 'variant',
+      src: 'https://cdn.example/a.jpg',
+      path: '/cache/hash/v1.webp',
+      id: 'v1',
+      size: 4096,
+      contentType: 'image/webp',
+      width: 200,
+      height: 100,
+      format: 'webp',
+    });
+    expect(received).toEqual({
+      kind: 'variant',
+      src: 'https://cdn.example/a.jpg',
+      path: '/cache/hash/v1.webp',
+      id: 'v1',
+      size: 4096,
+      contentType: 'image/webp',
+      width: 200,
+      height: 100,
+      format: 'webp',
+    });
+  });
+
+  test('image:delete', () => {
+    let received: unknown;
+    mochiEvents.on('image:delete', (e) => {
+      received = e;
+    });
+    mochiEvents.emit('image:delete', {
+      kind: 'original',
+      src: 'https://cdn.example/a.jpg',
+      path: '/cache/hash/original.jpg',
+      id: 'o1',
+      size: 8192,
+      reason: 'evicted',
+    });
+    expect(received).toEqual({
+      kind: 'original',
+      src: 'https://cdn.example/a.jpg',
+      path: '/cache/hash/original.jpg',
+      id: 'o1',
+      size: 8192,
+      reason: 'evicted',
+    });
   });
 
   test('compile:error carries structured logs', () => {
