@@ -35,6 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   tzdata \
   chromium \
   fonts-liberation \
+  fonts-noto-color-emoji \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # chrome-devtools-mcp resolves the default "stable" Chrome channel to
