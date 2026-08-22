@@ -69,20 +69,10 @@ git checkout -b chore/update-deps
 bun update
 ```
 
-**Workspace deps.** Bun 1.4 fixed `bun update --recursive` / `--filter`, which through 1.3.14 reported "no changes" while `bun outdated` still listed everything. Try the one-liner first and confirm against `bun outdated --filter='*'`:
+**Workspace deps.** `bun update --recursive` updates every workspace's `package.json`, not just the root — it rewrites the caret specs in each. Run it, then confirm against `bun outdated --filter='*'`:
 
 ```sh
 bun update --recursive
-```
-
-If it still under-reports, fall back to one `bun update` per workspace directory:
-
-```sh
-for p in cli demos docs minimal mochi mochi-rsvelte mochi-svelte-shaker minimal-rsvelte msgpackr-extract-stub shared site support video-animations; do
-  [ -d "packages/$p" ] || continue
-  echo "=== $p ==="
-  (cd packages/$p && bun update 2>&1 | grep -E '^\^|packages installed')
-done
 ```
 
 **Never use `bun update --latest`.** It rewrites declared specs to the newest version regardless of carve-outs and blows through every exact pin.
