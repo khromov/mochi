@@ -103,6 +103,24 @@ export interface MochiCacheDeleteEvent {
   key: string;
 }
 
+/** Emitted the moment the OS reports low memory, before Mochi drains its caches — subscribe to give other resources
+ * back (idle connections, worker pools). The cache drain's own result rides the separate `cache:pressure`. */
+export interface MochiMemoryPressureEvent {
+  /** `'critical'` means the OS is about to start killing processes; only macOS also reports `'warning'`. */
+  level: 'warning' | 'critical';
+}
+
+/** Emitted when the OS reports low memory and Mochi drains its in-memory caches in response. */
+export interface MochiCachePressureEvent {
+  /** `'critical'` means the OS is about to start killing processes; only macOS also reports `'warning'`. */
+  level: 'warning' | 'critical';
+  /** Entries reclaimed: aged-out ones at `'warning'`, all of them at `'critical'`. */
+  removed: number;
+  /** How many in-memory caches responded. */
+  caches: number;
+  durationMs: number;
+}
+
 export interface MochiCacheSweepEvent {
   /** Expired entries deleted by this sweep. */
   removed: number;
@@ -210,6 +228,20 @@ export interface MochiQueueFailedEvent {
   duration: number;
   /** Message of the error the processor threw. */
   error: string;
+}
+
+/**
+ * Emitted once per cron job when `Mochi.serve({ cron })` registers it. A durable cron run is a queue job named
+ * after the cron, so its run lifecycle surfaces through `queue:active` / `queue:completed` / `queue:failed`.
+ */
+export interface MochiCronScheduledEvent {
+  /** The cron job's name. */
+  job: string;
+  schedule: string;
+  /** IANA zone the schedule is read in; absent when using the system zone. */
+  tz?: string;
+  /** Epoch ms of the next fire; absent when none could be computed. */
+  nextRun?: number;
 }
 
 export interface MochiQueueErrorEvent {
@@ -405,6 +437,8 @@ export type MochiEventMap = {
   'cache:inflight:deferred': MochiCacheInflightDeferredEvent;
   'cache:delete': MochiCacheDeleteEvent;
   'cache:sweep': MochiCacheSweepEvent;
+  'memory:pressure': MochiMemoryPressureEvent;
+  'cache:pressure': MochiCachePressureEvent;
   'image:cache-sweep': MochiImageCacheSweepEvent;
   'image:store': MochiImageStoreEvent;
   'image:delete': MochiImageDeleteEvent;
@@ -416,6 +450,7 @@ export type MochiEventMap = {
   'queue:completed': MochiQueueCompletedEvent;
   'queue:failed': MochiQueueFailedEvent;
   'queue:error': MochiQueueErrorEvent;
+  'cron:scheduled': MochiCronScheduledEvent;
   'email:sent': MochiEmailSentEvent;
   'email:error': MochiEmailErrorEvent;
   'server:start': MochiServerStartEvent;

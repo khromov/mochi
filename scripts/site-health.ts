@@ -1,7 +1,16 @@
 import { styleText } from 'node:util';
-import { launch, type LaunchedChrome } from 'chrome-launcher';
-import CDP from 'chrome-remote-interface';
-import type { Protocol } from 'devtools-protocol';
+
+// Hand-written types for the CDP slice this script reads — Bun.WebView's `cdp()`/`addEventListener()` are untyped, so
+// this is cheaper than a dependency on the full protocol types.
+type RemoteObject = { value?: unknown; description?: string; unserializableValue?: string; preview?: { description?: string } };
+type RequestWillBeSent = { requestId: string; loaderId: string; type?: string; request: { url: string }; redirectResponse?: { status: number; url: string } };
+type ResponseReceived = { requestId: string; loaderId: string; type?: string; response: { status: number } };
+type LoadingDone = { requestId: string };
+type ExceptionThrown = { exceptionDetails: { text?: string; exception?: { description?: string } } };
+type LogEntryAdded = { entry: { level: string; text: string; url?: string } };
+type NavigateResult = { errorText?: string; loaderId?: string };
+type LifecycleEvent = { name: string; frameId: string; loaderId: string };
+type FrameTree = { frameTree: { frame: { id: string } } };
 
 type Args = {
   base: string;
@@ -27,7 +36,7 @@ The sitemap hardcodes the production origin, so each <loc> is re-pointed at
 
 Writes a human-readable REPORT.md and exits 1 if any page failed.
 
-Chrome is discovered automatically; set CHROME_PATH to pick a specific binary.
+Chrome is discovered automatically; set BUN_CHROME_PATH to pick a specific binary.
 
 Arguments:
   base             Origin to check (default: https://mochi.fast)
@@ -198,14 +207,21 @@ type Issue = { kind: 'error' | 'warning'; text: string };
  */
 type PageResult = { url: string; status?: number; redirects: string[]; issues: Issue[]; ok: boolean; retried: boolean };
 
-/** Flatten a `Runtime.consoleAPICalled` argument list into one readable line. */
-function renderArgs(args: Protocol.Runtime.RemoteObject[]): string {
+/**
+ * Flatten one console call into a readable line; Bun unwraps primitives to raw values but hands objects over as the
+ * CDP `RemoteObject` descriptor, so both shapes arrive in the same array.
+ */
+function renderArgs(args: unknown[]): string {
   return args
     .map((arg) => {
-      if (arg.value !== undefined) {
-        return typeof arg.value === 'string' ? arg.value : JSON.stringify(arg.value);
+      if (typeof arg !== 'object' || arg === null) {
+        return String(arg);
       }
-      return arg.description ?? arg.preview?.description ?? arg.unserializableValue ?? '';
+      const remote = arg as RemoteObject;
+      if (remote.value !== undefined) {
+        return typeof remote.value === 'string' ? remote.value : JSON.stringify(remote.value);
+      }
+      return remote.description ?? remote.preview?.description ?? remote.unserializableValue ?? JSON.stringify(arg);
     })
     .join(' ')
     .trim();
@@ -225,7 +241,7 @@ const isIgnored = (url: string, text: string) => IGNORE_PATTERNS.some(({ message
  */
 const isMainDocument = (params: { type?: string; requestId: string; loaderId: string }) => params.type === 'Document' && params.requestId === params.loaderId;
 
-async function checkPage(port: number, url: string, timeout: number): Promise<PageResult> {
+async function checkPage(url: string, timeout: number): Promise<PageResult> {
   const issues: Issue[] = [];
   const redirects: string[] = [];
   const seen = new Set<string>();
@@ -236,6 +252,17 @@ async function checkPage(port: number, url: string, timeout: number): Promise<Pa
   // the page we were asked to check.
   let mainLoaderId: string | undefined;
   let retried = false;
+  let onLoad: (() => void) | undefined;
+  // A timed-out attempt's load event can still land mid-retry, and `onLoad` by then points at the retry's resolver —
+  // so the event is matched against the loader id `Page.navigate` handed back for *this* attempt.
+  let expectedLoaderId: string | undefined;
+  let matchAnyLoader = false;
+  // Loads seen before their attempt learned its loader id, so a fast load between navigate() and the assignment below
+  // is not lost.
+  const loadedLoaders = new Set<string>();
+  // Declared before the listeners rather than at its assignment, so an event arriving mid-setup reads an
+  // empty string (and is ignored) instead of hitting the temporal dead zone.
+  let mainFrameId = '';
 
   const expected = expectedStatusFor(url);
 
@@ -249,43 +276,47 @@ async function checkPage(port: number, url: string, timeout: number): Promise<Pa
     issues.push({ kind, text: clean });
   };
 
-  const target = await CDP.New({ port, url: 'about:blank' });
-  const client = await CDP({ port, target });
+  // Console output must come through this option, not a `Runtime.consoleAPICalled` listener: Bun consumes that CDP
+  // event internally to implement the option and never re-dispatches it, so a listener silently sees nothing.
+  const view = new Bun.WebView({
+    backend: 'chrome',
+    console: (type: string, ...args: unknown[]) => {
+      if (type === 'error' || type === 'assert') {
+        add('error', renderArgs(args));
+      } else if (type === 'warn' || type === 'warning') {
+        add('warning', renderArgs(args));
+      }
+    },
+  });
   try {
-    const { Page, Network, Runtime, Log } = client;
+    // cdp() needs a session, and the first navigate is what establishes one.
+    await view.navigate('about:blank');
 
-    Network.requestWillBeSent((params) => {
-      inflight.set(params.requestId, params.request.url);
-      if (!isMainDocument(params)) {
+    view.addEventListener<RequestWillBeSent>('Network.requestWillBeSent', ({ data }) => {
+      inflight.set(data.requestId, data.request.url);
+      if (!isMainDocument(data)) {
         return;
       }
-      mainLoaderId ??= params.loaderId;
+      mainLoaderId ??= data.loaderId;
       // A later self-navigation carries its own loader id; ignore its hops.
-      if (params.loaderId !== mainLoaderId) {
+      if (data.loaderId !== mainLoaderId) {
         return;
       }
-      if (params.redirectResponse) {
-        redirects.push(`${params.redirectResponse.status} ${params.redirectResponse.url}`);
+      if (data.redirectResponse) {
+        redirects.push(`${data.redirectResponse.status} ${data.redirectResponse.url}`);
       }
     });
-    Network.loadingFinished(({ requestId }) => inflight.delete(requestId));
-    Network.loadingFailed(({ requestId }) => inflight.delete(requestId));
-    Network.responseReceived((params) => {
-      if (isMainDocument(params) && params.loaderId === mainLoaderId && status === undefined) {
-        status = params.response.status;
+    view.addEventListener<LoadingDone>('Network.loadingFinished', ({ data }) => void inflight.delete(data.requestId));
+    view.addEventListener<LoadingDone>('Network.loadingFailed', ({ data }) => void inflight.delete(data.requestId));
+    view.addEventListener<ResponseReceived>('Network.responseReceived', ({ data }) => {
+      if (isMainDocument(data) && data.loaderId === mainLoaderId && status === undefined) {
+        status = data.response.status;
       }
     });
-    Runtime.consoleAPICalled((params) => {
-      if (params.type === 'error' || params.type === 'assert') {
-        add('error', renderArgs(params.args));
-      } else if (params.type === 'warning') {
-        add('warning', renderArgs(params.args));
-      }
+    view.addEventListener<ExceptionThrown>('Runtime.exceptionThrown', ({ data }) => {
+      add('error', data.exceptionDetails.exception?.description ?? data.exceptionDetails.text ?? 'Uncaught exception');
     });
-    Runtime.exceptionThrown(({ exceptionDetails }) => {
-      add('error', exceptionDetails.exception?.description ?? exceptionDetails.text ?? 'Uncaught exception');
-    });
-    Log.entryAdded(({ entry }) => {
+    view.addEventListener<LogEntryAdded>('Log.entryAdded', ({ data: { entry } }) => {
       if (entry.level !== 'error' && entry.level !== 'warning') {
         return;
       }
@@ -294,10 +325,29 @@ async function checkPage(port: number, url: string, timeout: number): Promise<Pa
       if (entry.url === url && expected !== undefined && /Failed to load resource/.test(entry.text)) {
         return;
       }
-      add(entry.level, entry.url ? `${entry.text} (${entry.url})` : entry.text);
+      add(entry.level as Issue['kind'], entry.url ? `${entry.text} (${entry.url})` : entry.text);
+    });
+    // Not `Page.loadEventFired`: Bun.WebView consumes that internally to resolve its own navigate() and never
+    // re-dispatches it, so use the frame-scoped main-frame `load` event, which also ignores cross-origin iframe loads
+    // like the blog's newsletter embed.
+    view.addEventListener<LifecycleEvent>('Page.lifecycleEvent', ({ data }) => {
+      if (data.name !== 'load' || data.frameId !== mainFrameId) {
+        return;
+      }
+      loadedLoaders.add(data.loaderId);
+      if (matchAnyLoader || data.loaderId === expectedLoaderId) {
+        onLoad?.();
+      }
     });
 
-    await Promise.all([Page.enable(), Network.enable(), Runtime.enable(), Log.enable()]);
+    // Sequential, not Promise.all: a view allows one cdp() call in flight at a time.
+    for (const domain of ['Page', 'Network', 'Runtime', 'Log']) {
+      await view.cdp(`${domain}.enable`);
+    }
+    await view.cdp('Page.setLifecycleEventsEnabled', { enabled: true });
+    // Read once, before any attempt: the tab's main frame id is stable across navigations, so resolving it up front
+    // removes the race where a lifecycle event lands before Page.navigate has returned the id.
+    mainFrameId = (await view.cdp<FrameTree>('Page.getFrameTree')).frameTree.frame.id;
 
     const timedOut = Symbol('timeout');
     for (let attempt = 1; attempt <= LOAD_ATTEMPTS; attempt++) {
@@ -309,13 +359,22 @@ async function checkPage(port: number, url: string, timeout: number): Promise<Pa
       inflight.clear();
       status = undefined;
       mainLoaderId = undefined;
+      expectedLoaderId = undefined;
+      matchAnyLoader = false;
+      loadedLoaders.clear();
 
-      const loaded = Page.loadEventFired();
-      const navigation = await Page.navigate({ url });
+      const loaded = new Promise<void>((resolve) => (onLoad = resolve));
+      // Driven through cdp() rather than view.navigate(): navigate() has no timeout and
+      // permits only one in flight, so a timed-out attempt would make the retry throw.
+      const navigation = await view.cdp<NavigateResult>('Page.navigate', { url });
       if (navigation.errorText) {
         add('error', `Navigation failed: ${navigation.errorText}`);
       }
-      if ((await Promise.race([loaded, sleep(timeout).then(() => timedOut)])) !== timedOut) {
+      expectedLoaderId = navigation.loaderId;
+      // A navigation with no loader id (an aborted one) can never be matched, so fall back to accepting any load.
+      matchAnyLoader = expectedLoaderId === undefined;
+      const alreadyLoaded = expectedLoaderId !== undefined && loadedLoaders.has(expectedLoaderId);
+      if (alreadyLoaded || (await Promise.race([loaded, sleep(timeout).then(() => timedOut)])) !== timedOut) {
         break;
       }
       if (attempt < LOAD_ATTEMPTS) {
@@ -334,9 +393,8 @@ async function checkPage(port: number, url: string, timeout: number): Promise<Pa
   } catch (err) {
     add('error', `Navigation failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
-    await client.close().catch(() => {});
     // A leaked tab starves the pool and keeps burning CPU in the background.
-    await CDP.Close({ port, id: target.id }).catch(() => {});
+    view.close();
   }
 
   if (status === undefined) {
@@ -402,21 +460,24 @@ async function main() {
   const urls = await fetchSitemap(base);
   console.log(styleText('dim', `Checking ${urls.length} pages from ${base}/sitemap.xml …\n`));
 
-  let chrome: LaunchedChrome;
+  // Preflight so a missing browser exits 2 (a setup problem) instead of reporting every page as a failure.
   try {
-    chrome = await launch({
-      chromeFlags: ['--headless=new', '--disable-gpu', '--no-sandbox', '--disable-dev-shm-usage'],
-    });
+    const probe = new Bun.WebView({ backend: 'chrome' });
+    try {
+      await probe.navigate('about:blank');
+    } finally {
+      probe.close();
+    }
   } catch (err) {
     console.error(styleText('red', `Could not launch Chrome: ${err instanceof Error ? err.message : String(err)}`));
-    console.error(styleText('dim', 'Set CHROME_PATH to a Chrome/Chromium executable.'));
+    console.error(styleText('dim', 'Set BUN_CHROME_PATH to a Chrome/Chromium executable.'));
     process.exit(2);
   }
 
   const results: PageResult[] = [];
   try {
     await pool(urls, concurrency, async (url) => {
-      const result = await checkPage(chrome.port, url, timeout);
+      const result = await checkPage(url, timeout);
       results.push(result);
       const errors = result.issues.filter((i) => i.kind === 'error').length;
       const warnings = result.issues.length - errors;
@@ -424,7 +485,7 @@ async function main() {
       console.log(`${label}  ${styleText('dim', `[${results.length}/${urls.length}]`)} ${url}`);
     });
   } finally {
-    await chrome.kill();
+    Bun.WebView.closeAll();
   }
 
   results.sort((a, z) => a.url.localeCompare(z.url));

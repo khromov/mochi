@@ -63,6 +63,11 @@ jobs:
       - name: Run tests
         run: bun run test
 
+      # rm -rf in the clean scripts is a Bun Shell builtin, cross-platform only through `bun run`; the matrix never runs
+      # clean otherwise, so this is the sole Windows coverage for it.
+      - name: Verify clean scripts
+        run: bun .github/scripts/verify-clean-scripts.ts
+
   test:
     if: always()
     needs: test-matrix

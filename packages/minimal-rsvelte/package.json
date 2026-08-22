@@ -12,7 +12,7 @@
     "dev": "MODE=development bun src/index.ts",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
     "test": "bun test",
-    "clean": "rimraf .mochi"
+    "clean": "rm -rf .mochi"
   },
   "dependencies": {
     "mochi-framework": "workspace:*",

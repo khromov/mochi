@@ -53,7 +53,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@bluwy/giget-core": "^0.1.7",
     "@clack/prompts": "^1.7.0",
     "commander": "^15.0.0"
   },

@@ -99,7 +99,7 @@ await emails.addBulk([{ data: { to: 'a@x.com' } }, { data: { to: 'b@x.com' }, op
 
 ### Standalone producers
 
-A script whose only job is _enqueueing_ — a cron job, a CLI backfill, a migration — can write straight to queue storage. Give the descriptor `storage` and its first `add()` lazily connects a **producer-only** runtime; tear down with [`Mochi.stop()`](#mochistop):
+A script whose only job is _enqueueing_ — an external scheduler, a CLI backfill, a migration — can write straight to queue storage. (For recurring work inside the server process, use [scheduled jobs](/docs/scheduled-jobs/) instead.) Give the descriptor `storage` and its first `add()` lazily connects a **producer-only** runtime; tear down with [`Mochi.stop()`](#mochistop):
 
 ```ts
 // enqueue.ts — a standalone producer script
