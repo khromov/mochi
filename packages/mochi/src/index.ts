@@ -77,6 +77,8 @@ export type {
   MochiCacheInflightDeferredEvent,
   MochiCacheDeleteEvent,
   MochiCacheSweepEvent,
+  MochiMemoryPressureEvent,
+  MochiCachePressureEvent,
   MochiImageCacheSweepEvent,
   MochiImageEntryKind,
   MochiImageStoreEvent,
@@ -90,6 +92,7 @@ export type {
   MochiQueueCompletedEvent,
   MochiQueueFailedEvent,
   MochiQueueErrorEvent,
+  MochiCronScheduledEvent,
   MochiEmailSentEvent,
   MochiEmailErrorEvent,
   MochiServerStartEvent,
@@ -130,6 +133,7 @@ export type {
   PGliteLike,
 } from './queue';
 export { DEFAULT_EXPIRE_IN_SECONDS } from './queue';
+export type { MochiCronJob, MochiCronHandler, MochiCronRun, MochiCronOptions, MochiCronRuntimeOptions } from './cron';
 export { json, error, apiError, MochiHttpError } from './utils';
 export { trailingSlashIt } from './runtime/trailingSlash';
 export { fail, redirect, success } from './runtime/forms';
@@ -218,6 +222,7 @@ export type {
   MochiFileConfig,
   MochiFileResolver,
   MochiQueueConfig,
+  MochiCronConfig,
   BunRouteValue,
   MochiSvelteShakerOptions,
   MochiBarrelWarningOptions,

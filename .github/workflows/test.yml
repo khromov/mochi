@@ -63,58 +63,10 @@ jobs:
       - name: Run tests
         run: bun run test
 
-  # TEMPORARY living check: install the pinned Bun, then upgrade to the latest canary
-  # and run the full suite on all three OSes. Fetches the moving canary every run by
-  # design (early warning for Bun 1.4.0). Non-blocking — kept out of the `test` gate's
-  # needs and marked continue-on-error, so a canary-side regression never blocks a PR.
-  # Remove once we pin 1.4.0 (or drop the 1.4.0 prep).
-  test-matrix-canary:
-    name: Test (Bun canary)
-    runs-on: ${{ matrix.os }}
-    continue-on-error: true
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v6
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: .bun-version
-
-      - name: Upgrade to the latest Bun canary
-        run: |
-          bun upgrade --canary
-          bun --version
-          bun --revision
-
-      - name: Cache Bun dependencies
-        uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-canary-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-bun-canary-
-
-      - name: Install dependencies
-        run: bun install
-
-      - name: Typecheck
-        run: bun run typecheck
-
-      - name: Lint
-        run: bun run lint
-
-      - name: Try building server
-        run: bun run build
-
-      - name: Run tests
-        run: bun run test
+      # rm -rf in the clean scripts is a Bun Shell builtin, cross-platform only through `bun run`; the matrix never runs
+      # clean otherwise, so this is the sole Windows coverage for it.
+      - name: Verify clean scripts
+        run: bun .github/scripts/verify-clean-scripts.ts
 
   test:
     if: always()

@@ -42,6 +42,7 @@ import { files as portableText } from '../demos/portable-text/files.ts';
 import { files as propDedup } from '../demos/prop-dedup/files.ts';
 import { files as propsId } from '../demos/props-id/files.ts';
 import { files as queue } from '../demos/queue/files.ts';
+import { files as cron } from '../demos/cron/files.ts';
 import { files as rateLimit } from '../demos/rate-limit/files.ts';
 import { files as reloadFormData } from '../demos/reload-form-data/files.ts';
 import { files as requestCache } from '../demos/request-cache/files.ts';
@@ -52,6 +53,7 @@ import { files as serverIsland } from '../demos/server-island/files.ts';
 import { files as deferInvalidation } from '../demos/defer-invalidation/files.ts';
 import { files as serverProps } from '../demos/server-props/files.ts';
 import { files as sharedState } from '../demos/shared-state/files.ts';
+import { files as staticDirs } from '../demos/static-dirs/files.ts';
 import { files as streams } from '../demos/streams/files.ts';
 import { files as tanstackTable } from '../demos/tanstack-table/files.ts';
 import { files as url } from '../demos/url/files.ts';
@@ -299,6 +301,22 @@ export const demos: Demo[] = [
     files: queue,
     title: 'Background jobs with queues',
     hook: 'How background job queues work — offload work to a Mochi.queue() with an embedded worker, no Redis.',
+    category: 'endpoints',
+  },
+  {
+    href: '/demos/cron/',
+    slug: 'cron',
+    files: cron,
+    title: 'Scheduled jobs with cron',
+    hook: 'How scheduled jobs work — a Mochi.cron() job writes to an in-memory log every minute and the browser streams each new entry over a WebSocket.',
+    category: 'endpoints',
+  },
+  {
+    href: '/demos/static-dirs/',
+    slug: 'static-dirs',
+    files: staticDirs,
+    title: 'Static Directories',
+    hook: 'How staticDirs works — mount a whole directory tree under a URL prefix as one Bun route, with Content-Type / ETag / Range / index.html from Bun and no per-file registration.',
     category: 'endpoints',
   },
   {

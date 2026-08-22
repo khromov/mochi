@@ -30,6 +30,7 @@
   import ShieldAlert from '@lucide/svelte/icons/shield-alert';
   import ListTodo from '@lucide/svelte/icons/list-todo';
   import Inbox from '@lucide/svelte/icons/inbox';
+  import CalendarClock from '@lucide/svelte/icons/calendar-clock';
 
   interface DemoLink {
     href: string;
@@ -58,6 +59,7 @@
     '/demos/file/': FileDown,
     '/demos/streams/': AudioWaveform,
     '/demos/queue/': Inbox,
+    '/demos/cron/': CalendarClock,
     '/demos/server-island/': ComponentIcon,
     '/demos/island-props/': Package2,
     '/demos/lazy/': Telescope,

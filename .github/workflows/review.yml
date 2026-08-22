@@ -50,6 +50,14 @@ jobs:
       - name: Dependency report
         run: bun packages/mochi/scripts/dep-report.ts > dep-report.txt
 
+      # Advisory only, folded into the review comment: `bun audit` exits non-zero whenever anything is outstanding, and
+      # a PR must not go red for a vulnerability it did not introduce. `|| true` keeps the step green; a reviewer reads
+      # the comment and runs `bun audit fix` deliberately.
+      - name: Security advisories and licenses
+        run: |
+          bun audit > audit.txt 2>&1 || true
+          bun pm licenses --prod > licenses.txt 2>&1 || true
+
       - name: Pack mochi-framework
         run: |
           cd packages/mochi
@@ -68,7 +76,7 @@ jobs:
         run: git diff --name-only origin/main...HEAD > changed.txt
 
       - name: Render comment
-        run: bun .github/scripts/loc-comment.ts main.json pr.json --repo ${{ github.repository }} --run-id ${{ github.run_id }} --dep-report dep-report.txt --changed-paths changed.txt > comment.md
+        run: bun .github/scripts/loc-comment.ts main.json pr.json --repo ${{ github.repository }} --run-id ${{ github.run_id }} --dep-report dep-report.txt --changed-paths changed.txt --audit audit.txt --licenses licenses.txt > comment.md
 
       - name: Post or update sticky comment
         uses: actions/github-script@v9

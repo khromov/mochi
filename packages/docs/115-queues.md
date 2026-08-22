@@ -99,7 +99,7 @@ await emails.addBulk([{ data: { to: 'a@x.com' } }, { data: { to: 'b@x.com' }, op
 
 ### Standalone producers
 
-A script whose only job is _enqueueing_ — a cron job, a CLI backfill, a migration — can write straight to queue storage. Give the descriptor `storage` and its first `add()` lazily connects a **producer-only** runtime; tear down with [`Mochi.stop()`](#mochistop):
+A script whose only job is _enqueueing_ — an external scheduler, a CLI backfill, a migration — can write straight to queue storage. (For recurring work inside the server process, use [scheduled jobs](/docs/scheduled-jobs/) instead.) Give the descriptor `storage` and its first `add()` lazily connects a **producer-only** runtime; tear down with [`Mochi.stop()`](#mochistop):
 
 ```ts
 // enqueue.ts — a standalone producer script
@@ -311,7 +311,15 @@ When a queue's backlog crosses the warning threshold (`warningQueueSize`, defaul
 
 ### Shutdown
 
-Queues close gracefully on `SIGTERM`/`SIGINT`. In-flight jobs get up to 10 seconds to finish; a job still running after that is failed and follows its queue's retry policy from the store. For a worker process with an HTTP port (health checks, metrics), use `Mochi.serve({ queues })` with no `routes` — [`Mochi.worker()`](#standalone-workers) is the serverless alternative:
+Queues close gracefully on `SIGTERM`/`SIGINT`. In-flight jobs get up to `queueShutdownTimeout` (default 10 seconds) to finish; a job still running after that is failed and follows its queue's retry policy from the store. Raise it for handlers that legitimately run longer than 10s, so a job in flight at shutdown finishes instead of being re-run:
+
+```ts
+Mochi.serve({ queues, queueShutdownTimeout: 60_000 }); // or Mochi.worker({ queues, queueShutdownTimeout })
+```
+
+<VersionNote since="0.10.0" message="queueShutdownTimeout was added in 0.10.0; before it, the queue graceful-drain window was fixed at 10s." />
+
+It is distinct from `shutdownTimeout`, which bounds the HTTP-server drain. For a worker process with an HTTP port (health checks, metrics), use `Mochi.serve({ queues })` with no `routes` — [`Mochi.worker()`](#standalone-workers) is the serverless alternative:
 
 ```ts
 // worker.ts — run with `bun worker.ts`

@@ -6,7 +6,7 @@ import { styleText } from 'node:util';
 import pkg from '../package.json' with { type: 'json' };
 import { create, SCAFFOLDED_PORT } from './create.ts';
 import { TEMPLATES, TEMPLATE_IDS, type TemplateId } from './templates.ts';
-import { isDirEmpty, validatePackageName } from './utils.ts';
+import { bunVersionWarning, isDirEmpty, validatePackageName } from './utils.ts';
 
 const program = new Command('create-mochi')
   .description('Scaffold a new Mochi project.')
@@ -47,6 +47,11 @@ interface CliOptions {
 
 async function runCreate(rawPath: string | undefined, opts: CliOptions): Promise<void> {
   p.intro(`${styleText(['bgMagenta', 'black'], ' create-mochi ')} ${styleText('dim', `v${pkg.version}`)}`);
+
+  const bunWarning = bunVersionWarning(Bun.version);
+  if (bunWarning) {
+    p.log.warn(styleText('yellow', bunWarning));
+  }
 
   const dir = await promptDirectory(rawPath);
   const force = await maybePromptForce(dir, opts.force === true);

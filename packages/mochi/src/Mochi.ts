@@ -14,6 +14,7 @@ import {
   isMochiWs,
   isMochiSse,
   isMochiFile,
+  isMochiCron,
   isMochiQueue,
   isServerPropsResolver,
   isAlsoHydrateMode,
@@ -60,6 +61,7 @@ import {
   headResponse,
   isHtmlResponse,
   MochiHttpError,
+  normalizeAssetPrefix,
   relForDisplay,
   toPosixPath,
   withHead,
@@ -86,6 +88,9 @@ import {
   assertNoConflictingStandaloneRuntime,
   resolveQueueConfigMode,
   collectQueueClosure,
+  startCronRuntime,
+  stopCronRuntime,
+  CRON_JITTER_MS,
 } from './queue';
 import { pinGlobal } from './utils/globalState';
 import { resetStartupMilestones } from './lifecycle';
@@ -114,6 +119,9 @@ import { consoleLogger } from './dev/consoleLogger';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
 import { ISLAND_FAILURE_CSS, ISLAND_FAILURE_DEV_CSS, islandFailureStub } from './web-components/islandFailureStub';
 import { resolvePublicFiles, registerPublicRoutes, isExcludedDotPath } from './runtime/publicDir';
+import { installMemoryPressureHandler, removeMemoryPressureHandler } from './runtime/memoryPressure';
+import { registerStaticDirRoutes, resolveStaticDirs } from './runtime/staticDirs';
+import { createCronJob, cronSignature, type MochiCronHandler, type MochiCronJob, type MochiCronOptions } from './cron';
 import { startDevWatcher } from './dev/devWatcher';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './dev/pageCacheAdminRoutes';
 import { liveReloadGreeting } from './dev/liveReloadGeneration';
@@ -238,6 +246,14 @@ export class Mochi {
   }
 
   /**
+   * Declare a scheduled job — inert until `Mochi.serve({ cron: [job] })` starts it. Invalid schedules throw here at
+   * import time, not at boot.
+   */
+  static cron(name: string, schedule: string, config: MochiCronOptions | MochiCronHandler): MochiCronJob {
+    return createCronJob(name, schedule, config);
+  }
+
+  /**
    * Resolve the handle for a queue declared in `Mochi.serve({ queues })` so jobs can be `.add()`ed to it, passing the
    * payload type explicitly (`Mochi.getQueue<JobData>(name)`). Throws for an undeclared name, or before `Mochi.serve()` mounts its queues.
    */
@@ -252,7 +268,7 @@ export class Mochi {
    * handling is yours to wire (`Mochi.stop()` drains and closes the runtime).
    */
   static worker(options: MochiWorkerOptions): MochiWorker {
-    return createWorker(options.queues, options.storage, options.queueConfig);
+    return createWorker(options.queues, options.storage, options.queueConfig, options.queueShutdownTimeout);
   }
 
   /**
@@ -377,6 +393,9 @@ export class Mochi {
       if (typeof config.name !== 'string' || !/^[\w.\-/]+$/.test(config.name)) {
         throw new Error(`Mochi.serve({ queues }): "${config.name}" is not a valid queue name. Names may only contain letters, digits, underscores, dots, dashes, and slashes.`);
       }
+      if (config.name.startsWith('cron-')) {
+        throw new Error(`Mochi.serve({ queues }): "${config.name}" uses the reserved "cron-" prefix — that namespace is for scheduled jobs (Mochi.cron). Rename the queue.`);
+      }
       if (queueNames.has(config.name)) {
         throw new Error(`Mochi.serve({ queues }): two queues are named "${config.name}". Queue names must be unique.`);
       }
@@ -418,6 +437,31 @@ export class Mochi {
       // Fail before the config singleton pins and the server binds — rejecting this deep in the boot would wedge the process.
       assertNoConflictingStandaloneRuntime(queueStorage);
     }
+
+    // Same fail-fast rule for cron: a bad descriptor or duplicate name rejects before the config singleton pins and
+    // the socket binds, so a typo can never leave a half-scheduled server listening.
+    const declaredCron = options.cron ?? [];
+    const cronNames = new Set<string>();
+    for (const job of declaredCron) {
+      if (!isMochiCron(job)) {
+        throw new Error(`Mochi.serve({ cron }): every element must be a descriptor created with Mochi.cron(name, schedule, …).`);
+      }
+      if (typeof job.name !== 'string' || !/^[\w.\-/]+$/.test(job.name)) {
+        throw new Error(`Mochi.serve({ cron }): "${job.name}" is not a valid cron job name. Names may only contain letters, digits, underscores, dots, dashes, and slashes.`);
+      }
+      if (cronNames.has(job.name)) {
+        throw new Error(`Mochi.serve({ cron }): two cron jobs are named "${job.name}". Cron job names must be unique.`);
+      }
+      cronNames.add(job.name);
+    }
+    // Independent of queueStorage: cron always runs on its own bun-boss instance, defaulting to in-process memory.
+    const cronStorage = options.cronStorage ?? 'memory';
+    if (declaredCron.length > 0 && !isValidQueueStorage(cronStorage)) {
+      throw new Error(`Mochi.serve({ cronStorage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
+    }
+
+    // Same fail-fast rule: an unmountable prefix rejects here rather than 404ing at runtime.
+    const staticDirMounts = options.staticDirs ? resolveStaticDirs(options.staticDirs, normalizeAssetPrefix(options.assetPrefix)) : [];
 
     const { svelteVersion } = await checkEnvironment();
     const mochiVersion = await readMochiVersion();
@@ -1485,6 +1529,9 @@ export class Mochi {
       }
     }
 
+    // After the mirroring pass on purpose: a `/*` pattern must not be mirrored to `/*\/`.
+    registerStaticDirRoutes(bunRoutes, staticDirMounts);
+
     // Register server island endpoint
     bunRoutes[`${registry.assetPrefix}/island/:componentName`] = withHead(async (req: Request, server: Server<undefined>): Promise<Response> => {
       const setup = await buildRequestContext(req, server, {
@@ -1869,6 +1916,8 @@ export class Mochi {
       htmlShell: _htmlShell,
       handle: _handle,
       markdown: _markdown,
+      cron: _cron,
+      cronStorage: _cronStorage,
       websocket: userWebSocketOptions,
       bun: bunPassthrough,
       ...bunOptions
@@ -1972,6 +2021,10 @@ export class Mochi {
         // listener open and hang shutdown. Best-effort, then always stop.
         try {
           sweeperStop?.();
+          removeMemoryPressureHandler();
+          // The cron boss is a timekeeper and a SQL handle outliving the socket: without this, an embedded caller that
+          // stops the server directly (rather than via a signal or Mochi.stop()) keeps enqueuing runs into a dead app.
+          await stopCronRuntime();
           stopEmailBadgeBroadcast?.();
           await closeEmailTransport();
           for (const store of rateLimitStores) {
@@ -1987,6 +2040,12 @@ export class Mochi {
         }
         return stopServer(closeActiveConnections);
       }) as typeof server.stop;
+    }
+
+    // Installed once the server is up, so a boot that throws never leaves a listener behind on a dead process; never
+    // in development, where the compile-heavy boot hair-triggers the OS signal and the reclaim would be a spurious no-op.
+    if (!development && (options.memoryPressure ?? true)) {
+      installMemoryPressureHandler();
     }
 
     await runHook('mochi:listening', { options, server });
@@ -2011,7 +2070,7 @@ export class Mochi {
       if (declaredQueues.length > 0) {
         // kind 'serve' adopts a standalone producer runtime already connected to the same storage.
         await startQueueRuntime(queueStorage, { kind: 'serve' });
-        await mountQueues(declaredQueues, resolveQueueConfigMode(options.queueConfig));
+        await mountQueues(declaredQueues, resolveQueueConfigMode(options.queueConfig), options.queueShutdownTimeout);
       }
     } catch (err) {
       await closeAllQueueResources();
@@ -2021,6 +2080,18 @@ export class Mochi {
     // Fires once every declared queue is registered, so a user hook reaching for a handle (or `Mochi.boss()`)
     // gets it instead of a "not mounted yet" error.
     await runHook('mochi:queuesMounted', { options, server, queues: declaredQueues.map((q) => q.name) });
+
+    // After the queues mount, so a job firing immediately can reach Mochi.getQueue(); a throw here tears the
+    // just-bound server down rather than leaving it listening with half a schedule registered.
+    if (declaredCron.length > 0) {
+      try {
+        await startCronRuntime(declaredCron, { cronStorage, development, jitterMs: development ? 0 : CRON_JITTER_MS, shutdownTimeout: options.queueShutdownTimeout });
+      } catch (err) {
+        await closeAllQueueResources();
+        await server.stop(true);
+        throw err;
+      }
+    }
 
     if (warmupHandlers.length > 0) {
       mochiEvents.emit('warmup:start', { routeCount: warmupHandlers.length });
@@ -2055,6 +2126,7 @@ export class Mochi {
 
     if (development) {
       await startDevWatcher({
+        initialCronSignature: cronSignature(declaredCron),
         registry,
         server,
         options,
