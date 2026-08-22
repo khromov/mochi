@@ -3,12 +3,10 @@ import { lookup } from 'node:dns/promises';
 import ipaddr from 'ipaddr.js';
 
 /**
- * Defense-in-depth guard for outbound fetches against user-supplied URLs:
- * validate the host against an optional allowlist and reject hosts that resolve
- * to private/loopback/link-local/reserved addresses. Note this does not fully
- * close DNS-rebinding (the IP is resolved here, then re-resolved by `fetch`) —
- * an encrypted/authenticated payload remains the primary protection for callers
- * that have one.
+ * Defense-in-depth guard for outbound fetches against user-supplied URLs: validate the host against an optional
+ * allowlist and reject hosts resolving to private, loopback, link-local, or reserved addresses. DNS-rebinding stays
+ * partly open, since the IP is resolved here and re-resolved by `fetch`, so an encrypted, authenticated payload remains
+ * the primary protection for callers that have one.
  */
 export interface UrlGuardOptions {
   allowedHosts?: string[] | undefined;
@@ -39,10 +37,8 @@ function stripBrackets(hostname: string): string {
   return hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
 }
 
-// Reject anything that isn't a normal public (global unicast) address. ipaddr.js
-// classifies private, loopback, link-local, unique-local, multicast, reserved,
-// and every IPv6 transition range (6to4, NAT64/rfc6052, rfc6145, teredo,
-// ipv4-mapped) as non-'unicast', so a single range() check covers them all.
+// ipaddr.js classifies private, loopback, link-local, unique-local, multicast, reserved, and every IPv6 transition
+// range (6to4, NAT64/rfc6052, rfc6145, teredo, ipv4-mapped) as non-'unicast', so one `range()` check covers them all.
 function isBlockedIp(ip: string): boolean {
   let addr: ipaddr.IPv4 | ipaddr.IPv6;
   try {

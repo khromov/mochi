@@ -16,14 +16,10 @@ export interface TailwindOptions {
 }
 
 /**
- * Bun-backed resolver passed to Tailwind as both `customCssResolver` and
- * `customJsResolver`. enhanced-resolve (Tailwind's default resolver) escapes
- * `#`/`?` in paths as `\0#` and fails to unescape before readFile, so any
- * install path containing those chars crashes; Bun's resolver returns clean
- * paths. Returning `undefined` for ids Bun can't resolve is intentional:
- * Tailwind treats a falsy return as "defer to the default resolver" (it only
- * uses a custom resolver's result when truthy), so this only *replaces* the
- * default for the paths Bun handles and never narrows what's resolvable.
+ * Bun-backed resolver passed to Tailwind as both `customCssResolver` and `customJsResolver`. Tailwind's default
+ * enhanced-resolve escapes `#`/`?` in paths as `\0#` and never unescapes before readFile, crashing on any install path
+ * containing those chars, where Bun's resolver returns clean paths. Returning `undefined` for ids Bun can't resolve
+ * makes Tailwind defer to its default, so this replaces the default only for the paths Bun handles.
  */
 export function createBunResolver(): Resolver {
   return async (id, resolveBase) => {
@@ -35,12 +31,7 @@ export function createBunResolver(): Resolver {
   };
 }
 
-/**
- * Run Tailwind once: compile the input CSS, scan configured sources for
- * candidate classes, build the final CSS, and write it to `output` only when
- * the bytes actually differ. The skip-on-equal write avoids ping-ponging the
- * dev CSS watcher when nothing changed.
- */
+/** Run Tailwind once — compile the input CSS, scan sources for candidate classes, build the final CSS — writing to `output` only when the bytes differ, so the dev CSS watcher doesn't ping-pong. */
 export async function compileTailwind(opts: TailwindOptions): Promise<void> {
   const inputAbs = path.resolve(opts.input);
   const outputAbs = path.resolve(opts.output);
@@ -70,11 +61,7 @@ export async function compileTailwind(opts: TailwindOptions): Promise<void> {
   }
 }
 
-/**
- * Run Tailwind at startup, then in development re-run on relevant file
- * changes. Uses `mochiEvents.setHandler` so the subscription replaces itself
- * across module re-imports rather than stacking.
- */
+/** Run Tailwind at startup, re-running on relevant file changes in development. `mochiEvents.setHandler` makes the subscription replace itself across module re-imports rather than stacking. */
 export async function setupTailwind(opts: TailwindOptions): Promise<void> {
   const outputAbs = path.resolve(opts.output);
   await compileTailwind(opts);

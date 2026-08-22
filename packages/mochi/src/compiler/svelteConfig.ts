@@ -12,17 +12,12 @@ export interface MochiSvelteConfig {
 }
 
 /**
- * Loads a Svelte config file. `configPath` is resolved against `process.cwd()`
- * if relative, used as-is if absolute, and defaults to `./svelte.config.js`.
- * Returns `{}` if the file is missing. Supports both ESM (`export default`)
- * and CJS (`module.exports`).
+ * Loads a Svelte config file, resolving a relative `configPath` against `process.cwd()` and defaulting to
+ * `./svelte.config.js`. A missing file yields `{}`, and both ESM and CJS shapes work.
  *
- * Pass `{ reload: true }` for the dev-watcher path so edits are re-evaluated:
- * Bun's query-string cache-busting is unreliable on some platforms (Windows),
- * so `freshImportBundled` re-imports a uniquely-named bundle instead. Bundling
- * (rather than copying) keeps the config's relative imports working from the
- * `tempDir` copy. Startup/build loads happen once, so they import the file
- * directly and leave nothing behind.
+ * Pass `{ reload: true }` on the dev-watcher path so edits re-evaluate: Bun's query-string cache-busting is unreliable
+ * on Windows, so `freshImportBundled` re-imports a uniquely-named bundle, and bundling rather than copying keeps the
+ * config's relative imports working from the `tempDir` copy. Startup and build loads happen once, importing directly.
  */
 export async function loadSvelteConfig(configPath?: string, opts: { reload?: boolean; tempDir?: string } = {}): Promise<MochiSvelteConfig> {
   const resolved = path.resolve(configPath ?? 'svelte.config.js');
@@ -43,30 +38,22 @@ export const FRAMEWORK_COMPILER_DEFAULTS: CompileOptions = {
   discloseVersion: false,
 };
 
-/**
- * Applied last, after both the user's config and the per-call-site overrides.
- * `mochi-framework`'s own components (`<Image>`) use top-level `await`, so an app
- * that turned this off would fail to compile the framework's own source.
- */
+// Applied last, after both the user's config and the per-call-site overrides. Mochi's own components (`<Image>`) use
+// top-level `await`, so an app that turned this off would fail to compile the framework's own source.
 export const FRAMEWORK_FORCED_COMPILER_OPTIONS: CompileOptions = {
   experimental: { async: true },
 };
 
-/**
- * `arrayMerge` strategy for `deepmerge`: replace the destination array with the
- * source array rather than concatenating. Keeps last-write-wins semantics for
- * arrays at every nesting depth, mirroring how plain values behave.
- */
+// Replacing the destination array rather than concatenating keeps last-write-wins semantics at every nesting depth,
+// mirroring how plain values behave.
 const overwriteMerge = (_destinationArray: unknown[], sourceArray: unknown[]): unknown[] => sourceArray;
 
 /**
- * Four-layer merge for Svelte `compilerOptions`:
+ * Four-layer merge for Svelte `compilerOptions`, later layers winning and nested plain objects deep-merged:
  *   1. framework defaults (e.g. `discloseVersion: false`)
  *   2. user options from `svelte.config.js`
- *   3. framework-owned overrides for the current call site (e.g. `generate`, `filename`)
+ *   3. framework-owned overrides for the call site (e.g. `generate`, `filename`)
  *   4. framework-forced options that nothing may override (`experimental.async`)
- *
- * Later layers win, and nested plain objects are deep-merged rather than replaced.
  */
 export function mergeCompilerOptions(user: CompileOptions | undefined, forced: CompileOptions): CompileOptions {
   return deepmerge.all<CompileOptions>([FRAMEWORK_COMPILER_DEFAULTS, user ?? {}, forced, FRAMEWORK_FORCED_COMPILER_OPTIONS], {

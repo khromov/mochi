@@ -1,12 +1,7 @@
 import { compile as svelteCompile, compileModule as svelteCompileModule, VERSION as SVELTE_VERSION, type CompileOptions } from 'svelte/compiler';
 import { logger } from '../utils/log';
 
-/**
- * Which Svelte compiler implementation compiles `.svelte` / `.svelte.[jt]s`
- * sources. `'rsvelte'` requires the optional `@mochi-framework/rsvelte` adapter
- * package to be installed — without it the framework warns and falls back to
- * `'svelte'` rather than failing the build.
- */
+/** Which implementation compiles `.svelte` / `.svelte.[jt]s` sources. `'rsvelte'` needs the optional `@mochi-framework/rsvelte` adapter, warning and falling back to `'svelte'` without it. */
 export type MochiSvelteCompiler = 'svelte' | 'rsvelte';
 
 /** Shape of a compile result the framework consumes. Structurally a subset of Svelte's own. */
@@ -16,10 +11,8 @@ export interface SvelteCompileOutput {
 }
 
 /**
- * The compiler surface `ComponentRegistry` depends on. Deliberately narrower
- * than `svelte/compiler`: `parse()` (island preprocessing) and `preprocess()`
- * always run on the official compiler, because alternative backends don't
- * produce an upstream-shaped AST.
+ * The compiler surface `ComponentRegistry` depends on, narrower than `svelte/compiler`: `parse()` for island
+ * preprocessing and `preprocess()` stay on the official compiler, since alternative backends produce no upstream-shaped AST.
  */
 export interface SvelteCompilerBackend {
   /** Stable id, e.g. `'svelte'` or `'rsvelte'`. */
@@ -37,11 +30,8 @@ export const officialBackend: SvelteCompilerBackend = {
   compileModule: (source, options) => svelteCompileModule(source, options),
 };
 
-/**
- * Bare specifier of the optional adapter package. Held in a variable so the
- * `import()` below is never statically analysable — an absent optional peer must
- * be a caught runtime rejection, not a resolution failure at load time.
- */
+// Held in a variable so the `import()` below stays statically unanalysable: an absent optional peer must surface as a
+// caught runtime rejection rather than a load-time resolution failure.
 const RSVELTE_SPECIFIER = '@mochi-framework/rsvelte';
 
 const ENV_VAR = 'MOCHI_SVELTE_COMPILER';
@@ -52,11 +42,8 @@ export function isBackend(value: unknown): value is SvelteCompilerBackend {
   return typeof b?.compile === 'function' && typeof b.compileModule === 'function' && typeof b.name === 'string' && typeof b.version === 'string';
 }
 
-/**
- * `MOCHI_SVELTE_COMPILER` wins over the `Mochi.serve()` option so a backend can
- * be A/B'd on an existing app without editing code. An unrecognised value is a
- * typo, not a silent opt-out — warn and keep the configured choice.
- */
+// `MOCHI_SVELTE_COMPILER` wins over the `Mochi.serve()` option so a backend can be A/B'd without editing code. An
+// unrecognised value is treated as a typo — warn and keep the configured choice.
 function effectiveChoice(configured: MochiSvelteCompiler | undefined): MochiSvelteCompiler {
   const env = process.env[ENV_VAR];
   if (env === 'svelte' || env === 'rsvelte') {

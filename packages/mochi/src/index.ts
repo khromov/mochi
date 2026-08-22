@@ -198,10 +198,8 @@ export type {
 import type { Snippet } from 'svelte';
 
 /**
- * Props helper for a `mochi:clientOnly` component. Adds an optional `children`
- * snippet so the SSR fallback passed as children type-checks against the
- * component. The fallback is SSR-only placeholder markup — it is NOT passed to
- * the component at runtime, so don't render `children` inside a client-only
- * component.
+ * Props helper for a `mochi:clientOnly` component, adding an optional `children` snippet so the SSR fallback passed as
+ * children type-checks. That fallback is SSR-only placeholder markup and never reaches the component at runtime, so
+ * leave `children` unrendered inside a client-only component.
  */
 export type ClientOnlyProps<T> = Omit<T, 'children'> & { children?: Snippet };
