@@ -2,7 +2,7 @@
 title: 'Scheduled jobs'
 slug: scheduled-jobs
 ogTitle: 'Durable scheduled jobs with Mochi.cron()'
-description: 'Run recurring work on a cron schedule with Mochi.cron(), backed by a durable, fleet-wide scheduler.'
+description: 'Run recurring work on a cron schedule with Mochi.cron(), backed by a durable, multi-node scheduler.'
 ---
 
 <script>
@@ -14,7 +14,7 @@ description: 'Run recurring work on a cron schedule with Mochi.cron(), backed by
 
 <VersionNote since="0.10.0" message="Mochi.cron() and the serve-level cron option ship in the next Mochi release (0.10.0). This page describes the upcoming API." />
 
-Run recurring work — nightly cleanups, hourly syncs, a weekly digest — on a cron schedule. `Mochi.cron()` declares a job; `Mochi.serve({ cron })` starts it. Jobs are **durable** and **run once across the fleet**: the schedule lives in a database and a single instance is elected per firing, so scaling to N replicas does not fire a job N times.
+Run recurring work — nightly cleanups, hourly syncs, a weekly digest — on a cron schedule. `Mochi.cron()` declares a job; `Mochi.serve({ cron })` starts it. Jobs are **durable** and **run once across a multi-node setup** thanks to a database claim: the schedule lives in a database and a single instance is elected per firing, so scaling to N replicas does not fire a job N times.
 
 ```ts
 // file: src/index.ts
@@ -48,7 +48,7 @@ await Mochi.serve({
 
 <Callout type="warning">
 
-`memory` (and any per-instance store) coordinates the once-across-the-fleet guarantee only **within one process**. For a multi-replica deployment, point `cronStorage` at shared storage — Postgres, or a SQLite file on a shared volume.
+`memory` (and any per-instance store) coordinates the run-once guarantee only **within one process**. For a multi-replica deployment, point `cronStorage` at shared storage — Postgres, or a SQLite file on a shared volume.
 
 </Callout>
 
@@ -68,7 +68,7 @@ An invalid expression throws **at declaration**, not at boot, so a typo fails wh
 
 Pass `{ run, … }` instead of a bare handler:
 
-- `tz` — IANA time-zone name the schedule is read in. Defaults to **UTC** — durable cron reads one zone across the fleet.
+- `tz` — IANA time-zone name the schedule is read in. Defaults to **UTC** — durable cron reads one zone across every node.
 - `dev` — set `false` to skip the job when `development: true`. Default `true`.
 
 ```ts
@@ -79,7 +79,7 @@ Mochi.cron('digest', '0 9 * * MON', {
 });
 ```
 
-### Runs once, transactionally, across the fleet
+### Runs once, transactionally, across a multi-node setup
 
 Each firing is claimed by exactly one instance through an atomic database update, and the enqueue is deduplicated by a per-minute key. You do **not** need to hand-roll an idempotency key — the scheduler handles the race, and it corrects for clock skew against database time. This is the reason cron is durable rather than a per-instance timer.
 

@@ -544,8 +544,8 @@ export interface MochiServeOptions {
   } & import('./dev/consoleLogger').ConsoleLoggerOptions;
   /**
    * Durable scheduled jobs started with the server: descriptors from `Mochi.cron(name, schedule, handler)`. Schedules
-   * live in `cronStorage`, and each firing is claimed by exactly one instance, so a job runs once across the fleet
-   * rather than once per replica. A run executes as a queue job named after the cron (surfacing through `queue:*`
+   * live in `cronStorage`, and each firing is claimed by exactly one instance, so a job runs once across a
+   * multi-node setup thanks to that atomic per-firing claim, rather than once per replica. A run executes as a queue job named after the cron (surfacing through `queue:*`
    * events); a handler that throws is reported through `queue:failed`, and the schedule keeps running.
    */
   cron?: MochiCronConfig[];

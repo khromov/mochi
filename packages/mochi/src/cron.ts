@@ -15,7 +15,7 @@ export type MochiCronHandler = (run: MochiCronRun) => void | Promise<void>;
 
 /** The non-handler settings — what survives on `MochiCronJob.options`. */
 export interface MochiCronRuntimeOptions {
-  /** IANA time-zone name the schedule is interpreted in. Default: UTC — durable cron reads the schedule in one zone across the fleet. */
+  /** IANA time-zone name the schedule is interpreted in. Default: UTC — durable cron reads the schedule in one zone across every node. */
   tz?: string;
   /** Register this job when `development: true`. Default: `true`. */
   dev?: boolean;
