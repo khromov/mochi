@@ -238,6 +238,7 @@ const subConfirmStmt = db.query<never, [number, number]>("UPDATE newsletter_subs
 const subUnsubscribeStmt = db.query<never, [number, number]>("UPDATE newsletter_subscribers SET status = 'unsubscribed', unsubscribed_at = ? WHERE id = ?");
 const subDeleteStmt = db.query<never, [number]>('DELETE FROM newsletter_subscribers WHERE id = ?');
 const subLogDeleteStmt = db.query<never, [number]>('DELETE FROM newsletter_email_log WHERE subscriber_id = ?');
+const subExpiredIdsStmt = db.query<{ id: number }, [number]>("SELECT id FROM newsletter_subscribers WHERE status = 'pending' AND confirm_expires_at < ?");
 const subReArmStmt = db.query<never, [string, string, number, number, string, number]>(
   "UPDATE newsletter_subscribers SET email = ?, source = ?, status = 'pending', confirmed_at = NULL, unsubscribed_at = NULL, requested_at = ?, confirm_expires_at = ?, confirm_token = ?, email_status = 'pending', email_error = NULL, email_sent_at = NULL WHERE id = ?",
 );
@@ -315,6 +316,24 @@ export function deleteSubscriber(id: number): void {
     subLogDeleteStmt.run(id);
     subDeleteStmt.run(id);
   })();
+}
+
+/**
+ * Delete pending sign-ups whose confirmation window closed — otherwise expiry is only noticed when someone visits a
+ * dead token, so unconfirmed addresses are retained forever.
+ */
+export function purgeExpiredPendingSubscribers(now: number = Date.now()): number {
+  const expired = subExpiredIdsStmt.all(now);
+  if (expired.length === 0) {
+    return 0;
+  }
+  db.transaction(() => {
+    for (const { id } of expired) {
+      subLogDeleteStmt.run(id);
+      subDeleteStmt.run(id);
+    }
+  })();
+  return expired.length;
 }
 
 export function refreshConfirmToken(id: number, ttlMs: number): string {

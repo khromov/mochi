@@ -187,14 +187,46 @@ If a `storage` call throws, the cache degrades instead of failing the request: a
 
 `MochiCache` emits these events on `mochiEvents`:
 
-| Event                     | Payload                     | When                                                         |
-| ------------------------- | --------------------------- | ------------------------------------------------------------ |
-| `cache:read`              | `{ key, status }`           | Every cache lookup.                                          |
-| `cache:revalidate`        | `{ key }`                   | A background refetch starts (stale read).                    |
-| `cache:delete`            | `{ key }`                   | A key was removed via `delete(key)`.                         |
-| `cache:sweep`             | `{ removed, durationMs }`   | A `FileStorage` background sweep deleted expired files.      |
-| `cache:revalidate:failed` | `{ key, error }`            | A background refetch threw; the stale value is still served. |
-| `cache:error`             | `{ key, operation, error }` | A `storage` `get` / `set` / `remove` call threw.             |
+| Event                     | Payload                                  | When                                                               |
+| ------------------------- | ---------------------------------------- | ------------------------------------------------------------------ |
+| `cache:read`              | `{ key, status }`                        | Every cache lookup.                                                |
+| `cache:revalidate`        | `{ key }`                                | A background refetch starts (stale read).                          |
+| `cache:delete`            | `{ key }`                                | A key was removed via `delete(key)`.                               |
+| `cache:sweep`             | `{ removed, durationMs }`                | A `FileStorage` background sweep deleted expired files.            |
+| `cache:pressure`          | `{ level, removed, caches, durationMs }` | The OS reported low memory and Mochi drained its in-memory caches. |
+| `cache:revalidate:failed` | `{ key, error }`                         | A background refetch threw; the stale value is still served.       |
+| `cache:error`             | `{ key, operation, error }`              | A `storage` `get` / `set` / `remove` call threw.                   |
+
+### Memory pressure
+
+<VersionNote since="0.10.0" message="Memory-pressure cache draining (and the memoryPressure serve option) ships in the next Mochi release (0.10.0). This section describes the upcoming API." />
+
+When the operating system runs low on memory, Bun raises `process.on("memoryPressure")` and Mochi drains every
+in-memory cache before the kernel starts killing processes. `'critical'` (all platforms) clears them outright;
+`'warning'` (macOS only) drops just the aged-out entries, so a store without `maxAge` keeps everything. Each response
+emits one `cache:pressure` event and one `consoleLogger()` warning.
+
+Only `MemoryStorage` participates — it is the backend that holds bytes in RAM. `FileStorage` is disk-backed, so
+dropping it would not help. Turn the whole thing off with `Mochi.serve({ memoryPressure: false })`.
+
+Reclamation runs in production only. In development (`development: true`) it is always disabled — the compile-heavy
+boot hair-triggers the OS signal (Linux reports only `'critical'`), so the reclaim would be a spurious no-op.
+
+The raw signal is also broadcast as a `memory:pressure` event (payload `{ level }`) the moment it arrives, before the
+cache drain. Subscribe to reclaim resources Mochi doesn't own — idle connection pools, worker queues, your own maps:
+
+```ts
+import { mochiEvents } from 'mochi-framework';
+
+mochiEvents.on('memory:pressure', ({ level }) => {
+  if (level === 'critical') pool.drainIdle();
+});
+```
+
+```ts
+// file: src/index.ts
+await Mochi.serve({ memoryPressure: false, routes });
+```
 
 `consoleLogger()` surfaces `cache:revalidate:failed` and `cache:error` as warnings. Use `mochiEvents.setHandler` to attach a custom subscriber — it replaces a prior handler under the same name, so dev re-imports do not pile up listeners:
 

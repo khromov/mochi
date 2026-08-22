@@ -97,16 +97,6 @@ const SRC_DIR = path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..'
 /** Manifest schema version this runtime writes; see `MochiManifest.version` for the path families it implies. */
 const MANIFEST_VERSION = 3;
 
-// Bun <1.4.0's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`,
-// which is invalid CSS — only the seven plain keywords (woff2, woff, truetype, opentype,
-// embedded-opentype, svg, collection) work bare. Browsers silently drop the src and the
-// font never loads. Re-quote the four compound `*-variations` hints back to strings.
-// Bun 1.4.0 keeps them quoted, so this is a no-op there — delete once 1.3.14 support is dropped.
-const VARIATION_FORMAT_RE = /\bformat\((woff2-variations|woff-variations|truetype-variations|opentype-variations)\)/g;
-function restoreVariationsFormat(css: string): string {
-  return css.replace(VARIATION_FORMAT_RE, "format('$1')");
-}
-
 const MARKDOWN_EXTENSIONS = ['.md', '.svx'];
 const MARKDOWN_FILE_FILTER = /\.(md|svx)$/;
 
@@ -1587,43 +1577,37 @@ export class ComponentRegistry {
     const renderedIslandNames = new Set<string>();
     let hasServerIslands = false;
     if (hasIslandsOrServerIslands || shouldStrip) {
-      // NOTE(bun<1.4.0): registering `el.onEndTag()` inside a request's AsyncLocalStorage context leaks the context
-      // frame — and the whole request — for the life of the process on Bun 1.3.x. Island-internal comments are flagged
-      // through element-scoped `comments` handlers instead, which lol-html invokes immediately before the document
-      // handler for the same comment. Revert to an onEndTag depth counter once the minimum supported Bun is >= 1.4.0.
-      let insideIsland = false;
+      let islandDepth = 0;
       const rewriter = new HTMLRewriter();
       if (hasIslandsOrServerIslands) {
         rewriter
           .on('mochi-hydratable-island', {
             element(el) {
+              islandDepth++;
+              el.onEndTag(() => {
+                islandDepth--;
+              });
               const raw = el.getAttribute('component-name');
               if (raw) {
                 renderedIslandNames.add(raw);
               }
               injectIslandPropsBlock(el, propsById, emittedProps);
             },
-            comments() {
-              insideIsland = true;
-            },
           })
           .on('mochi-server-island', {
-            element() {
+            element(el) {
+              islandDepth++;
+              el.onEndTag(() => {
+                islandDepth--;
+              });
               hasServerIslands = true;
-            },
-            comments() {
-              insideIsland = true;
             },
           });
       }
       if (shouldStrip) {
         rewriter.onDocument({
           comments(comment) {
-            if (insideIsland) {
-              insideIsland = false;
-              return;
-            }
-            if (isSvelteMarker(comment.text)) {
+            if (islandDepth === 0 && isSvelteMarker(comment.text)) {
               comment.remove();
             }
           },
@@ -2048,7 +2032,7 @@ export class ComponentRegistry {
         const rawCss = await Bun.file(out.path).text();
         const suffixed = cssResult.outputs.filter((o) => o !== out).map((o) => o.path);
         const emitted = this.reconcileEmittedAssets(suffixed, token);
-        let cssText = restoreVariationsFormat(rawCss);
+        let cssText = rawCss;
         // Exact filenames rather than the bare suffix, which could collide with an unrelated run of the same characters.
         suffixed.forEach((original, i) => {
           cssText = cssText.replaceAll(path.basename(original), path.basename(emitted[i]!));

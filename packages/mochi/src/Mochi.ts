@@ -14,6 +14,7 @@ import {
   isMochiWs,
   isMochiSse,
   isMochiFile,
+  isMochiCron,
   isMochiQueue,
   isServerPropsResolver,
   isAlsoHydrateMode,
@@ -60,6 +61,7 @@ import {
   headResponse,
   isHtmlResponse,
   MochiHttpError,
+  normalizeAssetPrefix,
   relForDisplay,
   toPosixPath,
   withHead,
@@ -86,6 +88,9 @@ import {
   assertNoConflictingStandaloneRuntime,
   resolveQueueConfigMode,
   collectQueueClosure,
+  startCronRuntime,
+  stopCronRuntime,
+  CRON_JITTER_MS,
 } from './queue';
 import { assertValidOptionsStorage, initOptionsStorage, shutdownOptionsStorage } from './options';
 import { STORAGE_SHAPE_HINT } from './utils/storageConfig';
@@ -93,7 +98,7 @@ import { pinGlobal } from './utils/globalState';
 import { resetStartupMilestones } from './lifecycle';
 import type { MochiQueue, MochiQueueOptions, MochiQueueDescriptor, MochiQueueStorage, MochiWorker } from './queue';
 import type { BunBoss } from 'bun-boss';
-import { finalizeCookieHeaders } from './runtime/cookies';
+import { finalizeCookieHeaders, MochiCookieJar } from './runtime/cookies';
 import { makeRequestContextBuilder, mirrorsSlashForm } from './runtime/requestSetup';
 import { createRouteLimiter, applyRateLimitHeaders } from './runtime/rateLimit';
 import type { MochiRateLimitOptions, MochiRateLimitStore, RouteLimiter } from './runtime/rateLimit';
@@ -116,9 +121,17 @@ import { consoleLogger } from './dev/consoleLogger';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
 import { ISLAND_FAILURE_CSS, ISLAND_FAILURE_DEV_CSS, islandFailureStub } from './web-components/islandFailureStub';
 import { resolvePublicFiles, registerPublicRoutes, isExcludedDotPath } from './runtime/publicDir';
+import { installMemoryPressureHandler, removeMemoryPressureHandler } from './runtime/memoryPressure';
+import { registerStaticDirRoutes, resolveStaticDirs } from './runtime/staticDirs';
+import { createCronJob, cronSignature, type MochiCronHandler, type MochiCronJob, type MochiCronOptions } from './cron';
 import { startDevWatcher } from './dev/devWatcher';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './dev/pageCacheAdminRoutes';
 import { liveReloadGreeting } from './dev/liveReloadGeneration';
+import { createProtectionRuntime } from './protection/gate';
+import { resolveProtectionOptions, PROTECTION_SHELL_COMPONENT } from './protection/config';
+import { mintClearanceToken } from './protection/clearance';
+import { verifyCaptcha } from './captcha/captcha';
+import { getCaptchaRuntime } from './captcha/config';
 
 const DEFAULT_HTML_SHELL = await Bun.file(new URL('./templates/default-shell.html', import.meta.url)).text();
 
@@ -234,6 +247,14 @@ export class Mochi {
   }
 
   /**
+   * Declare a scheduled job — inert until `Mochi.serve({ cron: [job] })` starts it. Invalid schedules throw here at
+   * import time, not at boot.
+   */
+  static cron(name: string, schedule: string, config: MochiCronOptions | MochiCronHandler): MochiCronJob {
+    return createCronJob(name, schedule, config);
+  }
+
+  /**
    * Resolve the handle for a queue declared in `Mochi.serve({ queues })` so jobs can be `.add()`ed to it, passing the
    * payload type explicitly (`Mochi.getQueue<JobData>(name)`). Throws for an undeclared name, or before `Mochi.serve()` mounts its queues.
    */
@@ -253,7 +274,7 @@ export class Mochi {
       assertValidOptionsStorage(options.optionsStorage, 'Mochi.worker({ optionsStorage })');
       initOptionsStorage(options.optionsStorage);
     }
-    return createWorker(options.queues, options.storage, options.queueConfig);
+    return createWorker(options.queues, options.storage, options.queueConfig, options.queueShutdownTimeout);
   }
 
   /**
@@ -378,6 +399,9 @@ export class Mochi {
       if (typeof config.name !== 'string' || !/^[\w.\-/]+$/.test(config.name)) {
         throw new Error(`Mochi.serve({ queues }): "${config.name}" is not a valid queue name. Names may only contain letters, digits, underscores, dots, dashes, and slashes.`);
       }
+      if (config.name.startsWith('cron-')) {
+        throw new Error(`Mochi.serve({ queues }): "${config.name}" uses the reserved "cron-" prefix — that namespace is for scheduled jobs (Mochi.cron). Rename the queue.`);
+      }
       if (queueNames.has(config.name)) {
         throw new Error(`Mochi.serve({ queues }): two queues are named "${config.name}". Queue names must be unique.`);
       }
@@ -424,6 +448,31 @@ export class Mochi {
       initOptionsStorage(options.optionsStorage);
     }
 
+    // Same fail-fast rule for cron: a bad descriptor or duplicate name rejects before the config singleton pins and
+    // the socket binds, so a typo can never leave a half-scheduled server listening.
+    const declaredCron = options.cron ?? [];
+    const cronNames = new Set<string>();
+    for (const job of declaredCron) {
+      if (!isMochiCron(job)) {
+        throw new Error(`Mochi.serve({ cron }): every element must be a descriptor created with Mochi.cron(name, schedule, …).`);
+      }
+      if (typeof job.name !== 'string' || !/^[\w.\-/]+$/.test(job.name)) {
+        throw new Error(`Mochi.serve({ cron }): "${job.name}" is not a valid cron job name. Names may only contain letters, digits, underscores, dots, dashes, and slashes.`);
+      }
+      if (cronNames.has(job.name)) {
+        throw new Error(`Mochi.serve({ cron }): two cron jobs are named "${job.name}". Cron job names must be unique.`);
+      }
+      cronNames.add(job.name);
+    }
+    // Independent of queueStorage: cron always runs on its own bun-boss instance, defaulting to in-process memory.
+    const cronStorage = options.cronStorage ?? 'memory';
+    if (declaredCron.length > 0 && !isValidQueueStorage(cronStorage)) {
+      throw new Error(`Mochi.serve({ cronStorage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
+    }
+
+    // Same fail-fast rule: an unmountable prefix rejects here rather than 404ing at runtime.
+    const staticDirMounts = options.staticDirs ? resolveStaticDirs(options.staticDirs, normalizeAssetPrefix(options.assetPrefix)) : [];
+
     const { svelteVersion } = await checkEnvironment();
     const mochiVersion = await readMochiVersion();
     initExtensions(options);
@@ -448,6 +497,7 @@ export class Mochi {
     const debugBarEnabled = development && (options.debugBar ?? true);
     const liveReloadEnabled = options.liveReload ?? development;
     const middleware = options.handle;
+    const protectionEnabled = options.protection?.enabled === true;
     const baseOutDir = options.outDir ?? './.mochi';
     // Nesting dev artifacts keeps a stale prod manifest and dev chunks apart across a later `start`, while prod stays at
     // the root so Docker and deploys are unaffected.
@@ -569,6 +619,7 @@ export class Mochi {
         logLevel: resolvedLogLevel,
         middleware: !!middleware,
         csrf: !!options.csrf,
+        protection: protectionEnabled,
         proxy: !!options.proxy,
         markdown: !!options.markdown,
         email: emailTransportType,
@@ -601,11 +652,17 @@ export class Mochi {
 
     const errorPagePath = options.errorPage ?? DEFAULT_ERROR_PAGE_PATH;
 
+    // Resolved before compileAll so the interstitial page (default or custom) rides the same one-shot build.
+    const protectionOptions = protectionEnabled && options.protection ? resolveProtectionOptions(options.protection, getCaptchaRuntime().options.bits) : undefined;
+
     // Compiling every page entrypoint in one `Bun.build` below lets splitting pull shared transitive deps (devalue,
     // mochi-framework internals) into chunk files instead of inlining them per page.
     const ssrEntrypoints: string[] = [errorPagePath, CLIENT_STATS_COMPONENT];
     if (debugBarEnabled) {
       ssrEntrypoints.push(PAGE_CACHE_ADMIN_COMPONENT);
+    }
+    if (protectionOptions) {
+      ssrEntrypoints.push(protectionOptions.page ?? PROTECTION_SHELL_COMPONENT);
     }
     if (emailViewerEnabled) {
       ssrEntrypoints.push(EMAIL_VIEWER_COMPONENT);
@@ -638,6 +695,20 @@ export class Mochi {
       getSpeculationRules: () => speculationRules,
       fontPreload: options.fonts?.preload !== false,
     });
+
+    // The interstitial renders through the app shell like error pages do, so a custom `protection.page`
+    // component inherits the site's styling for free.
+    const protectionRuntime = protectionOptions
+      ? createProtectionRuntime({
+          options: protectionOptions,
+          registry,
+          renderShell: (result) => renderShell(result),
+          assetPrefix: registry.assetPrefix,
+          newRequestId,
+          proxy: options.proxy,
+          trailingSlashPolicy: options.trailingSlash,
+        })
+      : undefined;
 
     const { renderErrorResponse, routeErrorResponse } = createErrorResponder({
       handleError: options.handleError,
@@ -693,6 +764,7 @@ export class Mochi {
       protectedMethods,
       trustedOrigins,
       newRequestId,
+      protection: protectionRuntime?.gate,
     });
 
     const internalRoutes: Record<string, MochiPageConfig | MochiApiConfig> = {
@@ -875,7 +947,7 @@ export class Mochi {
           server: Server<undefined>,
           inner: (ctx: MochiRequestContext, event: MochiEvent, resolveOpts: MochiResolveOptions | undefined) => Promise<Response>,
         ): Promise<Response> => {
-          const setup = buildRequestContext(req, server, {
+          const setup = await buildRequestContext(req, server, {
             kind: 'page',
             pattern,
             csrfErrorTransform: (resp) => (isEnhanceRequest(req) ? jsonError(resp.status, 'Cross-site form submission forbidden') : resp),
@@ -1110,7 +1182,7 @@ export class Mochi {
         resolveLimiter(handler.rateLimit, pattern);
 
         const bunRouteValue: BunRouteValue = async (req: Request, server: Server<undefined>): Promise<Response> => {
-          const setup = buildRequestContext(req, server, { kind: 'api', pattern });
+          const setup = await buildRequestContext(req, server, { kind: 'api', pattern });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
           }
@@ -1172,7 +1244,7 @@ export class Mochi {
         wsHandlersMap.set(pattern, wsHandlers);
 
         const bunRouteValue = (async (req: Request, server: Server<undefined>) => {
-          const setup = buildRequestContext(req, server, { kind: 'ws', pattern });
+          const setup = await buildRequestContext(req, server, { kind: 'ws', pattern });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
           }
@@ -1244,7 +1316,7 @@ export class Mochi {
         const capturedSseHandler = handler.handler;
 
         const bunRouteValue: BunRouteValue = async (req: Request, server: Server<undefined>): Promise<Response> => {
-          const setup = buildRequestContext(req, server, { kind: 'sse', pattern });
+          const setup = await buildRequestContext(req, server, { kind: 'sse', pattern });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
           }
@@ -1346,7 +1418,7 @@ export class Mochi {
         const source = handler.source;
 
         const bunRouteValue: BunRouteValue = async (req: Request, server: Server<undefined>): Promise<Response> => {
-          const setup = buildRequestContext(req, server, { kind: 'file', pattern });
+          const setup = await buildRequestContext(req, server, { kind: 'file', pattern });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
           }
@@ -1462,9 +1534,12 @@ export class Mochi {
       }
     }
 
+    // After the mirroring pass on purpose: a `/*` pattern must not be mirrored to `/*\/`.
+    registerStaticDirRoutes(bunRoutes, staticDirMounts);
+
     // Register server island endpoint
     bunRoutes[`${registry.assetPrefix}/island/:componentName`] = withHead(async (req: Request, server: Server<undefined>): Promise<Response> => {
-      const setup = buildRequestContext(req, server, {
+      const setup = await buildRequestContext(req, server, {
         kind: 'island',
         pattern: `${registry.assetPrefix}/island/:componentName`,
         paramsOverride: {},
@@ -1671,6 +1746,54 @@ export class Mochi {
       bunRoutes[`${registry.assetPrefix}/image-cache/entry/`] = imageCacheEntryHandler;
     }
 
+    if (protectionRuntime) {
+      const { verifyPath, options: protectionOptions } = protectionRuntime;
+      const verifyHandler = async (req: Request, server: Server<undefined>): Promise<Response> => {
+        if (req.method !== 'POST') {
+          return new Response('Method Not Allowed', { status: 405 });
+        }
+        const setup = await buildRequestContext(req, server, { kind: 'api', pattern: verifyPath, skipProtection: true });
+        if ('earlyResponse' in setup) {
+          return setup.earlyResponse;
+        }
+        const { ctx, start, requestId, url } = setup;
+        let formData: FormData;
+        try {
+          formData = await req.formData();
+        } catch {
+          return jsonError(400, 'Expected form data');
+        }
+        // minBits stops a token minted for an easier captcha (a low-bits form) being redeemed for clearance.
+        const result = await verifyCaptcha(formData, { minAgeMs: 0, minBits: protectionOptions.bits });
+        let response: Response;
+        if (result.ok) {
+          ctx.cookies.set(protectionOptions.cookieName, mintClearanceToken(protectionOptions.bits), {
+            httpOnly: true,
+            sameSite: 'lax',
+            path: '/',
+            maxAge: Math.floor(protectionOptions.maxAgeMs / 1000),
+            secure: url.protocol === 'https:',
+          });
+          response = Response.json({ ok: true });
+        } else {
+          response = Response.json({ ok: false, error: result.error }, { status: 403, headers: { 'Cache-Control': 'no-store' } });
+        }
+        const final = finalizeCookieHeaders(response, ctx.cookies);
+        mochiEvents.emit('request', {
+          requestId,
+          kind: 'api',
+          method: req.method,
+          path: url.pathname + url.search,
+          status: final.status,
+          duration: performance.now() - start,
+        });
+        return final;
+      };
+      // Both slash variants, like the image-cache routes, so the endpoint answers under any trailingSlash policy.
+      bunRoutes[verifyPath] = verifyHandler;
+      bunRoutes[`${verifyPath}/`] = verifyHandler;
+    }
+
     if (process.env.MOCHI_MEMORY_PROBE === '1') {
       bunRoutes['/__mochi/health/memory'] = (): Response => {
         Bun.gc(true);
@@ -1698,7 +1821,23 @@ export class Mochi {
           `If it moved, point \`publicDir\` at the new location; if the files are gone on purpose, re-run \`mochi-framework build\` to clear this.`,
       );
     }
-    registerPublicRoutes(bunRoutes, initialPublicFiles);
+    // publicDir files bypass buildRequestContext (they're raw Bun routes), so protection reaches them through this
+    // guard. Finalizing the served file through the same jar the gate read adds `Vary: Cookie` to cleared responses.
+    const publicRouteGuard =
+      protectionRuntime && protectionRuntime.options.protectFiles
+        ? async (req: Request, server: Server<undefined>, serve: () => Promise<Response>): Promise<Response> => {
+            const cookies = new MochiCookieJar(req.headers.get('Cookie'), cookieDefaults);
+            const blocked = await protectionRuntime.gate({
+              request: req,
+              url: buildPublicUrl(req, options.proxy),
+              kind: 'file',
+              cookies,
+              server,
+            });
+            return blocked ?? finalizeCookieHeaders(await serve(), cookies);
+          }
+        : undefined;
+    registerPublicRoutes(bunRoutes, initialPublicFiles, publicRouteGuard);
 
     const userFetch = options.fetch;
 
@@ -1736,6 +1875,16 @@ export class Mochi {
           return applyResolveOptions(await serveDiskAsset(diskAsset, development), resolveOpts);
         }
         if (userFetch) {
+          // Assets never reach here, so only user-fetch fallbacks are gated — the interstitial's own JS/CSS stays loadable.
+          if (protectionRuntime) {
+            const cookies = new MochiCookieJar(req.headers.get('Cookie'), cookieDefaults);
+            const blocked = await protectionRuntime.gate({ request: req, url, kind: 'fallback', cookies, server });
+            if (blocked) {
+              return applyResolveOptions(blocked, resolveOpts);
+            }
+            // The gate read the clearance cookie, so a cleared response varies on it like any page's would.
+            return applyResolveOptions(finalizeCookieHeaders(await userFetch(req, server), cookies), resolveOpts);
+          }
           const response = await userFetch(req, server);
           return applyResolveOptions(response, resolveOpts);
         }
@@ -1772,6 +1921,8 @@ export class Mochi {
       htmlShell: _htmlShell,
       handle: _handle,
       markdown: _markdown,
+      cron: _cron,
+      cronStorage: _cronStorage,
       websocket: userWebSocketOptions,
       bun: bunPassthrough,
       ...bunOptions
@@ -1870,6 +2021,10 @@ export class Mochi {
         (cleanupPromise ??= (async () => {
           const steps: Array<[string, () => unknown]> = [
             ['Image sweeper', () => sweeperStop?.()],
+            ['Memory pressure handler', () => removeMemoryPressureHandler()],
+            // The cron boss is a timekeeper and a SQL handle outliving the socket: without this, an embedded caller that
+            // stops the server directly (rather than via a signal or Mochi.stop()) keeps enqueuing runs into a dead app.
+            ['Cron runtime', () => stopCronRuntime()],
             ['Email badge broadcast', () => stopEmailBadgeBroadcast?.()],
             ['Email transport', () => closeEmailTransport()],
             ['Options storage', () => shutdownOptionsStorage()],
@@ -1895,6 +2050,12 @@ export class Mochi {
       }) as typeof server.stop;
     }
 
+    // Installed once the server is up, so a boot that throws never leaves a listener behind on a dead process; never
+    // in development, where the compile-heavy boot hair-triggers the OS signal and the reclaim would be a spurious no-op.
+    if (!development && (options.memoryPressure ?? true)) {
+      installMemoryPressureHandler();
+    }
+
     await runHook('mochi:listening', { options, server });
 
     {
@@ -1917,7 +2078,7 @@ export class Mochi {
       if (declaredQueues.length > 0) {
         // kind 'serve' adopts a standalone producer runtime already connected to the same storage.
         await startQueueRuntime(queueStorage, { kind: 'serve' });
-        await mountQueues(declaredQueues, resolveQueueConfigMode(options.queueConfig));
+        await mountQueues(declaredQueues, resolveQueueConfigMode(options.queueConfig), options.queueShutdownTimeout);
       }
     } catch (err) {
       await closeAllQueueResources();
@@ -1927,6 +2088,18 @@ export class Mochi {
     // Fires once every declared queue is registered, so a user hook reaching for a handle (or `Mochi.boss()`)
     // gets it instead of a "not mounted yet" error.
     await runHook('mochi:queuesMounted', { options, server, queues: declaredQueues.map((q) => q.name) });
+
+    // After the queues mount, so a job firing immediately can reach Mochi.getQueue(); a throw here tears the
+    // just-bound server down rather than leaving it listening with half a schedule registered.
+    if (declaredCron.length > 0) {
+      try {
+        await startCronRuntime(declaredCron, { cronStorage, development, jitterMs: development ? 0 : CRON_JITTER_MS, shutdownTimeout: options.queueShutdownTimeout });
+      } catch (err) {
+        await closeAllQueueResources();
+        await server.stop(true);
+        throw err;
+      }
+    }
 
     if (warmupHandlers.length > 0) {
       mochiEvents.emit('warmup:start', { routeCount: warmupHandlers.length });
@@ -1961,6 +2134,7 @@ export class Mochi {
 
     if (development) {
       await startDevWatcher({
+        initialCronSignature: cronSignature(declaredCron),
         registry,
         server,
         options,
@@ -1984,6 +2158,7 @@ export class Mochi {
         shellPath,
         reloadShell,
         reloadSpeculationRules,
+        publicRouteGuard,
       });
     }
 

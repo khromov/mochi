@@ -1,5 +1,5 @@
 import { Mochi, error, getRequestContext, mintCaptcha, verifyCaptcha } from 'mochi-framework';
-import type { MochiRouteValue, MochiQueueConfig } from 'mochi-framework';
+import type { MochiRouteValue, MochiQueueConfig, MochiCronConfig } from 'mochi-framework';
 import {
   buildDocsNav,
   buildLlmsJson,
@@ -16,12 +16,14 @@ import {
   loadDocs,
 } from './lib/docs';
 import { loadPosts, getPost } from './lib/blog';
+import { buildFeedXml, FEED_CONTENT_TYPE } from './lib/feed';
 import { CHANGELOG_SLUG, CHANGELOG_TITLE, CHANGELOG_DESCRIPTION, getChangelogHtml, getChangelogTxt } from './lib/changelog';
 import { respondMcp } from './lib/mcp';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
 import { routes as cacheEventsRoutes } from './demos/cache-events/routes';
 import { routes as captchaRoutes } from './demos/captcha/routes';
+import { routes as protectionRoutes } from './demos/protection/routes';
 import { routes as captchaStylingRoutes } from './demos/captcha-styling/routes';
 import { routes as chartsRoutes } from './demos/charts/routes';
 import { routes as chatRoutes } from './demos/chat/routes';
@@ -63,6 +65,7 @@ import { routes as portableTextRoutes } from './demos/portable-text/routes';
 import { routes as propDedupRoutes } from './demos/prop-dedup/routes';
 import { routes as propsIdRoutes } from './demos/props-id/routes';
 import { routes as queueRoutes, queues as queueQueues } from './demos/queue/routes';
+import { routes as cronRoutes, cron as cronJobs } from './demos/cron/routes';
 import { routes as rateLimitRoutes } from './demos/rate-limit/routes';
 import { routes as reloadFormDataRoutes } from './demos/reload-form-data/routes';
 import { routes as requestCacheRoutes } from './demos/request-cache/routes';
@@ -70,9 +73,11 @@ import { routes as requestIdRoutes } from './demos/request-id/routes';
 import { routes as modeWatcherRoutes } from './demos/mode-watcher/routes';
 import { routes as runedRoutes } from './demos/runed/routes';
 import { routes as serverIslandRoutes } from './demos/server-island/routes';
+import { routes as deferInvalidationRoutes } from './demos/defer-invalidation/routes';
 import { routes as shotRoutes } from './shot/routes';
 import { routes as serverPropsRoutes } from './demos/server-props/routes';
 import { routes as sharedStateRoutes } from './demos/shared-state/routes';
+import { routes as staticDirsRoutes } from './demos/static-dirs/routes';
 import { routes as streamsRoutes } from './demos/streams/routes';
 import { routes as tanstackTableRoutes } from './demos/tanstack-table/routes';
 import { routes as urlRoutes } from './demos/url/routes';
@@ -274,6 +279,11 @@ export const routes: Record<string, MochiRouteValue> = {
       headers: { 'Content-Type': 'application/xml; charset=utf-8' },
     });
   }),
+  '/feed.xml': Mochi.api(async () => {
+    return new Response(await buildFeedXml(), {
+      headers: { 'Content-Type': FEED_CONTENT_TYPE },
+    });
+  }),
   '/llms.txt': Mochi.api(async () => {
     const { url } = getRequestContext();
     return new Response(await buildLlmsIndexTxt(url.origin), {
@@ -336,6 +346,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...apiRoutes,
   ...cacheEventsRoutes,
   ...captchaRoutes,
+  ...protectionRoutes,
   ...captchaStylingRoutes,
   ...chartsRoutes,
   ...chatRoutes,
@@ -377,6 +388,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...propDedupRoutes,
   ...propsIdRoutes,
   ...queueRoutes,
+  ...cronRoutes,
   ...rateLimitRoutes,
   ...reloadFormDataRoutes,
   ...requestCacheRoutes,
@@ -384,9 +396,11 @@ export const routes: Record<string, MochiRouteValue> = {
   ...modeWatcherRoutes,
   ...runedRoutes,
   ...serverIslandRoutes,
+  ...deferInvalidationRoutes,
   ...serverPropsRoutes,
   ...shotRoutes,
   ...sharedStateRoutes,
+  ...staticDirsRoutes,
   ...streamsRoutes,
   ...tanstackTableRoutes,
   ...urlRoutes,
@@ -398,3 +412,6 @@ export const routes: Record<string, MochiRouteValue> = {
 
 // Background job queues, mounted in Mochi.serve({ queues }) (see src/index.ts).
 export const queues: MochiQueueConfig[] = [...queueQueues];
+
+// Scheduled jobs, mounted in Mochi.serve({ cron }) (see src/index.ts).
+export const cron: MochiCronConfig[] = [...cronJobs];

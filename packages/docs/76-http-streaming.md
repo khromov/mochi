@@ -31,6 +31,7 @@ Use these to layer real-time UI on top of a rendered base page.
 - **Server islands** (`mochi:defer`) load slow or personalized fragments out-of-band after the shell ships. The island fetches itself once the browser sees the placeholder.
 - **Visible hydration** (`mochi:hydrate:visible`) keeps the initial JavaScript payload small.
 - **Shared HTTP cache** (Cloudflare, CloudFront, Fastly, Varnish, nginx) in front of the origin makes render time irrelevant for the cacheable case. A server island can stay uncached behind a cached shell — see [Cache](/docs/cache/).
+- **[`compress()`](/docs/middleware/#compress) streams** every encoding it offers (gzip, zstd, deflate) through a `CompressionStream`, so a compressed response stays chunked.
 
 <SeeItInAction
 demos={[{ href: "/demos/streams/", title: "Real-time Streams", hook: "How server-sent events and WebSocket streaming work — live SSE and WebSocket clocks, lazily hydrated via mochi:hydrate:visible." }]}

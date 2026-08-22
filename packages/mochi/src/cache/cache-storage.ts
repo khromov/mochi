@@ -3,6 +3,7 @@ import { mkdir, open, readdir, rename, rm, stat, unlink, type FileHandle } from 
 import { join, relative, resolve } from 'node:path';
 import type { Storage, SweepOptions, SweepResult } from './cache';
 import { mochiEvents } from '../events';
+import { registerPressureResponder } from '../runtime/memoryPressure';
 import { pinGlobal } from '../utils/globalState';
 import { logger } from '../utils/log';
 
@@ -92,12 +93,15 @@ export class MemoryStorage implements Storage {
   private store = new Map<string, { value: unknown; writtenAt: number }>();
   private readonly maxAge?: number;
   private intervalTimer?: ReturnType<typeof setInterval>;
+  readonly pressureLabel = 'MemoryStorage';
 
   constructor(options: MemoryStorageOptions = {}) {
     this.maxAge = options.maxAge;
     if (options.purgeInterval && options.purgeInterval > 0) {
       this.startSweeper(options.purgeInterval);
     }
+    // This is the backend that actually holds bytes in RAM, so it is the one the OS low-memory signal drains.
+    registerPressureResponder(this);
   }
 
   getItem(key: string): unknown {
@@ -220,6 +224,29 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
   }
 }
 
+// TODO: This is very hacky and we should check if 1.4.0 solves it and/or remove this asap
+// Windows reports a delete-pending file — a concurrent sweep or removeItem mid-unlink — as EPERM/EACCES
+// on open rather than ENOENT, and an antivirus/indexer handle surfaces the same codes; retrying lets the
+// delete finish into a plain ENOENT miss and a transient lock clear into a successful read. ENOENT itself
+// is never retried — it is the miss signal `getItem` branches on. No-op on POSIX.
+const READ_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
+async function readTextWithRetry(path: string): Promise<string> {
+  if (process.platform !== 'win32') {
+    return Bun.file(path).text();
+  }
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await Bun.file(path).text();
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? '';
+      if (attempt >= 20 || !READ_RETRY_CODES.has(code)) {
+        throw err;
+      }
+      await Bun.sleep(Math.min(100, 10 * (attempt + 1)) * (0.5 + Math.random()));
+    }
+  }
+}
+
 // fsyncing a directory makes a rename into it survive a crash. Some filesystems reject directory fsync with
 // EINVAL/ENOTSUP; the data file is fsynced regardless, so only rename-durability is lost and the failure mode degrades
 // to reverting to the prior version.
@@ -282,7 +309,7 @@ export class FileStorage implements Storage {
   async getItem(key: string): Promise<unknown> {
     let text: string;
     try {
-      text = await Bun.file(this.pathFor(key)).text();
+      text = await readTextWithRetry(this.pathFor(key));
     } catch (err) {
       // A missing file is a cache miss; any other read error propagates so the
       // cache can degrade to a `miss` + `cache:error` rather than serving garbage.

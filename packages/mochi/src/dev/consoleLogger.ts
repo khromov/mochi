@@ -200,6 +200,17 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     verySlow,
     level: removed === 0 ? 'debug' : 'info',
   }));
+  // Pinned at warn: this only fires when the OS is already short of memory, which an operator needs to see in
+  // production, where the default level hides info lines.
+  subscribe('cache:pressure', ({ level, removed, caches, durationMs }) => ({
+    label: 'CACHE',
+    path: 'pressure',
+    note: `${styleText(level === 'critical' ? 'red' : 'yellow', level)} ${styleText('dim', `${removed} entr${removed === 1 ? 'y' : 'ies'} dropped from ${caches} cache${caches === 1 ? '' : 's'}`)}`,
+    duration: durationMs,
+    slow,
+    verySlow,
+    level: 'warn',
+  }));
   subscribe('image:cache-sweep', ({ removedVariants, removedOriginals, removedOther, durationMs }) => {
     const removed = removedVariants + removedOriginals + removedOther;
     // `removedOther` is markers/tmp/unattributable — noise on the common line, so
@@ -287,6 +298,11 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     level: 'warn',
   }));
 
+  subscribe('cron:scheduled', ({ job, schedule, nextRun }) => ({
+    label: 'CRON',
+    path: job,
+    note: `${styleText('dim', schedule)}${nextRun === undefined ? '' : styleText('dim', ` → next ${new Date(nextRun).toISOString()}`)}`,
+  }));
   subscribe('email:sent', ({ to, subject, transport, duration }) => {
     // Four delivery classes, coloured so a non-delivery never reads as a success line: `log` didn't send (yellow, warn,
     // visible in production), `dev` was captured into the outbox (info, pointed at the viewer), `suppressed` was vetoed
@@ -396,6 +412,15 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
       return { label: 'HMR ', path: relPath(path), note: styleText('dim', action), duration: durationMs, slow, verySlow };
     });
   }
+
+  // Not gated by `compile`: this is a resource-leak warning, not routine build chatter, so silencing build lines must
+  // not hide it. Drop it with a `consoleLogger:line` filter on `source.name === 'recompile:module-churn'` instead.
+  subscribe('recompile:module-churn', ({ reloadCount }) => ({
+    label: 'HMR ',
+    path: 'module-state',
+    note: `re-imported ${reloadCount}× — module-scoped resources leak on each reload (DB pools, timers, SMTP pools); hold them with ${styleText('cyan', 'pinGlobal()')} → /docs/development-mode`,
+    level: 'warn',
+  }));
 }
 
 /**

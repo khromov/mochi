@@ -145,6 +145,7 @@ export interface DebugBarConfig {
   logLevel: string;
   middleware: boolean;
   csrf: boolean;
+  protection: boolean;
   proxy: boolean;
   markdown: boolean;
   /** Active email transport type. `dev` gates the toolbar's email-viewer link. */
