@@ -43,6 +43,9 @@ await Mochi.serve({
   // A separate file from SUPPORT_DB on purpose: the app holds its own bun:sqlite handle on support.sqlite, and sharing
   // one file across two drivers invites writer contention for no benefit.
   queueStorage: { sqlite: process.env.SUPPORT_QUEUE_DB || '.db/queue.sqlite' },
+  // Its own file rather than the queue's, for the same writer-contention reason: cron runs on a second bun-boss
+  // instance with a second SQL handle. Without this the default is `memory`, so a restart drops the nightly firing.
+  cronStorage: { sqlite: process.env.SUPPORT_CRON_DB || '.db/cron.sqlite' },
   email: {
     from: process.env.SMTP_FROM || 'Mochi Support Form <support@mochi.fast>',
     transport: smtp,

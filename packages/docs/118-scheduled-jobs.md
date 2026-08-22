@@ -44,7 +44,13 @@ await Mochi.serve({
 ```
 
 - Accepts `memory`, `{ sqlite }`, `{ postgres }`, or `{ pglite }`.
-- **Defaults to `memory`**, independent of `queueStorage`. Cron always runs on its own instance, so queues and cron never share tables even when pointed at the same store.
+- **Defaults to `memory`**, independent of `queueStorage`. Cron always runs on its own instance under its own `mochi_cron` namespace — a Postgres schema, or a table-name prefix on SQLite — so queues and cron never share tables even when pointed at the same store.
+
+<Callout type="info">
+
+Pointing both at the **same SQLite file** is safe table-wise but puts two writers on one file. Give cron its own file when both are durable.
+
+</Callout>
 
 <Callout type="warning">
 
@@ -88,6 +94,14 @@ Each firing is claimed by exactly one node through an atomic database update, an
 A scheduled run executes internally as a [queue](/docs/queues/) job named `cron-<name>`, so its lifecycle surfaces through the queue events — `queue:active`, `queue:completed`, `queue:failed` with `queue: "cron-<name>"`. Registration emits one `cron:scheduled` event.
 
 A handler that throws is reported through `queue:failed` and logged; the schedule stays registered and runs again at its next occurrence.
+
+The handler receives the run: `{ name, schedule, scheduledTime, tz? }`. `scheduledTime` is the epoch ms at which the scheduler claimed the firing — the same value on every retry of that firing, so it works as an idempotency key.
+
+```ts
+Mochi.cron('sync', '*/15 * * * *', async ({ name, scheduledTime }) => {
+  await syncOnce(`${name}:${scheduledTime}`);
+});
+```
 
 <Callout type="info">
 

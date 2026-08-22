@@ -89,6 +89,7 @@ import {
   resolveQueueConfigMode,
   collectQueueClosure,
   startCronRuntime,
+  stopCronRuntime,
   CRON_JITTER_MS,
 } from './queue';
 import { pinGlobal } from './utils/globalState';
@@ -2015,6 +2016,9 @@ export class Mochi {
         try {
           sweeperStop?.();
           removeMemoryPressureHandler();
+          // The cron boss is a timekeeper and a SQL handle outliving the socket: without this, an embedded caller that
+          // stops the server directly (rather than via a signal or Mochi.stop()) keeps enqueuing runs into a dead app.
+          await stopCronRuntime();
           stopEmailBadgeBroadcast?.();
           await closeEmailTransport();
           for (const store of rateLimitStores) {
@@ -2075,7 +2079,7 @@ export class Mochi {
     // just-bound server down rather than leaving it listening with half a schedule registered.
     if (declaredCron.length > 0) {
       try {
-        await startCronRuntime(declaredCron, { cronStorage, development, jitterMs: development ? 0 : CRON_JITTER_MS });
+        await startCronRuntime(declaredCron, { cronStorage, development, jitterMs: development ? 0 : CRON_JITTER_MS, shutdownTimeout: options.queueShutdownTimeout });
       } catch (err) {
         await closeAllQueueResources();
         await server.stop(true);

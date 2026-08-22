@@ -46,9 +46,11 @@ export const COMPRESSION_FORMAT: Record<CompressionMethod, CompressionStreamForm
 // `methods` is the server's allowlist (and tiebreak order for `*`); the client's
 // header preference (order + q-values) decides among configured methods.
 export function negotiateEncoding(acceptEncoding: string, methods: CompressionMethod[]): CompressionMethod | null {
-  const tokens = methods.map((m) => COMPRESSION_TOKEN[m]);
-  const best = new Negotiator({ headers: { 'accept-encoding': acceptEncoding } }).encodings(tokens)[0];
-  return methods.find((m) => COMPRESSION_TOKEN[m] === best) ?? null;
+  // A method this build no longer supports ('brotli', from a config written against an older release) has no token, and
+  // negotiator dereferences whatever it is handed — drop it so the request degrades to the remaining methods.
+  const supported = methods.filter((m) => COMPRESSION_TOKEN[m]);
+  const best = new Negotiator({ headers: { 'accept-encoding': acceptEncoding } }).encodings(supported.map((m) => COMPRESSION_TOKEN[m]))[0];
+  return supported.find((m) => COMPRESSION_TOKEN[m] === best) ?? null;
 }
 
 /** Create a JSON response. */

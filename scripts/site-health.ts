@@ -8,8 +8,8 @@ type ResponseReceived = { requestId: string; loaderId: string; type?: string; re
 type LoadingDone = { requestId: string };
 type ExceptionThrown = { exceptionDetails: { text?: string; exception?: { description?: string } } };
 type LogEntryAdded = { entry: { level: string; text: string; url?: string } };
-type NavigateResult = { errorText?: string };
-type LifecycleEvent = { name: string; frameId: string };
+type NavigateResult = { errorText?: string; loaderId?: string };
+type LifecycleEvent = { name: string; frameId: string; loaderId: string };
 type FrameTree = { frameTree: { frame: { id: string } } };
 
 type Args = {
@@ -252,9 +252,14 @@ async function checkPage(url: string, timeout: number): Promise<PageResult> {
   // the page we were asked to check.
   let mainLoaderId: string | undefined;
   let retried = false;
-  // Re-pointed at each attempt's resolver, so a late load event from a previous
-  // attempt cannot settle the current one.
   let onLoad: (() => void) | undefined;
+  // A timed-out attempt's load event can still land mid-retry, and `onLoad` by then points at the retry's resolver —
+  // so the event is matched against the loader id `Page.navigate` handed back for *this* attempt.
+  let expectedLoaderId: string | undefined;
+  let matchAnyLoader = false;
+  // Loads seen before their attempt learned its loader id, so a fast load between navigate() and the assignment below
+  // is not lost.
+  const loadedLoaders = new Set<string>();
   // Declared before the listeners rather than at its assignment, so an event arriving mid-setup reads an
   // empty string (and is ignored) instead of hitting the temporal dead zone.
   let mainFrameId = '';
@@ -326,7 +331,11 @@ async function checkPage(url: string, timeout: number): Promise<PageResult> {
     // re-dispatches it, so use the frame-scoped main-frame `load` event, which also ignores cross-origin iframe loads
     // like the blog's newsletter embed.
     view.addEventListener<LifecycleEvent>('Page.lifecycleEvent', ({ data }) => {
-      if (data.name === 'load' && data.frameId === mainFrameId) {
+      if (data.name !== 'load' || data.frameId !== mainFrameId) {
+        return;
+      }
+      loadedLoaders.add(data.loaderId);
+      if (matchAnyLoader || data.loaderId === expectedLoaderId) {
         onLoad?.();
       }
     });
@@ -350,6 +359,9 @@ async function checkPage(url: string, timeout: number): Promise<PageResult> {
       inflight.clear();
       status = undefined;
       mainLoaderId = undefined;
+      expectedLoaderId = undefined;
+      matchAnyLoader = false;
+      loadedLoaders.clear();
 
       const loaded = new Promise<void>((resolve) => (onLoad = resolve));
       // Driven through cdp() rather than view.navigate(): navigate() has no timeout and
@@ -358,7 +370,11 @@ async function checkPage(url: string, timeout: number): Promise<PageResult> {
       if (navigation.errorText) {
         add('error', `Navigation failed: ${navigation.errorText}`);
       }
-      if ((await Promise.race([loaded, sleep(timeout).then(() => timedOut)])) !== timedOut) {
+      expectedLoaderId = navigation.loaderId;
+      // A navigation with no loader id (an aborted one) can never be matched, so fall back to accepting any load.
+      matchAnyLoader = expectedLoaderId === undefined;
+      const alreadyLoaded = expectedLoaderId !== undefined && loadedLoaders.has(expectedLoaderId);
+      if (alreadyLoaded || (await Promise.race([loaded, sleep(timeout).then(() => timedOut)])) !== timedOut) {
         break;
       }
       if (attempt < LOAD_ATTEMPTS) {

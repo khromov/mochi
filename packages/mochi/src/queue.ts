@@ -222,6 +222,8 @@ interface QueueRegistry {
   cronBoss: BunBoss | null;
   /** SQL handle owned by a dedicated sqlite/memory cron boss, closed on shutdown. */
   cronOwnedSql: SQL | null;
+  /** The cron boss's own copy of the drain budget — `closeAllQueueResources` resets `shutdownTimeout` before it stops cron. */
+  cronShutdownTimeout: number;
 }
 
 const DEFAULT_QUEUE_SHUTDOWN_TIMEOUT = 10_000;
@@ -239,6 +241,7 @@ const registry = pinGlobal<QueueRegistry>('__mochi_queue_registry__', () => ({
   shutdownTimeout: DEFAULT_QUEUE_SHUTDOWN_TIMEOUT,
   cronBoss: null,
   cronOwnedSql: null,
+  cronShutdownTimeout: DEFAULT_QUEUE_SHUTDOWN_TIMEOUT,
 }));
 
 export function storageEquals(a: MochiQueueStorage | null, b: MochiQueueStorage): boolean {
@@ -464,7 +467,7 @@ export function formatQueueWarning(warning: Warning): string {
 }
 
 interface ConstructBossOptions {
-  /** Schema for postgres/pglite; ignored by the sqlite backend, which has no schemas. */
+  /** A real schema on postgres/pglite; a table-name prefix on sqlite, which has no schemas. */
   schema: string;
   /** Enable bun-boss's durable cron timekeeper on this instance. */
   schedule: boolean;
@@ -489,7 +492,9 @@ function constructBoss(storage: MochiQueueStorage, opts: ConstructBossOptions): 
       mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
     }
     const sql = new SQL(`sqlite://${file}`);
-    return { boss: new BunBoss({ backend: 'sqlite', db: fromBunSqlite(sql), ...extra }), ownedSql: sql };
+    // The sqlite backend has no schemas, so bun-boss folds `schema` into a table-name prefix instead — without it both
+    // bosses would default to `bunboss.*` and cron would share the queue tables inside one file.
+    return { boss: new BunBoss({ backend: 'sqlite', db: fromBunSqlite(sql), schema: opts.schema, ...extra }), ownedSql: sql };
   }
   if ('pglite' in storage) {
     // The caller constructs and owns the PGlite instance (bun-boss's adapter contract), so nothing is owned for closing.
@@ -880,28 +885,33 @@ export interface StartCronOptions {
   cronMonitorIntervalSeconds?: number;
   cronWorkerIntervalSeconds?: number;
   workerPollingSeconds?: number;
+  /** Graceful drain budget (ms) for the cron boss, from `queueShutdownTimeout`. */
+  shutdownTimeout?: number;
 }
 
-function cronRunFrom(job: MochiCronJob): MochiCronRun {
-  return { name: job.name, schedule: job.schedule, scheduledTime: Date.now(), ...(job.options?.tz ? { tz: job.options.tz } : {}) };
+function cronRunFrom(job: MochiCronJob, scheduledTime: number): MochiCronRun {
+  return { name: job.name, schedule: job.schedule, scheduledTime, ...(job.options?.tz ? { tz: job.options.tz } : {}) };
 }
 
 // A durable cron run is a queue job named `cron-<name>`, so reuse makeHandler — the run then emits
 // queue:active/completed/failed under that queue name, and a throw is failed-and-logged, not process-fatal.
 function cronWorkHandler(job: MochiCronJob) {
-  return makeHandler<unknown, void>(cronQueueName(job.name), async () => {
-    await job.run(cronRunFrom(job));
+  // `enqueuedAt` is when the scheduler claimed the firing, so it stays fixed across a backlog and every retry — unlike
+  // the handler's own start time, which is what an idempotency key or lateness metric must not be built on.
+  return makeHandler<unknown, void>(cronQueueName(job.name), async (queueJob) => {
+    await job.run(cronRunFrom(job, queueJob.enqueuedAt));
   });
 }
 
 /** Stop the dedicated cron boss (if any) and release its SQL handle; idempotent, and schedules stay in the store. */
 export async function stopCronRuntime(): Promise<void> {
-  const { cronBoss, cronOwnedSql, shutdownTimeout } = registry;
+  const { cronBoss, cronOwnedSql, cronShutdownTimeout } = registry;
   registry.cronBoss = null;
   registry.cronOwnedSql = null;
+  registry.cronShutdownTimeout = DEFAULT_QUEUE_SHUTDOWN_TIMEOUT;
   if (cronBoss) {
     try {
-      await cronBoss.stop({ graceful: true, timeout: shutdownTimeout });
+      await cronBoss.stop({ graceful: true, timeout: cronShutdownTimeout });
     } catch (err) {
       logger.warn(`[cron] shutdown: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -949,6 +959,7 @@ export async function startCronRuntime(jobs: MochiCronJob[], opts: StartCronOpti
   }
   registry.cronBoss = boss;
   registry.cronOwnedSql = ownedSql;
+  registry.cronShutdownTimeout = opts.shutdownTimeout ?? DEFAULT_QUEUE_SHUTDOWN_TIMEOUT;
 
   // Reconcile: drop any schedule this runtime owns that is no longer declared (a removed Mochi.cron line, or a
   // dev-skipped job) so an orphaned schedule can't keep enqueuing jobs no worker consumes.

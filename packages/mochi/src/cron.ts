@@ -4,7 +4,7 @@
 export interface MochiCronRun {
   readonly name: string;
   readonly schedule: string;
-  /** Epoch ms at which this invocation started. */
+  /** Epoch ms at which the scheduler claimed this firing — fixed across a queue backlog and every retry, unlike the handler's start time. */
   readonly scheduledTime: number;
   /** IANA zone the schedule is read in; absent when using the system zone. */
   readonly tz?: string;

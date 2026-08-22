@@ -5,7 +5,7 @@ export interface CronLogEntry {
   seq: number;
   /** Epoch ms at which the cron handler ran. */
   at: number;
-  /** The tick time (epoch ms) the run was scheduled for. */
+  /** Epoch ms at which the scheduler claimed the firing, which is earlier than `at` by the queue pickup delay. */
   scheduledTime: number;
 }
 

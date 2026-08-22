@@ -306,7 +306,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       return null;
     }
     reloadSpeculationRules?.(serveOptions.speculationRules);
-    await reconcileCron(serveOptions as { cron?: MochiCronJob[]; cronStorage?: MochiQueueStorage });
+    await reconcileCron(serveOptions as { cron?: MochiCronJob[]; cronStorage?: MochiQueueStorage; queueShutdownTimeout?: number });
     const freshRoutes = serveOptions.routes as Record<string, unknown>;
 
     const newComponentPaths = new Set<string>();
@@ -326,22 +326,24 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
 
   // Re-register durable cron only when an entry edit actually changes the cron array, so a route-only edit doesn't
   // churn the scheduler.
-  async function reconcileCron(serveOptions: { cron?: MochiCronJob[]; cronStorage?: MochiQueueStorage }): Promise<void> {
+  async function reconcileCron(serveOptions: { cron?: MochiCronJob[]; cronStorage?: MochiQueueStorage; queueShutdownTimeout?: number }): Promise<void> {
     const cron = serveOptions.cron ?? [];
     const signature = cronSignature(cron);
     if (signature === lastCronSignature) {
       return;
     }
-    lastCronSignature = signature;
     try {
       if (cron.length === 0) {
         await stopCronRuntime();
       } else {
-        await startCronRuntime(cron, { cronStorage: serveOptions.cronStorage ?? 'memory', development: true, jitterMs: 0 });
+        await startCronRuntime(cron, { cronStorage: serveOptions.cronStorage ?? 'memory', development: true, jitterMs: 0, shutdownTimeout: serveOptions.queueShutdownTimeout });
       }
+      // Only a successful re-register advances the signature: startCronRuntime stops the running scheduler before it
+      // rebuilds, so a failure leaves nothing scheduled and the next save must retry rather than short-circuit.
+      lastCronSignature = signature;
       logger.info(`[cron] re-registered ${cron.length} job(s) after edit`);
     } catch (err) {
-      logger.warn(`[cron] reload failed, keeping the previous schedule: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(`[cron] reload failed — no schedule is running; fix the error and save again: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

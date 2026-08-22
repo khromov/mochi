@@ -1,5 +1,7 @@
 import path from 'node:path';
+import { statSync } from 'node:fs';
 import type { BunRouteValue } from '../types';
+import { relForDisplay } from '../utils';
 
 /** A prefix → directory mount, as declared in `Mochi.serve({ staticDirs })`. */
 export type MochiStaticDirs = Record<string, string>;
@@ -31,7 +33,17 @@ export function resolveStaticDirs(staticDirs: MochiStaticDirs, assetPrefix: stri
       throw new Error(`Mochi.serve({ staticDirs }): "${rawPrefix}" needs a directory path.`);
     }
     // Pinned absolute while cwd is still valid, matching publicDir — a later chdir must not re-resolve the mount.
-    return { pattern: `${prefix}/*`, dir: path.resolve(dir) };
+    const resolved = path.resolve(dir);
+    // Bun's directory route resolves the path per request, so a typo would otherwise surface as a bare per-request
+    // ENOENT naming neither the prefix nor the option.
+    const stats = statSync(resolved, { throwIfNoEntry: false });
+    if (!stats) {
+      throw new Error(`Mochi.serve({ staticDirs }): "${rawPrefix}" points at "${dir}", which does not exist (looked in ${relForDisplay(resolved)}).`);
+    }
+    if (!stats.isDirectory()) {
+      throw new Error(`Mochi.serve({ staticDirs }): "${rawPrefix}" points at "${dir}", which is a file, not a directory.`);
+    }
+    return { pattern: `${prefix}/*`, dir: resolved };
   });
 }
 

@@ -2,6 +2,7 @@ import type { Handle } from '../runtime/hooks';
 import { getMochiConfig } from '../mochiConfig';
 import { appendVary, COMPRESSION_FORMAT, COMPRESSION_TOKEN, negotiateEncoding } from '../utils';
 import type { CompressionMethod } from '../utils';
+import { logger } from '../utils/log';
 
 const COMPRESSIBLE_TYPES = ['text/', 'application/json', 'application/javascript', 'application/xml', 'application/manifest+json', 'application/ld+json', 'image/svg+xml'];
 
@@ -33,7 +34,12 @@ function isDev(): boolean {
  * `utils/index.ts`).
  */
 export function compress(opts: CompressOptions = {}): Handle {
-  const methods = opts.methods ?? ['zstd', 'gzip'];
+  const declared = opts.methods ?? ['zstd', 'gzip'];
+  const methods = declared.filter((m) => COMPRESSION_TOKEN[m]);
+  const dropped = declared.filter((m) => !COMPRESSION_TOKEN[m]);
+  if (dropped.length > 0) {
+    logger.warn(`compress(): ignoring unsupported method(s) ${dropped.join(', ')} — supported: ${Object.keys(COMPRESSION_TOKEN).join(', ')}.`);
+  }
 
   return async ({ event, resolve }) => {
     const response = await resolve(event);

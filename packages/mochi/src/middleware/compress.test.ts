@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Server } from 'bun';
 import type { MochiEvent } from '../runtime/hooks';
+import type { CompressionMethod } from '../utils';
 import { compress } from './compress';
 
 // compress() reads dev mode from the Mochi.serve() config singleton; fake it via its global key.
@@ -275,6 +276,37 @@ describe('compress()', () => {
 
     expect(response.headers.get('Content-Encoding')).toBeNull();
     expect(response.headers.get('Vary')).toBe('Accept-Encoding');
+    expect(await response.text()).toBe(body);
+  });
+
+  // 'brotli' was a valid method before it was dropped; an upgraded app must degrade to its other methods rather than
+  // dereference a missing token and 500 every request.
+  test('ignores a method this build no longer supports', async () => {
+    const handle = compress({ methods: ['brotli' as CompressionMethod, 'gzip'] });
+    const body = 'x'.repeat(1024);
+    const req = new Request('http://localhost/', { headers: { 'Accept-Encoding': 'gzip, br' } });
+
+    const response = await handle({
+      event: makeEvent(req),
+      resolve: async () => new Response(body, { headers: { 'Content-Type': 'text/plain' } }),
+    });
+
+    expect(response.headers.get('Content-Encoding')).toBe('gzip');
+    const restored = new TextDecoder().decode(Bun.gunzipSync(new Uint8Array(await response.arrayBuffer())));
+    expect(restored).toBe(body);
+  });
+
+  test('an unsupported method as the only method leaves the response uncompressed', async () => {
+    const handle = compress({ methods: ['brotli' as CompressionMethod] });
+    const body = '<p>hello</p>';
+    const req = new Request('http://localhost/', { headers: { 'Accept-Encoding': 'br, gzip' } });
+
+    const response = await handle({
+      event: makeEvent(req),
+      resolve: async () => new Response(body, { headers: { 'Content-Type': 'text/html' } }),
+    });
+
+    expect(response.headers.get('Content-Encoding')).toBeNull();
     expect(await response.text()).toBe(body);
   });
 

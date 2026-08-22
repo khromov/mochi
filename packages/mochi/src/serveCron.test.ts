@@ -36,11 +36,13 @@ const serve = async (opts: Partial<Parameters<typeof Mochi.serve>[0]>): Promise<
 
 describe('Mochi.serve({ cron })', () => {
   // Only one Mochi.serve() may succeed per process (the __mochi_config__ singleton), so exactly one test boots a server and the rest assert rejections that throw before the singleton pins.
-  test('starts durable schedules and stops them on shutdown', async () => {
+  // server.stop() and not just the signal path: an embedded caller that stops the server directly would otherwise be
+  // left with a live timekeeper and an open store handle enqueuing runs into a dead app.
+  test('starts durable schedules and stops them on server.stop()', async () => {
     server = await serve({ cron: [Mochi.cron('nightly', IDLE, () => {}), Mochi.cron('weekly', IDLE, () => {})] });
     expect((await registeredCronNames()).sort()).toEqual(['nightly', 'weekly']);
 
-    await closeAllQueueResources();
+    await server.stop(true);
     expect(await registeredCronNames()).toEqual([]);
   });
 

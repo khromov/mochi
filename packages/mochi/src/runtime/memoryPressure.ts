@@ -1,4 +1,5 @@
 import { mochiEvents } from '../events';
+import type { MochiEventMap } from '../events';
 import { logger } from '../utils/log';
 import { pinGlobal } from '../utils/globalState';
 
@@ -27,7 +28,18 @@ interface PressureRegistry {
 const registry = pinGlobal<PressureRegistry>('__mochi_pressure_registry__', () => ({ responders: new Set(), handler: null }));
 
 export function registerPressureResponder(responder: PressureResponder): void {
+  // Pruning here too bounds the set in the common case: the OS signal never fires on a healthy Linux box (and never at
+  // all in dev or a build), so registration is the only pass a short-lived cache would otherwise get.
+  prune();
   registry.responders.add(new WeakRef(responder));
+}
+
+function prune(): void {
+  for (const ref of registry.responders) {
+    if (!ref.deref()) {
+      registry.responders.delete(ref);
+    }
+  }
 }
 
 function liveResponders(): PressureResponder[] {
@@ -51,7 +63,7 @@ export function respondToPressure(level: MemoryPressureLevel): { level: MemoryPr
   const start = Date.now();
   // Broadcast the raw signal before the cache drain, so unregistered subsystems (connection pools, worker queues, user
   // code) can reclaim their own resources too.
-  mochiEvents.emit('memory:pressure', { level });
+  emitSafely('memory:pressure', { level });
   const responders = liveResponders();
   let removed = 0;
   for (const responder of responders) {
@@ -67,8 +79,18 @@ export function respondToPressure(level: MemoryPressureLevel): { level: MemoryPr
     }
   }
   const result = { level, removed, caches: responders.length, durationMs: Date.now() - start };
-  mochiEvents.emit('cache:pressure', result);
+  emitSafely('cache:pressure', result);
   return result;
+}
+
+// mitt does not catch, and this runs inside a `process.on` listener, so a throwing subscriber would become an
+// uncaughtException — killing the process at the exact moment the OS was trying not to.
+function emitSafely<K extends 'memory:pressure' | 'cache:pressure'>(event: K, payload: MochiEventMap[K]): void {
+  try {
+    mochiEvents.emit(event, payload);
+  } catch (err) {
+    logger.warn(`Memory-pressure "${event}" listener threw: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 /** Subscribe to the OS low-memory notification. Idempotent, so repeated `Mochi.serve()` calls install one handler. */

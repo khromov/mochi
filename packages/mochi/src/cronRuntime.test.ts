@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
+import { Database } from 'bun:sqlite';
 import { createCronJob } from './cron';
 import { closeAllQueueResources, registeredCronNames, startCronRuntime } from './queue';
 import { mochiEvents } from './events';
@@ -103,4 +104,39 @@ describe('startCronRuntime', () => {
     await startCronRuntime([createCronJob('keep', '0 3 * * *', () => {})], { cronStorage: storage, development: false, jitterMs: 0 });
     expect(await registeredCronNames()).toEqual(['keep']);
   });
+
+  // SQLite has no schemas, so bun-boss folds the namespace into the table name; without it cron would land in the
+  // default `bunboss.*` tables and share them with a queue pointed at the same file.
+  test('cron tables carry the mochi_cron namespace, so one sqlite file can hold both', async () => {
+    const storage = tmpSqlite();
+    await startCronRuntime([createCronJob('keep', '0 3 * * *', () => {})], { cronStorage: storage, development: false, jitterMs: 0 });
+    await closeAllQueueResources();
+
+    const db = new Database(storage.sqlite, { readonly: true });
+    const tables = db
+      .query<{ name: string }, []>("select name from sqlite_master where type = 'table'")
+      .all()
+      .map((row) => row.name);
+    db.close();
+
+    expect(tables.some((name) => name.startsWith('mochi_cron.'))).toBe(true);
+    expect(tables.some((name) => name.startsWith('bunboss'))).toBe(false);
+  });
+
+  // An idempotency key or lateness metric built on scheduledTime must not move with queue backlog or a retry, so it is
+  // the firing's enqueue time rather than the moment the handler happened to start.
+  test('scheduledTime is when the firing was enqueued, not when the handler ran', async () => {
+    const observed: { scheduledTime: number; ranAt: number }[] = [];
+    await startCronRuntime([createCronJob('lag', '* * * * *', (run) => void observed.push({ scheduledTime: run.scheduledTime, ranAt: Date.now() }))], {
+      ...runtimeOpts,
+      workerPollingSeconds: 5,
+      cronStorage: 'memory',
+    });
+
+    expect(await waitFor(() => observed.length > 0)).toBe(true);
+    const [first] = observed;
+    expect(first!.scheduledTime).toBeLessThan(first!.ranAt);
+    // The worker only polls every 5s, so the pickup lag the old handler-start value collapsed to zero is visible here.
+    expect(first!.ranAt - first!.scheduledTime).toBeGreaterThan(200);
+  }, 40_000);
 });

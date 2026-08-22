@@ -22,7 +22,7 @@ afterAll(() => {
 
 describe('resolveStaticDirs', () => {
   test('normalizes a trailing slash and builds the wildcard pattern', () => {
-    expect(resolveStaticDirs({ '/assets/': './media' }, '/_mochi')[0]!.pattern).toBe('/assets/*');
+    expect(resolveStaticDirs({ '/assets/': media }, '/_mochi')[0]!.pattern).toBe('/assets/*');
   });
 
   // A root mount would have to register the global catch-all, which answers every unmatched request with Bun's own
@@ -45,11 +45,20 @@ describe('resolveStaticDirs', () => {
   });
 
   test('rejects the same prefix twice', () => {
-    expect(() => resolveStaticDirs({ '/a': './one', '/a/': './two' }, '/_mochi')).toThrow(/mounted twice/);
+    expect(() => resolveStaticDirs({ '/a': media, '/a/': media }, '/_mochi')).toThrow(/mounted twice/);
   });
 
   test('resolves the directory to an absolute path', () => {
-    expect(path.isAbsolute(resolveStaticDirs({ '/assets': './media' }, '/_mochi')[0]!.dir)).toBe(true);
+    expect(path.isAbsolute(resolveStaticDirs({ '/assets': path.relative(process.cwd(), media) }, '/_mochi')[0]!.dir)).toBe(true);
+  });
+
+  // Bun's directory route resolves per request, so without this the typo is a bare ENOENT naming neither the option nor the prefix.
+  test('rejects a directory that does not exist', () => {
+    expect(() => resolveStaticDirs({ '/assets': path.join(root, 'nope') }, '/_mochi')).toThrow(/does not exist/);
+  });
+
+  test('rejects a path that is a file', () => {
+    expect(() => resolveStaticDirs({ '/assets': path.join(media, 'hello.txt') }, '/_mochi')).toThrow(/is a file, not a directory/);
   });
 });
 

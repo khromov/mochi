@@ -95,6 +95,56 @@ describe('respondToPressure', () => {
     expect(() => respondToPressure('critical')).not.toThrow();
     expect(store.count()).toBe(0);
   });
+
+  // The docs invite user code onto this event, and it runs inside a `process.on` listener — a throw would become an
+  // uncaughtException, killing the process at the exact moment the OS was trying not to.
+  test('a throwing memory:pressure subscriber neither escapes nor skips the drain', () => {
+    const store = new MemoryStorage();
+    fill(store, 3);
+    const listener = () => {
+      throw new Error('subscriber boom');
+    };
+    mochiEvents.on('memory:pressure', listener);
+    try {
+      expect(() => respondToPressure('critical')).not.toThrow();
+    } finally {
+      mochiEvents.off('memory:pressure', listener);
+    }
+    expect(store.count()).toBe(0);
+  });
+
+  test('a throwing cache:pressure subscriber does not escape', () => {
+    const listener = () => {
+      throw new Error('subscriber boom');
+    };
+    mochiEvents.on('cache:pressure', listener);
+    try {
+      expect(() => respondToPressure('warning')).not.toThrow();
+    } finally {
+      mochiEvents.off('cache:pressure', listener);
+    }
+  });
+});
+
+// Registration is the only prune pass a cache gets on a healthy box, where the OS signal never fires.
+describe('registerPressureResponder', () => {
+  test('drops collected responders instead of holding their refs forever', async () => {
+    const { responders } = (globalThis as unknown as Record<string, { responders: Set<WeakRef<PressureResponder>> }>)['__mochi_pressure_registry__']!;
+    const churn = () => {
+      for (let i = 0; i < 50; i++) {
+        new MemoryStorage();
+      }
+    };
+    churn();
+    const grown = responders.size;
+    for (let i = 0; i < 5 && responders.size >= grown; i++) {
+      Bun.gc(true);
+      await Bun.sleep(1);
+      registerPressureResponder({ pressureLabel: `anchor-${i}`, count: () => 0, sweep: () => ({ removed: 0 }), clear: () => {} });
+    }
+
+    expect(responders.size).toBeLessThan(grown);
+  });
 });
 
 describe('installMemoryPressureHandler', () => {
