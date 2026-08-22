@@ -50,6 +50,25 @@ jobs:
       - name: Dependency report
         run: bun packages/mochi/scripts/dep-report.ts > dep-report.txt
 
+      # Advisory only: `bun audit` exits non-zero whenever anything is outstanding, and a PR must not go red for a
+      # vulnerability it did not introduce. Read it in the job summary and fix with `bun audit fix` deliberately.
+      - name: Security advisories
+        if: always()
+        run: |
+          {
+            echo "## Security advisories"
+            echo
+            echo '```'
+            bun audit 2>&1 || true
+            echo '```'
+            echo
+            echo "## Licenses (production dependencies)"
+            echo
+            echo '```'
+            bun pm licenses --prod 2>&1 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Pack mochi-framework
         run: |
           cd packages/mochi
