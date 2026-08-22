@@ -20,6 +20,10 @@ await runTests({
     // Linux/macOS settle the same race in ~15ms. Running it after the parallel
     // batch removes the competing load; the test itself is unchanged.
     'src/migrations/runnerSqlite.test.ts',
+    // Same lane for the same reason: it drives PGlite over a socket bridge that
+    // serves one backend, opening and closing a connection per migration run, and
+    // under parallel Windows load that churn stalls until the file deadline.
+    'src/migrations/runnerPostgres.test.ts',
   ],
   // See testing.ts `windowsSkip`. Both suites' logic is OS-agnostic and fully
   // covered on Linux/macOS.
