@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { collectFontResources, collectImageResources, collectScriptResources, collectStyleResources, mergeResourceRows } from './resourceReport';
+import { collectFontResources, collectImageResources, collectScriptResources, collectStyleResources, mergeResourceRows, printStaticSummary } from './resourceReport';
 import type { LocalImageAsset } from '../image/types';
 
 const dirs: string[] = [];
@@ -70,6 +70,31 @@ describe('mergeResourceRows', () => {
     const images = collectImageResources([asset('big.png', 500), asset('small.png', 10)]);
     const fonts = collectFontResources([{ diskPath: asset('mid-1234abcd.woff2', 100).diskPath }]);
     expect(mergeResourceRows(images, fonts).map((r) => r.name)).toEqual(['big.png', 'mid-1234abcd.woff2', 'small.png']);
+  });
+});
+
+describe('printStaticSummary', () => {
+  function capture(fn: () => void): string {
+    const lines: string[] = [];
+    const original = console.log;
+    console.log = (...args: unknown[]) => lines.push(Bun.stripANSI(args.join(' ')));
+    try {
+      fn();
+    } finally {
+      console.log = original;
+    }
+    return lines.join('\n');
+  }
+
+  test('renders the public directory forward-slashed, whatever separators it was given', () => {
+    const out = capture(() => printStaticSummary('.\\assets\\public', 2, 2048));
+    expect(out).toContain('./assets/public');
+    expect(out).not.toContain('\\');
+    expect(out).toContain('2 files · 2.05 kB');
+  });
+
+  test('an empty public directory prints nothing', () => {
+    expect(capture(() => printStaticSummary('./public', 0, 0))).toBe('');
   });
 });
 
