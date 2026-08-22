@@ -4,6 +4,7 @@ import { extractServeOptions } from './extractServeOptions';
 import { loadMigrationFiles } from '../migrations/loadMigrationFiles';
 import { isValidStorage } from '../migrations/storage';
 import { runStartupMigrations } from '../migrations/startup';
+import { relForDisplay } from '../utils';
 import { markBuilding } from '../utils/buildFlag';
 
 export interface MigrateCommandOptions {
@@ -31,13 +32,14 @@ export async function runMigrateCommand(opts: MigrateCommandOptions): Promise<vo
   markBuilding();
 
   const entryPath = path.resolve(process.cwd(), opts.entry ?? './src/index.ts');
+  const entryLabel = relForDisplay(entryPath) || entryPath;
   if (!existsSync(entryPath)) {
-    throw new Error(`Entry not found: ${entryPath}. Pass --entry <path> to the file calling Mochi.serve().`);
+    throw new Error(`Entry not found: ${entryLabel}. Pass --entry <path> to the file calling Mochi.serve().`);
   }
   const serveOptions = await extractServeOptions(entryPath);
   const storage = serveOptions?.storage;
   if (storage === undefined || !isValidStorage(storage)) {
-    throw new Error(`No \`storage\` found. Ensure ${entryPath} calls Mochi.serve({ storage: { type: 'sqlite', path: 'path/to.db' } | { type: 'postgres', url } }).`);
+    throw new Error(`No \`storage\` found. Ensure ${entryLabel} calls Mochi.serve({ storage: { type: 'sqlite', path: 'path/to.db' } | { type: 'postgres', url } }).`);
   }
 
   const applied = await runStartupMigrations(storage);

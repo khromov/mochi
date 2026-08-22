@@ -2,21 +2,7 @@ import { describe, expect, test, beforeAll, beforeEach, afterAll } from 'bun:tes
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { startTestPostgres, type TestPostgres } from '../__fixtures__/postgres/startTestPostgres';
-import { runMigrations } from './runner';
-import type { RunMigrationsOptions } from './runner';
-
-// PGlite's socket bridge serves one connection at a time, and this file's open/close churn can rarely race its
-// teardown and drop the next connect — retry that one infra error so it can't mask the behavior under test.
-async function migrate(opts: RunMigrationsOptions): ReturnType<typeof runMigrations> {
-  try {
-    return await runMigrations(opts);
-  } catch (err) {
-    if (String(err).includes('Connection closed')) {
-      return runMigrations(opts);
-    }
-    throw err;
-  }
-}
+import { runMigrations as migrate } from './runner';
 
 const root = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-migrate-pg-'));
 let pg: TestPostgres;
