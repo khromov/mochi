@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import type { Server } from 'bun';
-import { brotliDecompressSync } from 'node:zlib';
 import type { MochiEvent } from '../runtime/hooks';
 import { compress } from './compress';
 
@@ -137,7 +136,9 @@ describe('compress()', () => {
     expect(restored).toBe(body);
   });
 
-  test('compresses with brotli when Accept-Encoding only offers br', async () => {
+  // Brotli is intentionally unsupported (Bun's CompressionStream('brotli') is fixed at q11) — a br-only client is left
+  // uncompressed rather than served a slow buffered stream.
+  test('does not compress when Accept-Encoding only offers the unsupported br', async () => {
     const handle = compress();
     const body = '<!doctype html><html><body>' + 'hello '.repeat(500) + '</body></html>';
     const req = new Request('http://localhost/', {
@@ -149,10 +150,9 @@ describe('compress()', () => {
       resolve: async () => new Response(body, { headers: { 'Content-Type': 'text/html' } }),
     });
 
-    expect(response.headers.get('Content-Encoding')).toBe('br');
-    const compressed = new Uint8Array(await response.arrayBuffer());
-    const restored = new TextDecoder().decode(brotliDecompressSync(compressed));
-    expect(restored).toBe(body);
+    expect(response.headers.get('Content-Encoding')).toBeNull();
+    expect(response.headers.get('Vary')).toBe('Accept-Encoding');
+    expect(await response.text()).toBe(body);
   });
 
   test('client preference wins: Accept-Encoding "gzip, br" picks gzip', async () => {
@@ -170,7 +170,7 @@ describe('compress()', () => {
     expect(response.headers.get('Content-Encoding')).toBe('gzip');
   });
 
-  test('client preference wins: Accept-Encoding "br, gzip" picks brotli', async () => {
+  test('Accept-Encoding "br, gzip" falls back to gzip since brotli is unsupported', async () => {
     const handle = compress();
     const body = 'x'.repeat(1024);
     const req = new Request('http://localhost/', {
@@ -182,7 +182,7 @@ describe('compress()', () => {
       resolve: async () => new Response(body, { headers: { 'Content-Type': 'text/plain' } }),
     });
 
-    expect(response.headers.get('Content-Encoding')).toBe('br');
+    expect(response.headers.get('Content-Encoding')).toBe('gzip');
   });
 
   test('client q-values win over header order: br;q=0.5, gzip picks gzip', async () => {
@@ -201,10 +201,10 @@ describe('compress()', () => {
   });
 
   test('honors q=0 to skip an otherwise-preferred encoding', async () => {
-    const handle = compress({ methods: ['brotli', 'gzip'] });
+    const handle = compress({ methods: ['zstd', 'gzip'] });
     const body = 'x'.repeat(1024);
     const req = new Request('http://localhost/', {
-      headers: { 'Accept-Encoding': 'br;q=0, gzip' },
+      headers: { 'Accept-Encoding': 'zstd;q=0, gzip' },
     });
 
     const response = await handle({
@@ -216,7 +216,7 @@ describe('compress()', () => {
   });
 
   test('Accept-Encoding: * picks the first configured method', async () => {
-    const handle = compress({ methods: ['brotli', 'gzip'] });
+    const handle = compress({ methods: ['zstd', 'gzip'] });
     const body = 'x'.repeat(1024);
     const req = new Request('http://localhost/', {
       headers: { 'Accept-Encoding': '*' },
@@ -227,11 +227,11 @@ describe('compress()', () => {
       resolve: async () => new Response(body, { headers: { 'Content-Type': 'text/plain' } }),
     });
 
-    expect(response.headers.get('Content-Encoding')).toBe('br');
+    expect(response.headers.get('Content-Encoding')).toBe('zstd');
   });
 
   test('Accept-Encoding: * picks the first configured method (gzip-first order)', async () => {
-    const handle = compress({ methods: ['gzip', 'brotli'] });
+    const handle = compress({ methods: ['gzip', 'zstd'] });
     const body = 'x'.repeat(1024);
     const req = new Request('http://localhost/', {
       headers: { 'Accept-Encoding': '*' },
@@ -276,23 +276,6 @@ describe('compress()', () => {
     expect(response.headers.get('Content-Encoding')).toBeNull();
     expect(response.headers.get('Vary')).toBe('Accept-Encoding');
     expect(await response.text()).toBe(body);
-  });
-
-  test('brotliQuality option produces a valid brotli stream', async () => {
-    const handle = compress({ methods: ['brotli'], brotliQuality: 11 });
-    const body = '<!doctype html>' + 'lorem '.repeat(500);
-    const req = new Request('http://localhost/', {
-      headers: { 'Accept-Encoding': 'br' },
-    });
-
-    const response = await handle({
-      event: makeEvent(req),
-      resolve: async () => new Response(body, { headers: { 'Content-Type': 'text/html' } }),
-    });
-
-    expect(response.headers.get('Content-Encoding')).toBe('br');
-    const restored = new TextDecoder().decode(brotliDecompressSync(new Uint8Array(await response.arrayBuffer())));
-    expect(restored).toBe(body);
   });
 
   test('compresses with zstd when the client asks for it', async () => {

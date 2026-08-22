@@ -31,16 +31,17 @@ export function resolveArgsPath(args: { path: string; resolveDir?: string }): st
   return args.resolveDir ? path.resolve(args.resolveDir, args.path) : path.resolve(args.path);
 }
 
-export type CompressionMethod = 'gzip' | 'brotli' | 'zstd' | 'deflate';
+// TODO: restore 'brotli' once Bun's CompressionStream accepts a quality level — it is fixed at 11, far too slow for
+// per-request SSR, and we've standardized on the single streaming CompressionStream API (zstd covers brotli-class ratios).
+export type CompressionMethod = 'gzip' | 'zstd' | 'deflate';
 
 /** Internal method name to the `Content-Encoding` token that goes on the wire. */
-export const COMPRESSION_TOKEN: Record<CompressionMethod, 'gzip' | 'br' | 'zstd' | 'deflate'> = { gzip: 'gzip', brotli: 'br', zstd: 'zstd', deflate: 'deflate' };
+export const COMPRESSION_TOKEN: Record<CompressionMethod, 'gzip' | 'zstd' | 'deflate'> = { gzip: 'gzip', zstd: 'zstd', deflate: 'deflate' };
 
-/** Bun accepts brotli and zstd on top of the three formats the Web-standard `CompressionFormat` type lists. */
-export type CompressionStreamFormat = CompressionFormat | 'brotli' | 'zstd';
+/** Bun accepts zstd on top of the three formats the Web-standard `CompressionFormat` type lists. */
+export type CompressionStreamFormat = CompressionFormat | 'zstd';
 
-// Deliberately not COMPRESSION_TOKEN: `CompressionStream` takes a format name, and `new CompressionStream('br')` throws.
-export const COMPRESSION_FORMAT: Record<CompressionMethod, CompressionStreamFormat> = { gzip: 'gzip', brotli: 'brotli', zstd: 'zstd', deflate: 'deflate' };
+export const COMPRESSION_FORMAT: Record<CompressionMethod, CompressionStreamFormat> = { gzip: 'gzip', zstd: 'zstd', deflate: 'deflate' };
 
 // `methods` is the server's allowlist (and tiebreak order for `*`); the client's
 // header preference (order + q-values) decides among configured methods.

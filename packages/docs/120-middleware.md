@@ -116,7 +116,7 @@ When composed with `sequence`, `transformPage` runs in **reverse** order (inner 
 
 ### `compress`
 
-Built-in middleware factory for response compression. It negotiates gzip, brotli, zstd or deflate from the client's `Accept-Encoding`. Place it innermost in `sequence(...)` so it sees the body produced by the rest of the chain:
+Built-in middleware factory for response compression. It negotiates gzip, zstd or deflate from the client's `Accept-Encoding`. Place it innermost in `sequence(...)` so it sees the body produced by the rest of the chain:
 
 ```ts
 // file: src/index.ts
@@ -130,16 +130,14 @@ await Mochi.serve({
 
 Options:
 
-- `methods` — the encodings the server is willing to use: `'gzip'`, `'brotli'`, `'zstd'`, `'deflate'`. Defaults to `['brotli', 'gzip']`. The client's `Accept-Encoding` picks the winner. The array order is only a tiebreak when the client expresses no preference.
-- `brotliQuality` — brotli quality level `0..11`. Defaults to `4`. You should raise it only when the response is cached — higher levels may be too slow for per-request SSR.
+- `methods` — the encodings the server is willing to use: `'gzip'`, `'zstd'`, `'deflate'`. Defaults to `['zstd', 'gzip']`. The client's `Accept-Encoding` picks the winner. The array order is only a tiebreak when the client expresses no preference.
 
 ```ts
-sequence(auth, compress({ brotliQuality: 6 }));
 sequence(auth, compress({ methods: ['gzip'] }));
 sequence(auth, compress({ methods: ['zstd', 'gzip'] }));
 ```
 
-Every encoding except brotli streams: the body is piped through a `CompressionStream`, so a chunked SSR response stays chunked and the client sees the first bytes before the handler has finished. Brotli is buffered — Bun's `CompressionStream("brotli")` is fixed at quality 11, which is far too slow for per-request SSR (roughly 200x the time of the `brotliQuality` default of 4 on a 400 KB page). Reach for `zstd` when you want brotli-class ratios without giving up streaming.
+Every encoding streams through one `CompressionStream`, so a chunked SSR response stays chunked and the client sees the first bytes before the handler has finished. Brotli is intentionally not offered — Bun's `CompressionStream("brotli")` is fixed at quality 11, far too slow for per-request SSR — so reach for `zstd` when you want brotli-class ratios without giving up streaming; a client that only accepts `br` is served uncompressed. Brotli returns once Bun's `CompressionStream` accepts a quality level.
 
 `compress()` is a no-op in development, because the debug bar must inject itself into the HTML after the response is built. In production it adds `Vary: Accept-Encoding` and compresses compressible content types (`text/*`, `application/json`, `application/javascript`, `application/xml`, and others). A response that already declares `Content-Encoding` passes through untouched. Static framework assets also flow through `handle`, so `compress()` covers them. Other body-touching middleware must branch on `event.kind === 'asset'` when it needs to skip framework bundles.
 
