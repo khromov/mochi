@@ -1,6 +1,7 @@
 <script>
   import { highlightCode } from '../../lib/highlight.server';
   import DemoPage from '../../components/DemoPage.svelte';
+  import CodeSnippet from '../../components/CodeSnippet.svelte';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
 
@@ -61,8 +62,7 @@
 
     <p class="lead">This site's <code>handleError</code>:</p>
 
-    <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-    {@html handleErrorHtml}
+    <CodeSnippet html={handleErrorHtml} />
 
     <p>
       Watch your dev server output while clicking the links above — each visit logs one

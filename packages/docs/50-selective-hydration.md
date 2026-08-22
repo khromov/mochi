@@ -1,16 +1,18 @@
 ---
 title: 'Selective hydration with mochi:hydrate'
 slug: selective-hydration
-description: 'Mark components with mochi:hydrate to ship client-side JavaScript only where interactivity is needed.'
+description: 'Mark components with mochi:hydrate to ship client JavaScript only where you need interactivity.'
 ---
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Selective hydration with `mochi:hydrate`
 
-Components render server-side by default and ship zero JavaScript. Add `mochi:hydrate` to opt a component into client-side hydration; everything else stays static HTML.
+Components render on the server and ship zero JavaScript. Add `mochi:hydrate` to opt a component into client-side hydration. Everything else stays static HTML.
 
 ```svelte
 <!-- file: src/routes/Page.svelte -->
@@ -18,42 +20,105 @@ Components render server-side by default and ship zero JavaScript. Add `mochi:hy
 <StaticHeader />
 ```
 
-Props are serialized with `devalue` into a `<script type="application/json">` block emitted just before the island, so the same values are available during hydration. See `Passing props to islands` for the supported types.
+Mochi serializes props with `devalue` so the same values are available during hydration. See [Passing props to islands](/docs/island-props/) for the supported types.
 
-Do **NOT** nest `mochi:hydrate` (or `mochi:hydrate:visible`) inside another hydratable component; instead, remove the inner directive and let the outer island hydrate the whole subtree. Hydration is all-or-nothing per island — the framework rejects nested directives at compile time.
+### What is an island?
 
-### The `isHydratable` prop
+An island is any component you mark with a `mochi:*` directive: `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:clientOnly`, `mochi:clientOnly:visible`, `mochi:defer`, or `mochi:defer:visible`. Everything else is server-rendered HTML that ships no JavaScript. The directive decides when and where the island runs.
 
-Every island invocation receives one implicit prop from the framework:
+### Supported import forms
 
-- `isHydratable` — `true` when the call site uses `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`. Undefined for pure SSR-only invocations.
+Import an island statically from a **relative** `.svelte` / `.md` / `.svx` path in the same file's `<script>`. Default, named, and mixed imports all work.
 
-Accept it in the component's `$props()` to branch on hydration state at the same call site that opts in:
+```svelte
+<script>
+  import Counter from './Counter.svelte'; // default
+  import { Widget } from './Barrel.svelte'; // named (module-script export)
+  import Chart, { presets } from './Chart.svelte'; // mixed
+</script>
+
+<Counter mochi:hydrate />
+<Widget mochi:hydrate />
+<Chart mochi:hydrate:visible />
+```
+
+Framework components from `mochi-framework/components` are the one package exception. Put a directive directly on the package import.
+
+```svelte
+<script>
+  import { MochiCaptcha } from 'mochi-framework/components';
+</script>
+
+<MochiCaptcha mochi:hydrate />
+```
+
+Any other import form is a **compile error**, surfaced on the dev error page and in `mochi-framework build`. The two you are most likely to hit:
+
+- **Third-party package imports** (`import { Widget } from 'some-ui-lib'`). Wrap the component in a local `.svelte` file and put the directive on the wrapper.
+- **Components received through props, variables, or namespaces** (`<Item.Row mochi:hydrate />`). An island needs a statically known source file. Use the same wrapper fix.
+
+```svelte
+<!-- file: src/lib/Wrapped.svelte — local wrapper makes a third-party component an island -->
+<script>
+  import { Widget } from 'some-ui-lib';
+  let props = $props();
+</script>
+
+<Widget {...props} />
+```
+
+These rules apply to every directive family: `mochi:hydrate*`, `mochi:defer*`, and `mochi:clientOnly*`.
+
+<Callout type="info">
+
+**Hydration is all-or-nothing per island.** A `mochi:hydrate` directive hydrates the whole subtree, so nesting one hydratable island inside another is a compile error. Mark the outermost component and let it cover everything below.
+
+</Callout>
+
+### No children on hydrate islands
+
+<VersionNote since="0.10.0" message="Children on mochi:hydrate* became a compile error in 0.10.0; they previously rendered server-side and silently vanished on hydration." />
+
+A `mochi:hydrate` / `mochi:hydrate:visible` island cannot take children at the call site — the client hydrates from the serialized props alone, and a snippet cannot cross the server→client boundary:
+
+```svelte
+<Wrapper mochi:hydrate>
+  <p>This is a compile error.</p>
+</Wrapper>
+```
+
+Move the markup inside the component, or pass what it needs as serializable props. A layout-style wrapper that renders `{@render children()}` therefore cannot be a hydrate island — mark the interactive components _inside_ it instead. With `mochi:defer*` and `mochi:clientOnly*`, children are legal and mean something different: the loading fallback. See [Server islands](/docs/server-islands/) and [`mochi:clientOnly`](/docs/client-only/).
+
+### `isHydratable()`
+
+`isHydratable()` returns `true` when the calling component belongs to a subtree that will hydrate on this page load — `mochi:hydrate*`, `mochi:clientOnly*`, or `mochi:defer mochi:hydrate` — at any nesting depth. It returns `false` everywhere else (plain SSR, pure `mochi:defer` renders, emails). Use it to branch SSR-only fallback behavior.
 
 ```svelte
 <!-- file: src/lib/Counter.svelte -->
 <script lang="ts">
-  let {
-    isHydratable,
-    count = 0,
-  }: {
-    isHydratable?: boolean;
-    count?: number;
-  } = $props();
+  import { isHydratable } from 'mochi-framework';
+
+  let { count = 0 }: { count?: number } = $props();
+
+  const hydratable = isHydratable();
 </script>
 
-{#if isHydratable}
+{#if hydratable}
   <button onclick={() => count++}>{count}</button>
 {:else}
   <span>{count}</span>
 {/if}
 ```
 
-Do **NOT** declare `isHydratable` as a user-controlled prop; instead, treat it as a read-only input from the framework.
+<Callout type="info">
+
+Like `getContext`, call `isHydratable()` during component initialization — at the top level of the `<script>` block, not inside an event handler or `$effect`.
+
+</Callout>
 
 ### Unique ids with `$props.id()`
 
-For a unique, SSR-stable id inside an island, use Svelte's native [`$props.id()`](<https://svelte.dev/docs/svelte/$props#$props.id()>) — the value generated during the server render is reused on hydration:
+For an SSR-stable id inside an island, use Svelte's native [`$props.id()`](<https://svelte.dev/docs/svelte/$props#$props.id()>). The value from the server render is reused on hydration.
 
 ```svelte
 <!-- file: src/lib/SignupField.svelte -->
@@ -65,30 +130,57 @@ For a unique, SSR-stable id inside an island, use Svelte's native [`$props.id()`
 <input id="{uid}-email" type="email" />
 ```
 
-Each component instance gets its own id, so repeating the same island on a page never produces duplicate DOM ids. It also works inside server islands: their standalone renders are namespaced with the island id carried inside the signed props envelope (via render's `idPrefix`), so ids from a deferred fragment cannot collide with ids already on the page.
+Each instance gets its own id, so repeating the same island never produces duplicate DOM ids. It also works inside server islands: their ids are namespaced so a deferred fragment cannot collide with ids already on the page.
 
 ### `mochi:hydrate:visible`
 
-Use `mochi:hydrate:visible` to defer hydration until the component scrolls into view. The component still server-renders; only its JS (and CSS) load on first intersection.
+Use `mochi:hydrate:visible` to defer hydration until the component scrolls into view. The component still server-renders. Only its JavaScript and CSS load on first intersection.
 
 ```svelte
 <HeavyChart mochi:hydrate:visible />
 <HeavyChart mochi:hydrate:visible={{ rootMargin: '200px' }} />
 ```
 
-Pass `rootMargin` to start loading before the component enters the viewport. See `Lazy hydration with mochi:hydrate:visible` for the full options.
+Pass `rootMargin` to start loading before the component enters the viewport. See [Lazy hydration](/docs/lazy-hydration/).
 
 <Callout type="warning">
 
-Islands that use `:visible` require JS to apply their styles — per-component CSS is loaded alongside the bundle on intersection, not in the initial page `<head>`. If you need the island to look correcft on initial SSR load, do not use `:visible`.
+A `:visible` island loads its CSS with its bundle on intersection, not in the initial page `<head>`. It can briefly render unstyled. Use `mochi:hydrate` for anything that must look correct on the initial SSR load.
 
 </Callout>
 
-### `mochi:defer`
+### `mochi:clientOnly`
 
-Use `mochi:defer` to render the component on a separate request after the page ships, and combine it with `mochi:hydrate` to also hydrate the deferred markup once it lands. See `Server islands with mochi:defer` for the full lifecycle.
+Use `mochi:clientOnly` to skip SSR entirely. Mochi mounts the component in the browser only, with an optional fallback snippet as the SSR placeholder. See [Client-only components](/docs/client-only/).
 
 ```svelte
-<!-- Server-rendered after page load, then hydrated -->
+<AudioVisualizer mochi:clientOnly />
+```
+
+Add `:visible` to defer the browser mount until the placeholder scrolls into view, with the same `rootMargin` option.
+
+```svelte
+<AudioVisualizer mochi:clientOnly:visible={{ rootMargin: '200px' }} />
+```
+
+### `mochi:defer`
+
+Use `mochi:defer` to render the component in a separate request after the page ships. Combine it with `mochi:hydrate` to also hydrate the deferred markup. See [Server islands](/docs/server-islands/).
+
+```svelte
 <ShoppingCart mochi:defer mochi:hydrate items={initialItems} />
 ```
+
+Add `:visible` to defer the fetch until the placeholder scrolls into view.
+
+```svelte
+<UserAvatar mochi:defer:visible={{ rootMargin: '200px' }} userId={123} />
+```
+
+<SeeItInAction
+demos={[
+{ href: "/demos/hydration/", title: "Hydration Modes", hook: "How the hydration modes work — mochi:hydrate, mochi:hydrate:visible, rootMargin tuning, and mochi:defer server islands side by side." },
+{ href: "/demos/lazy/", title: "Lazy Islands", hook: "How lazy hydration works — islands marked mochi:hydrate:visible hydrate and load their CSS only when scrolled into view." },
+{ href: "/demos/server-island/", title: "Server Islands", hook: "How server islands work — components marked mochi:defer render server-side on demand after the initial page is delivered." },
+]}
+/>

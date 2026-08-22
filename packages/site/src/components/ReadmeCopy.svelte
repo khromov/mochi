@@ -3,8 +3,7 @@
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import Copy from '@lucide/svelte/icons/copy';
 
-  // For demos, `href` is the demo page href (ends in '/') and the source sits next to it
-  // at `${href}llms.txt`. For docs, the source is derived from `slug`.
+  // For demos, the source sits next to `href` at `${href}llms.txt`; for docs it's derived from `slug`.
   let { slug, href, kind = 'docs' }: { slug?: string; href?: string; kind?: 'docs' | 'demos' } = $props();
 
   const url = $derived(kind === 'demos' ? `${href}llms.txt` : slug ? `/docs/${slug}/llms.txt` : '/llms.txt');

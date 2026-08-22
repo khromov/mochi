@@ -1,6 +1,5 @@
 <script>
   import { isServer, isDev } from 'mochi-framework';
-  // console.log('Running on:', isServer ? 'SERVER' : 'BROWSER', '|', isDev ? 'DEV' : 'PROD');
 
   const { id, name, sprite } = $props();
 </script>

@@ -1,14 +1,37 @@
 import type { BunFile, Server, ServerWebSocket } from 'bun';
-import type { Handle, HandleError, MochiEvent } from './hooks';
-import type { MochiCookieJar } from './cookies';
-import type { MochiCsrfOptions } from './csrf';
+import type { Handle, HandleError, MochiEvent } from './runtime/hooks';
+import type { MochiCookieJar } from './runtime/cookies';
+import type { MochiCsrfOptions } from './runtime/csrf';
 import type { MochiFilters, MochiHooks } from './extensions';
-import type { MochiProxyOptions } from './proxy';
+import type { MochiProxyOptions } from './runtime/proxy';
+import type { LocalImageAsset, MochiImageOptions } from './image/types';
+import type { MochiEmailOptions } from './email/types';
+import type { MochiCaptchaOptions } from './captcha/types';
+import type { MochiProtectionOptions } from './protection/types';
+import type { MochiCronHandler, MochiCronRuntimeOptions } from './cron';
+import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions, MochiQueueStorage } from './queue';
+import type { MochiRateLimitOptions } from './runtime/rateLimit';
+import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
+import type { SpeculationRules } from './runtime/speculationRules';
 
-export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | Promise<Record<string, unknown>>;
+export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | MochiRedirect | Promise<Record<string, unknown> | MochiRedirect>;
 
 export function isServerPropsResolver(serverProps: Record<string, unknown> | MochiServerPropsResolver | undefined): serverProps is MochiServerPropsResolver {
   return typeof serverProps === 'function';
+}
+
+/**
+ * A `mochi:defer mochi:hydrate` island's authored hydration mode, riding inside the encrypted server-island
+ * envelope under {@link ALSO_HYDRATE_ENVELOPE_KEY}. The preprocessor and the island endpoint both import it
+ * from here so producer and consumer stay in agreement.
+ */
+export type AlsoHydrateMode = 'eager' | 'visible';
+
+/** Envelope key carrying the {@link AlsoHydrateMode} inside the sealed props. */
+export const ALSO_HYDRATE_ENVELOPE_KEY = '__mochi_ah';
+
+export function isAlsoHydrateMode(value: unknown): value is AlsoHydrateMode {
+  return value === 'eager' || value === 'visible';
 }
 
 export interface MochiPageHandlerConfig {
@@ -21,35 +44,26 @@ export interface MochiPageConfig {
   readonly componentPath: string;
   readonly serverProps?: Record<string, unknown> | MochiServerPropsResolver;
   readonly actions?: MochiFormActions;
+  /** Per-route rate limit. Overrides the global `rateLimit` serve option; `false` opts this route out. */
+  readonly rateLimit?: MochiRateLimitOptions | false;
 }
 
 export function isMochiPage(value: unknown): value is MochiPageConfig {
   return typeof value === 'object' && value !== null && (value as MochiPageConfig).__mochiPage === true;
 }
 
-// ---------------------------------------------------------------------------
-// API routes
-// ---------------------------------------------------------------------------
-
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'OPTIONS' | 'HEAD';
 
-/**
- * The event object passed to API route handlers.
- * Extends MochiEvent with the HTTP method, the resolved route params, and the
- * request's cookie jar.
- */
+/** The event object passed to API route handlers. */
 export interface MochiApiEvent extends MochiEvent {
-  /** The HTTP method of the request (GET, POST, PUT, DELETE, etc.). */
   method: HttpMethod;
   /** Resolved route params (e.g. `:id` from `/api/users/:id`). */
   params: Record<string, string>;
-  /** The request's cookie jar — read or write cookies on the response. */
   cookies: MochiCookieJar;
 }
 
 /**
- * An API route handler function. Receives a `MochiApiEvent` and must return
- * a `Response` (or a promise of one).
+ * An API route handler, which must return a `Response` or a promise of one.
  *
  * ```ts
  * Mochi.api(({ method, request, url }) => {
@@ -65,20 +79,15 @@ export type MochiApiHandler = (event: MochiApiEvent) => Response | Promise<Respo
 export interface MochiApiConfig {
   readonly __mochiApi: true;
   readonly handler: MochiApiHandler;
+  /** Per-route rate limit. Overrides the global `rateLimit` serve option; `false` opts this route out. */
+  readonly rateLimit?: MochiRateLimitOptions | false;
 }
 
 export function isMochiApi(value: unknown): value is MochiApiConfig {
   return typeof value === 'object' && value !== null && (value as MochiApiConfig).__mochiApi === true;
 }
 
-// ---------------------------------------------------------------------------
-// File routes
-// ---------------------------------------------------------------------------
-
-/**
- * Resolves the disk path of the file to serve for a `Mochi.file()` route.
- * Receives the request and the resolved route params (e.g. `:name`).
- */
+/** Resolves the disk path of the file to serve for a `Mochi.file()` route. */
 export type MochiFileResolver = (req: Request, params: Record<string, string>) => string | Promise<string>;
 
 export interface MochiFileConfig {
@@ -101,49 +110,32 @@ export interface RouteRegistrationResult {
   type: 'page' | 'api' | 'ws' | 'sse' | 'file';
 }
 
-// ---------------------------------------------------------------------------
-// Form actions (attached to Mochi.page() handlers)
-// ---------------------------------------------------------------------------
-
-/**
- * Returned by `fail()` — re-renders the entry component with a `form` prop
- * indicating the action failed. The HTTP status code carries over.
- */
+/** Returned by `fail()`; re-renders the entry component with a `form` prop marking the action failed, carrying the HTTP status over. */
 export interface MochiFormFail<T extends Record<string, unknown> = Record<string, unknown>> {
   readonly __mochiFormFail: true;
   readonly status: number;
   readonly data: T;
 }
 
-/**
- * Returned by `redirect()` — produces an HTTP redirect after the action runs.
- * Use 303 for POST/Redirect/GET after a successful mutation.
- */
-export interface MochiFormRedirect {
-  readonly __mochiFormRedirect: true;
+/** Returned by `redirect()`; produces an HTTP redirect from a form action or a `serverProps` resolver. Use 303 for POST/Redirect/GET after a successful mutation. */
+export interface MochiRedirect {
+  readonly __mochiRedirect: true;
   readonly status: 301 | 302 | 303 | 307 | 308;
   readonly location: string;
 }
 
-/**
- * Returned by `success()` — re-renders the entry component with a `form` prop
- * indicating the action succeeded. Response status is 200.
- */
+/** Returned by `success()`; re-renders the entry component with a `form` prop marking the action succeeded, with status 200. */
 export interface MochiFormSuccess<T extends Record<string, unknown> = Record<string, unknown>> {
   readonly __mochiFormSuccess: true;
   readonly data: T;
 }
 
-/**
- * Any return value allowed from a form action handler. Returning a plain
- * `Response` is an escape hatch.
- */
-export type MochiFormActionResult = MochiFormFail | MochiFormRedirect | MochiFormSuccess | Response | void | undefined;
+/** Any return value allowed from a form action handler; a plain `Response` is the escape hatch. */
+export type MochiFormActionResult = MochiFormFail | MochiRedirect | MochiFormSuccess | Response | void | undefined;
 
 /**
- * The event object passed to form action handlers. Body is already parsed
- * into `formData`. `actionName` is `"default"` unless a `?/name` query is
- * present on the form's action URL.
+ * The event object passed to form action handlers, with the body already parsed into `formData`.
+ * `actionName` is `"default"` unless a `?/name` query is present on the form's action URL.
  */
 export interface MochiFormEvent extends MochiEvent {
   method: HttpMethod;
@@ -155,31 +147,21 @@ export interface MochiFormEvent extends MochiEvent {
 
 export type MochiFormActionHandler = (event: MochiFormEvent) => MochiFormActionResult | Promise<MochiFormActionResult>;
 
-/**
- * Map of action name → handler. The `default` entry runs when the form has
- * no `?/name` query string. Other keys are addressed via `action="?/name"`.
- */
+/** Map of action name → handler. The `default` entry runs for a bare form; other keys are addressed via `action="?/name"`. */
 export type MochiFormActions = Record<string, MochiFormActionHandler>;
 
 /**
- * The resolved outcome of a form submission, delivered to the component as the
- * `form` prop on POST re-render. `null` on GET requests and on successful
- * redirects (where no re-render happens at all).
+ * The resolved outcome of a form submission, delivered to the component as the `form` prop on POST re-render.
+ * `null` on GET requests and on successful redirects, where no re-render happens.
  */
 export type MochiFormResult = { ok: true; action: string; data: Record<string, unknown> } | { ok: false; action: string; status: number; data: Record<string, unknown> } | null;
-
-// ---------------------------------------------------------------------------
-// Enhanced ({@attach enhance(...)}) form submissions — JSON wire format
-// ---------------------------------------------------------------------------
 
 /** Generic constraint used for `Success` / `Failure` payloads in enhanced form submissions. */
 export type MochiFormShape = Record<string, unknown> | undefined;
 
 /**
- * The JSON envelope returned to a client `{@attach enhance(...)}` submission. Mirrors
- * SvelteKit's `ActionResult` so the wire format is portable. `data` arrives
- * decoded — `enhance` runs `devalue.parse` on the raw string off the wire
- * before invoking the callback.
+ * The JSON envelope returned to a client `{@attach enhance(...)}` submission, mirroring SvelteKit's `ActionResult`.
+ * `data` arrives decoded: `enhance` runs `devalue.parse` on the raw string off the wire before invoking the callback.
  */
 export type MochiEnhanceResult<Success extends MochiFormShape = MochiFormShape, Failure extends MochiFormShape = MochiFormShape> =
   | { type: 'success'; status: number; data?: Success }
@@ -187,11 +169,7 @@ export type MochiEnhanceResult<Success extends MochiFormShape = MochiFormShape, 
   | { type: 'redirect'; status: number; location: string }
   | { type: 'error'; status?: number; error: unknown };
 
-/**
- * The result-handler returned (optionally) from a `MochiSubmitFunction`. If
- * provided, it fully replaces the default fallback for handling the server's
- * `MochiEnhanceResult`.
- */
+/** The result-handler optionally returned from a `MochiSubmitFunction`; when present it fully replaces the default handling of `MochiEnhanceResult`. */
 export type MochiSubmitCallback<Success extends MochiFormShape = MochiFormShape, Failure extends MochiFormShape = MochiFormShape> = (opts: {
   formData: FormData;
   formElement: HTMLFormElement;
@@ -201,25 +179,16 @@ export type MochiSubmitCallback<Success extends MochiFormShape = MochiFormShape,
 }) => void | Promise<void>;
 
 /**
- * Options object accepted by `enhance(...)` as an alternative to passing a
- * `MochiSubmitFunction` directly.
- *
- * - `submit` — same as passing a `MochiSubmitFunction` directly (optional).
- * - `onPending` — called with `true` immediately before the fetch begins and
- *   `false` once the result callback has settled (or if the submission was
- *   cancelled). Use it to drive loading/disabled state without managing
- *   `pending` inside the submit function.
+ * Options object accepted by `enhance(...)` as an alternative to passing a `MochiSubmitFunction` directly.
+ * `onPending` fires with `true` immediately before the fetch begins and `false` once the result callback
+ * settles or the submission is cancelled, so loading state can live outside the submit function.
  */
 export type MochiEnhanceOptions<Success extends MochiFormShape = MochiFormShape, Failure extends MochiFormShape = MochiFormShape> = {
   submit?: MochiSubmitFunction<Success, Failure>;
   onPending?: (pending: boolean) => void;
 };
 
-/**
- * The callback signature accepted by `enhance(...)`. Called once per submit;
- * may return a `MochiSubmitCallback` (sync or via `Promise`) to replace the
- * default fallback.
- */
+/** The callback accepted by `enhance(...)`, called once per submit; it may return a `MochiSubmitCallback` to replace the default handling. */
 export type MochiSubmitFunction<Success extends MochiFormShape = MochiFormShape, Failure extends MochiFormShape = MochiFormShape> = (input: {
   action: URL;
   formData: FormData;
@@ -251,11 +220,8 @@ export interface MochiWsData<T = unknown> {
   __mochiOpenedAt: number;
   __mochiPath: string;
   /**
-   * Absolute path of the page entry that rendered the tab on the other end of
-   * this socket — used by the dev live-reload to scope `reload` signals to
-   * tabs whose entry was actually affected. Set only on the internal
-   * `/__mochi_live_reload` socket; user-defined `Mochi.ws()` routes leave it
-   * undefined.
+   * Absolute path of the page entry that rendered the tab on the other end of this socket, letting dev live-reload
+   * scope `reload` signals to tabs whose entry was actually affected. Set only on the internal `/__mochi_live_reload` socket.
    */
   __mochiEntry?: string;
   user: T;
@@ -270,16 +236,10 @@ export function isMochiWs(value: unknown): value is MochiWsConfig {
   return typeof value === 'object' && value !== null && (value as MochiWsConfig).__mochiWs === true;
 }
 
-// ---------------------------------------------------------------------------
-// SSE routes
-// ---------------------------------------------------------------------------
-
 export interface MochiSseStream {
-  /** Send an SSE event. Optionally specify event type and id. */
   send(data: string, options?: { event?: string; id?: string }): void;
-  /** Close the stream. */
   close(): void;
-  /** Register a cleanup callback for when the client disconnects. */
+  /** Runs when the client disconnects. */
   onClose(callback: () => void): void;
 }
 
@@ -294,6 +254,56 @@ export function isMochiSse(value: unknown): value is MochiSseConfig {
   return typeof value === 'object' && value !== null && (value as MochiSseConfig).__mochiSse === true;
 }
 
+/**
+ * Descriptor returned by `Mochi.queue(name, …)`. Non-generic so a heterogeneous `queues` array type-checks; the
+ * `never` parameter slots keep a caller's typed processor/listeners assignable (contravariance) without casts.
+ */
+export interface MochiQueueConfig {
+  readonly __mochiQueue: true;
+  readonly name: string;
+  readonly process?: MochiProcessor<never, unknown>;
+  readonly options?: MochiQueueRuntimeOptions;
+  readonly on?: Partial<MochiQueueListeners<never, never>>;
+  readonly storage?: MochiQueueStorage;
+}
+
+export function isMochiQueue(value: unknown): value is MochiQueueConfig {
+  return typeof value === 'object' && value !== null && (value as MochiQueueConfig).__mochiQueue === true;
+}
+
+/** Structural twin of `MochiCronJob`, kept here so `types.ts` never has to import values from `cron.ts`. */
+export interface MochiCronConfig {
+  readonly __mochiCron: true;
+  readonly name: string;
+  readonly schedule: string;
+  readonly run: MochiCronHandler;
+  readonly options?: MochiCronRuntimeOptions;
+  nextRun(from?: number | Date): number | null;
+}
+
+export function isMochiCron(value: unknown): value is MochiCronConfig {
+  return typeof value === 'object' && value !== null && (value as MochiCronConfig).__mochiCron === true;
+}
+
+/** Options for `Mochi.worker()` — consume queues in a process that never calls `Mochi.serve()`. */
+export interface MochiWorkerOptions {
+  queues: MochiQueueConfig[];
+  /** The app's queue storage; may instead come from a `storage` declared on the descriptors. */
+  storage?: MochiQueueStorage;
+  /**
+   * `'verify'` (default): a stored queue whose config differs from its declaration is a start() error — code is
+   * authoritative. `'sync'`: write the declared config to storage instead, logging each change. `MOCHI_QUEUE_SYNC=1`
+   * forces `'sync'` process-wide and wins over this option.
+   */
+  queueConfig?: 'verify' | 'sync';
+  /**
+   * Grace period (ms) on shutdown for in-flight queue jobs to drain before the boss is stopped and the store closed.
+   * Default: `10000`. Raise it for handlers that legitimately run longer than 10s, so a job in flight at shutdown
+   * finishes and is not failed and re-run.
+   */
+  queueShutdownTimeout?: number;
+}
+
 export type MochiRouteValue = MochiPageConfig | MochiApiConfig | MochiWsConfig | MochiSseConfig | MochiFileConfig | BunRouteValue;
 
 /** `stack` is only populated when the server runs with `development: true`. */
@@ -305,25 +315,44 @@ export interface MochiErrorProps {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Build manifest
-// ---------------------------------------------------------------------------
-
 export interface MochiManifestComponent {
+  /** Compiled SSR module path, relative to the build outDir. */
   ssrModule: string;
-  hydratables: { name: string; resolvedPath: string }[];
+  /** `resolvedPath` is an encoded source path (see `version`). `exportName` is optional for manifests written before named-export islands existed; absent means `default`. */
+  hydratables: { name: string; displayName: string; resolvedPath: string; exportName?: string }[];
+  /** Encoded source paths (see `version`) of every component contributing scoped CSS to this entry. */
   cssComponents: string[];
 }
 
 export interface MochiManifest {
-  version: 1;
+  /**
+   * Schema version of the on-disk build output; the runtime loads only the exact version it writes (currently 3)
+   * and throws on anything else, so build and serve must use the same `mochi-framework` version.
+   *
+   * Every manifest path is relative, in one of three families:
+   * - **Artifacts** the runtime opens (`ssrModule`, `clientFiles`,
+   *   `localImageAssets[].diskPath`, `fontAssets[].diskPath`, `importCssAssets[].diskPath`, `serverIslandScript`) — out-dir relative,
+   *   resolved against the manifest's own directory.
+   * - **Sources** used as lookup keys (`components` keys, `hydratables[].resolvedPath`,
+   *   `cssComponents`, `cssFileUrls` keys, `serverIslandPaths`, `importedCssUrls` keys,
+   *   `entryImportedCss` keys and values) — POSIX, project-root relative, with framework-owned
+   *   sources under a `$mochi/` sentinel. Both ends take the root from `process.cwd()`, so
+   *   `mochi-framework build` and the server must run from the same working directory.
+   * - **`stats.outputs[].inputs[].path`** — build-cwd relative, as Bun's metafile emits it, and diagnostic only.
+   *
+   * Static files form no family: the runtime rescans `publicDir` at startup in every mode, and a manifest carries only
+   * the count — see `publicFileCount`.
+   */
+  version: number;
   /** URL prefix under which framework client assets and the server island endpoint are served. */
   assetPrefix: string;
   bootstrapUrl: string | null;
   componentEntryUrls: Record<string, string>;
+  /** Maps encoded source path (see `version`) → the URL of that component's scoped CSS. */
   cssFileUrls: Record<string, string>;
-  /** Maps URL path → disk path relative to project root */
+  /** Maps URL path → disk path relative to the build outDir. */
   clientFiles: Record<string, string>;
+  /** Keyed by encoded source path (see `version`). */
   components: Record<string, MochiManifestComponent>;
   stats: {
     outputs: {
@@ -333,43 +362,47 @@ export interface MochiManifest {
       imports: string[];
     }[];
   } | null;
-  /** Maps server island component name → resolved file path */
+  /** Maps server island component name → its encoded source path (see `version`). */
   serverIslandPaths?: Record<string, string>;
-  /** Maps public URL path → disk path (relative to project root) for static files copied from `public/`. */
-  publicFiles?: Record<string, string>;
-  /** Maps resolved CSS-import path → served URL (e.g. /import-css/inter-<hash>.css) */
+  /** Maps server island component name → the named export it renders (default-export islands are omitted). */
+  serverIslandExports?: Record<string, string>;
+  /** Maps served asset URL → emitted asset details for locally-imported images (`import x from './x.png'`). `diskPath` is outDir-relative. */
+  localImageAssets?: Record<string, LocalImageAsset>;
+  /** Maps encoded CSS-import source path (see `version`) → served URL (e.g. /import-css/inter-<hash>.css) */
   importedCssUrls?: Record<string, string>;
-  /** Maps page entry .svelte path → list of CSS-import paths reachable from it */
+  /** Maps served font URL → binary font extracted from imported CSS. `diskPath` is outDir-relative. */
+  fontAssets?: Record<string, { diskPath: string; contentType: string }>;
+  /** Maps served URL → non-font asset the bundler emitted beside a stylesheet. `diskPath` is outDir-relative. */
+  importCssAssets?: Record<string, { diskPath: string; contentType: string }>;
+  /** Maps encoded CSS-import source path (see `version`) → served URLs of its preload-worthy extracted fonts. */
+  importedCssFontPreloads?: Record<string, string[]>;
+  /** Maps encoded page entry path (see `version`) → the CSS-import paths reachable from it, likewise encoded. */
   entryImportedCss?: Record<string, string[]>;
+  /** Prebuilt, minified ServerIsland inline web-component script, emitted by `build()` so production loads it from disk in place of a startup `Bun.build`. */
+  serverIslandScript?: string;
+  /**
+   * How many files `publicDir` held at build time — a count rather than a path family, so it stays machine-independent.
+   * The build copies no static files, so nothing else in the out-dir would reveal a deploy that shipped the build output
+   * and left `publicDir` behind; `Mochi.serve()` compares this against its own startup scan.
+   */
+  publicFileCount?: number;
 }
 
 /**
- * Dependency-injected markdown support. When set on `MochiServeOptions`,
- * Mochi registers `.md` and `.svx` loaders that pipe source through the
- * user-supplied `compile` function (typically `mdsvex`'s) before handing
- * the resulting Svelte source to the Svelte compiler.
- *
- * Omit `markdown` to disable markdown entirely — `.md`/`.svx` imports
- * then surface as a "no loader" error from Bun's bundler.
- *
- * The `compile` signature is structurally typed to match mdsvex without
- * importing from it, so users on a different markdown compiler can wrap
- * it to fit.
- */
-/**
  * Highlighter signature accepted by `MarkdownConfig.highlight.highlighter`.
- * The parameter types are widened to match mdsvex's `Highlighter` (so the
- * `compile` function from mdsvex assigns cleanly), but extra params are
- * optional — a `(code, lang) => string` implementation works.
+ * Extra params are optional, so a `(code, lang) => string` implementation works.
  */
 export type MarkdownHighlighter = (code: string, lang?: string | null, metastring?: string | null, filename?: string, optimise?: boolean) => string | Promise<string>;
 
+/**
+ * Dependency-injected markdown support. When set on `MochiServeOptions`, Mochi registers `.md` and `.svx` loaders
+ * that pipe source through `compile` (typically `mdsvex`'s) before handing the result to the Svelte compiler.
+ * Omit `markdown` and `.md`/`.svx` imports surface as a "no loader" error from Bun's bundler.
+ */
 export interface MarkdownConfig {
   /**
-   * The markdown → Svelte source compiler. Signature kept loose (`unknown` in
-   * the return position) so mdsvex's `compile` — which declares a nested-Promise
-   * return type in its `.d.ts` — assigns cleanly. The loader awaits the result
-   * and runtime-checks for `{ code: string }`.
+   * The markdown → Svelte source compiler. The return position is `unknown` so mdsvex's `compile`, which declares a
+   * nested-Promise return type, assigns cleanly; the loader awaits the result and runtime-checks for `{ code: string }`.
    */
   compile: (
     source: string,
@@ -386,17 +419,11 @@ export interface MarkdownConfig {
   /** Remark plugins forwarded to `compile`. */
   remarkPlugins?: unknown[];
   /**
-   * Syntax highlighter for fenced code blocks. Omit to leave fenced blocks
-   * un-highlighted (mdsvex's bare `<pre><code>` output). Plug in Shiki,
-   * highlight.js, or any other library by wrapping it in a
-   * `(code, lang) => string | Promise<string>` function.
+   * Syntax highlighter for fenced code blocks; omit for mdsvex's bare `<pre><code>` output.
+   * Wrap Shiki, highlight.js, or any other library in a `(code, lang) => string | Promise<string>` function.
    */
   highlight?: { highlighter: MarkdownHighlighter };
 }
-
-// ---------------------------------------------------------------------------
-// Serve options
-// ---------------------------------------------------------------------------
 
 /**
  * Per-mode route warmup control. Use this object form instead of a plain
@@ -410,33 +437,76 @@ export interface MochiWarmupOptions {
   enabledInDev: boolean;
 }
 
+/** Keys the framework sets on `Bun.serve()` itself; rejected under `bun` and stripped from `BunServeOverrides`. */
+export const FRAMEWORK_OWNED_BUN_KEYS = ['fetch', 'websocket', 'routes', 'error'] as const;
+
+/**
+ * Options spread directly into the underlying `Bun.serve()`. The framework owns
+ * the keys in {@link FRAMEWORK_OWNED_BUN_KEYS}; setting any of them here throws.
+ */
+export type BunServeOverrides = Omit<NonNullable<Parameters<typeof Bun.serve>[0]>, (typeof FRAMEWORK_OWNED_BUN_KEYS)[number]>;
+
 export interface MochiServeOptions {
   port?: number;
   hostname?: string;
-  development?: boolean;
   /**
-   * Mount the dev-only debug toolbar (the floating bottom-right bar).
-   * Default: `true`. Has no effect when `development` is `false` — the
-   * toolbar is dev-only, so setting `debugBar: true` in production does
-   * NOT enable it.
+   * Escape hatch for raw `Bun.serve()` options Mochi doesn't surface — e.g.
+   * `idleTimeout` (seconds; HTTP default 10, max 255, 0 disables), `maxRequestBodySize`,
+   * `reusePort`, `tls`. Spread into `Bun.serve()`; framework-owned keys are rejected.
    */
+  bun?: BunServeOverrides;
+  development?: boolean;
+  /** Mount the dev-only debug toolbar. Default: `true`, and ignored entirely when `development` is `false`. */
   debugBar?: boolean;
   /**
-   * Enable the dev-mode live-reload WebSocket that reloads the browser on
-   * source changes. Default: matches `development`. Set to `false` to keep
-   * the debug bar but skip the WS — useful when shipping the debug bar in
-   * a production-like deployment (e.g. Docker demo sites) where the
-   * `/__mochi_live_reload` socket is flaky behind a proxy.
+   * Enable the dev-mode live-reload WebSocket that reloads the browser on source changes. Default: matches `development`.
+   * Set `false` to keep the debug bar without the socket, for production-like deployments where `/__mochi_live_reload` is flaky behind a proxy.
    */
   liveReload?: boolean;
+  /**
+   * Grace period (ms) on `SIGTERM`/`SIGINT` for in-flight requests to finish before connections are force-closed.
+   * Default: `5000` in production, `0` in development, where `0` force-closes immediately. A non-forced `server.stop()`
+   * never resolves while a WebSocket is open, so the forced fallback keeps one live-reload tab from wedging the process.
+   */
+  shutdownTimeout?: number;
   /** Path to a prebuilt manifest JSON. Defaults to `.mochi/manifest.json`. */
   manifest?: string;
   routes?: Record<string, MochiRouteValue>;
+  /**
+   * Background job queues to start with the server: an array of `Mochi.queue(name, { process, … })` descriptors.
+   * Add jobs via the descriptor itself or `Mochi.getQueue(name)`. Queues drain gracefully on shutdown.
+   */
+  queues?: MochiQueueConfig[];
+  /**
+   * Where queue jobs live: `'memory'` (default — lost on restart), `{ sqlite: 'path/to.db' }` for a durable
+   * single-process store, `{ postgres: url }` for a shared multi-process store (installed into a `mochi_queue` schema),
+   * or `{ pglite: instance }` for an embedded in-process Postgres you construct and own (Mochi never closes it).
+   * Unset, it inherits a `storage` declared on the queue descriptors; an app has one queue storage, so conflicting
+   * declarations are a boot error.
+   */
+  queueStorage?: MochiQueueStorage;
+  /**
+   * `'verify'` (default): a stored queue whose config differs from its declaration is a boot error — code is
+   * authoritative. `'sync'`: write the declared config to storage instead, logging each change. `MOCHI_QUEUE_SYNC=1`
+   * forces `'sync'` process-wide and wins over this option.
+   */
+  queueConfig?: 'verify' | 'sync';
+  /**
+   * Grace period (ms) on shutdown for in-flight queue jobs to drain before the boss is stopped and the store closed.
+   * Default: `10000`. Distinct from `shutdownTimeout`, which bounds the HTTP server drain. Raise it for queues whose
+   * handlers legitimately run longer than 10s, so a job in flight at shutdown finishes and is not failed and re-run.
+   */
+  queueShutdownTimeout?: number;
   fetch?: (req: Request, server: Server<undefined>) => Response | Promise<Response>;
   htmlShell?: string;
   /**
-   * A middleware handle function (or a `sequence()` of them) that wraps every
-   * incoming request. Use this to add authentication, logging, headers, etc.
+   * Speculation Rules injected as a `<script type="speculationrules">` tag into every rendered page's `<head>`, so
+   * the browser can prefetch/prerender same-site URLs and make navigations feel instant. An omitted option — or an
+   * object whose `prefetch` and `prerender` are both empty or absent — injects nothing.
+   */
+  speculationRules?: SpeculationRules;
+  /**
+   * A middleware handle function (or a `sequence()` of them) wrapping every incoming request — authentication, logging, headers.
    *
    * ```ts
    * import { sequence } from './mochi-framework/hooks';
@@ -455,47 +525,80 @@ export interface MochiServeOptions {
   /** Deflate-compress server island props when it reduces size. Default: true. */
   compressServerIslandProps?: boolean;
   /**
-   * Built-in request logger configuration. Pass `{ enabled: false }` to
-   * disable the formatter while keeping events flowing on the bus, set
-   * `level` to gate `log.*` output globally, or override thresholds via
-   * `slowThreshold` / `verySlowThreshold`. Enabled by default.
+   * Render nested `mochi:defer` islands in-process during an island fetch instead of emitting further client fetches,
+   * collapsing an N-level chain into one request. `mochi:defer:visible` children always keep their own lazy fetch, and a
+   * single call site opts out with `mochi:defer={{ inline: false }}`. Default: true.
+   */
+  inlineNestedIslands?: boolean;
+  /**
+   * Built-in request logger, enabled by default. `{ enabled: false }` disables the formatter while events keep flowing
+   * on the bus; `level` gates `log.*` output globally; `slowThreshold` / `verySlowThreshold` override the timing bands.
    */
   logger?: {
     enabled?: boolean;
     /**
-     * Minimum severity for `log.*` output across the framework (server +
-     * client bundles). `'silent'` suppresses everything including BOOT/STOP.
+     * Minimum severity for `log.*` output across server and client bundles, where `'silent'` suppresses even BOOT/STOP.
      * Defaults: `'info'` in development, `'warn'` in production.
      */
-    level?: import('./log').LogLevel;
-  } & import('./consoleLogger').ConsoleLoggerOptions;
+    level?: import('./utils/log').LogLevel;
+  } & import('./dev/consoleLogger').ConsoleLoggerOptions;
+  /**
+   * Durable scheduled jobs started with the server, from `Mochi.cron(name, schedule, handler)`; schedules persist in
+   * `cronStorage` and a single node is elected per firing, so a job runs once across a multi-node setup. Each run
+   * executes as a queue job named `cron-<name>` (surfacing through `queue:*` events), and a handler that throws is
+   * reported via `queue:failed` while the schedule keeps running.
+   */
+  cron?: MochiCronConfig[];
+  /**
+   * Storage for the durable cron scheduler (`memory` | `{ sqlite }` | `{ postgres }` | `{ pglite }`), defaulting to
+   * `memory` and independent of `queueStorage` — cron always runs on its own bun-boss instance. Point it at a shared
+   * store (Postgres, or a SQLite file on a shared volume) for a multi-node deployment.
+   */
+  cronStorage?: MochiQueueStorage;
+  /**
+   * Drain in-memory caches when the OS reports low memory, before the kernel starts killing processes: `'warning'`
+   * (macOS only) drops aged-out entries, `'critical'` drops everything, reported through the `cache:pressure` event.
+   * Default: `true`.
+   */
+  memoryPressure?: boolean;
+  /**
+   * Extra directory trees mounted under a URL prefix, as `{ "/assets": "./media" }`. Each becomes one Bun directory
+   * route, so a large tree costs one route instead of one per file, and Range, ETag, `If-None-Match`, `index.html`
+   * and sendfile streaming come from Bun.
+   *
+   * Unlike `publicDir` these mounts do no dotfile filtering, do not run the `publicDir:scan` filter, and cannot be
+   * gated by `protection.protectFiles`. A miss under the prefix answers with Bun's own 404 rather than the configured
+   * `errorPage`; paths outside the prefix are unaffected, which is why the site root cannot be mounted.
+   */
+  staticDirs?: import('./runtime/staticDirs').MochiStaticDirs;
   /** Directory served as static assets (cwd-relative). Default: `./public`. */
   publicDir?: string;
-  /** Directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`. */
+  /**
+   * Base directory for build artifacts and dev cache (cwd-relative). Default: `./.mochi`.
+   * Production writes here directly while development nests under `<outDir>/dev`, keeping the two modes separate.
+   */
   outDir?: string;
   /**
-   * URL prefix under which framework client assets (JS bundles, CSS, bundle
-   * stats page) and the server island endpoint are served. Must start with
-   * `/`, must not be the root `/`, must not end with `/`, and must not
-   * contain whitespace or `..`. Default: `/_mochi`.
-   *
-   * In production, the value baked into the prebuilt manifest takes
-   * precedence — set this on the `build()` call (or `--asset-prefix` CLI
-   * flag) so dev and prod stay in sync.
+   * URL prefix serving framework client assets (JS bundles, CSS, the bundle stats page) and the server island endpoint.
+   * Must start with `/`, be deeper than the root, end without a slash, and contain no whitespace or `..`. Default: `/_mochi`.
+   * In production the value baked into the prebuilt manifest wins, so set it on the `build()` call or `--asset-prefix` flag.
    */
   assetPrefix?: string;
   /** Extra paths the dev-mode file watcher monitors, in addition to the defaults `src` and `public`. */
   additionalWatchPaths?: string[];
   /**
-   * Path to a Svelte config file (cwd-relative or absolute). Default:
-   * `./svelte.config.js`. The file's `compilerOptions` are merged into
-   * Mochi's defaults; missing file → defaults only.
+   * Path to a Svelte config file (cwd-relative or absolute). Default: `./svelte.config.js`.
+   * Its `compilerOptions` merge into Mochi's defaults; a missing file leaves the defaults in place.
    */
   svelteConfigPath?: string;
   /**
-   * Dependency-injected markdown (`.md` / `.svx`) support. Pass the `compile`
-   * function from `mdsvex` plus any rehype/remark plugins to enable; omit to
-   * leave markdown unhandled.
+   * Which compiler emits component JS. Default `'svelte'`. `'rsvelte'` routes `compile`/`compileModule` through the Rust
+   * port and requires the optional `@mochi-framework/rsvelte` package, warning and falling back to `'svelte'` if it won't
+   * load; island parsing and preprocessing always use official Svelte. Override with `MOCHI_SVELTE_COMPILER=svelte|rsvelte`.
+   */
+  svelteCompiler?: MochiSvelteCompiler;
+  /**
+   * Dependency-injected markdown (`.md` / `.svx`) support — pass `mdsvex`'s `compile` plus any rehype/remark plugins to enable.
    *
    * ```ts
    * import { compile as mdsvexCompile } from 'mdsvex';
@@ -509,100 +612,165 @@ export interface MochiServeOptions {
    */
   markdown?: MarkdownConfig;
   /**
-   * Origin-header CSRF protection for form-style POST/PUT/PATCH/DELETE
-   * requests. Enabled by default — pass `{ checkOrigin: false }` to disable
-   * or `{ trustedOrigins: ['https://other.example'] }` to allow extra origins.
+   * Origin-header CSRF protection for form-style POST/PUT/PATCH/DELETE requests, enabled by default. Pass
+   * `{ checkOrigin: false }` to disable or `{ trustedOrigins: ['https://other.example'] }` to allow extra origins.
    *
-   * The check rejects requests whose `Origin` header is missing or doesn't
-   * match the expected origin, but only when the `Content-Type` is
-   * `application/x-www-form-urlencoded`, `multipart/form-data`, or
-   * `text/plain` — the three types a cross-origin `<form>` can submit
-   * without a CORS preflight. JSON endpoints rely on the browser's preflight
-   * and are not gated here.
+   * A request is rejected when its `Origin` header is missing or mismatched, and only for the three content types a
+   * cross-origin `<form>` can submit without a CORS preflight: `application/x-www-form-urlencoded`, `multipart/form-data`,
+   * and `text/plain`. JSON endpoints are covered by the browser's preflight instead.
    *
-   * The expected origin defaults to `url.origin`. Behind a reverse proxy,
-   * configure `proxy` (below) so the check compares against the public
-   * origin instead.
+   * The expected origin defaults to `url.origin`; behind a reverse proxy, configure `proxy` so it compares against the public origin.
    */
   csrf?: MochiCsrfOptions;
   /**
-   * Reverse-proxy trust configuration. Used to derive the expected origin
-   * for the CSRF check and the client IP for `getClientAddress()` from
-   * forwarded headers. Only set the header options when the proxy is
-   * trusted to overwrite them — clients can spoof these headers otherwise.
+   * Reverse-proxy trust configuration, deriving the expected CSRF origin and `getClientAddress()`'s client IP from forwarded headers.
+   * Set the header options only when the proxy is trusted to overwrite them, since clients can otherwise spoof them.
    */
   proxy?: MochiProxyOptions;
   /**
-   * Trailing-slash policy. When set, every non-asset, non-root user route is
-   * registered under both `/foo` and `/foo/`, and requests to the
-   * non-canonical form are redirected:
+   * Trailing-slash policy for `Mochi.page()` routes. When set, each page is registered under both `/foo` and `/foo/`,
+   * and the non-canonical form redirects:
    *
    * - `'never'` — `/foo/` → 301/308 → `/foo`
    * - `'always'` — `/foo` → 301/308 → `/foo/`
    *
-   * 301 for GET/HEAD, 308 otherwise. Root `/` and paths with file extensions
-   * are never redirected. Default: unset (no canonicalisation).
+   * 301 for GET/HEAD, 308 for POST (the only other method a page registers, via `actions`), leaving root `/` and
+   * paths with file extensions alone.
+   *
+   * Every other route kind — `Mochi.api()`, `Mochi.sse()`, `Mochi.ws()`, `Mochi.file()` — is exempt: no mirroring and
+   * no redirect, so only the exact pattern you declared matches and the other slash form 404s. To answer on both,
+   * point two patterns at one route:
+   *
+   * ```ts
+   * const ping = Mochi.api(() => json({ ok: true }));
+   * routes = { '/api/ping': ping, '/api/ping/': ping };
+   * ```
+   *
+   * Paths that match no route are never redirected either — they 404 (or reach your `fetch`/middleware fallback) in
+   * whichever slash form they arrived.
+   *
+   * Default: unset — neither form redirects, and only the form you registered is matched.
    */
   trailingSlash?: 'never' | 'always';
   /**
-   * Event hooks: run a function at a specific framework moment. One entry per name,
-   * no priorities. See `MochiHooks` for available names.
+   * Global rate limit applied to every page and API route, a thin shim around `@joint-ops/hitlimit-bun`. Routes inheriting
+   * this option share one limiter, one bucket per key (default: the proxy-aware client IP). A route's own `rateLimit` replaces it.
    */
+  rateLimit?: MochiRateLimitOptions;
+  /** Event hooks: run a function at a specific framework moment. One entry per name, no priorities. See `MochiHooks` for available names. */
   eventHooks?: MochiHooks;
-  /**
-   * Filters: replace a framework default value. Receive the existing value
-   * and return the new one. One entry per name. See `MochiFilters` for
-   * available names.
-   */
+  /** Filters: receive a framework default value and return its replacement. One entry per name. See `MochiFilters` for available names. */
   filters?: MochiFilters;
   /**
-   * Warm the SSR render pipeline at startup. When enabled, every static page
-   * route (no `:param` or `*` segments) is invoked once via its real handler
-   * immediately after the server starts listening — running `serverProps`,
-   * Svelte SSR, and HTML shell assembly so the first real request to each
-   * route avoids a cold-start penalty.
+   * Warm the SSR render pipeline at startup by invoking every static page route once through its real handler — `serverProps`,
+   * Svelte SSR, and shell assembly — so the first real request skips the cold start. Routes with `:param` or `*` segments are skipped.
    *
-   * Pass `true` to warm in **production only** (dev restarts are frequent and
-   * the extra render burst isn't worth it), or a `MochiWarmupOptions` object
-   * for explicit per-mode control (e.g. `{ enabledInProd: true, enabledInDev:
-   * false }`). Warmup is fire-and-forget: the server accepts traffic
-   * immediately and a `warmup:complete` event fires once the batch finishes.
-   * Non-static routes are skipped (their concrete URLs can't be inferred).
-   * Default: `false`.
+   * Pass `true` to warm in **production only**, or a `MochiWarmupOptions` object for per-mode control. Warmup is fire-and-forget:
+   * the server accepts traffic immediately and a `warmup:complete` event fires once the batch finishes. Default: `false`.
    */
   warmup?: boolean | MochiWarmupOptions;
   /**
-   * Run the whole-program [svelte-shaker](https://github.com/baseballyama/svelte-shaker)
-   * pass before compiling, slimming `.svelte` source (prop folding, dead-branch
-   * removal, CSS narrowing) so the Svelte compiler emits less code.
+   * On-the-fly image transforms via named sizes, mounting a signed `/_mochi/image/*` endpoint behind `getImageUrl()` and `<Image>`.
+   * Every served URL's payload is encrypted, so arbitrary sources and transforms stay unreachable. Default: enabled; pass
+   * `{ enabled: false }` to turn it off. See `MochiImageOptions`.
+   */
+  image?: MochiImageOptions;
+  /**
+   * Transactional email: configures `Mochi.email(...)` with a default `from` and a pluggable `transport` — SMTP, a custom-send
+   * function for HTTP email APIs, or the default `log` transport, which logs in place of sending. See `MochiEmailOptions`.
+   */
+  email?: MochiEmailOptions;
+  /**
+   * Slide-to-verify captcha backing `mintCaptcha()` / `verifyCaptcha()` and the `<MochiCaptcha>` component, tuning proof-of-work
+   * difficulty, the token timing floor and expiry, and the one-time nonce store used for replay protection. See `MochiCaptchaOptions`.
+   * Default: 16 bits, a 2s floor, a 15-minute expiry, and an in-memory nonce store.
+   */
+  captcha?: MochiCaptchaOptions;
+  /**
+   * Cloudflare-style browser verification: unverified clients get an interstitial that auto-solves the captcha
+   * proof-of-work and redeems it for a signed clearance cookie before any protected route answers. `protect` selects
+   * which requests are gated (default: all); `bits` and `maxAgeMs` tune difficulty and clearance lifetime; `page`
+   * swaps in a custom interstitial component, like `errorPage`. See `MochiProtectionOptions`. Default: disabled.
+   */
+  protection?: MochiProtectionOptions;
+  /**
+   * Run the whole-program [svelte-shaker](https://github.com/baseballyama/svelte-shaker) pass before compiling, slimming
+   * `.svelte` source (prop folding, dead-branch removal, CSS narrowing) so the Svelte compiler emits less code.
    *
-   * **Production only** — ignored in dev, since shaking is whole-program and
-   * per-file HMR can't safely reuse a one-time shake. Only components under
-   * `./src` are scanned. `mochi-framework build` reads this value straight from
-   * your entry's `Mochi.serve()` call, so the prebuilt manifest stays in sync
-   * with no mirroring needed.
+   * **Production only**, since shaking is whole-program and per-file HMR can't safely reuse a one-time shake; the scan covers
+   * `./src`. `mochi-framework build` reads this straight from your entry's `Mochi.serve()` call, keeping the manifest in sync.
    *
-   * Pass `true` to shake everything, or an object with `enabled: true` and
-   * additional options (`exclude`). Set `enabled: false` to disable shaking
-   * while keeping other config visible. Default: `false`.
+   * Pass `true` to shake everything, or an object with `enabled: true` plus `exclude`. Default: `false`.
+   *
+   * Requires the optional `@mochi-framework/svelte-shaker` package (`bun add -d @mochi-framework/svelte-shaker`); without
+   * it Mochi warns once at boot and compiles from the original sources.
    */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /**
+   * Warning when a dependency drags a large module into the build graph that is then almost entirely tree-shaken away — the
+   * "barrel import" smell, e.g. `import { Sun } from '@lucide/svelte'` in place of `@lucide/svelte/icons/sun`. Bun re-parses
+   * that re-export file on every rebuild, so it slows HMR even though little of it ships. Dev fires once per package; a
+   * production build collapses offenders into one summary line. Default: enabled.
+   *
+   * - `false` — silence the warning entirely.
+   * - `{ ignore: ['pkg-name'] }` — suppress specific packages you can't fix.
+   * - `{ minBytes: 102400 }` — override the parsed-size threshold (default 50 KB).
+   */
+  barrelWarnings?: boolean | MochiBarrelWarningOptions;
+  /**
+   * Font handling for side-effect CSS imports (`import '@fontsource/inter'`, `import './lobster.css'`): Bun's CSS bundler
+   * inlines every `url()` as a base64 `data:` URI, so Mochi extracts fonts above `inlineThreshold` into separate
+   * content-hashed files, drops legacy `woff` sources when `woff2` is offered, and preloads latin-visible woff2 faces.
+   * See `MochiFontOptions` for the knobs.
+   */
+  fonts?: MochiFontOptions;
+  /**
+   * Output controls for `mochi-framework build`, read from your entry alongside `optimize` and `barrelWarnings`.
+   * The runtime itself ignores this field.
+   */
+  build?: MochiBuildReportOptions;
   [key: string]: unknown;
 }
 
-export interface MochiSvelteShakerOptions {
+/** Object form of `MochiServeOptions['fonts']`. See that field for semantics. */
+export interface MochiFontOptions {
   /**
-   * Whether the optimizer is active. When `false`, shaking is skipped even
-   * though an options object is present — useful to keep `exclude` / `report`
-   * config visible while temporarily disabling the pass.
+   * Fonts at or below this byte size stay inlined in the bundled CSS as `data:` URIs; larger ones are emitted as
+   * separate content-hashed files. Default: 4096. Bun copies any `url()` asset of 128 KB or more to a file of its own
+   * regardless of this value, so fonts that large are always emitted — `Infinity` inlines everything below that
+   * ceiling, not everything.
    */
+  inlineThreshold?: number;
+  /** Drop legacy `format('woff')` sources from `@font-face` `src:` lists that also offer `woff2`. Default: `true`. */
+  dropLegacyWoff?: boolean;
+  /**
+   * Inject `<link rel="preload" as="font">` for the page's extracted woff2 fonts whose `unicode-range` is absent or
+   * covers latin, capped at 8 per page. Default: `true`.
+   */
+  preload?: boolean;
+}
+
+/** Object form of `MochiServeOptions['build']`. See that field for semantics. */
+export interface MochiBuildReportOptions {
+  /** Print the emitted-resources list, one row per local image import (with dimensions) and per font extracted from imported CSS, with size on disk. The summary line keeps its counts either way. Default: enabled. */
+  resources?: boolean;
+}
+
+/** Object form of `MochiServeOptions['barrelWarnings']`. See that field for semantics. */
+export interface MochiBarrelWarningOptions {
+  /** Packages to exclude from the heavy-barrel warning (e.g. ones you can't fix). */
+  ignore?: string[];
+  /** Parsed-size threshold in bytes before a dependency file is considered. Default: 50 KB. */
+  minBytes?: number;
+}
+
+export interface MochiSvelteShakerOptions {
+  /** When `false`, shaking is skipped even though an options object is present, keeping `exclude` config visible while the pass is off. */
   enabled: boolean;
   /**
-   * Glob patterns (cwd-relative) of `.svelte` files to leave unshaken — they
-   * compile from their original source instead of svelte-shaker's slimmed
-   * output. Use to dodge a component the shaker mis-transforms (e.g. a `class:`
-   * shorthand on a folded prop). Excluding never affects how *other* components
-   * are shaken. Example: `['src/components/ThemeToggle.svelte', 'src/legacy/**']`.
+   * Glob patterns (cwd-relative) of `.svelte` files that compile from their original source instead of svelte-shaker's output,
+   * to dodge a component the shaker mis-transforms (e.g. a `class:` shorthand on a folded prop). Scoped to the listed files alone.
+   * Example: `['src/components/ThemeToggle.svelte', 'src/legacy/**']`.
    */
   exclude?: string[];
 }

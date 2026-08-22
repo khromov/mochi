@@ -1,7 +1,7 @@
 ---
 title: 'Docs for LLMs'
 slug: docs-for-llms
-description: 'An llms.txt index at /llms.txt, plus concatenated bundles for pasting into LLM contexts.'
+description: 'A remote MCP server, an agent skill, and an llms.txt index with concatenated bundles for LLM contexts.'
 ---
 
 <script>
@@ -11,17 +11,17 @@ description: 'An llms.txt index at /llms.txt, plus concatenated bundles for past
 
 ## LLM integrations
 
-Mochi provides several different ways of integrating LLMs to improve your development experience. We primarily recommend to use _either_ the [**Agent skill**](#agent-skill-recommended) or the [**MCP server**](#mcp-server-recommended). Both will augment your development experience with up-to-date documentation and how-to's on how to do various tasks in Mochi. You can also use the older [llms.txt format](#llmstxt).
+Mochi offers several ways to give an LLM up-to-date documentation. We recommend either the [**Agent skill**](#agent-skill-recommended) or the [**MCP server**](#mcp-server-recommended). You can also use the older [llms.txt format](#llmstxt).
 
-## Agent skill (recommended)
+### Agent skill (recommended)
 
-Mochi publishes a `SKILL.md` — agent guidance that tells a coding assistant to fetch the relevant docs and demos from `/llms.txt` before writing framework code. Pull the latest copy into your project with the CLI:
+Mochi publishes a `SKILL.md` that tells a coding assistant to fetch the relevant docs and demos from `/llms.txt` before writing framework code. Pull the latest copy into your project with the CLI:
 
 ```sh
 bunx mochi-framework update-skill [agent]
 ```
 
-This fetches `https://mochi.fast/SKILL.md` and writes it into your project, creating the file if it does not exist or overwriting it if it does. Run it again whenever you upgrade the framework to keep the guidance in sync.
+This fetches `https://mochi.fast/SKILL.md` and writes it into your project. Run it again whenever you upgrade the framework.
 
 The optional `agent` argument controls where the skill is written (default: `claude-code`):
 
@@ -32,9 +32,9 @@ The optional `agent` argument controls where the skill is written (default: `cla
 | `antigravity` (`agy`) | `.agents/skills/mochi/SKILL.md`   |
 | `codex`               | `.agents/skills/mochi/SKILL.md`   |
 
-## MCP Server (recommended)
+### MCP Server (recommended)
 
-Mochi runs an official remote MCP server at `https://mochi.fast/mcp` (HTTP transport). It exposes the same docs and demos as the skill — `get_documentation_sections` to list everything and `get_section` to read specific pages — so an assistant can pull exactly the context it needs. Add it to your tool of choice below.
+Mochi runs an official remote MCP server at `https://mochi.fast/mcp` (HTTP transport). It exposes the same docs and demos as the skill — `get_documentation_sections` to list everything and `get_section` to read specific pages. Add it to your tool of choice below.
 
 <Disclosure title="Claude Code">
 
@@ -44,7 +44,7 @@ Run:
 claude mcp add -t http -s project mochi https://mochi.fast/mcp
 ```
 
-This adds the server at `project` scope (shared via `.mcp.json`); pass `-s user` or `-s local` instead to change that. (For the skill-based alternative, see [Agent skill](#agent-skill-recommended) above.)
+This adds the server at `project` scope. Pass `-s user` or `-s local` to change that.
 
 </Disclosure>
 
@@ -82,7 +82,7 @@ Run `/mcp add`, or edit `~/.copilot/mcp-config.json`:
 
 <Disclosure title="Antigravity Editor">
 
-Open the MCP store via the **"..."** dropdown at the top of the editor's agent panel, click **Manage MCP Servers**, then **View raw config**, and add the server to the config:
+Open the MCP store via the **"..."** dropdown at the top of the agent panel, click **Manage MCP Servers**, then **View raw config**, and add:
 
 ```json
 { "mcpServers": { "mochi": { "type": "http", "serverUrl": "https://mochi.fast/mcp" } } }
@@ -92,7 +92,7 @@ Open the MCP store via the **"..."** dropdown at the top of the editor's agent p
 
 <Disclosure title="Antigravity CLI (previously Gemini)">
 
-Edit `~/.gemini/config/mcp_config.json` and add the server:
+Edit `~/.gemini/config/mcp_config.json` and add:
 
 ```json
 { "mcpServers": { "mochi": { "type": "http", "serverUrl": "https://mochi.fast/mcp" } } }
@@ -143,42 +143,43 @@ Refer to your client's documentation for adding a remote MCP server and use `htt
 
 </Disclosure>
 
-## llms.txt
+### llms.txt
 
-[`/llms.txt`](/llms.txt) is the index: a title, a one-line summary, and a linked list of every doc (`## Docs`) and demo (`## Examples`), each pointing at its own plain-text file. The concatenated bundles below are linked under `## Optional`. Start here.
+[`/llms.txt`](/llms.txt) is the index: a title, a one-line summary, and a linked list of every doc (`## Docs`), demo (`## Examples`), and blog post (`## Blog`), each pointing at its own plain-text file. The concatenated bundles below are linked under `## Optional`.
 
-### All docs concatenated
+#### All docs concatenated
 
-The full set of docs, concatenated in reading order, is served at [`/llms-recommended.txt`](/llms-recommended.txt). Use this when you want the model to have the complete picture of the framework API in one paste.
+The full set of docs, concatenated in reading order, is served at [`/llms-recommended.txt`](/llms-recommended.txt). Use it when you want the model to have the complete API in one paste.
 
-### Docs + demo source
+#### Docs + demo source
 
-[`/llms-full.txt`](/llms-full.txt) includes everything in `/llms-recommended.txt` plus the source of every demo (`.svelte` and `.ts` files), grouped by demo name. Use this when the model needs both the API and real working examples.
+[`/llms-full.txt`](/llms-full.txt) includes everything in `/llms-recommended.txt` plus the source of every demo, every blog post, and the changelog. Use it when the model needs both the API and working examples.
 
-### Per-document text
+#### Per-document text
 
-Each individual doc is reachable as plain text at `/docs/<slug>/llms.txt`:
+Each doc is reachable as plain text at `/docs/<slug>/llms.txt`, for example [`/docs/intro/llms.txt`](/docs/intro/llms.txt). The "Copy as llms.txt" button on each doc page emits just that page.
 
-- [`/docs/intro/llms.txt`](/docs/intro/llms.txt)
-- [`/docs/server-islands/llms.txt`](/docs/server-islands/llms.txt)
-- [`/docs/api-routes/llms.txt`](/docs/api-routes/llms.txt)
+The changelog is served the same way at [`/docs/changelog/llms.txt`](/docs/changelog/llms.txt), and reads as a page at [`/docs/changelog/`](/docs/changelog/). Mochi fetches it from GitHub, so both return `503` (not `404`) when that fetch is unavailable.
 
-The "Copy as llms.txt" button on each doc page emits just that page — use it to give the model focused context without the rest of the framework.
+#### Per-post text
 
-### Per-demo source
+Each published blog post is reachable as raw markdown at `/blog/<slug>/llms.txt`, for example [`/blog/mochi-0-8-0/llms.txt`](/blog/mochi-0-8-0/llms.txt).
 
-Each demo's source is reachable as plain text alongside its demo page — usually `/demos/<slug>/llms.txt`. It's the exact source `/llms-full.txt` bundles for that demo, scoped to one demo:
+#### Per-demo source
+
+Each demo's source is reachable as plain text alongside its demo page, usually `/demos/<slug>/llms.txt`. It is the exact source `/llms-full.txt` bundles for that demo, scoped to one demo:
 
 - [`/demos/hello-world/llms.txt`](/demos/hello-world/llms.txt)
 - [`/demos/chat/llms.txt`](/demos/chat/llms.txt)
 
-### Machine-readable index
+#### Machine-readable index
 
-[`/llms.json`](/llms.json) returns a JSON index of every doc and demo — each with its `title`, `description`, and an absolute `url` to its `llms.txt`. Use it to discover what's available and fetch each piece on demand:
+[`/llms.json`](/llms.json) returns a JSON index of every doc, blog post, and demo, each with its `title`, `description`, and an absolute `url` to its `llms.txt`.
 
 ```json
 {
   "docs": [{ "title": "Welcome", "description": "…", "url": "https://mochi.fast/docs/intro/llms.txt" }],
+  "posts": [{ "title": "Mochi 0.8.0", "description": "2026-07-21 — …", "url": "https://mochi.fast/blog/mochi-0-8-0/llms.txt" }],
   "demos": [{ "title": "Hello World", "description": "…", "url": "https://mochi.fast/demos/hello-world/llms.txt" }]
 }
 ```

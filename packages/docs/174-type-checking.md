@@ -6,9 +6,12 @@ description: 'Run svelte-check + tsc against your project; Mochi auto-patches sv
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Type checking
+
+<VersionNote since="0.10.0" message="mochi-framework prepare was added in 0.10.0. Before it, svelte-check was patched through bun's patchedDependencies and a committed patch file pinned to one exact svelte-check version." />
 
 Scaffolded projects ship a `typecheck` script that runs [`svelte-check`](https://www.npmjs.com/package/svelte-check) followed by `tsc`:
 

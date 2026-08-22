@@ -4,17 +4,43 @@ import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from 'mochi-framework';
 import { internalDemoLlmsRoutes } from './lib/docs';
-import { routes } from './routes';
+import { CHANGELOG_URL } from './lib/changelog';
+import { routes, queues } from './routes';
 
 // Boots the real site routes so the per-demo llms.txt routes are exercised against
 // the actual router — this is what catches collisions like /demos/data-loading/:id
 // shadowing /demos/data-loading/llms.txt.
 describe('per-demo llms.txt routes', () => {
-  let server: Server<undefined>;
+  let server: Server<undefined> | undefined;
   let outDir: string;
   let base: string;
 
+  const realBunImage = Bun.Image;
+  const realFetch = globalThis.fetch;
+  // Shaped like real release-please output — the linked version heading is what the
+  // page's external-link handling is asserted against.
+  const CHANGELOG_BODY = '# Changelog\n\n## [0.8.0](https://github.com/khromov/mochi/releases/tag/v0.8.0) (2026-07-21)\n\n### Features\n\n- something\n';
+
   beforeAll(async () => {
+    // /llms-full.txt and /docs/changelog/llms.txt fetch the changelog from GitHub.
+    // Intercept only that URL — the tests themselves fetch the local server, so
+    // every other request must pass through to the real fetch.
+    globalThis.fetch = (async (input: unknown, init?: unknown) => {
+      if (String(input) === CHANGELOG_URL) {
+        return new Response(CHANGELOG_BODY);
+      }
+      return realFetch(input as never, init as never);
+    }) as typeof fetch;
+    // The build-time image loader's native `Bun.Image().metadata()` decode can trip the
+    // Bun bundler bug worked around in bunfig.toml when this test's in-process compile
+    // runs a nested `Bun.build` pass; stub it with a metadata-only fake, restored in `afterAll`.
+    // @ts-expect-error minimal metadata-only stub, not the full Bun.Image type
+    Bun.Image = class {
+      constructor(_bytes: unknown) {}
+      metadata() {
+        return Promise.resolve({ width: 1, height: 1, format: 'jpeg' });
+      }
+    };
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-demo-llms-'));
     server = await Mochi.serve({
       port: 0,
@@ -22,12 +48,20 @@ describe('per-demo llms.txt routes', () => {
       logger: { enabled: false },
       outDir,
       routes,
+      // Mount the demo queues too, since the routes produce to them.
+      queues,
     });
     base = `http://localhost:${server.port}`;
-  });
+    // No prebuilt manifest here, so this boot compiles every component in the site — ~26s and
+    // growing with the route table, against bun test's 30s default. Kept under the 240s per-file
+    // kill in scripts/run-tests.ts so a real hang still reports as a hook timeout, not a SIGKILL.
+  }, 120_000);
 
   afterAll(() => {
-    server.stop(true);
+    Bun.Image = realBunImage;
+    globalThis.fetch = realFetch;
+    // Guarded: if `beforeAll` failed, an unconditional stop() throws and buries the real error.
+    server?.stop(true);
     rmSync(outDir, { recursive: true, force: true });
   });
 
@@ -136,6 +170,67 @@ describe('per-demo llms.txt routes', () => {
     expect(text).toContain('/llms-full.txt');
     // The index is just links — not the raw docs with their fenced code blocks.
     expect(text).not.toContain('```');
+  });
+
+  test('/llms.txt has a ## Blog section', async () => {
+    const text = await fetch(`${base}/llms.txt`).then((r) => r.text());
+    expect(text).toContain('## Blog');
+  });
+
+  test('/blog/:slug/llms.txt serves the post markdown as text/plain', async () => {
+    const res = await fetch(`${base}/blog/mochi-0-8-0/llms.txt`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/plain');
+    const text = await res.text();
+    expect(text).toContain('slug: mochi-0-8-0');
+    expect(text).not.toContain('<!doctype html>');
+  });
+
+  test('an unknown post llms.txt 404s', async () => {
+    const res = await fetch(`${base}/blog/does-not-exist/llms.txt`);
+    expect(res.status).toBe(404);
+  });
+
+  test('/llms.json has a posts array whose urls are all /blog/…/llms.txt', async () => {
+    const body = (await fetch(`${base}/llms.json`).then((r) => r.json())) as { posts: { url: string }[] };
+    expect(Array.isArray(body.posts)).toBe(true);
+    expect(body.posts.length).toBeGreaterThan(0);
+    for (const post of body.posts) {
+      expect(new URL(post.url).pathname).toMatch(/^\/blog\/[^/]+\/llms\.txt$/);
+    }
+  });
+
+  test('/llms-full.txt carries both the blog posts and the changelog', async () => {
+    const text = await fetch(`${base}/llms-full.txt`).then((r) => r.text());
+    expect(text).toContain('# Blog Posts');
+    expect(text).toContain('# Changelog');
+  });
+
+  test('/docs/changelog/llms.txt serves the changelog', async () => {
+    const res = await fetch(`${base}/docs/changelog/llms.txt`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/plain');
+    expect(await res.text()).toContain('# Changelog');
+  });
+
+  // Slashless: this harness doesn't set the site's `trailingSlash: 'always'` (that lives
+  // in index.ts), so the canonical path here is the bare one.
+  test('/docs/changelog renders the changelog as a page', async () => {
+    const res = await fetch(`${base}/docs/changelog`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/html');
+    const html = await res.text();
+    // Rendered markup, not the raw markdown the llms.txt route serves.
+    expect(html).toContain('<h3 id="features">Features</h3>');
+    expect(html).not.toContain('### Features');
+    // Reachable from the nav, and carrying the same llms.txt affordance as a real doc.
+    expect(html).toContain('href="/docs/changelog/"');
+    expect(html).toContain('href="/docs/changelog/llms.txt"');
+  });
+
+  test('/docs/changelog opens outbound links in a new tab', async () => {
+    const html = await fetch(`${base}/docs/changelog`).then((r) => r.text());
+    expect(html).toContain('<a href="https://github.com/khromov/mochi/releases/tag/v0.8.0" rel="noopener noreferrer nofollow" target="_blank">');
   });
 
   test('/llms-recommended.txt serves the concatenated docs', async () => {

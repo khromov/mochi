@@ -1,20 +1,17 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { compile as mdsvexCompile } from 'mdsvex';
 import { logger, trailingSlashIt } from 'mochi-framework';
 import rehypeSlug from 'rehype-slug';
+import { SITE_ROOT } from './siteRoot';
+import { loadPosts, getPost } from './blog';
+import { CHANGELOG_SLUG, CHANGELOG_TITLE, CHANGELOG_DESCRIPTION, getChangelogTxt } from './changelog';
 import { demos, type Demo } from './demos';
-import type { SourceSpec } from '../components/utils.ts';
+import { isDemoIndex, stripImageConfig, stripStaticDirs, type SourceSpec } from '../components/sourceUtils';
+import { collectHeadings, type HastNode, type MdsvexRehypePlugin } from './markdown';
 import type { TocEntry } from './toc';
 
-type MdsvexRehypePlugin = NonNullable<NonNullable<Parameters<typeof mdsvexCompile>[1]>['rehypePlugins']>[number];
-
-export const DOCS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../docs');
-const DEMOS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../demos');
-// Demo source paths in each demo's `files` are written relative to the site package root (e.g. './src/...').
-const SITE_ROOT = path.resolve(DEMOS_DIR, '../..');
-
+export const DOCS_DIR = path.resolve(SITE_ROOT, '../docs');
 // Internal demos are keyed by their folder name (`slug`) and carry their own `files`
 // list — the single source of truth shared by the demo page, the per-demo llms.txt
 // route, and the /llms-full.txt bundle.
@@ -29,7 +26,7 @@ function filesForDemo(slug: string): SourceSpec[] | undefined {
   return internalDemos().find((d) => d.slug === slug)?.files;
 }
 
-/** Parses the leading numeric prefix of a filename (e.g. `"01-intro.md"` → `1`). */
+// Parses the leading numeric prefix of a filename (e.g. `"01-intro.md"` → `1`).
 function leadingFileNumber(filename: string, fallback = Number.NaN): number {
   const digits = /^(\d+)-/.exec(filename)?.[1];
   return digits === undefined ? fallback : Number.parseInt(digits, 10);
@@ -39,6 +36,8 @@ export interface DocMetadata {
   title: string;
   slug: string;
   description?: string;
+  /** Overrides `title` on the social card only, where there's no sidebar or breadcrumb for context. */
+  ogTitle?: string;
   order?: number;
 }
 
@@ -46,6 +45,7 @@ export interface DocEntry {
   slug: string;
   title: string;
   description?: string;
+  ogTitle?: string;
   order: number;
   filename: string;
   toc: TocEntry[];
@@ -56,7 +56,10 @@ let cachedDocs: DocEntry[] | null = null;
 let cachedBySlug: Map<string, DocEntry> | null = null;
 let cachedNav: TocEntry[] | null = null;
 let cachedLlmsRecommendedTxt: string | null = null;
-let cachedLlmsFullTxt: string | null = null;
+// Only the docs + demos + posts portion is a forever memo. The changelog block is
+// concatenated per request (getChangelogTxt is itself cached) so its 4h TTL isn't
+// frozen into this module-level string.
+let cachedLlmsFullBaseTxt: string | null = null;
 let cachedSitemapXml: string | null = null;
 const cachedDemoLlmsTxt = new Map<string, string | null>();
 
@@ -65,7 +68,7 @@ export function clearDocsCaches(): void {
   cachedBySlug = null;
   cachedNav = null;
   cachedLlmsRecommendedTxt = null;
-  cachedLlmsFullTxt = null;
+  cachedLlmsFullBaseTxt = null;
   cachedSitemapXml = null;
   cachedDemoLlmsTxt.clear();
 }
@@ -84,7 +87,10 @@ export async function loadDocs(): Promise<DocEntry[]> {
   filenames.sort((a, b) => {
     const na = leadingFileNumber(a);
     const nb = leadingFileNumber(b);
-    if (Number.isFinite(na) && Number.isFinite(nb)) {
+    // Numeric prefix decides order only when it differs; ties need a total order too, since
+    // Bun.Glob.scan's filesystem order differs between the image-build and runtime containers,
+    // which would make the generated docs barrel non-reproducible.
+    if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) {
       return na - nb;
     }
     return a.localeCompare(b);
@@ -109,6 +115,7 @@ export async function loadDocs(): Promise<DocEntry[]> {
       slug,
       title,
       description: metadata.description,
+      ogTitle: metadata.ogTitle,
       order,
       filename,
       toc,
@@ -206,7 +213,7 @@ async function buildDemoLlmsTxt(slug: string, stripStyles = false): Promise<stri
     return null;
   }
   const parts: string[] = [`## Demo: ${slug}\n`];
-  for (const { label, path: rel, lang } of specs) {
+  for (const { label, path: rel, lang, showImageConfig, showStaticDirs } of specs) {
     const abs = path.resolve(SITE_ROOT, rel);
     if (!existsSync(abs)) {
       // A declared source file that isn't on disk is almost always a typo'd path
@@ -215,6 +222,14 @@ async function buildDemoLlmsTxt(slug: string, stripStyles = false): Promise<stri
       continue;
     }
     let content = (await Bun.file(abs).text()).trimEnd();
+    if (isDemoIndex(rel)) {
+      if (!showImageConfig) {
+        content = stripImageConfig(content).trimEnd();
+      }
+      if (!showStaticDirs) {
+        content = stripStaticDirs(content).trimEnd();
+      }
+    }
     const fence = lang ?? (label.endsWith('.svelte') ? 'svelte' : 'ts');
     // Strip <style> blocks only from Svelte-fenced sources — never from .ts, where a
     // literal "<style>" would just be code/text, not markup to elide.
@@ -246,39 +261,72 @@ function stripSvelteStyleBlocks(text: string): string {
   return text.replace(SVELTE_STYLE_BLOCK_RE, '<style>\n  /* Styles omitted */\n</style>');
 }
 
-export async function buildLlmsFullTxt(): Promise<string> {
-  if (cachedLlmsFullTxt) {
-    return cachedLlmsFullTxt;
+async function buildBlogPostsTxt(): Promise<string> {
+  // Published posts only, newest first (loadPosts() already sorts and hides drafts).
+  const posts = await loadPosts();
+  const parts: string[] = ['# Blog Posts\n'];
+  for (const post of posts) {
+    parts.push(post.raw.trimEnd());
   }
-  const [docs, demos] = await Promise.all([loadDocs(), buildDemosTxt(true)]);
-  cachedLlmsFullTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n\n' + demos;
-  return cachedLlmsFullTxt;
+  return parts.join('\n\n');
 }
 
-const SITE_BASE = 'https://mochi.fast';
+export async function buildLlmsFullTxt(): Promise<string> {
+  if (!cachedLlmsFullBaseTxt) {
+    const [docs, demos, posts] = await Promise.all([loadDocs(), buildDemosTxt(true), buildBlogPostsTxt()]);
+    cachedLlmsFullBaseTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n\n' + demos + '\n\n' + posts;
+  }
+  // The changelog is fetched (and cached) separately; concatenate it per request so its own
+  // 4h TTL isn't frozen into the forever memo, and omit the block on a fetch miss.
+  const changelog = await getChangelogTxt();
+  if (changelog === null) {
+    return cachedLlmsFullBaseTxt;
+  }
+  return `${cachedLlmsFullBaseTxt}\n\n# Changelog\n\n${changelog.trimEnd()}\n`;
+}
+
+export const SITE_BASE = 'https://mochi.fast';
+const SITEMAP_NS = 'http://www.sitemaps.org/schemas/sitemap/0.9';
+export const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>';
 
 export async function buildSitemapXml(): Promise<string> {
   if (cachedSitemapXml) {
     return cachedSitemapXml;
   }
   const docs = await loadDocs();
+  // Published posts only — loadPosts() without includeDrafts never exposes drafts.
+  const posts = await loadPosts();
   const internalDemos = demos.filter((d) => d.href.startsWith('/'));
 
   const urls: string[] = [
-    `  <url><loc>${SITE_BASE}/</loc></url>`,
-    ...docs.map((d) => `  <url><loc>${SITE_BASE}/docs/${d.slug}/</loc></url>`),
+    `${SITE_BASE}/`,
+    ...docs.map((d) => `${SITE_BASE}/docs/${d.slug}/`),
+    `${SITE_BASE}/docs/${CHANGELOG_SLUG}/`,
+    `${SITE_BASE}/blog/`,
+    ...posts.map((p) => `${SITE_BASE}/blog/${p.slug}/`),
     // Demo hrefs already carry a trailing slash; trailingSlashIt normalizes to
     // exactly one rather than appending unconditionally (which produced `…/request-id//`).
-    ...internalDemos.map((d) => `  <url><loc>${trailingSlashIt(`${SITE_BASE}${d.href}`)}</loc></url>`),
+    ...internalDemos.map((d) => trailingSlashIt(`${SITE_BASE}${d.href}`)),
   ];
 
-  cachedSitemapXml = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">', ...urls, '</urlset>', ''].join('\n');
+  cachedSitemapXml = `${XML_DECLARATION}\n${Bun.XML.stringify({ urlset: { '@xmlns': SITEMAP_NS, url: urls.map((loc) => ({ loc })) } })}\n`;
   return cachedSitemapXml;
 }
 
 export async function getDocLlmsTxt(slug: string): Promise<string | null> {
+  // The changelog is a synthetic doc — not in loadDocs() — fetched from GitHub.
+  if (slug === CHANGELOG_SLUG) {
+    return getChangelogTxt();
+  }
   const doc = await getDoc(slug);
   return doc ? doc.raw.trimEnd() + '\n' : null;
+}
+
+// Serves a published blog post's raw markdown (frontmatter and any <script>
+// component imports intact, matching getDocLlmsTxt). Drafts stay hidden.
+export async function getPostLlmsTxt(slug: string): Promise<string | null> {
+  const post = await getPost(slug);
+  return post ? post.raw.trimEnd() + '\n' : null;
 }
 
 export interface LlmsIndexEntry {
@@ -287,65 +335,79 @@ export interface LlmsIndexEntry {
   url: string;
 }
 
-/** The plain-text source URL for a demo, derived from its page href (which ends in '/'). */
+// The plain-text source URL for a demo, derived from its page href (which ends in '/').
 function demoLlmsPath(href: string): string {
   return href.endsWith('/') ? `${href}llms.txt` : `${href}/llms.txt`;
 }
 
 export interface DemoLlmsRoute {
-  /** Route path, sitting alongside the demo page (e.g. /demos/chat/llms.txt, /cookie-vary-test/llms.txt). */
   path: string;
-  /** Demo folder name (the demo's `slug`) used to look up its source. */
   slug: string;
 }
 
-/**
- * Demos with local source, each as the static llms.txt route to register and the
- * `slug` (folder name) behind it. The route is static (not a param) so it outranks
- * demo param routes like /demos/data-loading/:id, and its path tracks the demo's own
- * page href so source and page share a prefix.
- */
+/** Static llms.txt routes for demos with local source, one per `slug` — static (not a param) so it outranks demo param routes like `/demos/data-loading/:id`, and its path tracks the demo's own page href. */
 export function internalDemoLlmsRoutes(): DemoLlmsRoute[] {
   return internalDemos().map((d) => ({ path: demoLlmsPath(d.href), slug: d.slug }));
 }
 
 export interface SectionIndexEntry {
-  type: 'doc' | 'demo';
+  type: 'doc' | 'demo' | 'post';
   slug: string;
   title: string;
   description: string;
 }
 
+// Prefix a post's description with its date so an agent can judge recency;
+// `description` is optional, so fall back to the date alone.
+function postSectionDescription(date: string, description?: string): string {
+  return description ? `${date} — ${description}` : date;
+}
+
 export async function buildSectionIndex(): Promise<SectionIndexEntry[]> {
-  const docList = await loadDocs();
+  const [docList, posts] = await Promise.all([loadDocs(), loadPosts()]);
   const docs: SectionIndexEntry[] = docList.map((d) => ({
     type: 'doc',
     slug: d.slug,
     title: d.title,
     description: d.description ?? '',
   }));
+  // The synthetic changelog rounds out the docs — addressed as a doc so
+  // get_section({ type: 'doc', slug: 'changelog' }) resolves it.
+  docs.push({ type: 'doc', slug: CHANGELOG_SLUG, title: CHANGELOG_TITLE, description: CHANGELOG_DESCRIPTION });
+  const postEntries: SectionIndexEntry[] = posts.map((p) => ({
+    type: 'post',
+    slug: p.slug,
+    title: p.title,
+    description: postSectionDescription(p.date, p.description),
+  }));
   const demoEntries: SectionIndexEntry[] = internalDemos().map((d) => ({ type: 'demo', slug: d.slug, title: d.title, description: d.hook }));
-  return [...docs, ...demoEntries];
+  return [...docs, ...postEntries, ...demoEntries];
 }
 
-export async function buildLlmsJson(origin: string): Promise<{ docs: LlmsIndexEntry[]; demos: LlmsIndexEntry[] }> {
-  const docList = await loadDocs();
+export async function buildLlmsJson(origin: string): Promise<{ docs: LlmsIndexEntry[]; posts: LlmsIndexEntry[]; demos: LlmsIndexEntry[] }> {
+  const [docList, posts] = await Promise.all([loadDocs(), loadPosts()]);
   const docs: LlmsIndexEntry[] = docList.map((d) => ({
     title: d.title,
     description: d.description ?? '',
     url: `${origin}/docs/${d.slug}/llms.txt`,
   }));
+  docs.push({ title: CHANGELOG_TITLE, description: CHANGELOG_DESCRIPTION, url: `${origin}/docs/${CHANGELOG_SLUG}/llms.txt` });
+  const postEntries: LlmsIndexEntry[] = posts.map((p) => ({
+    title: p.title,
+    description: postSectionDescription(p.date, p.description),
+    url: `${origin}/blog/${p.slug}/llms.txt`,
+  }));
   const demoEntries: LlmsIndexEntry[] = internalDemos().map((d) => ({ title: d.title, description: d.hook, url: `${origin}${demoLlmsPath(d.href)}` }));
-  return { docs, demos: demoEntries };
+  return { docs, posts: postEntries, demos: demoEntries };
 }
 
 const SITE_NAME = 'Mochi';
 const SITE_SUMMARY = 'Mochi is an SSR-first framework for Svelte 5 on Bun with islands-based selective hydration.';
 
-// Standard llms.txt index: title + summary + linked sections, rendered from the same
-// data as /llms.json. Per-request (origin-dependent), so not cached.
+// Standard llms.txt index (title + summary + linked sections) rendered from the same data
+// as /llms.json; per-request since it's origin-dependent, so not cached.
 export async function buildLlmsIndexTxt(origin: string): Promise<string> {
-  const { docs, demos } = await buildLlmsJson(origin);
+  const { docs, posts, demos } = await buildLlmsJson(origin);
   const link = (e: LlmsIndexEntry) => `- [${e.title}](${e.url}): ${e.description}`;
   const lines = [
     `# ${SITE_NAME}`,
@@ -360,6 +422,10 @@ export async function buildLlmsIndexTxt(origin: string): Promise<string> {
     '',
     ...demos.map(link),
     '',
+    '## Blog',
+    '',
+    ...posts.map(link),
+    '',
     '## Optional',
     '',
     `- [All docs concatenated](${origin}/llms-recommended.txt): The full documentation in reading order.`,
@@ -369,44 +435,13 @@ export async function buildLlmsIndexTxt(origin: string): Promise<string> {
   return lines.join('\n');
 }
 
-type HastNode = {
-  type: string;
-  tagName?: string;
-  value?: string;
-  properties?: Record<string, unknown>;
-  children?: HastNode[];
-};
-
-function hastText(node: HastNode): string {
-  if (node.type === 'text') {
-    return node.value ?? '';
-  }
-  if (!node.children) {
-    return '';
-  }
-  return node.children.map(hastText).join('');
-}
-
 async function parseDoc(markdown: string): Promise<{
   metadata: Partial<DocMetadata>;
   toc: TocEntry[];
 }> {
-  const toc: TocEntry[] = [];
+  let toc: TocEntry[] = [];
   const capture = () => (tree: HastNode) => {
-    for (const node of tree.children ?? []) {
-      if (node.type !== 'element' || !node.tagName) {
-        continue;
-      }
-      const match = /^h([1-6])$/.exec(node.tagName);
-      if (!match) {
-        continue;
-      }
-      toc.push({
-        level: Number(match[1]),
-        text: hastText(node),
-        slug: String(node.properties?.id ?? ''),
-      });
-    }
+    toc = collectHeadings(tree);
   };
   const result = await mdsvexCompile(markdown, {
     extensions: ['.md', '.svx'],

@@ -6,7 +6,6 @@
   import { formatSize } from './utils';
   import { locateIsland } from './highlight';
   import { parse as devalueParse } from 'devalue';
-  import { decodeSignedProps } from './decodeProps';
   import formatHighlight from '../vendor/json-format-highlight/index.ts';
 
   let { island }: { island: IslandInfo } = $props();
@@ -24,8 +23,7 @@
 
   type PropsDisplay = { html: string; caption?: string } | { text: string };
 
-  // Decoding a server island's signed props is async (decompression), so it's
-  // done lazily on first expand and cached. Hydratable props are parsed inline.
+  // Done lazily on first expand and cached to keep the row cheap until opened.
   let decoded: Promise<PropsDisplay> | null = $state(null);
 
   async function buildDisplay(): Promise<PropsDisplay> {
@@ -33,15 +31,22 @@
       if (!island.signedProps) {
         return { text: '(no props)' };
       }
-      try {
-        const { islandId, ...rest } = await decodeSignedProps(island.signedProps);
-        return {
-          html: formatHighlight(rest, highlightColors),
-          caption: typeof islandId === 'string' ? islandId : undefined,
-        };
-      } catch {
-        return { text: `(unable to decode props, ${island.propsSize} bytes)` };
+      // Server-island props are encrypted (opaque on the wire), so they can't be
+      // decoded client-side. The SSR pass records the decoded snapshot keyed by
+      // the token; look it up by the token in the `signed-props` attribute.
+      const recorded = window.__mochi_debug?.serverProps?.[island.signedProps];
+      if (recorded) {
+        try {
+          const { islandId, ...rest } = JSON.parse(recorded) as Record<string, unknown>;
+          return {
+            html: formatHighlight(rest, highlightColors),
+            caption: typeof islandId === 'string' ? islandId : undefined,
+          };
+        } catch {
+          // Fall through to the opaque-size fallback.
+        }
       }
+      return { text: `(encrypted props, ${island.propsSize} bytes)` };
     }
     if (!island.rawProps) {
       return { text: '(no props)' };
@@ -70,7 +75,7 @@
   <div class="island-item">
     <button class="island-header" type="button" onclick={toggle}>
       <span class="chevron"><ChevronRight size={12} /></span>
-      <span class="island-name">{island.name}</span>
+      <span class="island-name">{island.displayName}</span>
     </button>
     <span class="island-meta">
       <span
@@ -82,7 +87,7 @@
         {island.mode}
       </span>
       {#if island.type === 'server'}
-        <span class="lock-icon" title="Props are HMAC-signed in production to prevent tampering. Unencrypted props are shown only in dev mode.">
+        <span class="lock-icon" title="Props are encrypted (authenticated AES-256) on the wire. The decoded values are shown only in dev mode.">
           <Lock size={10} />
         </span>
       {/if}
@@ -104,7 +109,7 @@
     {:then propsDisplay}
       {#if 'html' in propsDisplay}
         {#if propsDisplay.caption}
-          <div class="island-id-caption" title="The framework's per-island id, carried inside the signed props envelope.">{propsDisplay.caption}</div>
+          <div class="island-id-caption" title="The framework's per-island id, carried inside the encrypted props envelope.">{propsDisplay.caption}</div>
         {/if}
         <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized JSON highlight output -->
         <pre class="island-props">{@html propsDisplay.html}</pre>
