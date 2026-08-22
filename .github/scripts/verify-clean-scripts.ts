@@ -1,10 +1,7 @@
 /**
- * Verify every workspace `clean` script actually removes its target directory, on whatever OS this runs on.
- *
- * The scripts use `rm -rf`, which is a Bun Shell builtin rather than a system command — so `bun run clean` is
- * cross-platform, but only through `bun run`. This exercises the real package.json script through the real `bun run`
- * path, which on Windows means Bun Shell. The matrix build never runs `clean`, so without this the Windows behaviour
- * is untested.
+ * Verify every workspace `clean` script removes its target dir, on whatever OS this runs on. The scripts use `rm -rf`,
+ * a Bun Shell builtin that is cross-platform only through `bun run`, and the matrix build never runs `clean` — so this
+ * is the sole Windows coverage for it.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
