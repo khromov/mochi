@@ -48,6 +48,17 @@ describe('CSS imports — happy path', () => {
     expect(cssOutput?.size).toBeGreaterThan(0);
   });
 
+  test('minifies the bundled CSS', () => {
+    const cssOutput = registry.getClientStats()?.outputs.find((o) => o.name.startsWith('styles-'));
+    expect(cssOutput).toBeDefined();
+    const cssText = registry.getClientFile(`/_mochi/import-css/${cssOutput!.name}`);
+    expect(cssText).toBeDefined();
+    // Minified output drops the source-path banner comment and all indentation.
+    expect(cssText).not.toContain('/*');
+    expect(cssText).not.toMatch(/\n\s{2,}/);
+    expect(cssText!.trim()).toContain('body{color:red}');
+  });
+
   test('renderComponent links the bundled CSS URL', async () => {
     const { requestContext } = await import('../runtime/requestContext');
     const { MochiCookieJar } = await import('../runtime/cookies');
@@ -98,9 +109,9 @@ describe('CSS imports — variable-font format() preservation', () => {
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  // Bun's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`,
-  // which is invalid CSS and causes the browser to silently drop the @font-face src.
-  // The framework re-quotes it after bundling.
+  // Bun >=1.4.0's CSS bundler keeps `format('woff2-variations')` quoted; the bare
+  // unquoted form `format(woff2-variations)` is invalid CSS and makes the browser
+  // silently drop the @font-face src, so guard against a regression back to it.
   test('preserves quoted format() value for woff2-variations', () => {
     const stats = registry.getClientStats();
     const cssOutput = stats?.outputs.find((o) => o.name.startsWith('font-'));
@@ -108,8 +119,7 @@ describe('CSS imports — variable-font format() preservation', () => {
     const cssUrl = `/_mochi/import-css/${cssOutput!.name}`;
     const cssText = registry.getClientFile(cssUrl);
     expect(cssText).toBeDefined();
-    // Bun <1.4.0 stripped the quotes (framework re-quotes to single); Bun >=1.4.0 keeps
-    // them (double). Either quote style is valid CSS — the bare unquoted form is the real bug.
+    // Either quote style is valid CSS — the bare unquoted form is the real bug.
     expect(cssText).toMatch(/\bformat\((['"])woff2-variations\1\)/);
     expect(cssText).not.toMatch(/\bformat\(woff2-variations\)/);
   });

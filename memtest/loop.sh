@@ -13,7 +13,9 @@
 # Override the 24h window with CYCLE_SECONDS for a quick end-to-end test.
 #
 # No `set -e`: the loop must outlive a failed pull/build/run, so fallible
-# commands are guarded individually instead of aborting the supervisor.
+# commands are guarded individually instead of aborting the supervisor. The one
+# deliberate abort is stale code (non-ff divergence / dirty tree) — it exits
+# $FATAL_STALE so systemd stops in `failed` rather than exercising old code.
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
@@ -24,6 +26,7 @@ FAIL_BACKOFF_SECONDS="${FAIL_BACKOFF_SECONDS:-3600}" # retry sooner than a full 
 CONTAINER="${CONTAINER:-mochi-memtest}"          # names below are the ones run.sh reads
 SNAPSHOT_DIR="${SNAPSHOT_DIR:-$PWD/snapshots}"
 PORT="${PORT:-3333}"
+FATAL_STALE=78                                    # sysexits EX_CONFIG: can't reach origin/$BRANCH; fail loud instead of running stale (unit pairs this with RestartPreventExitStatus)
 
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)] $*"; }
 
@@ -46,17 +49,17 @@ pull_and_maybe_reexec() {
 
   if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
     if [ "${MEMTEST_LOOP_RESET:-0}" != "1" ]; then
-      log "working tree dirty — skipping pull (set MEMTEST_LOOP_RESET=1 to hard-reset)"
-      return 0
+      log "FATAL: working tree dirty — refusing to run possibly-stale code; clean the tree or set MEMTEST_LOOP_RESET=1 to auto-hard-reset, then restart"
+      exit "$FATAL_STALE"
     fi
     log "working tree dirty — MEMTEST_LOOP_RESET=1, hard-resetting to origin/$BRANCH"
     if ! git reset --hard "origin/$BRANCH"; then
-      log "reset failed — running current checkout, will retry next cycle"
-      return 0
+      log "FATAL: hard-reset to origin/$BRANCH failed — refusing to run stale code; reconcile manually, then restart"
+      exit "$FATAL_STALE"
     fi
   elif ! git merge --ff-only --quiet "origin/$BRANCH"; then
-    log "ff-only merge failed (non-ff) — running current checkout, will retry next cycle"
-    return 0
+    log "FATAL: local $BRANCH diverged from origin/$BRANCH (non-ff) — refusing to run stale code; reconcile (e.g. git reset --hard origin/$BRANCH), then restart"
+    exit "$FATAL_STALE"
   fi
   after="$(git rev-parse HEAD)"
 

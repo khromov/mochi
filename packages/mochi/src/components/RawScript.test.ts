@@ -4,7 +4,7 @@ import path from 'node:path';
 import { ComponentRegistry } from '../compiler/ComponentRegistry';
 import { HYDRATABLE_CONTEXT_KEY } from '../islands/isHydratable';
 
-const COMPONENT_PATH = path.join(import.meta.dir, 'RawScript.svelte');
+const COMPONENT_PATH = path.join(import.meta.dir, 'RawScript.server.svelte');
 
 // Multi-line with HTML-sensitive characters so a verbatim check catches escaping, wrapping, or truncation.
 const SCRIPT_CONTENT = 'console.log("hello from raw");\nif (1 < 2 && "q") console.log(\'<b>&amp;</b>\');\n';

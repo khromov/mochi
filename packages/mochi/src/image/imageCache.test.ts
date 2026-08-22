@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Storage } from '../cache/cache';
-import { MemoryStorage } from '../cache/cache-storage';
+import { FileStorage, MemoryStorage } from '../cache/cache-storage';
 import { mochiEvents } from '../events';
 import type { MochiImageDeleteEvent, MochiImageStoreEvent } from '../events';
 import { ImageCache, originalId, variantId, type ImageCacheOptions, type RegenResult } from './imageCache';
@@ -42,16 +42,21 @@ function makeCache(overrides: Partial<ImageCacheOptions> = {}): ImageCache {
 const SRC = 'https://example.com/a.png';
 const ID = variantId(SRC, CFG);
 
-// Wait for a fire-and-forget background revalidation to land. A fixed `Bun.sleep`
-// flakes when the regen's disk write is slower than the wait (Windows CI), so poll
-// the observable effect until it holds or a generous deadline passes. The predicate
-// may be async so callers can drive convergence from within it (a variant only
-// re-regenerates when it is read).
-async function settle(predicate: () => boolean | Promise<boolean>, timeoutMs = 2_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!(await predicate()) && Date.now() < deadline) {
-    await Bun.sleep(5);
+// Drive a fire-and-forget background revalidation to completion. Waiting on `whenIdle()` rather than a wall clock is
+// what keeps this off a slow disk's timing: the earlier poll-until-deadline version failed on Windows CI once two
+// chained regen writes outlasted its budget. `MAX_HOPS` bounds convergence in hops of real work, not milliseconds —
+// a variant only re-regenerates when it is read, so each pass drains pending work and then re-reads.
+const MAX_HOPS = 6;
+async function settle(cache: ImageCache, predicate: () => boolean | Promise<boolean>): Promise<void> {
+  for (let hop = 0; hop < MAX_HOPS; hop++) {
+    await cache.whenIdle();
+    if (await predicate()) {
+      return;
+    }
   }
+  // Reporting the exhaustion here keeps a non-convergence from surfacing as a
+  // baffling value mismatch on the caller's next assertion.
+  throw new Error(`settle: predicate never held within ${MAX_HOPS} regen hops`);
 }
 
 function origFn(bytes: number[], contentType = 'image/jpeg', counter?: { n: number }) {
@@ -102,7 +107,7 @@ describe('ImageCache.getOriginal', () => {
     expect(stale.status).toBe('stale');
     expect(Array.from(stale.entry.bytes)).toEqual([1]); // old bytes served immediately
 
-    await settle(() => counter.n === 2);
+    await settle(cache, () => counter.n === 2);
     expect(counter.n).toBe(2); // revalidated in the background
   });
 
@@ -190,7 +195,7 @@ describe('ImageCache.getVariant (generation-stamped)', () => {
     expect(stale.status).toBe('stale');
     expect(Array.from(stale.entry.bytes)).toEqual([1]); // old bytes served immediately
 
-    await settle(() => counter.n === 2);
+    await settle(cache, () => counter.n === 2);
     expect(counter.n).toBe(2); // variant regenerated in the background
   });
 
@@ -231,11 +236,10 @@ describe('ImageCache.getVariant (generation-stamped)', () => {
 
     // Converges once the original's background refresh lands: the generation
     // mismatch forces one more regen against the new bytes — the variant must not
-    // stay pinned to [10] as fresh. Each read is what drives the regen, so poll by
-    // re-reading, bounded by a deadline rather than a fixed request count (a
-    // Windows regen write can outlast any fixed budget).
+    // stay pinned to [10] as fresh. Each read is what drives the next regen, so
+    // re-read between hops.
     let bytes: number[] = [];
-    await settle(async () => {
+    await settle(cache, async () => {
       const read = await cache.getVariant(SRC, ID, transform());
       bytes = Array.from(read.entry.bytes);
       return bytes[0] === 20;
@@ -360,7 +364,7 @@ describe('ImageCache.getPlaceholder', () => {
     await cache.invalidateOriginal(SRC, false);
     await cache.getOriginal(SRC, fetchFn); // serves stale, kicks the refresh
     let refreshed = orig.entry.meta.createdAt;
-    await settle(async () => {
+    await settle(cache, async () => {
       refreshed = (await cache.getOriginal(SRC, fetchFn)).entry.meta.createdAt;
       return refreshed !== orig.entry.meta.createdAt;
     });
@@ -391,12 +395,19 @@ describe('ImageCache.setPlaceholder', () => {
 
     let sawMiss = false;
     let stop = false;
+    let reads = 0;
     const reader = (async () => {
       while (!stop) {
         if ((await cache.inspect(key)) == null) {
           sawMiss = true;
         }
-        await Promise.resolve();
+        reads++;
+        // A timer yield, not a microtask drain: `await Promise.resolve()` resolves within the
+        // same tick, so the loop reopens the destination without the event loop ever turning
+        // and a queued rename cannot complete. On Windows a rename fails outright while any
+        // handle is held, so the writer below starved rather than raced. This still samples
+        // ~50x per rewrite, well inside the window a non-atomic publish would leave open.
+        await Bun.sleep(0);
       }
     })();
     for (let i = 0; i < 20; i++) {
@@ -406,6 +417,9 @@ describe('ImageCache.setPlaceholder', () => {
     await reader;
 
     expect(sawMiss).toBe(false);
+    // Guards the assertion above from going vacuous: it only means anything if the reader
+    // actually sampled while the rewrites were in flight.
+    expect(reads).toBeGreaterThan(100);
   });
 });
 
@@ -582,5 +596,50 @@ describe('ImageCache custom storage', () => {
     // This used to report the original as a *variant*; unattributed is the honest answer.
     const swept = await cache.sweep(Date.now() + 1_000_000);
     expect(swept).toEqual({ removedVariants: 0, removedOriginals: 0, removedOther: 1 });
+  });
+});
+
+describe('convergence does not depend on how fast the disk is', () => {
+  // Regression guard for a Windows CI failure: this scenario converges over two chained background writes (the
+  // original's refresh, then the variant's regen against it), and the test used to poll for the result on a 2s wall
+  // clock. A slow enough disk outran that budget and the variant read back as its pre-refresh generation. Taxing only
+  // `setItem` reproduces exactly that pressure — at 400ms per write the old deadline expired, so a revert to any
+  // clock-based wait fails here rather than months later on a loaded runner.
+  function slowWrites(inner: Storage, ms: number): Storage {
+    return {
+      getItem: (key) => inner.getItem(key),
+      setItem: async (key, value) => {
+        await Bun.sleep(ms);
+        return inner.setItem(key, value);
+      },
+      removeItem: (key) => inner.removeItem(key),
+      clear: () => inner.clear(),
+    };
+  }
+
+  test('a soft invalidation still propagates when every write is slow', async () => {
+    const dir = tmp();
+    const cache = makeCache({ storage: slowWrites(new FileStorage({ directory: dir }), 400) });
+
+    let upstream = [1];
+    const fetchFn = async () => ({ bytes: new Uint8Array(upstream), contentType: 'image/jpeg' });
+    const transform = (): (() => Promise<RegenResult>) => async () => {
+      const { entry } = await cache.getOriginal(SRC, fetchFn);
+      return { bytes: new Uint8Array([entry.bytes[0]! * 10]), contentType: 'image/webp', width: 100, height: 100, format: 'webp', originalCreatedAt: entry.meta.createdAt };
+    };
+
+    await cache.getOriginal(SRC, fetchFn);
+    expect(Array.from((await cache.getVariant(SRC, ID, transform())).entry.bytes)).toEqual([10]);
+
+    upstream = [2];
+    await cache.invalidateOriginal(SRC, false);
+    expect((await cache.getVariant(SRC, ID, transform())).status).toBe('stale');
+
+    let bytes: number[] = [];
+    await settle(cache, async () => {
+      bytes = Array.from((await cache.getVariant(SRC, ID, transform())).entry.bytes);
+      return bytes[0] === 20;
+    });
+    expect(bytes).toEqual([20]);
   });
 });

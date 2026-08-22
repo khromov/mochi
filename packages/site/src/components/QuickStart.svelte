@@ -79,7 +79,7 @@
   </div>
   <p class="quickstart-note">
     <span class="quickstart-note-text">
-      Requires <a href="https://bun.sh" target="_blank" rel="noopener noreferrer">Bun</a> <code>&gt;= 1.3.14</code>.
+      Requires <a href="https://bun.sh" target="_blank" rel="noopener noreferrer">Bun</a> <code>&gt;= 1.4.0</code>.
       <a href="/docs/why-bun/" class="why-bun-link" style="border-bottom-color: currentColor;">Why Bun?</a>
     </span>
     <span class="os-icons">

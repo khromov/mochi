@@ -36,13 +36,13 @@ Render both through `CodeSnippet` (`import CodeSnippet from '../../components/Co
 
 ## Gotchas
 
-- **API routes obey `trailingSlash: 'always'`.** A client `fetch('/api/<slug>/x')` 301/308-redirects; fetch the canonical `'/api/<slug>/x/'` directly.
+- **Only page routes follow `trailingSlash: 'always'`.** For api, sse, ws and file routes only the pattern you declared matches, so a client must `fetch('/api/<slug>/x')` or `new EventSource('/sse/<slug>')` — the slashed form is a 404, not a redirect.
 - **SSR runs the island too.** Browser-only utilities are SSR-safe but return defaults (`0`/`false`/`undefined`) during SSR, then the top-level re-runs on the client during hydration — design each card so the SSR state reads as intended, not broken.
 - **A class utility whose constructor synchronously touches the instance being assigned** (e.g. a `FiniteStateMachine` initial-state `_enter` that references the `const`) hits the temporal dead zone — defer the self-reference (`queueMicrotask`) and/or guard on `isBrowser`.
 
 ## Verify
 
-- Start one site on a free port: `PORT=4444 bun run dev:site`. `curl` the page (trailing slash) for a 200 + the intro's install line/link.
-- **Drive a real browser** (chrome-devtools MCP) against `/demos/<slug>/` — curl only exercises SSR. Confirm every island hydrates with **zero console errors/warnings** (this is the load-bearing check for a first-time island dependency), any backing `fetch` succeeds, and interactions work. Screenshot for a visual check.
+- Start the site: `bun run dev:site` (port 3333). `curl` the page (trailing slash) for a 200 + the intro's install line/link.
+- **Drive a real browser** (chrome-devtools MCP) against `http://localhost:3333/demos/<slug>/` — curl only exercises SSR. Confirm every island hydrates with **zero console errors/warnings** (this is the load-bearing check for a first-time island dependency), any backing `fetch` succeeds, and interactions work. Screenshot for a visual check.
 - Tear down with `pkill -f dev:site` (verify `pgrep -x bun`).
 - Delegate `bun run checks` + `bun run format` to a sub-agent (keep the output out of the main context). **Never commit** unless asked.

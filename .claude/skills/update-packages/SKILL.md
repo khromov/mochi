@@ -38,13 +38,13 @@ These are pinned with no caret on purpose. A plain `bun update` will not move th
 | `satori`, `@resvg/resvg-js`, `subset-font` (`packages/video-animations`)    | Satori's output is pixel-sensitive; a bump can silently shift frame rendering.                                                                                                                                                                                    |
 | `tmcp`, `@tmcp/*`, `valibot`, `svelte-french-toast` (`packages/site`)       | Pinned to known-good versions.                                                                                                                                                                                                                                    |
 
-### `svelte-shaker` (`packages/mochi`) — a floor, not a pin
+### `svelte-shaker` (`packages/mochi-svelte-shaker`) — a floor, not a pin
 
-Declared as `>=0.18.1` rather than an exact version. We drive its internal `svelte-shaker/node` subpath on a pre-1.0 package, and the floor is a correctness boundary: below 0.18.1 the shaker strips `mochi:*` directives, silently turning islands into plain components. Because it is a floor in a published package, a future regressed release _can_ reach consumers — so treat every observed bump as potentially breaking. Verify with a real `bun run build:site` (the `slimmed N of M` line must be non-zero and the "optimization skipped" warning absent — shake failures are swallowed by the fallback) plus `bun test packages/mochi/src/compiler/svelteShaker.test.ts`. See the comment in `packages/mochi/src/compiler/svelteShaker.ts`.
+Declared as `>=0.18.1` rather than an exact version. We drive its internal `svelte-shaker/node` subpath on a pre-1.0 package, and the floor is a correctness boundary: below 0.18.1 the shaker strips `mochi:*` directives, silently turning islands into plain components. Because it is a floor in a published package, a future regressed release _can_ reach consumers — so treat every observed bump as potentially breaking. Verify with `bun --cwd=packages/mochi-svelte-shaker run test`: its `build.isolated.test.ts` drives a real `mochi-framework build` and asserts a non-zero `slimmed N of M` line with no "optimization skipped" warning, which is the only automated guard — shake failures are otherwise swallowed by the fallback. No app in the repo enables `optimize`, so there is no second signal. See the comment in `packages/mochi-svelte-shaker/src/index.ts`.
 
 ### `@rsvelte/vite-plugin-svelte-native` (`packages/mochi-rsvelte`) — a floor, not a pin
 
-Declared as `>=0.2.8 <1.0.0`, same philosophy as `svelte-shaker`: a deliberate floor range that intentionally admits 0.x _minor_ bumps (0.2 → 0.3), which are semver-exempt and therefore potential majors. A `bun update` inside the workspace **will** move it within that range. It's fine to take the bump, but verify it the way the floor is protected in CI: a real `bun run build` must build `minimal-rsvelte` through `@mochi-framework/rsvelte` without falling back to `svelte/compiler` — its `scripts/build.ts` wrapper **fails** on fallback, so a green minimal-rsvelte build is the signal, and the site's `slimmed N of M` line staying non-zero confirms the shaker still ran.
+Declared as `>=0.2.8 <1.0.0`, same philosophy as `svelte-shaker`: a deliberate floor range that intentionally admits 0.x _minor_ bumps (0.2 → 0.3), which are semver-exempt and therefore potential majors. A `bun update` inside the workspace **will** move it within that range. It's fine to take the bump, but verify it the way the floor is protected in CI: a real `bun run build` must build `minimal-rsvelte` through `@mochi-framework/rsvelte` without falling back to `svelte/compiler` — its `scripts/build.ts` wrapper **fails** on fallback, so a green minimal-rsvelte build is the signal.
 
 ### Held majors — caret-bounded, do not bump the major without re-deciding
 
@@ -69,14 +69,10 @@ git checkout -b chore/update-deps
 bun update
 ```
 
-**Workspace deps — one `bun update` per workspace.** As of Bun 1.3.14, neither `bun update --recursive` nor `bun update --filter='*'` actually updates workspace dependencies; they report "no changes" while `bun outdated` still lists everything. You must run `bun update` from inside each workspace directory:
+**Workspace deps.** `bun update --recursive` updates every workspace's `package.json`, not just the root — it rewrites the caret specs in each. Run it, then confirm against `bun outdated --filter='*'`:
 
 ```sh
-for p in cli demos docs minimal mochi mochi-rsvelte minimal-rsvelte msgpackr-extract-stub shared site support video-animations; do
-  [ -d "packages/$p" ] || continue
-  echo "=== $p ==="
-  (cd packages/$p && bun update 2>&1 | grep -E '^\^|packages installed')
-done
+bun update --recursive
 ```
 
 **Never use `bun update --latest`.** It rewrites declared specs to the newest version regardless of carve-outs and blows through every exact pin.
@@ -116,13 +112,13 @@ Green tests are necessary but nowhere near sufficient. Work down this list; the 
 
    A build that succeeds is not a build that is correct. Optimizations in this repo are guarded by fallbacks that log and continue, so a broken dependency shows up as a _bigger bundle and a log line_, never as a failure. If a count moved, explain why before proceeding.
 
-4. **Browser smoke test** — `curl` only exercises SSR HTML and will not catch hydration breakage (the duplicate-copy failure in step 4 is invisible to a 200-status check on some routes). Start a server on a non-colliding port and drive it with the `chrome-devtools` MCP:
+4. **Browser smoke test** — `curl` only exercises SSR HTML and will not catch hydration breakage (the duplicate-copy failure in step 4 is invisible to a 200-status check on some routes). Start a server and drive it with the `chrome-devtools` MCP:
 
    ```sh
-   PORT=4444 bun run dev:site
+   bun run dev:site
    ```
 
-   Load `/`, a docs page (`/docs/queues/` — `/docs/` itself is not a route), and at least two island-heavy demos. On each: `list_console_messages` for hydration mismatches and uncaught errors, `list_network_requests` for failed `/_mochi/island/*` or asset fetches. Request routes with a trailing slash. Tear down with `pkill -f dev:site` and confirm via `pgrep -x bun`.
+   Load `http://localhost:3333/`, a docs page (`/docs/queues/` — `/docs/` itself is not a route), and at least two island-heavy demos. On each: `list_console_messages` for hydration mismatches and uncaught errors, `list_network_requests` for failed `/_mochi/island/*` or asset fetches. Request routes with a trailing slash. Tear down with `pkill -f dev:site` and confirm via `pgrep -x bun`.
 
 5. **`bun run cli-test`** if template packages (`minimal`, `demos`) moved versions.
 

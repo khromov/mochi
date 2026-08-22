@@ -113,7 +113,7 @@ function sceneLogo(t: number): Node {
       opacity: wordOp,
       transform: `translateY(${wordY}px)`,
     }),
-    text('an experimental SSR framework', {
+    text('islands framework', {
       fontFamily: FONT.mono,
       fontSize: 30,
       letterSpacing: '0.32em',
@@ -297,7 +297,7 @@ function sceneClose(t: number): Node {
       marginTop: 22,
       opacity: clamp(norm(t, 25.6, 26.6)),
     }),
-    text('Early prototype — use in production if you are brave.', {
+    text('Work in progress — be one of the first to try it, and give us feedback!', {
       fontFamily: FONT.serif,
       fontStyle: 'italic',
       fontSize: 30,

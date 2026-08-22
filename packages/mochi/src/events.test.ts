@@ -40,18 +40,28 @@ describe('mochiEvents', () => {
     });
   });
 
+  test('recompile:module-churn is part of the event map', () => {
+    let received: unknown = null;
+    const handler = (e: unknown) => {
+      received = e;
+    };
+    mochiEvents.on('recompile:module-churn', handler);
+    mochiEvents.emit('recompile:module-churn', { reloadCount: 10 });
+    mochiEvents.off('recompile:module-churn', handler);
+    expect(received).toEqual({ reloadCount: 10 });
+  });
+
   test('queue:completed is part of the event map', () => {
     let received: unknown = null;
     const handler = (e: unknown) => {
       received = e;
     };
     mochiEvents.on('queue:completed', handler);
-    mochiEvents.emit('queue:completed', { queue: 'emails', jobId: 'j1', jobName: 'send', attempt: 1, duration: 12 });
+    mochiEvents.emit('queue:completed', { queue: 'emails', jobId: 'j1', attempt: 1, duration: 12 });
     mochiEvents.off('queue:completed', handler);
     expect(received).toEqual({
       queue: 'emails',
       jobId: 'j1',
-      jobName: 'send',
       attempt: 1,
       duration: 12,
     });

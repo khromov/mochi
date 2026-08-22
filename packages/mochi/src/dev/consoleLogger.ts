@@ -63,10 +63,13 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
 
   // `source` is auto-built from the event name and payload, so call sites describe only the formatted line. The cast
   // widens `{name: K; payload: M[K]}` to the distributed `ConsoleLoggerSource` union, which TypeScript can't infer
-  // through a generic closure.
-  function subscribe<K extends keyof MochiEventMap>(name: K, format: (payload: MochiEventMap[K]) => Omit<EmitInput, 'source'>): void {
+  // through a generic closure. A `null` from the formatter suppresses the line (e.g. per-job adds inside a bulk add).
+  function subscribe<K extends keyof MochiEventMap>(name: K, format: (payload: MochiEventMap[K]) => Omit<EmitInput, 'source'> | null): void {
     mochiEvents.on(name, (payload) => {
-      emit({ ...format(payload), source: { name, payload } as ConsoleLoggerSource });
+      const formatted = format(payload);
+      if (formatted) {
+        emit({ ...formatted, source: { name, payload } as ConsoleLoggerSource });
+      }
     });
   }
 
@@ -195,7 +198,18 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     duration: durationMs,
     slow,
     verySlow,
-    level: 'info',
+    level: removed === 0 ? 'debug' : 'info',
+  }));
+  // Pinned at warn: this only fires when the OS is already short of memory, which an operator needs to see in
+  // production, where the default level hides info lines.
+  subscribe('cache:pressure', ({ level, removed, caches, durationMs }) => ({
+    label: 'CACHE',
+    path: 'pressure',
+    note: `${styleText(level === 'critical' ? 'red' : 'yellow', level)} ${styleText('dim', `${removed} entr${removed === 1 ? 'y' : 'ies'} dropped from ${caches} cache${caches === 1 ? '' : 's'}`)}`,
+    duration: durationMs,
+    slow,
+    verySlow,
+    level: 'warn',
   }));
   subscribe('image:cache-sweep', ({ removedVariants, removedOriginals, removedOther, durationMs }) => {
     const removed = removedVariants + removedOriginals + removedOther;
@@ -239,40 +253,56 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   // at `info` they'd vanish, leaving `completed` visible only when a job trips the slow-escalation. Per-attempt `active`
   // repeats on every retry and adds nothing, so it stays on `logger.debug`. The `consoleLogger:level` filter demotes any
   // of it for apps that find the lifecycle chatty.
-  subscribe('queue:added', ({ queue, jobName, jobId }) => ({
+  subscribe('queue:added', ({ queue, jobId, bulk }) =>
+    // Bulk adds print one `queue:addedBulk` summary instead of a line per job — a 100k addBulk must not log 100k lines.
+    bulk
+      ? null
+      : {
+          label: 'QUEUE',
+          path: queue,
+          note: styleText('dim', `+ ${jobId}`),
+          level: 'warn',
+        },
+  );
+  subscribe('queue:addedBulk', ({ queue, count }) => ({
     label: 'QUEUE',
-    path: `${queue}/${jobName}`,
-    note: styleText('dim', `+ ${jobId}`),
+    path: queue,
+    note: styleText('dim', `+ ${count} jobs (bulk)`),
     level: 'warn',
   }));
-  subscribe('queue:active', ({ queue, jobName }) => ({
+  subscribe('queue:active', ({ queue }) => ({
     label: 'QUEUE',
-    path: `${queue}/${jobName}`,
+    path: queue,
     note: styleText('cyan', 'active'),
     level: 'debug',
   }));
-  subscribe('queue:completed', ({ queue, jobName, duration }) => ({
+  subscribe('queue:completed', ({ queue, duration }) => ({
     label: 'QUEUE',
-    path: `${queue}/${jobName}`,
+    path: queue,
     note: styleText('green', 'done'),
     duration,
     slow,
     verySlow,
     level: 'warn',
   }));
-  subscribe('queue:failed', ({ queue, jobName, attempt, error }) => ({
+  subscribe('queue:failed', ({ queue, attempt, error }) => ({
     label: 'QUEUE',
-    path: `${queue}/${jobName}`,
+    path: queue,
     note: `${styleText('red', `failed (attempt ${attempt})`)} ${styleText('dim', error)}`,
     level: 'warn',
   }));
   subscribe('queue:error', ({ queue, error }) => ({
     label: 'QUEUE',
-    path: queue,
+    path: queue ?? 'queue',
     note: `${styleText('red', 'queue error')} ${styleText('dim', error)}`,
     level: 'warn',
   }));
 
+  subscribe('cron:scheduled', ({ job, schedule, nextRun }) => ({
+    label: 'CRON',
+    path: job,
+    note: `${styleText('dim', schedule)}${nextRun === undefined ? '' : styleText('dim', ` → next ${new Date(nextRun).toISOString()}`)}`,
+  }));
   subscribe('email:sent', ({ to, subject, transport, duration }) => {
     // Four delivery classes, coloured so a non-delivery never reads as a success line: `log` didn't send (yellow, warn,
     // visible in production), `dev` was captured into the outbox (info, pointed at the viewer), `suppressed` was vetoed
@@ -382,6 +412,15 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
       return { label: 'HMR ', path: relForDisplay(path), note: styleText('dim', action), duration: durationMs, slow, verySlow };
     });
   }
+
+  // Not gated by `compile`: this is a resource-leak warning, not routine build chatter, so silencing build lines must
+  // not hide it. Drop it with a `consoleLogger:line` filter on `source.name === 'recompile:module-churn'` instead.
+  subscribe('recompile:module-churn', ({ reloadCount }) => ({
+    label: 'HMR ',
+    path: 'module-state',
+    note: `re-imported ${reloadCount}× — module-scoped resources leak on each reload (DB pools, timers, SMTP pools); hold them with ${styleText('cyan', 'pinGlobal()')} → /docs/development-mode`,
+    level: 'warn',
+  }));
 }
 
 /**

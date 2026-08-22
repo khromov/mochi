@@ -7,7 +7,7 @@
  */
 import path from 'node:path';
 import type { BunPlugin } from 'bun';
-import { relForDisplay } from '../utils/index';
+import { relForDisplay, resolveArgsPath } from '../utils/index';
 import { SRC_DIR } from './paths';
 
 const SERVER_ONLY_MODULES = new Map<string, string>([
@@ -28,7 +28,7 @@ export const serverOnlyModuleGuard: BunPlugin = {
   name: 'mochi-server-only-module-guard',
   setup(build) {
     build.onResolve({ filter: CANDIDATE_SPECIFIER }, (args) => {
-      const base = args.resolveDir ? path.resolve(args.resolveDir, args.path) : path.resolve(args.path);
+      const base = resolveArgsPath(args);
       for (const candidate of [base, `${base}.ts`]) {
         const what = SERVER_ONLY_MODULES.get(candidate);
         if (what === undefined) {

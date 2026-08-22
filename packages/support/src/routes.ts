@@ -1,11 +1,37 @@
 import { Mochi, fail, redirect, success, logger, mintCaptcha, verifyCaptcha, consumeCaptcha, getRequestContext } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
+import type { Subscriber } from './db.server';
 import { authFailureDelay, credentialsMatch } from './adminAuth';
-import { appendEmailLog, emailLogsBySubmission, insertSubmission, listSubmissions, setHandled } from './db.server';
-import { SUPPORT_EMAIL_QUEUE, SUPPORT_TO } from './jobs.server';
-import type { SupportEmailJob } from './jobs.server';
+import {
+  appendEmailLog,
+  appendNewsletterLog,
+  deleteSubscriber,
+  emailLogsBySubmission,
+  getSubscriber,
+  insertSubmission,
+  listSubmissions,
+  listSubscribers,
+  newsletterLogsBySubscriber,
+  refreshConfirmToken,
+  setHandled,
+  unsubscribeSubscriber,
+} from './db.server';
+import { SUPPORT_TO, supportEmailQueue } from './jobs.server';
+import { CONFIRM_TTL_MS } from './newsletter/config';
+import { newsletterEmailQueue } from './newsletter/jobs.server';
+import { newsletterRoutes } from './newsletter/routes';
+
+const NEWSLETTER_TAB = '/admin/?tab=newsletter';
+
+// A missing or junk `id` yields NaN, which binds as NULL and turns a stale admin
+// tab into a NOT NULL violation on the log insert. Resolve the row first instead.
+function subscriberFromForm(formData: FormData): Subscriber | null {
+  const id = Number(formData.get('id'));
+  return Number.isInteger(id) ? getSubscriber(id) : null;
+}
 
 export const routes: Record<string, MochiRouteValue> = {
+  ...newsletterRoutes,
   '/': Mochi.page('./src/Support.svelte', {
     serverProps: () => ({ captcha: mintCaptcha() }),
     actions: {
@@ -45,9 +71,9 @@ export const routes: Record<string, MochiRouteValue> = {
         // Logged before enqueuing so the entry can't be ordered after the worker's own `sending` line.
         appendEmailLog(id, { attempt: 0, event: 'queued', detail: `Queued for delivery to ${SUPPORT_TO}` });
         try {
-          await Mochi.getQueue<SupportEmailJob>(SUPPORT_EMAIL_QUEUE).add('send', { id });
+          await supportEmailQueue.add({ id });
         } catch (err) {
-          // The row stays `pending`, so recover() picks it up on the next boot — telling the visitor it failed would be wrong.
+          // The row stays `pending` and visible in the admin panel for manual follow-up — telling the visitor it failed would be wrong.
           logger.error('support: could not enqueue delivery', err);
         }
         return success();
@@ -77,6 +103,9 @@ export const routes: Record<string, MochiRouteValue> = {
         inbox: listSubmissions(false),
         handled: listSubmissions(true),
         logs: emailLogsBySubmission(),
+        subscribers: listSubscribers(),
+        newsletterLogs: newsletterLogsBySubscriber(),
+        tab: ctx.url.searchParams.get('tab') === 'newsletter' ? 'newsletter' : 'support',
         // Shown in the footer so the proxy's client-IP resolution — what the rate limiter keys on — can be verified in production.
         client: { address: ctx.getClientAddress(), forwardedFor: ctx.request.headers.get('x-forwarded-for') },
       };
@@ -90,6 +119,38 @@ export const routes: Record<string, MochiRouteValue> = {
       unhandle: ({ formData }) => {
         setHandled(Number(formData.get('id')), false);
         return redirect(303, '/admin/');
+      },
+      // Mints a fresh token, so the link in the previous email stops working —
+      // there is only ever one live confirmation link per address.
+      resendConfirmation: async ({ formData }) => {
+        const subscriber = subscriberFromForm(formData);
+        // Only a pending row has anything to confirm; on any other status the
+        // job would skip and leave a misleading `sent` line in the delivery log.
+        if (subscriber?.status !== 'pending') {
+          return redirect(303, NEWSLETTER_TAB);
+        }
+        refreshConfirmToken(subscriber.id, CONFIRM_TTL_MS);
+        appendNewsletterLog(subscriber.id, { attempt: 0, event: 'queued', detail: 'Re-sent from the admin panel' });
+        try {
+          await newsletterEmailQueue.add({ id: subscriber.id });
+        } catch (err) {
+          logger.error('newsletter: could not enqueue confirmation resend', err);
+        }
+        return redirect(303, NEWSLETTER_TAB);
+      },
+      unsubscribeSignup: ({ formData }) => {
+        const subscriber = subscriberFromForm(formData);
+        if (subscriber) {
+          unsubscribeSubscriber(subscriber.id);
+        }
+        return redirect(303, NEWSLETTER_TAB);
+      },
+      deleteSignup: ({ formData }) => {
+        const subscriber = subscriberFromForm(formData);
+        if (subscriber) {
+          deleteSubscriber(subscriber.id);
+        }
+        return redirect(303, NEWSLETTER_TAB);
       },
     },
   }),

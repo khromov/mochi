@@ -1,6 +1,7 @@
 <script lang="ts">
   import PageShell from './components/PageShell.svelte';
   import Footer from './components/Footer.svelte';
+  import NewsletterEmbed from './components/NewsletterEmbed.svelte';
   import type { TocEntry } from './lib/toc';
   import { formatPostDate } from './lib/formatDate';
 
@@ -15,14 +16,17 @@
   let {
     docsNav,
     posts,
+    newsletterEmbedUrl,
   }: {
     docsNav: TocEntry[];
     posts: PostListItem[];
+    newsletterEmbedUrl: string;
   } = $props();
 </script>
 
 <svelte:head>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="alternate" type="application/rss+xml" title="Mochi blog" href="https://mochi.fast/feed.xml" />
 </svelte:head>
 
 <PageShell
@@ -59,6 +63,8 @@
       {:else}
         <p class="post-description">No posts yet.</p>
       {/each}
+
+      <NewsletterEmbed src={newsletterEmbedUrl} />
     </section>
   </main>
 

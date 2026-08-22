@@ -1,5 +1,4 @@
 import { Mochi, mochiEvents } from 'mochi-framework';
-import type { MochiQueueConfig } from 'mochi-framework';
 import type { NotificationJob, ProcessedEntry, QueueStatus } from './types';
 
 export const QUEUE_NAME = 'demo-notifications';
@@ -22,8 +21,9 @@ const settle = (e: { queue: string }) => {
 mochiEvents.on('queue:completed', settle);
 mochiEvents.on('queue:failed', settle);
 
-// In-memory so the demo writes no SQLite file into the site working dir; pass `dataPath` to persist.
-export const notificationQueue: MochiQueueConfig = Mochi.queue<NotificationJob>({
+// The site rides the default `queueStorage: 'memory'`, so the demo writes no queue file into the working dir;
+// set `Mochi.serve({ queueStorage })` to persist.
+export const notificationQueue = Mochi.queue<NotificationJob>(QUEUE_NAME, {
   concurrency: 2,
   process: async (job) => {
     // Simulate delivery latency so the UI shows the queued → processing → done transition.
