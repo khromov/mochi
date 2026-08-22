@@ -14,6 +14,10 @@ import { DEFAULT_WIDTH, subjects } from '../src/shot/registry.ts';
 
 const SUBJECT_NAMES = Object.keys(subjects);
 
+// macOS keeps the zero-install WebKit default; elsewhere Chrome is the default anyway, and a CI/Docker runner can't
+// initialize its sandbox without these flags.
+const CHROME_BACKEND = process.platform === 'darwin' ? undefined : ({ type: 'chrome', argv: ['--no-sandbox', '--disable-dev-shm-usage'] } as const);
+
 const usage = `Usage: bun --cwd=packages/site scripts/shoot.ts <subject> [options]
 
 Subjects: ${SUBJECT_NAMES.join(', ')}
@@ -206,6 +210,7 @@ async function main(): Promise<void> {
 
   const consoleErrors: string[] = [];
   const view = new Bun.WebView({
+    backend: CHROME_BACKEND,
     width,
     height,
     console: (type: string, ...rest: unknown[]) => {

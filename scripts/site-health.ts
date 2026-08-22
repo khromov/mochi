@@ -132,6 +132,9 @@ const SETTLE_MS = 1500;
 /** Load attempts per page: a flaky first timeout is retried once before the page fails. */
 const LOAD_ATTEMPTS = 2;
 
+/** GitHub Actions runners can't initialize Chrome's sandbox; CI needs these flags for Chrome to launch. */
+const CHROME_BACKEND = { type: 'chrome', argv: ['--no-sandbox', '--disable-dev-shm-usage'] } as const;
+
 /** Run thunks with a bounded number in flight at once. */
 async function pool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
   let cursor = 0;
@@ -279,7 +282,7 @@ async function checkPage(url: string, timeout: number): Promise<PageResult> {
   // Console output must come through this option, not a `Runtime.consoleAPICalled` listener: Bun consumes that CDP
   // event internally to implement the option and never re-dispatches it, so a listener silently sees nothing.
   const view = new Bun.WebView({
-    backend: 'chrome',
+    backend: CHROME_BACKEND,
     console: (type: string, ...args: unknown[]) => {
       if (type === 'error' || type === 'assert') {
         add('error', renderArgs(args));
@@ -462,7 +465,7 @@ async function main() {
 
   // Preflight so a missing browser exits 2 (a setup problem) instead of reporting every page as a failure.
   try {
-    const probe = new Bun.WebView({ backend: 'chrome' });
+    const probe = new Bun.WebView({ backend: CHROME_BACKEND });
     try {
       await probe.navigate('about:blank');
     } finally {
