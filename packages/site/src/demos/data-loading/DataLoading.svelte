@@ -7,17 +7,9 @@
   import PokemonStats from './PokemonStats.svelte';
   import PokemonSelector from './PokemonSelector.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'DataLoading.svelte', path: './src/demos/data-loading/DataLoading.svelte' },
-    { label: 'PokemonSelector.svelte', path: './src/demos/data-loading/PokemonSelector.svelte' },
-    { label: 'PokemonHeader.svelte', path: './src/demos/data-loading/PokemonHeader.svelte' },
-    { label: 'PokemonMeta.svelte', path: './src/demos/data-loading/PokemonMeta.svelte' },
-    { label: 'PokemonStats.svelte', path: './src/demos/data-loading/PokemonStats.svelte' },
-    { label: 'routes.ts', path: './src/demos/data-loading/routes.ts' },
-    { label: 'cache.ts', path: './src/lib/cache.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 
   const id = (params.id ?? 'pikachu').toLowerCase();
 

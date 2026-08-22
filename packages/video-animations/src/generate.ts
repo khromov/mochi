@@ -1,6 +1,3 @@
-// Mochi brand animation: renders 900 satori frames -> PNG (resvg) -> MP4 (ffmpeg).
-// Run: bun run animate   (from packages/video-animations), or `bun run mochi:animate` at the repo root.
-// Frames render across VIDEO_WORKERS threads (default 4); set VIDEO_WORKERS=1 for a single-threaded run.
 import { resolve } from 'node:path';
 import { rmSync, mkdirSync, existsSync } from 'node:fs';
 import { prepareFonts } from './prepare-fonts';
@@ -10,6 +7,10 @@ import { CANVAS, FPS, TOTAL_FRAMES, DURATION_S } from './theme';
 const OUT_DIR = resolve(import.meta.dir, '..', 'out');
 const FRAMES_DIR = resolve(OUT_DIR, 'frames');
 const VIDEO_PATH = resolve(OUT_DIR, 'mochi.mp4');
+const AUDIO_PATH = resolve(import.meta.dir, '..', 'audio', 'bounce-bay-records-traditional-japanese-2-437931.mp3');
+
+// Fade the soundtrack out over the final stretch so the video ends on silence.
+const AUDIO_FADE_S = 3;
 
 const WORKERS = Math.max(1, Number(process.env.VIDEO_WORKERS ?? 4));
 
@@ -31,8 +32,6 @@ async function renderInline() {
   }
 }
 
-// Fan out frame rendering across `WORKERS` worker threads, each handling a
-// round-robin slice. Resolves once every worker reports done.
 async function renderParallel() {
   const workerUrl = new URL('./render-worker.ts', import.meta.url).href;
   const started = Bun.nanoseconds();
@@ -77,6 +76,10 @@ async function encode() {
       String(FPS),
       '-i',
       `${FRAMES_DIR}/frame_%04d.png`,
+      '-i',
+      AUDIO_PATH,
+      '-af',
+      `afade=t=out:st=${DURATION_S - AUDIO_FADE_S}:d=${AUDIO_FADE_S}`,
       '-c:v',
       'libx264',
       '-pix_fmt',
@@ -85,6 +88,12 @@ async function encode() {
       '18',
       '-preset',
       'slow',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '192k',
+      // Audio runs longer than the frame sequence; clip the muxed output to the video.
+      '-shortest',
       '-movflags',
       '+faststart',
       VIDEO_PATH,

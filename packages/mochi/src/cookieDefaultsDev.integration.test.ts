@@ -3,11 +3,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
-import { getRequestContext } from './requestContext';
+import { getRequestContext } from './runtime/requestContext';
 
-// Separate process (one Mochi.serve() per process) for the development-mode
-// cookie behavior: HttpOnly/SameSite still apply, but Secure is dropped so
-// cookies work over http://localhost.
+// Separate process (one Mochi.serve() per process) for the development-mode side of `secureCookies`:
+// HttpOnly/SameSite still apply, but Secure is dropped so cookies work over http://localhost.
 
 let server: Server<undefined>;
 let outDir: string;
@@ -19,6 +18,7 @@ beforeAll(async () => {
     development: true,
     logger: { enabled: false },
     outDir,
+    secureCookies: true,
     routes: {
       '/set': Mochi.api(() => {
         getRequestContext().cookies.set('session', 'abc');

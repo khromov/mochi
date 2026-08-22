@@ -1,7 +1,13 @@
 <script lang="ts">
-  // `isHydratable` is auto-injected as a prop on hydratable children
-  // (alongside `islandId`); plain SSR-only invocations leave it undefined.
-  let { isHydratable } = $props<{ isHydratable?: boolean }>();
+  import type { Snippet } from 'svelte';
+  import CtxProbe from './CtxProbe.svelte';
+
+  // `isHydratable` is a plain user prop now — the framework injects no props
+  // at all (the signal travels as Svelte context), so this must stay undefined
+  // on every invocation (regression probe for the removed public prop).
+  let { isHydratable, children }: { isHydratable?: boolean; children?: Snippet } = $props();
 </script>
 
 <span data-hydratable={String(isHydratable === true)}>probe</span>
+<CtxProbe />
+{@render children?.()}

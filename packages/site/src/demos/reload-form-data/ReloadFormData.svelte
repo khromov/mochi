@@ -2,17 +2,13 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import Guestbook from './Guestbook.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
   type GuestbookEntry = { id: string; name: string; at: number };
 
-  const sources = await loadSources([
-    { label: 'ReloadFormData.svelte', path: './src/demos/reload-form-data/ReloadFormData.svelte' },
-    { label: 'Guestbook.svelte', path: './src/demos/reload-form-data/Guestbook.svelte' },
-    { label: 'routes.ts', path: './src/demos/reload-form-data/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 
-  let { guestbook } = $props<{ guestbook: GuestbookEntry[] }>();
+  let { guestbook }: { guestbook: GuestbookEntry[] } = $props();
 </script>
 
 <DemoPage

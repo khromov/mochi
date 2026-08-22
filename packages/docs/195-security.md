@@ -1,33 +1,27 @@
 ---
 title: 'Security'
 slug: security
-description: 'Built-in Mochi defenses — CSRF, WebSocket origin checks, secure cookies, redirect safety, body limits, and security headers — plus how to add a CSP.'
+description: 'Built-in Mochi defenses — CSRF, WebSocket origin checks, redirect safety, security headers, secure cookies — plus how to add a CSP.'
 ---
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Security
 
-Mochi ships with safe-by-default protections. Most need no configuration in
-development; a few must be told your public origin before they protect a
-production deployment. The one knob that unlocks several at once is `proxy`.
+Mochi ships with safe-by-default protections. Most need no configuration in development; a few must be told your public origin before they protect a production deployment. The one knob that unlocks several at once is `proxy`.
 
 <Callout type="warning">
 
-Set <code>proxy.origin</code> (or <code>proxy.hostHeader</code>) before deploying.
-Until it's set, Mochi can't know which origin to trust, so the CSRF and WebSocket
-origin checks <strong>block every cross-origin state-changing request in
-production</strong>. See <a href="/docs/serve-options">Serve options</a>.
+Set `proxy.origin` (or `proxy.hostHeader`) before deploying. Until it is set, Mochi cannot know which origin to trust, so the CSRF and WebSocket origin checks **block every cross-origin state-changing request in production**. See [Serve options](/docs/serve-options/).
 
 </Callout>
 
 ### CSRF protection
 
-State-changing form submissions (`POST`/`PUT`/`PATCH`/`DELETE` with a form
-content type) are checked against the request `Origin`. A cross-origin submission
-is rejected with `403`. This is on by default.
+State-changing form submissions (`POST`/`PUT`/`PATCH`/`DELETE` with a form content type) are checked against the request `Origin`. A cross-origin submission is rejected with `403`. This is on by default.
 
 ```ts
 await Mochi.serve({
@@ -40,77 +34,45 @@ await Mochi.serve({
 });
 ```
 
-JSON/octet-stream API routes (`Mochi.api`) are not checked — the browser already
-forces a CORS preflight to send those cross-origin.
+JSON/octet-stream API routes (`Mochi.api`) are not checked — the browser already forces a CORS preflight to send those cross-origin.
 
 ### WebSocket origin check
 
-`Mochi.ws` upgrades are origin-checked the same way as form POSTs — without this,
-any website could open a socket to your server on a visitor's behalf
-(Cross-Site WebSocket Hijacking). Cross-origin upgrades are rejected with `403`
-in production once `proxy.origin`/`proxy.hostHeader` is configured; in
-development a mismatch is logged but allowed. The same `csrf.trustedOrigins` and
-`csrf.checkOrigin: false` escape hatches apply.
+<VersionNote since="0.10.0" message="The WebSocket upgrade origin check is new." />
 
-Upgrades **without** an `Origin` header are always allowed. Browsers always send
-`Origin` on upgrade requests and are the only clients that attach ambient
-credentials, so a missing header means a non-browser client — server-to-server
-connections, native apps, CLIs like `wscat` — that CSWSH can't exploit.
+`Mochi.ws` upgrades are origin-checked the same way as form POSTs. Without it, any website could open a socket to your server on a visitor's behalf and ride their cookies (Cross-Site WebSocket Hijacking). Cross-origin upgrades are rejected with `403` in production once `proxy.origin`/`proxy.hostHeader` is configured; in development a mismatch is logged but allowed. The same `csrf.trustedOrigins` and `csrf.checkOrigin: false` escape hatches apply.
 
-### Cookies are secure by default
-
-Cookies set through the request `cookies` jar get `HttpOnly`, `SameSite=Lax`, and
-(in production) `Secure` unless you override them:
-
-```ts
-cookies.set('session', token); // HttpOnly; SameSite=Lax; Secure (prod)
-
-cookies.set('theme', 'dark', { httpOnly: false }); // readable by client JS
-```
-
-Change the baseline for every cookie with the `cookie:defaults` filter on
-`Mochi.serve`.
+Upgrades **without** an `Origin` header are always allowed. Browsers always send `Origin` on upgrade requests and are the only clients that attach ambient credentials, so a missing header means a non-browser client — server-to-server, native apps, CLIs like `wscat` — that CSWSH cannot exploit.
 
 ### Redirect safety
 
-A form action's `redirect()` may only point at a same-origin destination (a
-relative path, or an absolute URL whose origin matches the request) or an origin
-listed in `csrf.trustedOrigins`. An off-origin location is blocked with `500` in
-production (logged in development), preventing open-redirect phishing when the
-target is influenced by request data such as a `?next=` parameter.
+<VersionNote since="0.10.0" message="The form-action redirect guard is new." />
+
+A form action's `redirect()` may only point at a same-origin destination (a relative path, or an absolute URL whose origin matches the request) or an origin listed in `csrf.trustedOrigins`. An off-origin location is blocked with `500` in production and logged in development, preventing open-redirect phishing when the target is influenced by request data such as a `?next=` parameter.
 
 ```ts
 return redirect(303, '/dashboard'); // ok
 return redirect(303, 'https://evil.example'); // blocked unless trusted
 ```
 
-### Request body size limit
-
-Every request body is capped — by Bun at the socket layer and by a fast
-Content-Length pre-check on form actions (which return `413 Payload Too Large`).
-The default is 5 MB; raise it for routes that accept large uploads.
-
-```ts
-await Mochi.serve({ maxRequestBodySize: 25 * 1024 * 1024, routes }); // 25 MB
-```
+The guard covers `redirect()` returned from a form action. Framework-internal redirects — trailing-slash and proxy canonicalisation — build their own target and are unaffected.
 
 ### Security response headers
 
-These baseline headers are sent on every framework response (pages, APIs, server
-islands, SSE streams, and `Mochi.file` routes) by default:
+<VersionNote since="0.10.0" message="securityHeaders and the security:headers filter are new." />
+
+These headers are sent on every framework response (pages, APIs, server islands, SSE streams, `Mochi.file` routes) by default:
 
 | Header                   | Value                             |
 | ------------------------ | --------------------------------- |
 | `X-Content-Type-Options` | `nosniff`                         |
 | `Referrer-Policy`        | `strict-origin-when-cross-origin` |
-| `X-Frame-Options`        | `SAMEORIGIN`                      |
 
-Tune or disable them via the `securityHeaders` option, and add more (HSTS, CSP)
-with the `security:headers` filter:
+`X-Frame-Options` is **opt-in**. It cannot express an allow-list, so sending it by default would break any page meant to be embedded cross-origin. Set it only when a blanket deny is what you want:
 
 ```ts
 await Mochi.serve({
-  securityHeaders: { frameOptions: 'DENY' }, // or `false` to drop the defaults
+  securityHeaders: { frameOptions: 'SAMEORIGIN' }, // or 'DENY', or `false` to drop all defaults
   filters: {
     'security:headers': (headers) => ({
       ...headers,
@@ -121,13 +83,42 @@ await Mochi.serve({
 });
 ```
 
+<Callout type="info">
+
+Prefer CSP `frame-ancestors` when some origins may frame you and others may not — it is an allow-list, `X-Frame-Options` is not. A response that already carries a `frame-ancestors` policy never gets `X-Frame-Options` stamped on it, so an embeddable route keeps working even with `frameOptions` on.
+
+</Callout>
+
 A header a route or middleware already set is never overwritten.
+
+### Secure cookies
+
+<VersionNote since="0.10.0" message="The secureCookies option is new." />
+
+`secureCookies: true` gives every cookie set through the request jar a hardened baseline — `HttpOnly`, `SameSite=Lax`, and (outside development) `Secure`:
+
+```ts
+await Mochi.serve({ secureCookies: true, routes });
+
+cookies.set('session', token); // HttpOnly; SameSite=Lax; Secure (prod)
+cookies.set('theme', 'dark', { httpOnly: false }); // readable by client JS
+```
+
+It is off by default, because `HttpOnly` hides server-set cookies from client JS and existing apps may read them. Override per cookie as above, or change the baseline for every cookie with the `cookie:defaults` filter.
+
+### Request body size limit
+
+Bun caps request bodies at 128 MB. Lower it through the `bun` escape hatch — an oversized body is rejected at the socket layer with `413`, before your handler runs:
+
+```ts
+await Mochi.serve({ bun: { maxRequestBodySize: 5 * 1024 * 1024 }, routes }); // 5 MB
+```
 
 ### Content-Security-Policy (opt-in)
 
-A useful CSP is app-specific and needs a per-request nonce for the inline
-scripts Mochi emits, so it's off by default. Turn on `csp`, then read the nonce
-with `getCspNonce()` and set the header yourself — typically in middleware:
+<VersionNote since="0.10.0" message="The csp option and getCspNonce() are new." />
+
+A useful CSP is app-specific and needs a per-request nonce for the inline scripts Mochi emits, so it is off by default. Turn on `csp`, then read the nonce with `getCspNonce()` and set the header yourself — typically in middleware:
 
 ```ts
 import { getCspNonce } from 'mochi-framework';
@@ -144,36 +135,28 @@ const csp: Handle = async ({ event, resolve }) => {
 await Mochi.serve({ csp: true, handle: csp, routes });
 ```
 
-With `csp: true`, Mochi stamps the nonce on every executable `<script>` it
-renders. When `csp` is off, rendered HTML is byte-for-byte unchanged.
+With `csp: true`, Mochi stamps the nonce on every `<script>` it renders. Scripts your own components emit are never stamped — give them the nonce yourself. When `csp` is off, rendered HTML is byte-for-byte unchanged.
 
 <Callout type="warning">
 
-Keep <code>'strict-dynamic'</code> in a nonce-based policy if you use server
-islands. Deferred island fragments are fetched in separate requests, so their
-scripts carry a <em>different</em> nonce than the page's CSP header —
-<code>'strict-dynamic'</code> lets the already-trusted bootstrap load them
-anyway, while a nonce-only policy silently blocks island hydration.
+Keep `'strict-dynamic'` in a nonce-based policy if you use server islands. Deferred island fragments are fetched in separate requests, so their scripts carry a _different_ nonce than the page's CSP header — `'strict-dynamic'` lets the already-trusted bootstrap load them anyway, while a nonce-only policy silently blocks island hydration.
 
 </Callout>
 
 ### WebSocket resource limits
 
-`Mochi.ws` lifecycle callbacks are framework-owned, but Bun's connection tuning
-is shared across all sockets via the `websocket` serve option. Cap frame size and
-slow-client buffering to resist memory-exhaustion abuse:
+`Mochi.ws` lifecycle callbacks are framework-owned, but Bun's connection tuning is shared across all sockets via the `websocket` serve option. Cap frame size and slow-client buffering to resist memory-exhaustion abuse:
 
 ```ts
 await Mochi.serve({
   websocket: {
     maxPayloadLength: 1 << 20, // reject frames over 1 MB
     backpressureLimit: 1 << 20, // buffered-send ceiling per socket
-    closeOnBackpressureLimit: true, // drop a client that can't keep up
+    closeOnBackpressureLimit: true, // drop a client that cannot keep up
     idleTimeout: 120, // seconds
   },
   routes,
 });
 ```
 
-For high-throughput sends, implement the `drain` callback in your `Mochi.ws`
-handler to resume only when the socket's buffer clears.
+For high-throughput sends, implement the `drain` callback in your `Mochi.ws` handler to resume only when the socket's buffer clears.

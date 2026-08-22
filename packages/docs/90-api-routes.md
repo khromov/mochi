@@ -4,6 +4,11 @@ slug: api-routes
 description: 'Register JSON endpoints with Mochi.api() that receive a request event and return a Response.'
 ---
 
+<script>
+  import Callout from './_components/Callout.svelte';
+  import SeeItInAction from './_components/SeeItInAction.svelte';
+</script>
+
 ## API routes
 
 `Mochi.api(handler)` registers a JSON endpoint. The handler receives a `MochiApiEvent` (`method`, `request`, `url`, `server`, `locals`, `params`, `cookies`) and **must** return a `Response` (or a `Promise<Response>`).
@@ -19,11 +24,9 @@ await Mochi.serve({
 });
 ```
 
-Do **NOT** return a plain object or string from a `Mochi.api` handler; instead, wrap the value in `Response.json(...)` or the `json()` helper — anything else fails type-checking and the runtime won't serialize it for you.
-
 ### `MochiApiEvent`
 
-Destructure `params` and `cookies` directly off the event — they mirror what `Mochi.page` form-action handlers receive:
+Destructure `params` and `cookies` off the event. They mirror what `Mochi.page` form-action handlers receive:
 
 ```ts
 // file: src/index.ts
@@ -40,11 +43,11 @@ await Mochi.serve({
 });
 ```
 
-`getRequestContext()` still works and exposes the same values plus `requestId`, `islandProps`, `getClientAddress()`, etc. — reach for it from helper functions that aren't passed the event.
+`getRequestContext()` exposes the same values plus `requestId`, `islandProps`, and `getClientAddress()`. Use it from helper functions that are not passed the event.
 
 ### Reading the request body
 
-Use the standard `Request` body methods (`json()`, `text()`, `formData()`, `arrayBuffer()`). The body stream can only be consumed once.
+Use the standard `Request` body methods (`json()`, `text()`, `formData()`, `arrayBuffer()`). The body stream can be consumed once.
 
 ```ts
 // file: src/index.ts
@@ -61,11 +64,15 @@ await Mochi.serve({
 });
 ```
 
-Do **NOT** call `request.json()` (or any other body method) more than once on the same request; instead, await it once, store the result, and reuse the value — a second read throws `TypeError: Body already used`.
+<Callout type="warning">
+
+**Read the request body once.** Calling `request.json()` (or any body method) a second time throws `TypeError: Body already used`. Await it once, store the result, and reuse the value.
+
+</Callout>
 
 ### `json` (response helper)
 
-Build a JSON `Response` with the right `Content-Type` via `json(data, init?)` from `mochi-framework`. Use it as a shorthand for `new Response(JSON.stringify(...), { headers: { 'Content-Type': 'application/json' } })`.
+Build a JSON `Response` with the right `Content-Type` through `json(data, init?)` from `mochi-framework`.
 
 ```ts
 import { json } from 'mochi-framework';
@@ -73,11 +80,11 @@ import { json } from 'mochi-framework';
 Mochi.api(() => json({ ok: true }, { status: 201 }));
 ```
 
-`init` accepts `status`, `statusText`, and `headers` — `Content-Type: application/json` is set for you.
+`init` accepts `status`, `statusText`, and `headers`. Mochi sets `Content-Type: application/json` for you.
 
 ### `error` (typed throw)
 
-Use `error(status, message)` to throw a `MochiHttpError` from anywhere inside the handler — including helper functions called by it. The framework catches it and returns the canonical envelope `{ error: { message, status } }`.
+Use `error(status, message?)` to throw a `MochiHttpError` from anywhere inside the handler, including helper functions. The framework catches it and returns the canonical envelope `{ error: { message, status } }`. Omitting `message` fills in the canonical status text (`error(404)` → `Not Found`).
 
 ```ts
 import { error } from 'mochi-framework';
@@ -90,13 +97,17 @@ Mochi.api(async () => {
 // → 404 { "error": { "message": "Not found", "status": 404 } }
 ```
 
-`error` is typed `: never`, so TypeScript narrows control flow after the call — no manual `return` needed.
+`error` is typed `: never`, so TypeScript narrows control flow after the call.
 
-Do **NOT** throw a bare `Error` or any non-`MochiHttpError` value to signal a status code; instead, call `error(status, message)` — uncaught throws are coerced to `500 Internal Server Error` with a generic message and the original is logged server-side, never leaked to the client.
+<Callout type="danger">
+
+**Uncaught errors become 500s.** Any throw that is not a `MochiHttpError` is caught, coerced to `500 Internal Server Error` with a generic message, and logged server-side. Use `error(status, message)` to return intended status codes.
+
+</Callout>
 
 ### `apiError` (typed return)
 
-`apiError(status, message)` returns the same envelope as a plain `Response`, without throwing. Prefer it when the failure is part of the route's normal control flow and you want to keep returning instead of throwing.
+`apiError(status, message)` returns the same envelope as a plain `Response`, without throwing. Use it when the failure is part of the route's normal control flow.
 
 ```ts
 import { apiError } from 'mochi-framework';
@@ -106,12 +117,11 @@ Mochi.api(async ({ request }) => {
   if (!body) return apiError(400, 'Invalid JSON');
   return Response.json({ ok: true });
 });
-// bad body → 400 { "error": { "message": "Invalid JSON", "status": 400 } }
 ```
 
 ### `MochiHttpError`
 
-The error class `error()` throws. Catch it explicitly when you want to inspect or re-shape it; otherwise let it propagate to the framework.
+The error class `error()` throws. Catch it explicitly when you want to inspect or re-shape it. Otherwise let it propagate.
 
 ```ts
 import { MochiHttpError } from 'mochi-framework';
@@ -128,15 +138,10 @@ try {
 
 ### Uncaught errors
 
-Anything else thrown inside a `Mochi.api` handler — a database failure, a typo, a rejected promise — is returned as `500 Internal Server Error` with a generic message. The original error and stack are logged via `logger.error` with the method and path; the client never sees them.
+Anything else thrown inside a `Mochi.api` handler — a database failure, a typo, a rejected promise — returns `500 Internal Server Error` with a generic message. Mochi logs the original error and stack. The client never sees them.
 
-```ts
-Mochi.api(async () => {
-  await db.query('SELECT …'); // throws ConnectionError
-  return Response.json({ ok: true });
-});
-// → 500 { "error": { "message": "Internal Server Error", "status": 500 } }
-// (real error + stack logged to stderr)
-```
+API routes never render the HTML error page, and `handleError` is **not** called for them. The JSON envelope is the only contract.
 
-API routes never render the HTML error page and `handleError` is **not** called for them — the JSON envelope is the only contract.
+<SeeItInAction
+demos={[{ href: "/demos/api/", title: "API Endpoints", hook: "How API routes work — define JSON endpoints with Mochi.api(), tested live against the running server." }]}
+/>

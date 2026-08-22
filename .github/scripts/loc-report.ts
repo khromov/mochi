@@ -20,6 +20,7 @@ type Package = {
   name: string;
   root: string;
   categories: string[];
+  scanGlob?: string;
   docsGlob?: string;
 };
 
@@ -32,6 +33,8 @@ const DOCS_CATEGORY = 'Docs';
 // Generated files would otherwise inflate the count and drift between local
 // runs (where they exist) and CI runs (where they don't).
 const EXCLUDE: string[] = ['src/**/*.generated.*'];
+
+const TEST_GLOB = new Glob('src/**/*.test.ts');
 
 // First match wins within a package. Tests come first so test files don't
 // bleed into other categories.
@@ -50,6 +53,7 @@ const PACKAGES: Package[] = [
       'src/cookies*.ts',
       'src/extensions.ts',
       'src/cache.ts',
+      'src/image/**',
       'src/middleware/**',
       'src/enhance*.ts',
       'src/build*.ts',
@@ -84,14 +88,50 @@ const PACKAGES: Package[] = [
     categories: [],
   },
   {
+    name: 'packages/minimal-rsvelte',
+    root: join(REPO_ROOT, 'packages', 'minimal-rsvelte'),
+    categories: [],
+  },
+  {
+    name: 'packages/support',
+    root: join(REPO_ROOT, 'packages', 'support'),
+    categories: ['src/**/*.test.ts', 'src/admin/**', 'src/components/**', 'src/*.server.ts', 'src/{index,routes}.ts'],
+  },
+  {
+    name: 'packages/shared',
+    root: join(REPO_ROOT, 'packages', 'shared'),
+    categories: [],
+  },
+  {
+    name: 'packages/mochi-rsvelte',
+    root: join(REPO_ROOT, 'packages', 'mochi-rsvelte'),
+    categories: [],
+  },
+  {
+    name: 'packages/mochi-svelte-shaker',
+    root: join(REPO_ROOT, 'packages', 'mochi-svelte-shaker'),
+    categories: [],
+  },
+  {
     name: 'packages/cli',
     root: join(REPO_ROOT, 'packages', 'cli'),
     categories: ['src/**/*.test.ts', 'src/cli*', 'src/{create,templates,utils}.ts'],
   },
+  {
+    name: 'packages/video-animations',
+    root: join(REPO_ROOT, 'packages', 'video-animations'),
+    categories: ['src/{frame,anim,theme}.ts', 'src/{render,render-worker,generate}.ts'],
+  },
+  {
+    name: 'packages/msgpackr-extract-stub',
+    root: join(REPO_ROOT, 'packages', 'msgpackr-extract-stub'),
+    categories: ['*.test.ts'],
+    scanGlob: '*.{ts,js,cjs}',
+  },
 ];
 
 type Counts = { files: number; lines: number };
-type Report = { name: string; totals: Counts; byCategory: Record<string, Counts> };
+type Report = { name: string; totals: Counts; nonTestTotals: Counts; byCategory: Record<string, Counts> };
 
 function classify(relPath: string, categories: string[]): string {
   for (const pattern of categories) {
@@ -118,7 +158,7 @@ function renderSection(report: Report): string {
     .filter(([, c]) => c.files > 0)
     .sort((a, b) => b[1].lines - a[1].lines);
 
-  const nameWidth = Math.max('Category'.length, ...rows.map(([n]) => n.length));
+  const nameWidth = Math.max('Category'.length, 'Total (non-test)'.length, ...rows.map(([n]) => n.length));
   const linesWidth = Math.max('Lines'.length, String(report.totals.lines).length);
   const filesWidth = Math.max('Files'.length, String(report.totals.files).length);
   const barWidth = 24;
@@ -144,6 +184,7 @@ function renderSection(report: Report): string {
 
   out.push('─'.repeat(headerRowWidth));
   out.push(fmt('Total', String(report.totals.lines), String(report.totals.files), '', ''));
+  out.push(fmt('Total (non-test)', String(report.nonTestTotals.lines), String(report.nonTestTotals.files), '', ''));
 
   return out.join('\n');
 }
@@ -156,7 +197,8 @@ async function scanPackage(pkg: Package): Promise<Report> {
   byCategory[MISCELLANEOUS] = { files: 0, lines: 0 };
 
   const totals: Counts = { files: 0, lines: 0 };
-  const glob = new Glob(SCAN_GLOB);
+  const nonTestTotals: Counts = { files: 0, lines: 0 };
+  const glob = new Glob(pkg.scanGlob ?? SCAN_GLOB);
   for await (const file of glob.scan({ cwd: pkg.root, onlyFiles: true })) {
     if (EXCLUDE.some((p) => new Glob(p).match(file))) {
       continue;
@@ -167,6 +209,10 @@ async function scanPackage(pkg: Package): Promise<Report> {
     byCategory[category]!.lines += lines;
     totals.files += 1;
     totals.lines += lines;
+    if (!TEST_GLOB.match(file)) {
+      nonTestTotals.files += 1;
+      nonTestTotals.lines += lines;
+    }
   }
 
   if (pkg.docsGlob) {
@@ -178,10 +224,12 @@ async function scanPackage(pkg: Package): Promise<Report> {
       byCategory[DOCS_CATEGORY]!.lines += lines;
       totals.files += 1;
       totals.lines += lines;
+      nonTestTotals.files += 1;
+      nonTestTotals.lines += lines;
     }
   }
 
-  return { name: pkg.name, totals, byCategory };
+  return { name: pkg.name, totals, nonTestTotals, byCategory };
 }
 
 async function main() {

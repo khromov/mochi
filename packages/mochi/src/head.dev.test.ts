@@ -1,8 +1,7 @@
 // In dev mode every page is registered as a method-keyed Bun route object
 // (because pageConfigMap is populated for live reload), so this guards that a
 // plain page still answers HEAD with 200 rather than Bun's 405 for an unlisted
-// method. Dev mode also scans publicDir live (production reads the prebuilt
-// manifest), so this is where the public-file HEAD case is covered. Separate
+// method. The public-file HEAD case rides along here rather than in its own
 // file because only one Mochi.serve() is allowed per process.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -50,6 +49,9 @@ describe('HEAD requests (development)', () => {
     const get = await fetch(`${base}/robots.txt`);
     expect(get.status).toBe(200);
     expect(await get.text()).toBe(ROBOTS_BODY);
+
+    // Pin the concrete type so a header dropped from both responses can't pass tautologically.
+    expect(get.headers.get('Content-Type')).toContain('text/plain');
 
     const head = await fetch(`${base}/robots.txt`, { method: 'HEAD' });
     expect(head.status).toBe(200);

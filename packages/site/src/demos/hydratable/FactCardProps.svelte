@@ -1,9 +1,7 @@
 <script lang="ts">
-  // Alternative to hydratable(): the page computes `fact` server-side and
-  // passes it in as a prop. Mochi devalue-serialises island props into the
-  // HTML and re-hydrates them on the client, so the data still crosses the
-  // wire without re-running the SSR work — just via a different channel.
-  let { fact } = $props<{ fact: { sqliteVersion: string; computedAt: string } }>();
+  // Alternative to `hydratable()`: the page computes `fact` server-side and passes it as a prop,
+  // which Mochi devalue-serialises into the HTML and re-hydrates client-side without re-running the SSR work.
+  let { fact }: { fact: { sqliteVersion: string; computedAt: string } } = $props();
 
   let clicks = $state(0);
 </script>

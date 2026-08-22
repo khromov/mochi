@@ -1,56 +1,28 @@
 #!/usr/bin/env bun
-import { Glob } from 'bun';
+import { runTests } from 'mochi-framework';
 
-const sequential = new Set(['src/liveReloadFilter.test.ts']);
-
-const all = (await Array.fromAsync(new Glob('src/**/*.test.ts').scan('.'))).sort();
-const parallel = all.filter((f) => !sequential.has(f));
-
-const concurrency = navigator.hardwareConcurrency;
-console.log(`Running ${all.length} test files (${parallel.length} parallel × ${concurrency} workers, ${sequential.size} sequential)`);
-
-const results: { file: string; ok: boolean }[] = [];
-let idx = 0;
-
-async function next(): Promise<void> {
-  while (idx < parallel.length) {
-    const file = parallel[idx++]!;
-    const proc = Bun.spawn(['bun', 'test', '--timeout', '30000', file], {
-      stdin: 'ignore',
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    const [exitCode, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-    const ok = exitCode === 0;
-    results.push({ file, ok });
-    console.log(`\n${ok ? '✓' : '✗'} ${file}`);
-    if (stdout) {
-      process.stdout.write(stdout);
-    }
-    if (stderr) {
-      process.stderr.write(stderr);
-    }
-  }
-}
-
-await Promise.all(Array.from({ length: concurrency }, () => next()));
-
-for (const file of sequential) {
-  console.log(`\n→ ${file} (sequential)`);
-  const proc = Bun.spawnSync({
-    cmd: ['bun', 'test', '--timeout', '30000', file],
-    stdio: ['inherit', 'inherit', 'inherit'],
-  });
-  results.push({ file, ok: proc.exitCode === 0 });
-}
-
-const failed = results.filter((r) => !r.ok);
-console.log(`\n${'='.repeat(60)}`);
-console.log(`${results.length - failed.length}/${results.length} tests passed (concurrency: ${concurrency})`);
-if (failed.length > 0) {
-  console.log('Failed:');
-  for (const r of failed) {
-    console.log(`  ✗ ${r.file}`);
-  }
-  process.exit(1);
-}
+await runTests({
+  sequential: [
+    // Asserts a *single* write produces exactly one `reload` message, so it
+    // can't defend itself the way publicDirSpaces.test.ts does — re-touching to
+    // give the watcher another chance would emit extra reloads and break the
+    // assertion. Under full-suite parallel load chokidar/fsevents can drop an fs
+    // event outright, and a dropped event is unrecoverable: the test waits out
+    // its 30s timeout. Running it after the parallel batch removes the load.
+    'src/liveReloadFilter.test.ts',
+  ],
+  // See testing.ts `windowsSkip`. Both suites' logic is OS-agnostic and fully
+  // covered on Linux/macOS.
+  windowsSkip: [
+    // Passes every test but deterministically wedges in Bun's native post-test
+    // shutdown on Windows (even run alone; in-memory storage, no handles of
+    // ours) — a Bun runtime bug we can't recover from in JS.
+    // TODO: Take another pass at making the windows store tests work, especially when Bun >1.4.0 is released
+    'src/cache/cache.test.ts',
+    // Windows has no POSIX signal delivery: `proc.kill('SIGTERM')` maps to
+    // TerminateProcess, so the child dies with 143 before any handler runs.
+    // There is no way to signal another process for it to observe, so the
+    // shutdown path is only testable on Linux/macOS.
+    'src/shutdownSignal.test.ts',
+  ],
+});

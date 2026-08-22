@@ -3,12 +3,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
-import { redirect, success } from './forms';
-import { getRequestContext } from './requestContext';
+import { redirect, success } from './runtime/forms';
+import { getRequestContext } from './runtime/requestContext';
 
-// One production Mochi.serve() (only one is allowed per process) exercising the
-// hardening wired into Mochi.ts end-to-end: secure cookie defaults, the request
-// body cap, the same-origin redirect guard, and the default security headers.
+// One production Mochi.serve() (only one is allowed per process) exercising the hardening wired into Mochi.ts
+// end-to-end: opt-in secure cookie defaults, the same-origin redirect guard, and the baseline security headers.
 // The development-mode cookie case lives in its own file (separate process).
 
 const FIXTURE_PAGE = path.join(import.meta.dir, '__fixtures__', 'css-imports', 'Page.svelte');
@@ -25,7 +24,7 @@ beforeAll(async () => {
     proxy: { hostHeader: 'host' },
     logger: { enabled: false },
     outDir,
-    maxRequestBodySize: 1000,
+    secureCookies: true,
     routes: {
       '/set': Mochi.api(() => {
         getRequestContext().cookies.set('session', 'abc');
@@ -53,33 +52,13 @@ afterAll(() => {
   rmSync(outDir, { recursive: true, force: true });
 });
 
-describe('secure cookie defaults (production)', () => {
+describe('secureCookies (production)', () => {
   test('cookie is HttpOnly, SameSite=Lax, and Secure', async () => {
     const res = await fetch(`${base}/set`);
     const setCookie = (res.headers.get('set-cookie') ?? '').toLowerCase();
     expect(setCookie).toContain('httponly');
     expect(setCookie).toContain('samesite=lax');
     expect(setCookie).toContain('secure');
-  });
-});
-
-describe('request body size limit', () => {
-  test('an over-limit form POST returns 413', async () => {
-    const res = await fetch(`${base}/page`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded', origin: base },
-      body: 'a=' + 'x'.repeat(2000),
-    });
-    expect(res.status).toBe(413);
-  });
-
-  test('an under-limit form POST runs the action', async () => {
-    const res = await fetch(`${base}/page`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded', origin: base },
-      body: 'a=1',
-    });
-    expect(res.status).toBe(200);
   });
 });
 
@@ -108,11 +87,17 @@ describe('same-origin redirect guard', () => {
 });
 
 describe('default security headers', () => {
-  test('API responses carry the baseline headers', async () => {
+  test('API responses carry the baseline headers and no X-Frame-Options', async () => {
     const res = await fetch(`${base}/api/ok`);
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     expect(res.headers.get('referrer-policy')).toBe('strict-origin-when-cross-origin');
-    expect(res.headers.get('x-frame-options')).toBe('SAMEORIGIN');
+    expect(res.headers.get('x-frame-options')).toBeNull();
+  });
+
+  test('page responses carry the baseline headers', async () => {
+    const res = await fetch(`${base}/page`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
   });
 
   test('SSE responses carry the baseline headers', async () => {

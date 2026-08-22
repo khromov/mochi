@@ -2,13 +2,9 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import RandomRoll from './RandomRoll.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'FormReturnData.svelte', path: './src/demos/form-return-data/FormReturnData.svelte' },
-    { label: 'RandomRoll.svelte', path: './src/demos/form-return-data/RandomRoll.svelte' },
-    { label: 'routes.ts', path: './src/demos/form-return-data/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
 </script>
 
 <DemoPage
@@ -23,7 +19,7 @@
   <h3>With <code>{'{@attach enhance(...)}'}</code></h3>
   <RandomRoll label="The enhance attachment fills the input via fetch + JSON, no reload" mochi:hydrate />
   <h3>Plain HTML</h3>
-  <RandomRoll label="Full HTML POST, page re-renders, RandomRoll reads the value from the request's form snapshot via !isHydratable && isServer" />
+  <RandomRoll label="Full HTML POST, page re-renders, RandomRoll reads the value from the request's form snapshot via !isHydratable() && isServer" />
 </DemoPage>
 
 <style>

@@ -4,12 +4,12 @@
     {
       "label": "Pin @types/bun across the workspace",
       "dependencies": ["@types/bun"],
-      "pinVersion": "1.3.14"
+      "pinVersion": "1.4.0"
     },
     {
       "label": "Pin svelte-check across the workspace",
       "dependencies": ["svelte-check"],
-      "pinVersion": "4.4.7"
+      "pinVersion": "4.7.4"
     },
     {
       "label": "Peer dependencies are intentionally wide — don't sync them",
@@ -19,6 +19,12 @@
     {
       "label": "Private workspace packages are unversioned — don't require a version",
       "dependencyTypes": ["local"],
+      "isIgnored": true
+    },
+    {
+      "label": "msgpackr-extract is a pinned npm-alias override — semver comparison doesn't apply",
+      "dependencies": ["msgpackr-extract"],
+      "dependencyTypes": ["overrides"],
       "isIgnored": true
     }
   ]

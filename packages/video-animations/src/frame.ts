@@ -1,6 +1,3 @@
-// Builds the satori markup for a single frame at time `t` (seconds).
-// Each scene is an absolutely-positioned full-canvas layer whose opacity is driven
-// by windowOpacity(), so scenes cross-fade on one continuous timeline.
 import { COLORS, RADIUS, FONT, CANVAS } from './theme';
 import { clamp, lerp, norm, easeOutCubic, easeOutBack, windowOpacity } from './anim';
 
@@ -17,12 +14,60 @@ const text = (content: string, style: Record<string, any>): Node => ({
   props: { style: { display: 'flex', ...style }, children: content },
 });
 
-// ---- Mochi dango mascot (three soft balls on a skewer) ----
+// Deterministic hash in 0..1 — frames must be reproducible across render workers, so no Math.random().
+const rand = (seed: number) => {
+  const x = Math.sin(seed * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+const LEAF_COUNT = 18;
+
+function leaf(i: number, t: number): Node {
+  const seed = i + 1;
+  const size = lerp(30, 84, rand(seed));
+
+  const span = CANVAS.height + size * 2;
+  const fall = lerp(50, 90, rand(seed + 1.1));
+  const yRaw = (rand(seed + 2.2) * span + t * fall) % span;
+  const y = yRaw - size;
+
+  const x = rand(seed + 3.3) * CANVAS.width + Math.sin(t * lerp(0.15, 0.3, rand(seed + 4.4)) + seed) * lerp(10, 22, rand(seed + 5.5));
+  const rot = lerp(0, 360, rand(seed + 6.6)) + t * lerp(-2, 2, rand(seed + 7.7));
+
+  const peak = lerp(0.06, 0.12, rand(seed + 8.8));
+  const fadeBand = size * 2;
+  const op = peak * Math.min(clamp(yRaw / fadeBand), clamp((span - yRaw) / fadeBand));
+
+  // Satori/yoga rounds left/top to the integer pixel grid, turning sub-pixel drift into visible stair-stepping — so motion is driven via transform (full float precision) with the element pinned at left:0/top:0.
+  return h({
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: size,
+    height: size,
+    background: 'white',
+    opacity: op,
+    borderTopLeftRadius: size,
+    borderBottomRightRadius: size,
+    borderTopRightRadius: 0,
+    borderBottomLeftRadius: 0,
+    transform: `translate(${x}px, ${y}px) rotate(${rot}deg)`,
+  });
+}
+
+function backgroundLeaves(t: number): Node {
+  const leaves: Node[] = [];
+  for (let i = 0; i < LEAF_COUNT; i++) {
+    leaves.push(leaf(i, t));
+  }
+  return h({ position: 'absolute', top: 0, left: 0, width: CANVAS.width, height: CANVAS.height, overflow: 'hidden' }, leaves);
+}
+
 function dango(ball: number): Node {
   const stickW = ball * 0.16;
   const gap = ball * 0.06;
   const totalH = ball * 3 + gap * 2;
-  const ballColors = ['#f3b9c7', '#fff6ea', COLORS.accentSoft]; // sakura / shiro / matcha
+  const ballColors = ['#f3b9c7', '#fff6ea', COLORS.accentSoft];
   const balls = ballColors.map((c, i) =>
     h({
       position: 'absolute',
@@ -36,7 +81,6 @@ function dango(ball: number): Node {
     }),
   );
   return h({ position: 'relative', width: ball, height: totalH, alignItems: 'center', justifyContent: 'center' }, [
-    // wooden skewer poking out the bottom (you hold it by the stick)
     h({
       position: 'absolute',
       left: ball / 2 - stickW / 2,
@@ -50,7 +94,6 @@ function dango(ball: number): Node {
   ]);
 }
 
-// ---- Scene 1: logo reveal ----
 function sceneLogo(t: number): Node {
   const op = windowOpacity(t, 0, 6.0, 0.7);
   if (op <= 0) {
@@ -70,7 +113,7 @@ function sceneLogo(t: number): Node {
       opacity: wordOp,
       transform: `translateY(${wordY}px)`,
     }),
-    text('an experimental SSR framework', {
+    text('islands framework', {
       fontFamily: FONT.mono,
       fontSize: 30,
       letterSpacing: '0.32em',
@@ -82,7 +125,6 @@ function sceneLogo(t: number): Node {
   ]);
 }
 
-// ---- Scene 2: tagline ----
 function sceneTagline(t: number): Node {
   const op = windowOpacity(t, 5.6, 11.6, 0.7);
   if (op <= 0) {
@@ -120,7 +162,6 @@ function sceneTagline(t: number): Node {
   ]);
 }
 
-// ---- Scene 3: islands / selective hydration ----
 function sceneIslands(t: number): Node {
   const op = windowOpacity(t, 11.2, 19.4, 0.7);
   if (op <= 0) {
@@ -129,7 +170,6 @@ function sceneIslands(t: number): Node {
   const cols = 6;
   const rows = 3;
   const count = cols * rows;
-  // Pseudo-random but fixed order in which cards "hydrate".
   const order = [7, 2, 13, 9, 4, 16, 11];
   const p = clamp(norm(t, 12.2, 17.6));
   const hydratedN = Math.floor(p * order.length + 0.001);
@@ -154,7 +194,6 @@ function sceneIslands(t: number): Node {
           padding: 12,
         },
         [
-          // little "lines of content" bars
           h({ width: '70%', height: 8, borderRadius: 4, background: on ? 'rgba(231,241,232,0.85)' : 'rgba(231,241,232,0.22)' }),
           on
             ? h({
@@ -195,7 +234,6 @@ function sceneIslands(t: number): Node {
   ]);
 }
 
-// ---- Scene 4: capabilities ----
 function sceneCaps(t: number): Node {
   const op = windowOpacity(t, 19.0, 25.0, 0.7);
   if (op <= 0) {
@@ -235,7 +273,6 @@ function sceneCaps(t: number): Node {
   ]);
 }
 
-// ---- Scene 5: close ----
 function sceneClose(t: number): Node {
   const op = windowOpacity(t, 24.6, 30.0, 0.8);
   if (op <= 0) {
@@ -260,7 +297,7 @@ function sceneClose(t: number): Node {
       marginTop: 22,
       opacity: clamp(norm(t, 25.6, 26.6)),
     }),
-    text('Early prototype — use in production if you are brave.', {
+    text('Work in progress — be one of the first to try it, and give us feedback!', {
       fontFamily: FONT.serif,
       fontStyle: 'italic',
       fontSize: 30,
@@ -271,7 +308,6 @@ function sceneClose(t: number): Node {
   ]);
 }
 
-// Absolutely-positioned centered full-canvas layer.
 function layer(opacity: number, children: Node[]): Node {
   return h(
     {
@@ -289,7 +325,6 @@ function layer(opacity: number, children: Node[]): Node {
   );
 }
 
-// Thin bottom progress bar in accent — a small nod that this is a timed piece.
 function progressBar(t: number): Node {
   const frac = clamp(t / 30);
   return h({
@@ -316,7 +351,7 @@ export function buildFrame(t: number): Node {
         backgroundImage: `linear-gradient(135deg, ${COLORS.heroFrom} 0%, ${COLORS.heroTo} 100%)`,
         overflow: 'hidden',
       },
-      children: [...scenes, progressBar(t)],
+      children: [backgroundLeaves(t), ...scenes, progressBar(t)],
     },
   };
 }

@@ -2,14 +2,20 @@
   import '@fontsource/jetbrains-mono';
   import './lobster.css';
   import DemoPage from '../../components/DemoPage.svelte';
+  import CodeSnippet from '../../components/CodeSnippet.svelte';
   import { loadSources } from '../../components/utils.ts';
+  import { highlightCode } from '../../lib/highlight.server';
+  import { files } from './files.ts';
 
-  const sources = await loadSources([
-    { label: 'FontLoading.svelte', path: './src/demos/font-loading/FontLoading.svelte' },
-    { label: 'lobster.css', path: './src/demos/font-loading/lobster.css' },
-    { label: 'routes.ts', path: './src/demos/font-loading/routes.ts' },
-    { label: 'index.ts', path: './src/demoIndex.ts' },
-  ]);
+  const sources = await loadSources(files);
+
+  const codeFontFace = await highlightCode(
+    `@font-face {
+  font-family: 'Lobster';
+  src: url('./lobster.woff2') format('woff2');
+}`,
+    'css',
+  );
 </script>
 
 <DemoPage
@@ -31,14 +37,10 @@
       Drop a <code>.woff2</code> next to your component and reference it from a tiny
       <code>@font-face</code> CSS file:
     </p>
-    <pre><code
-        >{`@font-face {
-  font-family: 'Lobster';
-  src: url('./lobster.woff2') format('woff2');
-}`}</code
-      ></pre>
+    <CodeSnippet html={codeFontFace} />
     <p>
-      Import the CSS (<code>import './lobster.css'</code>). Bun's CSS bundler inlines the <code>.woff2</code> as a base64 data URI in the bundled CSS.
+      Import the CSS (<code>import './lobster.css'</code>). Mochi serves the <code>.woff2</code> as a separate content-hashed file — small fonts (≤4&nbsp;kB) stay inlined in the bundled
+      CSS as data URIs.
     </p>
     <p class="sample sample-display">The quick brown fox jumps over the lazy dog. 1234567890</p>
   </section>
@@ -66,8 +68,5 @@
   .sample-display {
     font-family: 'Lobster', cursive;
     font-size: 2rem;
-  }
-  pre {
-    margin: 0.75rem 0;
   }
 </style>

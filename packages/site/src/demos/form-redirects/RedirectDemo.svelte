@@ -2,13 +2,12 @@
   import { enhance } from 'mochi-framework';
   import type { MochiSubmitFunction, MochiEnhanceResult } from 'mochi-framework';
 
-  let { label } = $props<{ label: string }>();
+  let { label }: { label: string } = $props();
 
   let redirectResult = $state<{ status: number; location: string } | null>(null);
   let pending = $state(false);
 
-  // Intercept the redirect instead of immediately navigating so we can show
-  // the JSON envelope. Call follow() to actually navigate.
+  // Intercept the redirect instead of immediately navigating so we can show the JSON envelope.
   const handleSubmit: MochiSubmitFunction = () => {
     pending = true;
     redirectResult = null;

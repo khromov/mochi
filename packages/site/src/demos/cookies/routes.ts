@@ -7,20 +7,13 @@ export const routes: Record<string, MochiRouteValue> = {
     if (method !== 'POST') {
       error(405, 'Method Not Allowed');
     }
-    const {
-      username,
-      theme,
-      httpOnly = true,
-    } = (await request.json()) as {
+    const { username, theme } = (await request.json()) as {
       username: string;
       theme: string;
-      httpOnly?: boolean;
     };
     const { cookies } = getRequestContext();
-    // Cookies are HttpOnly by default (framework default); pass httpOnly: false to
-    // make one readable by client-side JS so the demo can show both behaviors.
-    cookies.set('mochi_username', username, { path: '/', maxAge: 604800, httpOnly });
-    cookies.set('mochi_theme', theme, { path: '/', maxAge: 604800, httpOnly });
+    cookies.set('mochi_username', username, { path: '/', maxAge: 604800 });
+    cookies.set('mochi_theme', theme, { path: '/', maxAge: 604800 });
     return Response.json({ ok: true });
   }),
 };

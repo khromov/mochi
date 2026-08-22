@@ -1,6 +1,6 @@
 import { MochiCache } from 'mochi-framework';
 
 export const pokemonCache = new MochiCache({
-  minTimeToStale: 10_000,
-  maxTimeToLive: 300_000,
+  minTimeToStale: 14_400_000,
+  maxTimeToLive: 86_400_000,
 });
