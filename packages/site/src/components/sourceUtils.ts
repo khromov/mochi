@@ -1,12 +1,13 @@
-export type SourceSpec = { label: string; path: string; lang?: string; showImageConfig?: boolean };
+export type SourceSpec = { label: string; path: string; lang?: string; showImageConfig?: boolean; showStaticDirs?: boolean };
 
 export function isDemoIndex(path: string): boolean {
   return path.endsWith('demoIndex.ts');
 }
 
-// Drop the `image: {…}` block (and its leading comment) — it's noise in every demo
-// except the image ones, which opt back in via `showImageConfig`.
-export function stripImageConfig(code: string): string {
+// Drop a top-level `<key>: {…}` serve-option block (and its leading comment) — it's
+// noise in every demo except the one whose feature it shows, which opts back in.
+function stripServeBlock(code: string, key: string): string {
+  const opener = new RegExp(`^\\s*${key}:\\s*\\{`);
   const lines = code.split('\n');
   const out: string[] = [];
   let depth = 0;
@@ -19,7 +20,7 @@ export function stripImageConfig(code: string): string {
       }
       continue;
     }
-    if (/^\s*image:\s*\{/.test(line)) {
+    if (opener.test(line)) {
       while (out.length && /^\s*\/\//.test(out[out.length - 1]!)) {
         out.pop();
       }
@@ -30,4 +31,12 @@ export function stripImageConfig(code: string): string {
     out.push(line);
   }
   return out.join('\n');
+}
+
+export function stripImageConfig(code: string): string {
+  return stripServeBlock(code, 'image');
+}
+
+export function stripStaticDirs(code: string): string {
+  return stripServeBlock(code, 'staticDirs');
 }

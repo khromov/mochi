@@ -7,8 +7,6 @@
  */
 import path from 'node:path';
 import { mkdir } from 'node:fs/promises';
-import { launch, type LaunchedChrome } from 'chrome-launcher';
-import CDP from 'chrome-remote-interface';
 import { NOISE_SVG, NOISE_TILE_SIZE } from '../src/og/brand.ts';
 
 const ASSETS_DIR = path.join(import.meta.dir, '..', 'src', 'og', 'assets');
@@ -18,27 +16,24 @@ type Rect = { x: number; y: number; width: number; height: number };
 const page = (body: string, style = '') =>
   `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:transparent}${style}</style>${body}`)}`;
 
-async function withPage<T>(port: number, url: string, fn: (client: CDP.Client) => Promise<T>): Promise<T> {
-  const target = await CDP.New({ port, url: 'about:blank' });
-  const client = await CDP({ port, target });
+async function withPage<T>(url: string, fn: (view: Bun.WebView) => Promise<T>): Promise<T> {
+  const view = new Bun.WebView({ backend: 'chrome' });
   try {
-    const { Page, Emulation } = client;
-    await Page.enable();
+    // cdp() needs a session, and the first navigate is what establishes one.
+    await view.navigate('about:blank');
     // Without this the screenshot gets Chrome's opaque white base layer instead of alpha.
-    await Emulation.setDefaultBackgroundColorOverride({ color: { r: 0, g: 0, b: 0, a: 0 } });
-    const loaded = Page.loadEventFired();
-    await Page.navigate({ url });
-    await loaded;
-    await client.Runtime.evaluate({ expression: 'document.fonts.ready', awaitPromise: true });
-    return await fn(client);
+    await view.cdp('Emulation.setDefaultBackgroundColorOverride', { color: { r: 0, g: 0, b: 0, a: 0 } });
+    await view.navigate(url);
+    await view.evaluate('document.fonts.ready');
+    return await fn(view);
   } finally {
-    await client.close();
-    await CDP.Close({ port, id: target.id });
+    view.close();
   }
 }
 
-async function shoot(client: CDP.Client, clip: Rect, scale: number): Promise<Buffer> {
-  const { data } = await client.Page.captureScreenshot({
+// view.screenshot() exposes neither `clip` nor `captureBeyondViewport`, so this one stays on the raw CDP command.
+async function shoot(view: Bun.WebView, clip: Rect, scale: number): Promise<Buffer> {
+  const { data } = await view.cdp<{ data: string }>('Page.captureScreenshot', {
     format: 'png',
     captureBeyondViewport: true,
     clip: { ...clip, scale },
@@ -46,13 +41,13 @@ async function shoot(client: CDP.Client, clip: Rect, scale: number): Promise<Buf
   return Buffer.from(data, 'base64');
 }
 
-async function bakeNoise(port: number): Promise<void> {
+async function bakeNoise(): Promise<void> {
   const url = page(
     `<div id="t"></div>`,
     `#t{width:${NOISE_TILE_SIZE}px;height:${NOISE_TILE_SIZE}px;background-image:url("data:image/svg+xml;utf8,${NOISE_SVG.replace(/%/g, '%25').replace(/#/g, '%23')}");background-size:${NOISE_TILE_SIZE}px ${NOISE_TILE_SIZE}px}`,
   );
-  await withPage(port, url, async (client) => {
-    const png = await shoot(client, { x: 0, y: 0, width: NOISE_TILE_SIZE, height: NOISE_TILE_SIZE }, 1);
+  await withPage(url, async (view) => {
+    const png = await shoot(view, { x: 0, y: 0, width: NOISE_TILE_SIZE, height: NOISE_TILE_SIZE }, 1);
     await Bun.write(path.join(ASSETS_DIR, 'noise-240.png'), png);
     console.log(`noise-240.png  ${NOISE_TILE_SIZE}×${NOISE_TILE_SIZE}  ${png.byteLength} B`);
   });
@@ -76,14 +71,10 @@ async function fetchDango(): Promise<void> {
   console.log(`dango.png      from noto-emoji  ${png.byteLength} B`);
 }
 
-let chrome: LaunchedChrome | undefined;
 try {
   await mkdir(ASSETS_DIR, { recursive: true });
-  chrome = await launch({
-    chromeFlags: ['--headless=new', '--disable-gpu', '--no-sandbox', '--disable-dev-shm-usage', '--force-device-scale-factor=1'],
-  });
-  await bakeNoise(chrome.port);
+  await bakeNoise();
   await fetchDango();
 } finally {
-  await chrome?.kill();
+  Bun.WebView.closeAll();
 }

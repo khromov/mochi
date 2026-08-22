@@ -80,10 +80,6 @@ await Mochi.serve({
 - **`preload`** — separately-fetched fonts are only discovered after the CSS arrives; preloading from the `<head>` closes that gap. Faces whose `unicode-range` excludes latin are skipped, and at most 8 fonts are preloaded per page.
 - **`inlineThreshold`** — Bun writes any `url()` asset of 128 kB or more to a file of its own, so fonts that large are always served separately whatever this is set to. That 128 kB cutoff is hardcoded in Bun and cannot currently be configured. Non-font assets over it (a background image, say) are served alongside the stylesheet; smaller ones stay inlined.
 
-### Variable fonts
-
-Bun's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`. Browsers silently drop the unquoted form. After bundling, Mochi re-quotes the four `*-variations` hints (`woff2-variations`, `woff-variations`, `truetype-variations`, `opentype-variations`), so `@fontsource-variable/*` packages work with no manual workaround.
-
 ### Dev mode
 
 A `.css` edit triggers a fast rebundle and a page reload, with no SSR recompile. Edits to `.svelte` or `.ts` files go through the full compile path.

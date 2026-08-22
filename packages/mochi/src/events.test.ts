@@ -40,6 +40,17 @@ describe('mochiEvents', () => {
     });
   });
 
+  test('recompile:module-churn is part of the event map', () => {
+    let received: unknown = null;
+    const handler = (e: unknown) => {
+      received = e;
+    };
+    mochiEvents.on('recompile:module-churn', handler);
+    mochiEvents.emit('recompile:module-churn', { reloadCount: 10 });
+    mochiEvents.off('recompile:module-churn', handler);
+    expect(received).toEqual({ reloadCount: 10 });
+  });
+
   test('queue:completed is part of the event map', () => {
     let received: unknown = null;
     const handler = (e: unknown) => {

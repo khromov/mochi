@@ -77,6 +77,8 @@ export type {
   MochiCacheInflightDeferredEvent,
   MochiCacheDeleteEvent,
   MochiCacheSweepEvent,
+  MochiMemoryPressureEvent,
+  MochiCachePressureEvent,
   MochiImageCacheSweepEvent,
   MochiImageEntryKind,
   MochiImageStoreEvent,
@@ -90,6 +92,7 @@ export type {
   MochiQueueCompletedEvent,
   MochiQueueFailedEvent,
   MochiQueueErrorEvent,
+  MochiCronScheduledEvent,
   MochiEmailSentEvent,
   MochiEmailErrorEvent,
   MochiServerStartEvent,
@@ -108,6 +111,7 @@ export type {
   MochiCompileErrorLog,
   MochiRecompileStartEvent,
   MochiRecompileCompleteEvent,
+  MochiRecompileModuleChurnEvent,
   MochiRecompileTrigger,
   MochiClientBundleEvent,
   MochiCaptchaVerifyEvent,
@@ -129,6 +133,7 @@ export type {
   PGliteLike,
 } from './queue';
 export { DEFAULT_EXPIRE_IN_SECONDS } from './queue';
+export type { MochiCronJob, MochiCronHandler, MochiCronRun, MochiCronOptions, MochiCronRuntimeOptions } from './cron';
 export { runMigrations } from './migrations/runner';
 export { loadMigrationFiles } from './migrations/loadMigrationFiles';
 export type { RunMigrationsOptions, AppliedMigration } from './migrations/runner';
@@ -220,6 +225,7 @@ export type {
   MochiFileConfig,
   MochiFileResolver,
   MochiQueueConfig,
+  MochiCronConfig,
   BunRouteValue,
   MochiSvelteShakerOptions,
   MochiBarrelWarningOptions,

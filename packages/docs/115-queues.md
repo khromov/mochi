@@ -99,7 +99,7 @@ await emails.addBulk([{ data: { to: 'a@x.com' } }, { data: { to: 'b@x.com' }, op
 
 ### Standalone producers
 
-A script whose only job is _enqueueing_ — a cron job, a CLI backfill, a migration — can write straight to queue storage. Give the descriptor `storage` and its first `add()` lazily connects a **producer-only** runtime; tear down with [`Mochi.stop()`](#mochistop):
+A script whose only job is _enqueueing_ — an external scheduler, a CLI backfill, a migration — can write straight to queue storage. (For recurring work inside the server process, use [scheduled jobs](/docs/scheduled-jobs/) instead.) Give the descriptor `storage` and its first `add()` lazily connects a **producer-only** runtime; tear down with [`Mochi.stop()`](#mochistop):
 
 ```ts
 // enqueue.ts — a standalone producer script
@@ -303,13 +303,23 @@ mochiEvents.on('queue:completed', ({ queue, jobId, duration }) => {
 
 `queue:completed` and `queue:failed` fire per attempt, as the processor settles — an immediate `Mochi.boss().findJobs()` from a listener may still see the job `active` for a beat. An `addBulk` emits `queue:added` per inserted job (flagged `bulk: true`) plus one `queue:addedBulk` summary — the console logger prints only the summary, so a 100k-job bulk add logs one line.
 
+When a queue's backlog crosses the warning threshold (`warningQueueSize`, default `10000`), Mochi logs a `[queue]` warning that names the offending queue and its current depth — e.g. `[queue] Warning: large queue backlog. Your queue should be reviewed (queue "emails" has 12345 jobs queued)`.
+
 ### Dev mode & hot reload
 
 `Mochi.serve({ queues })` starts the queue runtime once, so the dev route hot-reload watcher cannot spawn a duplicate consumer. The trade-off: **changes to a queue's `process` function or options do not hot-reload**. Restart the dev server to apply them.
 
 ### Shutdown
 
-Queues close gracefully on `SIGTERM`/`SIGINT`. In-flight jobs get up to 10 seconds to finish; a job still running after that is failed and follows its queue's retry policy from the store. For a worker process with an HTTP port (health checks, metrics), use `Mochi.serve({ queues })` with no `routes` — [`Mochi.worker()`](#standalone-workers) is the serverless alternative:
+Queues close gracefully on `SIGTERM`/`SIGINT`. In-flight jobs get up to `queueShutdownTimeout` (default 10 seconds) to finish; a job still running after that is failed and follows its queue's retry policy from the store. Raise it for handlers that legitimately run longer than 10s, so a job in flight at shutdown finishes instead of being re-run:
+
+```ts
+Mochi.serve({ queues, queueShutdownTimeout: 60_000 }); // or Mochi.worker({ queues, queueShutdownTimeout })
+```
+
+<VersionNote since="0.10.0" message="queueShutdownTimeout was added in 0.10.0; before it, the queue graceful-drain window was fixed at 10s." />
+
+It is distinct from `shutdownTimeout`, which bounds the HTTP-server drain. For a worker process with an HTTP port (health checks, metrics), use `Mochi.serve({ queues })` with no `routes` — [`Mochi.worker()`](#standalone-workers) is the serverless alternative:
 
 ```ts
 // worker.ts — run with `bun worker.ts`

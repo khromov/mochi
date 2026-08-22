@@ -1,7 +1,7 @@
 // The isolation boundary around bun-boss: the only module importing `bun-boss`, and the only one whose rewrite a
 // backend swap would need.
 import { BunBoss, fromBunSqlite, fromPglite, queueOptionDefaults } from 'bun-boss';
-import type { JobInsert, JobResult, JobWithMetadata, PGliteLike, SendOptions, UpdateQueueOptions, WorkOptions } from 'bun-boss';
+import type { JobInsert, JobResult, JobWithMetadata, PGliteLike, SendOptions, UpdateQueueOptions, WorkOptions, Warning } from 'bun-boss';
 import { SQL } from 'bun';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -15,6 +15,7 @@ import { applyFilter } from './extensions';
 import { startupMilestoneReached } from './lifecycle';
 import { mochiEvents } from './events';
 import { logger } from './utils/log';
+import type { MochiCronJob, MochiCronRun } from './cron';
 
 /**
  * Where queue jobs live: `'memory'` (SQLite `:memory:`, lost on restart), a SQLite file, a Postgres database, or a
@@ -218,7 +219,17 @@ interface QueueRegistry {
   storage: MochiQueueStorage | null;
   /** In-flight standalone boot, so concurrent first-adds share one `start()`. */
   starting: Promise<void> | null;
+  /** Graceful drain budget (ms) for shutdown, from `queueShutdownTimeout`; see `closeAllQueueResources`. */
+  shutdownTimeout: number;
+  /** Dedicated cron boss when cron uses a store other than queueStorage; null when cron rides the queue boss or is unused. */
+  cronBoss: BunBoss | null;
+  /** SQL handle owned by a dedicated sqlite/memory cron boss, closed on shutdown. */
+  cronOwnedSql: SQL | null;
+  /** The cron boss's own copy of the drain budget — `closeAllQueueResources` resets `shutdownTimeout` before it stops cron. */
+  cronShutdownTimeout: number;
 }
+
+const DEFAULT_QUEUE_SHUTDOWN_TIMEOUT = 10_000;
 
 // Pinned so every duplicate bundled copy of this module shares one registry, since `closeAllQueueResources` must see
 // every resource to drain it whichever copy created it.
@@ -230,6 +241,10 @@ const registry = pinGlobal<QueueRegistry>('__mochi_queue_registry__', () => ({
   kind: null,
   storage: null,
   starting: null,
+  shutdownTimeout: DEFAULT_QUEUE_SHUTDOWN_TIMEOUT,
+  cronBoss: null,
+  cronOwnedSql: null,
+  cronShutdownTimeout: DEFAULT_QUEUE_SHUTDOWN_TIMEOUT,
 }));
 
 export function storageEquals(a: MochiQueueStorage | null, b: MochiQueueStorage): boolean {
@@ -441,32 +456,73 @@ export async function startQueueRuntime(storage: MochiQueueStorage, opts?: { kin
   await registry.starting;
 }
 
-async function bootQueueRuntime(storage: MochiQueueStorage, kind: 'serve' | 'standalone', enableSpies: boolean): Promise<void> {
-  const spies = enableSpies ? { __test__enableSpies: true } : {};
-  let boss: BunBoss;
+// bun-boss's large-backlog warning ("large queue backlog…") names the offending queue and its depth in
+// `warning.data`, but bakes neither into `warning.message`; fold the queued count in so the log line says
+// how big the backlog actually is. Other warnings (slow query, clock skew, notifier) carry no such fields
+// and pass through untouched.
+export function formatQueueWarning(warning: Warning): string {
+  const data = warning.data as { name?: unknown; queuedCount?: unknown };
+  const queuedCount = Number(data?.queuedCount);
+  if (typeof data?.name === 'string' && Number.isFinite(queuedCount)) {
+    return `${warning.message} (queue "${data.name}" has ${queuedCount} job${queuedCount === 1 ? '' : 's'} queued)`;
+  }
+  return warning.message;
+}
+
+interface ConstructBossOptions {
+  /** A real schema on postgres/pglite; a table-name prefix on sqlite, which has no schemas. */
+  schema: string;
+  /** Enable bun-boss's durable cron timekeeper on this instance. */
+  schedule: boolean;
+  enableSpies: boolean;
+  /** How often the timekeeper checks whether a schedule is due; low values let tests fire quickly. */
+  cronMonitorIntervalSeconds?: number;
+  /** How often the internal send-it worker forwards a due schedule to its queue (test hook). */
+  cronWorkerIntervalSeconds?: number;
+}
+
+/** Construct (but do not start) a BunBoss for a storage, plus the SQL handle it owns for sqlite/memory. */
+function constructBoss(storage: MochiQueueStorage, opts: ConstructBossOptions): { boss: BunBoss; ownedSql: SQL | null } {
+  const extra = {
+    schedule: opts.schedule,
+    ...(opts.enableSpies ? { __test__enableSpies: true } : {}),
+    ...(opts.cronMonitorIntervalSeconds ? { cronMonitorIntervalSeconds: opts.cronMonitorIntervalSeconds } : {}),
+    ...(opts.cronWorkerIntervalSeconds ? { cronWorkerIntervalSeconds: opts.cronWorkerIntervalSeconds } : {}),
+  };
   if (storage === 'memory' || 'sqlite' in storage) {
     const file = storage === 'memory' ? ':memory:' : storage.sqlite;
     if (file !== ':memory:') {
       mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
     }
     const sql = new SQL(`sqlite://${file}`);
-    // Registered before start() so the failure path in Mochi.serve (closeAllQueueResources) closes it too.
-    registry.ownedSql = sql;
-    boss = new BunBoss({ backend: 'sqlite', db: fromBunSqlite(sql), schedule: false, ...spies });
-  } else if ('pglite' in storage) {
-    // The caller constructs and owns the PGlite instance (bun-boss's adapter contract), so nothing is registered for closing.
-    boss = new BunBoss({ backend: 'pglite', db: fromPglite(storage.pglite), schema: 'mochi_queue', schedule: false, ...spies });
-  } else {
-    boss = new BunBoss({ url: storage.postgres, backend: 'postgres', schema: 'mochi_queue', schedule: false, ...spies });
+    // The sqlite backend has no schemas, so bun-boss folds `schema` into a table-name prefix instead — without it both
+    // bosses would default to `bunboss.*` and cron would share the queue tables inside one file.
+    return { boss: new BunBoss({ backend: 'sqlite', db: fromBunSqlite(sql), schema: opts.schema, ...extra }), ownedSql: sql };
   }
-  // Attached before start(): an 'error' emit with no listener kills the process (EventEmitter semantics).
+  if ('pglite' in storage) {
+    // The caller constructs and owns the PGlite instance (bun-boss's adapter contract), so nothing is owned for closing.
+    return { boss: new BunBoss({ backend: 'pglite', db: fromPglite(storage.pglite), schema: opts.schema, ...extra }), ownedSql: null };
+  }
+  return { boss: new BunBoss({ url: storage.postgres, backend: 'postgres', schema: opts.schema, ...extra }), ownedSql: null };
+}
+
+/** Wire error/warning logging before start(): an 'error' emit with no listener kills the process (EventEmitter semantics). */
+function attachBossLogging(boss: BunBoss, label: string): void {
   boss.on('error', (error) => {
-    logger.error(`[queue] ${error.message}`);
+    logger.error(`[${label}] ${error.message}`);
     mochiEvents.emit('queue:error', { error: error.message });
   });
   boss.on('warning', (warning) => {
-    logger.warn(`[queue] ${warning.message}`);
+    logger.warn(`[${label}] ${formatQueueWarning(warning)}`);
   });
+}
+
+async function bootQueueRuntime(storage: MochiQueueStorage, kind: 'serve' | 'standalone', enableSpies: boolean): Promise<void> {
+  // Queues never schedule; durable cron always runs on its own bun-boss instance (see startCronRuntime).
+  const { boss, ownedSql } = constructBoss(storage, { schema: 'mochi_queue', schedule: false, enableSpies });
+  // Registered before start() so the failure path in Mochi.serve (closeAllQueueResources) closes it too.
+  registry.ownedSql = ownedSql;
+  attachBossLogging(boss, 'queue');
   try {
     await boss.start();
   } catch (err) {
@@ -813,6 +869,141 @@ async function verifyOrCreateQueue(boss: BunBoss, entry: DeclaredQueueEntry, con
   );
 }
 
+// Durable cron runs on its own bun-boss instance keyed by this schema/table-prefix, so it never touches the queue
+// tables even when pointed at the same store. Each cron becomes a queue named `cron-<name>`, reserving that prefix.
+const CRON_SCHEMA = 'mochi_cron';
+export const CRON_QUEUE_PREFIX = 'cron-';
+/** Fixed startup jitter (ms): a random 0..N delay staggers the timekeeper poll across nodes; not user-configurable. */
+export const CRON_JITTER_MS = 3000;
+
+const cronQueueName = (name: string): string => `${CRON_QUEUE_PREFIX}${name}`;
+
+export interface StartCronOptions {
+  cronStorage: MochiQueueStorage;
+  development: boolean;
+  /** Random 0..jitterMs delay before the scheduler starts; pass 0 in dev/tests. */
+  jitterMs: number;
+  enableSpies?: boolean;
+  /** Test hooks: low intervals let a `* * * * *` schedule fire within seconds instead of up to a minute. */
+  cronMonitorIntervalSeconds?: number;
+  cronWorkerIntervalSeconds?: number;
+  workerPollingSeconds?: number;
+  /** Graceful drain budget (ms) for the cron boss, from `queueShutdownTimeout`. */
+  shutdownTimeout?: number;
+}
+
+function cronRunFrom(job: MochiCronJob, scheduledTime: number): MochiCronRun {
+  return { name: job.name, schedule: job.schedule, scheduledTime, ...(job.options?.tz ? { tz: job.options.tz } : {}) };
+}
+
+// A durable cron run is a queue job named `cron-<name>`, so reuse makeHandler — the run then emits
+// queue:active/completed/failed under that queue name, and a throw is failed-and-logged, not process-fatal.
+function cronWorkHandler(job: MochiCronJob) {
+  // `enqueuedAt` is when the scheduler claimed the firing, so it stays fixed across a backlog and every retry — unlike
+  // the handler's own start time, which is what an idempotency key or lateness metric must not be built on.
+  return makeHandler<unknown, void>(cronQueueName(job.name), async (queueJob) => {
+    await job.run(cronRunFrom(job, queueJob.enqueuedAt));
+  });
+}
+
+/** Stop the dedicated cron boss (if any) and release its SQL handle; idempotent, and schedules stay in the store. */
+export async function stopCronRuntime(): Promise<void> {
+  const { cronBoss, cronOwnedSql, cronShutdownTimeout } = registry;
+  registry.cronBoss = null;
+  registry.cronOwnedSql = null;
+  registry.cronShutdownTimeout = DEFAULT_QUEUE_SHUTDOWN_TIMEOUT;
+  if (cronBoss) {
+    try {
+      await cronBoss.stop({ graceful: true, timeout: cronShutdownTimeout });
+    } catch (err) {
+      logger.warn(`[cron] shutdown: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  if (cronOwnedSql) {
+    try {
+      await cronOwnedSql.close();
+    } catch {
+      // Already closed by a failed start; nothing to do.
+    }
+  }
+}
+
+/**
+ * Register durable schedules on a dedicated bun-boss instance; the single winner per tick is elected atomically in the
+ * database, so exactly one node enqueues each firing. Skipped during a build; re-running replaces any prior cron boss so
+ * the dev watcher can re-register when the cron array changes.
+ */
+export async function startCronRuntime(jobs: MochiCronJob[], opts: StartCronOptions): Promise<void> {
+  if (isBuildingEntry()) {
+    return;
+  }
+  await stopCronRuntime();
+  const active = jobs.filter((job) => !(opts.development && job.options?.dev === false));
+
+  if (opts.jitterMs > 0) {
+    await Bun.sleep(Math.floor(Math.random() * opts.jitterMs));
+  }
+  const { boss, ownedSql } = constructBoss(opts.cronStorage, {
+    schema: CRON_SCHEMA,
+    schedule: true,
+    enableSpies: opts.enableSpies ?? false,
+    cronMonitorIntervalSeconds: opts.cronMonitorIntervalSeconds,
+    cronWorkerIntervalSeconds: opts.cronWorkerIntervalSeconds,
+  });
+  attachBossLogging(boss, 'cron');
+  try {
+    await boss.start();
+  } catch (err) {
+    await boss.stop({ graceful: false }).catch(() => {});
+    if (ownedSql) {
+      await ownedSql.close().catch(() => {});
+    }
+    throw err;
+  }
+  registry.cronBoss = boss;
+  registry.cronOwnedSql = ownedSql;
+  registry.cronShutdownTimeout = opts.shutdownTimeout ?? DEFAULT_QUEUE_SHUTDOWN_TIMEOUT;
+
+  // Reconcile: drop any schedule this runtime owns that is no longer declared (a removed Mochi.cron line, or a
+  // dev-skipped job) so an orphaned schedule can't keep enqueuing jobs no worker consumes.
+  const declaredQueues = new Set(active.map((job) => cronQueueName(job.name)));
+  for (const schedule of await boss.getSchedules()) {
+    if (!declaredQueues.has(schedule.name)) {
+      await boss.unschedule(schedule.name);
+    }
+  }
+
+  const cronWorkOptions = {
+    batchSize: 1,
+    includeMetadata: true,
+    perJobResults: true,
+    ...(opts.workerPollingSeconds ? { pollingIntervalSeconds: opts.workerPollingSeconds } : {}),
+  } as WorkOptions & { includeMetadata: true; perJobResults: true };
+
+  for (const job of active) {
+    const queueName = cronQueueName(job.name);
+    await boss.createQueue(queueName); // idempotent (ON CONFLICT DO NOTHING); config-preserving on an existing queue.
+    await boss.work(queueName, cronWorkOptions, cronWorkHandler(job));
+    await boss.schedule(queueName, job.schedule, {}, job.options?.tz ? { tz: job.options.tz } : undefined);
+    const next = job.nextRun();
+    mochiEvents.emit('cron:scheduled', {
+      job: job.name,
+      schedule: job.schedule,
+      ...(job.options?.tz ? { tz: job.options.tz } : {}),
+      ...(next === null ? {} : { nextRun: next }),
+    });
+  }
+}
+
+/** Logical names (prefix stripped) of the durable cron jobs registered in this process. */
+export async function registeredCronNames(): Promise<string[]> {
+  const boss = registry.cronBoss;
+  if (!boss) {
+    return [];
+  }
+  return (await boss.getSchedules()).map((schedule) => schedule.name.slice(CRON_QUEUE_PREFIX.length));
+}
+
 /** Implements `Mochi.queue(name, config)` — see its JSDoc there. */
 export function createQueueDescriptor<T = unknown, R = unknown>(name: string, config: MochiQueueOptions<T, R> = {}): MochiQueueDescriptor<T, R> {
   if (!QUEUE_NAME_RE.test(name)) {
@@ -874,8 +1065,9 @@ export function createQueueDescriptor<T = unknown, R = unknown>(name: string, co
  * Mount every queue declared in `Mochi.serve({ queues })` on the running boss: ensure each exists with its declared
  * config, then start a worker for each that has a processor.
  */
-export async function mountQueues(queues: MountableQueue[], mode: 'verify' | 'sync' = 'verify'): Promise<void> {
+export async function mountQueues(queues: MountableQueue[], mode: 'verify' | 'sync' = 'verify', shutdownTimeout: number = DEFAULT_QUEUE_SHUTDOWN_TIMEOUT): Promise<void> {
   const boss = requireBoss();
+  registry.shutdownTimeout = shutdownTimeout;
   await verifyOrCreateQueues(queues, 'Mochi.serve({ queues })', mode);
   // Only the declared array is registered — implicit descriptor-form deadLetter targets are ensured, not mounted.
   for (const config of queues) {
@@ -913,7 +1105,13 @@ export interface MochiWorker {
 }
 
 /** Implements `Mochi.worker(options)` — see its JSDoc there. */
-export function createWorker(queues: MountableQueue[], queueStorage?: MochiQueueStorage, queueConfig?: 'verify' | 'sync', appStorage?: MochiStorage): MochiWorker {
+export function createWorker(
+  queues: MountableQueue[],
+  queueStorage?: MochiQueueStorage,
+  queueConfig?: 'verify' | 'sync',
+  shutdownTimeout: number = DEFAULT_QUEUE_SHUTDOWN_TIMEOUT,
+  appStorage?: MochiStorage,
+): MochiWorker {
   if (queues.length === 0) {
     throw new Error('Mochi.worker(): declare at least one queue.');
   }
@@ -978,6 +1176,7 @@ export function createWorker(queues: MountableQueue[], queueStorage?: MochiQueue
           );
         }
         const boss = requireBoss();
+        registry.shutdownTimeout = shutdownTimeout;
         await verifyOrCreateQueues(queues, 'Mochi.worker()', resolveQueueConfigMode(queueConfig));
         for (const q of queues) {
           if (!registry.byName.has(q.name)) {
@@ -1045,7 +1244,7 @@ export async function closeAllQueueResources(): Promise<void> {
   while (registry.starting) {
     await registry.starting.catch(() => {});
   }
-  const { boss, ownedSql } = registry;
+  const { boss, ownedSql, shutdownTimeout } = registry;
   // Cleared first so a fresh serve in this process (e.g. a test that restarts) can re-mount its queues even if a
   // close below fails.
   registry.boss = null;
@@ -1055,9 +1254,13 @@ export async function closeAllQueueResources(): Promise<void> {
   registry.starting = null;
   registry.byName.clear();
   registry.workIds.clear();
+  registry.shutdownTimeout = DEFAULT_QUEUE_SHUTDOWN_TIMEOUT;
   if (boss) {
     try {
-      await boss.stop({ graceful: true, timeout: 10_000 });
+      // bun-boss drains in-flight handlers within the graceful window and settles their cleanups before closing
+      // the store; a job still running when the window lapses is failed and follows its retry policy. Raising
+      // `queueShutdownTimeout` above the job duration lets it finish instead of being re-run.
+      await boss.stop({ graceful: true, timeout: shutdownTimeout });
     } catch (err) {
       logger.warn(`[queue] shutdown: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -1069,4 +1272,5 @@ export async function closeAllQueueResources(): Promise<void> {
       // The handle may already be closed by a failed start; nothing to do.
     }
   }
+  await stopCronRuntime();
 }

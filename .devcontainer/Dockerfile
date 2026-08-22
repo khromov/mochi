@@ -35,6 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   tzdata \
   chromium \
   fonts-liberation \
+  fonts-noto-color-emoji \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # chrome-devtools-mcp resolves the default "stable" Chrome channel to
@@ -127,7 +128,7 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
 # Install Bun (pinned to the repo's .bun-version), baked into the image at build time.
-ARG BUN_VERSION=1.3.14
+ARG BUN_VERSION=1.4.0
 RUN curl -fsSL https://bun.com/install | bash -s "bun-v${BUN_VERSION}"
 ENV BUN_INSTALL=/home/node/.bun
 ENV PATH=$PATH:/home/node/.bun/bin

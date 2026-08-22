@@ -23,6 +23,7 @@ Event names use a `namespace:action` convention. Every key is in the typed `Moch
 - [`ws:open`](#wsopen), [`ws:message`](#wsmessage), [`ws:close`](#wsclose) — WebSocket lifecycle
 - [`sse:open`](#sseopen), [`sse:message`](#ssemessage), [`sse:close`](#sseclose) — Server-Sent Events lifecycle
 - [`queue:added`](#queueadded), [`queue:active`](#queueactive), [`queue:completed`](#queuecompleted), [`queue:failed`](#queuefailed), [`queue:error`](#queueerror) — [background job](/docs/queues/) lifecycle
+- `cron:scheduled` — a [scheduled job](/docs/scheduled-jobs/) was registered (its runs surface through `queue:*` on the job name)
 - [`email:sent`](#emailsent), [`email:error`](#emailerror) — [transactional email](/docs/email/) delivery
 - [`server:start`](#serverstart), [`server:stop`](#serverstop) — server lifecycle
 - [`warmup:start`](#warmupstart), [`warmup:complete`](#warmupcomplete) — route warmup batch (only with `warmup: true`)
@@ -30,6 +31,7 @@ Event names use a `namespace:action` convention. Every key is in the typed `Moch
 - [`action:invoke`](#actioninvoke), [`action:complete`](#actioncomplete) — form action lifecycle
 - [`compile:start`](#compilestart), [`compile:complete`](#compilecomplete), [`compile:error`](#compileerror) — Svelte SSR build
 - [`recompile:start`](#recompilestart), [`recompile:complete`](#recompilecomplete) — dev rebuild cycle
+- [`recompile:module-churn`](#recompilemodule-churn) — entry re-imported many times in a dev session (resource-leak warning)
 - [`client-bundle:complete`](#client-bundlecomplete) — hydratable client bundle finished
 - [`island:error`](#islanderror) — an island errored
 - [`captcha:verify`](#captchaverify) — a `<MochiCaptcha>` submission was verified or rejected
@@ -37,6 +39,8 @@ Event names use a `namespace:action` convention. Every key is in the typed `Moch
 - [`image:store`](#imagestore), [`image:delete`](#imagedelete) — [`<Image>`](/docs/images/) cache activity
 - `image:cache-sweep` — aggregate counts per janitor sweep (see [Images](/docs/images/))
 - `cache:read`, `cache:revalidate` — see [Cache events](/docs/cache/#subscribing-to-cache-events)
+- `memory:pressure` — the OS reported low memory; fires before the cache drain so other subsystems can reclaim too (see [Cache](/docs/cache/#memory-pressure))
+- `cache:pressure` — the OS reported low memory and in-memory caches were drained (see [Cache](/docs/cache/#memory-pressure))
 
 ### Subscribing
 
@@ -392,6 +396,22 @@ Fires after the matching `recompile:start`, once the rebuild finishes and client
 | `pageCount`         | `number`                             | pages that were rebuilt                        |
 | `clientBundleCount` | `number`                             | `buildClientBundle()` invocations during cycle |
 | `durationMs`        | `number`                             | wall-clock ms for the whole cycle              |
+
+#### `recompile:module-churn`
+
+Fires once per dev session, when the entry has been re-imported `reloadCount` times (default 10). Each reload re-evaluates the whole first-party module graph, so a module-scoped resource is re-created and the old one orphaned — see [route-handler HMR](/docs/development-mode/#route-handler-hmr). `consoleLogger()` renders it as a `warn`-level `HMR` line; suppress that line with a [`consoleLogger:line`](/docs/extensions/#consoleloggerline) filter matching `source.name === 'recompile:module-churn'`.
+
+| Field         | Type     | Notes                                       |
+| ------------- | -------- | ------------------------------------------- |
+| `reloadCount` | `number` | entry re-imports so far this session (≥ 10) |
+
+```ts
+import { mochiEvents } from 'mochi-framework';
+
+mochiEvents.on('recompile:module-churn', ({ reloadCount }) => {
+  console.warn(`entry re-imported ${reloadCount}× — hold resources with pinGlobal()`);
+});
+```
 
 #### `client-bundle:complete`
 

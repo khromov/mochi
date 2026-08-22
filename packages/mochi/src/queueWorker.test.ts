@@ -212,4 +212,72 @@ describe('Mochi.worker()', () => {
       warn.mockRestore();
     }
   }, 20_000);
+
+  test('drains an in-flight job on shutdown so it completes instead of being failed and re-run', async () => {
+    const file = path.join(dataDir, 'worker-drain.sqlite');
+    const processed: number[] = [];
+    const inFlight = deferred<void>();
+    const queue = Mochi.queue<{ n: number }>('drain-jobs', {
+      storage: { sqlite: file },
+      pollingIntervalSeconds: 0.5,
+      process: async (job: MochiJob<{ n: number }>) => {
+        processed.push(job.data.n);
+        inFlight.resolve();
+        // Still running when shutdown begins; the drain must wait for it to finish.
+        await Bun.sleep(600);
+      },
+    });
+
+    const jobId = await queue.add({ n: 1 });
+    const worker = Mochi.worker({ queues: [queue] });
+    await worker.start();
+    await inFlight.promise;
+
+    // The global teardown path (what Mochi.stop()/SIGINT run) gracefully drains in-flight jobs.
+    await closeAllQueueResources();
+    expect(processed).toEqual([1]);
+
+    // Re-open the same store: the job settled as completed, not left in retry for a future worker to re-run.
+    await startQueueRuntime({ sqlite: file });
+    expect((await getBoss().getJobById('drain-jobs', jobId!))?.state).toBe('completed');
+  }, 20_000);
+
+  test('queueShutdownTimeout bounds the drain: a job outlasting it is left for retry, not blocked on', async () => {
+    const file = path.join(dataDir, 'worker-drain-timeout.sqlite');
+    const inFlight = deferred<void>();
+    const queue = Mochi.queue<{ n: number }>('drain-timeout', {
+      storage: { sqlite: file },
+      pollingIntervalSeconds: 0.5,
+      process: async (_job: MochiJob<{ n: number }>) => {
+        inFlight.resolve();
+        await Bun.sleep(3000);
+      },
+    });
+
+    const jobId = await queue.add({ n: 1 });
+    const worker = Mochi.worker({ queues: [queue], queueShutdownTimeout: 500 });
+    await worker.start();
+    await inFlight.promise;
+
+    // The cut handler's late completion write (~3s) once queried the closed store and errored; bun-boss
+    // (>=0.5.1) settles the cleanup before closing, so capture logger.error across the drain window and
+    // assert it stays quiet — this also guards that the pinned bun-boss actually carries that fix.
+    const errs: string[] = [];
+    const err = spyOn(logger, 'error').mockImplementation((msg?: unknown) => {
+      errs.push(String(msg));
+    });
+    try {
+      const start = Date.now();
+      await closeAllQueueResources();
+      // Shutdown honors the 500ms budget instead of waiting out the 3s handler (default would be 10s).
+      expect(Date.now() - start).toBeLessThan(2000);
+      await Bun.sleep(2800);
+    } finally {
+      err.mockRestore();
+    }
+    expect(errs.filter((m) => /not opened|connection is not open|closed/i.test(m))).toEqual([]);
+
+    await startQueueRuntime({ sqlite: file });
+    expect((await getBoss().getJobById('drain-timeout', jobId!))?.state).not.toBe('completed');
+  }, 20_000);
 });

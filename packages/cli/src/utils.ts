@@ -53,6 +53,15 @@ export function validatePackageName(name: string): string | null {
   return null;
 }
 
+/** A warning string when `version` (e.g. `Bun.version`) is below the recommended Bun 1.4, else `null`. */
+export function bunVersionWarning(version: string): string | null {
+  const [major, minor] = version.split('.').map((n) => Number.parseInt(n, 10));
+  if (major === undefined || Number.isNaN(major) || major > 1 || (major === 1 && (minor ?? 0) >= 4)) {
+    return null;
+  }
+  return `Bun ${version} detected — create-mochi recommends Bun 1.4 or newer. Run \`bun upgrade\` first.`;
+}
+
 export function isDirEmpty(dir: string): boolean {
   if (!fs.existsSync(dir)) {
     return true;

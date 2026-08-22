@@ -9,12 +9,13 @@ import { generateDocsBarrel } from './lib/generateDocsBarrel';
 import { generateBlogBarrel } from './lib/generateBlogBarrel';
 import { clearDocsCaches, DOCS_DIR } from './lib/docs';
 import { clearBlogCaches, BLOG_DIR } from './lib/blog';
+import { clearFeedCache } from './lib/feed';
 import { highlightCode } from './lib/highlight.server';
 import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes';
 import { handle as modeWatcherHandle } from './demos/mode-watcher/routes';
 import { handle as shotHandle } from './shot/routes';
 import { encodeDebugBarGlobals } from './lib/debugBarEncode';
-import { routes, queues } from './routes';
+import { routes, queues, cron } from './routes';
 
 const DEVELOPMENT = process.env.MODE === 'development';
 const IS_DOCKER = process.env.MOCHI_DOCKER === 'true';
@@ -42,6 +43,7 @@ if (process.env.MODE === 'development') {
   mochiEvents.setHandler('blog-cache-clear', 'file:change', async ({ path: changed }) => {
     if (changed.startsWith(blogDirPrefix) && changed.endsWith('.md')) {
       clearBlogCaches();
+      clearFeedCache();
       // The sitemap cache lives with the docs caches and includes blog URLs.
       clearDocsCaches();
       await generateBlogBarrel();
@@ -199,6 +201,9 @@ await Mochi.serve({
   additionalWatchPaths: ['../docs'],
   logger: { level: 'log' },
   proxy: { origin }, // TODO: This is a bit of an awkward way to set the allowed csrf domain...
+  // Served straight from disk as one Bun directory route for the /demos/static-dirs page
+  // (kept in sync with the example shown in ./src/demoIndex.ts).
+  staticDirs: { '/gallery': './images' },
   // Named image sizes used by the /demos/image* pages (kept in sync with the
   // example shown in ./src/demoIndex.ts).
   image: {
@@ -244,6 +249,7 @@ await Mochi.serve({
   },
   routes,
   queues,
+  cron,
 });
 
 logger.info('Server running at ' + origin);

@@ -69,14 +69,10 @@ git checkout -b chore/update-deps
 bun update
 ```
 
-**Workspace deps — one `bun update` per workspace.** As of Bun 1.3.14, neither `bun update --recursive` nor `bun update --filter='*'` actually updates workspace dependencies; they report "no changes" while `bun outdated` still lists everything. You must run `bun update` from inside each workspace directory:
+**Workspace deps.** `bun update --recursive` updates every workspace's `package.json`, not just the root — it rewrites the caret specs in each. Run it, then confirm against `bun outdated --filter='*'`:
 
 ```sh
-for p in cli demos docs minimal mochi mochi-rsvelte mochi-svelte-shaker minimal-rsvelte msgpackr-extract-stub shared site support video-animations; do
-  [ -d "packages/$p" ] || continue
-  echo "=== $p ==="
-  (cd packages/$p && bun update 2>&1 | grep -E '^\^|packages installed')
-done
+bun update --recursive
 ```
 
 **Never use `bun update --latest`.** It rewrites declared specs to the newest version regardless of carve-outs and blows through every exact pin.
