@@ -116,6 +116,12 @@ The differences that matter:
 
 Bun clamps each mount: an encoded separator (`%2F`), a traversal segment (`..`) and empty path segments are all rejected, and on Linux the file is opened with `openat2(RESOLVE_IN_ROOT)` so a symlink inside the directory cannot escape it.
 
+<Callout type="warning">
+
+A mount is a native Bun directory route, matched **before** Mochi's request pipeline — so your middleware never sees it. `handle` hooks, `filterResponseHeaders`, `transformPage`, rate limiting, CSRF, trailing-slash normalization and the `request` event all skip `/prefix/*`, and a miss returns Bun's bare 404 rather than your `errorPage`. If you need any of that — auth, custom headers, logging — serve those files through `publicDir` (which can be gated with `protection.protectFiles`) or your own `Mochi.api` / `Mochi.file` route instead.
+
+</Callout>
+
 ### Raw Bun.serve options
 
 `bun` is spread straight into the underlying `Bun.serve()`, so any option Mochi doesn't expose is reachable through it:

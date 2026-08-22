@@ -77,6 +77,7 @@ import { routes as deferInvalidationRoutes } from './demos/defer-invalidation/ro
 import { routes as shotRoutes } from './shot/routes';
 import { routes as serverPropsRoutes } from './demos/server-props/routes';
 import { routes as sharedStateRoutes } from './demos/shared-state/routes';
+import { routes as staticDirsRoutes } from './demos/static-dirs/routes';
 import { routes as streamsRoutes } from './demos/streams/routes';
 import { routes as tanstackTableRoutes } from './demos/tanstack-table/routes';
 import { routes as urlRoutes } from './demos/url/routes';
@@ -399,6 +400,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...serverPropsRoutes,
   ...shotRoutes,
   ...sharedStateRoutes,
+  ...staticDirsRoutes,
   ...streamsRoutes,
   ...tanstackTableRoutes,
   ...urlRoutes,

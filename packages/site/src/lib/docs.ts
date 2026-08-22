@@ -7,7 +7,7 @@ import { SITE_ROOT } from './siteRoot';
 import { loadPosts, getPost } from './blog';
 import { CHANGELOG_SLUG, CHANGELOG_TITLE, CHANGELOG_DESCRIPTION, getChangelogTxt } from './changelog';
 import { demos, type Demo } from './demos';
-import { isDemoIndex, stripImageConfig, type SourceSpec } from '../components/sourceUtils';
+import { isDemoIndex, stripImageConfig, stripStaticDirs, type SourceSpec } from '../components/sourceUtils';
 import { collectHeadings, type HastNode, type MdsvexRehypePlugin } from './markdown';
 import type { TocEntry } from './toc';
 
@@ -213,7 +213,7 @@ async function buildDemoLlmsTxt(slug: string, stripStyles = false): Promise<stri
     return null;
   }
   const parts: string[] = [`## Demo: ${slug}\n`];
-  for (const { label, path: rel, lang, showImageConfig } of specs) {
+  for (const { label, path: rel, lang, showImageConfig, showStaticDirs } of specs) {
     const abs = path.resolve(SITE_ROOT, rel);
     if (!existsSync(abs)) {
       // A declared source file that isn't on disk is almost always a typo'd path
@@ -222,8 +222,13 @@ async function buildDemoLlmsTxt(slug: string, stripStyles = false): Promise<stri
       continue;
     }
     let content = (await Bun.file(abs).text()).trimEnd();
-    if (isDemoIndex(rel) && !showImageConfig) {
-      content = stripImageConfig(content).trimEnd();
+    if (isDemoIndex(rel)) {
+      if (!showImageConfig) {
+        content = stripImageConfig(content).trimEnd();
+      }
+      if (!showStaticDirs) {
+        content = stripStaticDirs(content).trimEnd();
+      }
     }
     const fence = lang ?? (label.endsWith('.svelte') ? 'svelte' : 'ts');
     // Strip <style> blocks only from Svelte-fenced sources — never from .ts, where a

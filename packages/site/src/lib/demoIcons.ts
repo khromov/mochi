@@ -61,6 +61,7 @@ import FileKey from '@lucide/svelte/icons/file-key';
 import Table from '@lucide/svelte/icons/table';
 import SunMoon from '@lucide/svelte/icons/sun-moon';
 import CalendarClock from '@lucide/svelte/icons/calendar-clock';
+import FolderOpen from '@lucide/svelte/icons/folder-open';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -87,6 +88,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Real-time Streams': { icon: AudioWaveform, label: 'WebSocket + SSE streams' },
   'Background jobs with queues': { icon: Inbox, label: 'Embedded job queue + worker' },
   'Scheduled jobs with cron': { icon: CalendarClock, label: 'Recurring job on a cron schedule' },
+  'Static Directories': { icon: FolderOpen, label: 'Mount a directory tree with staticDirs' },
   'Server Islands': { icon: ComponentIcon, label: 'Deferred server island' },
   'Invalidate mochi:defer islands': { icon: RotateCw, label: 'Reload a server island on demand' },
   'Client-only Islands': { icon: MonitorSmartphone, label: 'No SSR — mounts in the browser' },
