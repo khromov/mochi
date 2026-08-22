@@ -10,7 +10,7 @@ export interface PostMetadata {
   description?: string;
   date: string;
   draft?: boolean;
-  /** Author slug, keyed into `authors.ts`. */
+  // Author slug, keyed into `authors.ts`.
   author: string;
 }
 
@@ -18,10 +18,9 @@ export interface PostEntry {
   slug: string;
   title: string;
   description?: string;
-  /** Publication date as 'YYYY-MM-DD'. */
   date: string;
   draft: boolean;
-  /** Author slug, keyed into `authors.ts`. */
+  // Author slug, keyed into `authors.ts`.
   author: string;
   filename: string;
   raw: string;

@@ -1,6 +1,6 @@
 // Previously .isolated.test.ts — all tests now run in isolated processes.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from './ComponentRegistry';
 import { mochiEvents } from '../events';
@@ -24,6 +24,12 @@ interface RegistryInternals {
 // stubbed compileAll() copies the entry into entryDeps so recompileChanged()
 // has something to walk.
 let seededDeps: Map<string, Set<string>>;
+
+// Fake entrypoints that never touch disk. Resolved because every registry key
+// is: on Windows path.resolve('/fake/x') is 'C:\\fake\\x', which a raw literal
+// would never match.
+const PAGE_A = path.resolve('/fake/PageA.svelte');
+const PAGE_B = path.resolve('/fake/PageB.svelte');
 
 describe('recompile* batches into one compileAll + one buildClientBundle per cycle', () => {
   let outDir: string;
@@ -53,7 +59,10 @@ describe('recompile* batches into one compileAll + one buildClientBundle per cyc
       }
     ).compileAll = async function (filenames: string[], opts: { force?: boolean } = {}): Promise<void> {
       compileAllCalls += 1;
-      const todo = opts.force ? [...new Set(filenames)] : [...new Set(filenames)].filter((f) => !internals.compiledComponents.has(f));
+      // Mirror the real compileAll(): every source key is resolved on the way
+      // in, so a relative registration and its absolute form are one entry.
+      const resolved = [...new Set(filenames.map((f) => path.resolve(f)))];
+      const todo = opts.force ? resolved : resolved.filter((f) => !internals.compiledComponents.has(f));
       lastCompileAllArgs = todo;
       if (todo.length === 0) {
         return;
@@ -103,14 +112,14 @@ describe('recompile* batches into one compileAll + one buildClientBundle per cyc
   });
 
   test('seeds the registry via one batched compileAll + bundles once', async () => {
-    await registry.compileAll(['/fake/PageA.svelte', '/fake/PageB.svelte']);
+    await registry.compileAll([PAGE_A, PAGE_B]);
     expect(compileAllCalls).toBe(1);
     expect(bundleCalls).toBe(1); // single trailing buildClientBundle for the cohort
-    expect(registry.getPageCount()).toBe(2);
+    expect(registry.getPageCount()).toBe(2); // stub-derived sanity precondition, not a real-compile claim
   });
 
   test('recompileAll re-runs the entire cohort in one compileAll and bundles once', async () => {
-    await registry.compileAll(['/fake/PageA.svelte', '/fake/PageB.svelte']);
+    await registry.compileAll([PAGE_A, PAGE_B]);
     expect(registry.getPageCount()).toBe(2);
 
     bundleCalls = 0;
@@ -130,7 +139,7 @@ describe('recompile* batches into one compileAll + one buildClientBundle per cyc
       expect(compileAllCalls).toBe(1); // one batched build, not N
       expect(bundleCalls).toBe(1); // smoking gun: would have been N without batching
       expect(observedBundleEvents).toBe(1);
-      expect(new Set(lastCompileAllArgs)).toEqual(new Set(['/fake/PageA.svelte', '/fake/PageB.svelte']));
+      expect(new Set(lastCompileAllArgs)).toEqual(new Set([PAGE_A, PAGE_B]));
     } finally {
       mochiEvents.off('client-bundle:complete', handler);
     }
@@ -157,9 +166,9 @@ describe('recompile* batches into one compileAll + one buildClientBundle per cyc
     // PageA imports a shared helper; PageB does not.
     const SHARED = '/fake/shared.ts';
     const STANDALONE = '/fake/standalone.ts';
-    seededDeps.set('/fake/PageA.svelte', new Set([SHARED]));
-    seededDeps.set('/fake/PageB.svelte', new Set([STANDALONE]));
-    await registry.compileAll(['/fake/PageA.svelte', '/fake/PageB.svelte']);
+    seededDeps.set(PAGE_A, new Set([SHARED]));
+    seededDeps.set(PAGE_B, new Set([STANDALONE]));
+    await registry.compileAll([PAGE_A, PAGE_B]);
     expect(registry.getPageCount()).toBe(2);
 
     bundleCalls = 0;
@@ -171,14 +180,14 @@ describe('recompile* batches into one compileAll + one buildClientBundle per cyc
     expect(summary.pages.size).toBe(1); // only PageA depends on shared.ts
     expect(summary.clientBundleCount).toBe(1);
     expect(compileAllCalls).toBe(1);
-    expect(lastCompileAllArgs).toEqual(['/fake/PageA.svelte']);
+    expect(lastCompileAllArgs).toEqual([PAGE_A]);
     expect(bundleCalls).toBe(1);
     expect(registry.getPageCount()).toBe(2); // PageB still cached
   });
 
   test('recompileChanged for an unknown path is a no-op', async () => {
-    seededDeps.set('/fake/PageA.svelte', new Set(['/fake/dep.ts']));
-    await registry.compileAll(['/fake/PageA.svelte']);
+    seededDeps.set(PAGE_A, new Set(['/fake/dep.ts']));
+    await registry.compileAll([PAGE_A]);
 
     bundleCalls = 0;
     compileAllCalls = 0;
@@ -192,56 +201,52 @@ describe('recompile* batches into one compileAll + one buildClientBundle per cyc
   });
 
   test('recompileChanged on the entry file itself rebuilds just that entry', async () => {
-    seededDeps.set('/fake/PageA.svelte', new Set());
-    seededDeps.set('/fake/PageB.svelte', new Set());
-    await registry.compileAll(['/fake/PageA.svelte', '/fake/PageB.svelte']);
+    seededDeps.set(PAGE_A, new Set());
+    seededDeps.set(PAGE_B, new Set());
+    await registry.compileAll([PAGE_A, PAGE_B]);
 
     bundleCalls = 0;
     compileAllCalls = 0;
 
-    const summary = await registry.recompileChanged('/fake/PageA.svelte');
+    const summary = await registry.recompileChanged(PAGE_A);
 
     expect(summary.pages.size).toBe(1);
     expect(compileAllCalls).toBe(1);
-    expect(lastCompileAllArgs).toEqual(['/fake/PageA.svelte']);
+    expect(lastCompileAllArgs).toEqual([PAGE_A]);
     expect(bundleCalls).toBe(1);
   });
 
   // Regression: real callers register pages with relative paths
-  // (`Mochi.page('./src/Site.svelte', ...)`), so `compiledComponents` /
-  // `entryDeps` are keyed by the relative form. recompileChanged must evict
-  // and recompile under the SAME key — otherwise the renderComponent path
-  // (which calls compile() with the original relative key on every request)
-  // gets a stale cache hit and SSR returns the previous module.
-  test('recompileChanged with a relative entry key still evicts and recompiles', async () => {
+  // (`Mochi.page('./src/Site.svelte', ...)`), so a registry that keyed
+  // `compiledComponents` / `entryDeps` by the caller's string could evict and
+  // recompile under a *different* key than renderComponent looks up, and SSR
+  // would keep serving the previous module. Every source key is resolved on the
+  // way in now, so the relative and absolute forms are the same entry.
+  test('recompileChanged reaches an entry registered with a relative path', async () => {
     const REL = './fake-rel/PageRel.svelte';
+    const ABS = path.resolve(REL);
     const DEP = path.resolve('./fake-rel/dep.ts');
-    seededDeps.set(REL, new Set([DEP]));
+    seededDeps.set(ABS, new Set([DEP]));
     await registry.compileAll([REL]);
 
     const internals = registry as unknown as RegistryInternals;
-    const beforeEntry = internals.compiledComponents.get(REL);
+    const beforeEntry = internals.compiledComponents.get(ABS);
     const beforeSize = internals.compiledComponents.size;
     expect(beforeEntry).toBeDefined();
 
     const summary = await registry.recompileChanged(DEP);
 
     // Public contract: pages are absolute (matches __mochi_page_entry).
-    expect(summary.pages).toEqual(new Set([path.resolve(REL)]));
+    expect(summary.pages).toEqual(new Set([ABS]));
 
-    // Smoking gun #1: the entry under REL must have been REPLACED, not left
-    // stale. Pre-fix, recompileChanged evicted+recompiled under the absolute
-    // path, leaving the original REL-keyed module untouched.
-    const afterEntry = internals.compiledComponents.get(REL);
+    // Smoking gun #1: the entry was REPLACED, not left stale.
+    const afterEntry = internals.compiledComponents.get(ABS);
     expect(afterEntry).toBeDefined();
     expect(afterEntry).not.toBe(beforeEntry);
 
-    // Smoking gun #2: no duplicate entry under the absolute form. Pre-fix,
-    // both REL (stale) and path.resolve(REL) (fresh) would be present.
+    // Smoking gun #2: the relative registration produced no second entry.
     expect(internals.compiledComponents.size).toBe(beforeSize);
-    if (REL !== path.resolve(REL)) {
-      expect(internals.compiledComponents.has(path.resolve(REL))).toBe(false);
-    }
+    expect(internals.compiledComponents.has(REL)).toBe(false);
   });
 
   // Race-window regression: pre-fix, recompileChanged deleted the cache entry
@@ -251,11 +256,11 @@ describe('recompile* batches into one compileAll + one buildClientBundle per cyc
   // that compileAll(force:true) overwrites in place; the old entry stays
   // valid until the new one swaps it via `set()`.
   test('compiledComponents entry stays defined throughout recompileChanged', async () => {
-    seededDeps.set('/fake/PageA.svelte', new Set());
-    await registry.compileAll(['/fake/PageA.svelte']);
+    seededDeps.set(PAGE_A, new Set());
+    await registry.compileAll([PAGE_A]);
 
     const internals = registry as unknown as RegistryInternals;
-    const beforeEntry = internals.compiledComponents.get('/fake/PageA.svelte');
+    const beforeEntry = internals.compiledComponents.get(PAGE_A);
     expect(beforeEntry).toBeDefined();
 
     // Replace the seeded compileAll stub with a gated version so we can
@@ -284,22 +289,105 @@ describe('recompile* batches into one compileAll + one buildClientBundle per cyc
       }
     };
 
-    const rebuild = registry.recompileChanged('/fake/PageA.svelte');
+    const rebuild = registry.recompileChanged(PAGE_A);
     // Let recompileChanged enter the gated compileAll call.
     await Promise.resolve();
     await Promise.resolve();
 
     // Pre-fix this would be `undefined` (clearEntry already deleted it).
-    expect(internals.compiledComponents.get('/fake/PageA.svelte')).toBeDefined();
+    expect(internals.compiledComponents.get(PAGE_A)).toBeDefined();
     // And it should still be the original module — not yet swapped.
-    expect(internals.compiledComponents.get('/fake/PageA.svelte')).toBe(beforeEntry);
+    expect(internals.compiledComponents.get(PAGE_A)).toBe(beforeEntry);
 
     release();
     await rebuild;
 
     // Post-rebuild: entry replaced by the new module.
-    const afterEntry = internals.compiledComponents.get('/fake/PageA.svelte');
+    const afterEntry = internals.compiledComponents.get(PAGE_A);
     expect(afterEntry).toBeDefined();
     expect(afterEntry).not.toBe(beforeEntry);
+  });
+});
+
+// Integration anchor for the stubbed suite above: exercises recompileChanged /
+// compileAll against the REAL Svelte + Bun.build pipeline so the stub's contract
+// assumptions (path resolution, cached-entry filtering, entryDeps seeding, one
+// trailing client bundle per cycle) stay tied to production behavior.
+describe('recompile* against the real compileAll', () => {
+  let dir: string;
+  let registry: ComponentRegistry;
+  let compileStarts: string[];
+  let bundleEvents: number;
+  let pageDep: string;
+  let pageSolo: string;
+  let sharedTs: string;
+
+  const onCompileStart = ({ path: p }: { path: string }) => {
+    compileStarts.push(p);
+  };
+  const onBundle = () => {
+    bundleEvents += 1;
+  };
+
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-recompile-real-'));
+    registry = new ComponentRegistry({ development: true, outDir: path.join(dir, '.mochi') });
+    sharedTs = path.join(dir, 'shared.ts');
+    pageDep = path.join(dir, 'PageDep.svelte');
+    pageSolo = path.join(dir, 'PageSolo.svelte');
+    writeFileSync(sharedTs, "export const label = 'from-shared';\n");
+    writeFileSync(path.join(dir, 'Widget.svelte'), '<button>widget</button>\n');
+    writeFileSync(
+      pageDep,
+      '<script lang="ts">\n' +
+        "  import { label } from './shared';\n" +
+        "  import Widget from './Widget.svelte';\n" +
+        '</script>\n\n<main>{label}<Widget mochi:hydrate /></main>\n',
+    );
+    writeFileSync(pageSolo, '<div>solo</div>\n');
+    compileStarts = [];
+    bundleEvents = 0;
+    mochiEvents.on('compile:start', onCompileStart);
+    mochiEvents.on('client-bundle:complete', onBundle);
+  });
+
+  afterEach(() => {
+    mochiEvents.off('compile:start', onCompileStart);
+    mochiEvents.off('client-bundle:complete', onBundle);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('recompileChanged walks the real dep graph and bundles once per cycle', async () => {
+    await registry.compileAll([pageDep, pageSolo]);
+    expect(new Set(compileStarts)).toEqual(new Set([pageDep, pageSolo]));
+    expect(bundleEvents).toBe(1); // one trailing bundle for the whole cohort
+
+    compileStarts = [];
+    bundleEvents = 0;
+
+    const summary = await registry.recompileChanged(sharedTs);
+    expect(summary.pages).toEqual(new Set([pageDep])); // PageSolo's real dep graph excludes shared.ts
+    expect(summary.clientBundleCount).toBe(1);
+    expect(compileStarts).toEqual([pageDep]);
+    expect(bundleEvents).toBe(1);
+
+    const noop = await registry.recompileChanged(path.join(dir, 'unrelated.ts'));
+    expect(noop.pages.size).toBe(0);
+    expect(noop.clientBundleCount).toBe(0);
+  });
+
+  test('relative and absolute registrations resolve to one cached entry', async () => {
+    const rel = path.relative(process.cwd(), pageSolo);
+    await registry.compileAll([rel]);
+    expect(compileStarts).toEqual([pageSolo]); // emitted paths are resolved absolute
+
+    compileStarts = [];
+    await registry.compileAll([pageSolo]);
+    expect(compileStarts).toEqual([]); // cached under the resolved key → filtered out
+
+    // The entry's own resolved path is in its dep set, so entry-as-changed-path rebuilds it.
+    const summary = await registry.recompileChanged(pageSolo);
+    expect(summary.pages).toEqual(new Set([pageSolo]));
+    expect(compileStarts).toEqual([pageSolo]);
   });
 });

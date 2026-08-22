@@ -1,6 +1,7 @@
+import type { Server } from 'bun';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { toPosixPath } from '../utils';
+import { toPosixPath, relForDisplay } from '../utils';
 import { logger } from '../utils/log';
 import { applyFilter } from '../extensions';
 import type { BunRouteValue } from '../types';
@@ -26,72 +27,80 @@ export function isExcludedDotPath(relative: string): boolean {
 }
 
 /**
- * Map a public file's URL path (the human-readable map key, e.g. `/a b.txt`)
- * to the route key it must be registered under. Bun's router matches against
- * the percent-encoded request pathname, so `/a b.txt` would match nothing —
- * the browser sends `/a%20b.txt`. encodeURI mirrors that path-encoding (space →
- * %20, while `/` and path-legal chars like `,`/`()` are preserved), so the key
- * matches the incoming request without regressing already-legal names. Every
- * site that registers public files as Bun routes MUST go through this so the
- * encoding can't drift between the startup and dev-watcher-reload paths.
+ * Map a public file's human-readable URL path (`/a b.txt`) to the route key it registers under. Bun's router matches the
+ * percent-encoded request pathname the browser sends (`/a%20b.txt`), and `encodeURI` mirrors that encoding while
+ * preserving `/` and path-legal chars. Every registration site MUST go through this, so the encoding can't drift
+ * between the startup and dev-watcher-reload paths.
  */
 export function publicRouteKey(urlPath: string): string {
   return encodeURI(urlPath);
 }
 
 /**
- * Scan a directory for static public assets. Returns a map of
- * URL path (e.g. `/img/logo.png`) → disk path, using forward slashes on all
- * platforms. Dotfiles and files inside dot-directories are skipped, except
- * for files under `.well-known/` which are served. Returns an empty map
- * if the directory does not exist.
+ * Scan a directory for static public assets, returning URL path → disk path with forward slashes on every platform.
+ * Dotfiles and dot-directory contents are skipped apart from `.well-known/`, and a missing directory yields an empty map.
  */
 export async function scanPublicDir(dir: string): Promise<Map<string, string>> {
   if (!existsSync(dir)) {
     return new Map();
   }
+  // Pin the base to absolute while cwd is still valid, so `Bun.file()` can't re-resolve a relative disk path against a
+  // later-changed or deleted cwd and turn every static file into a 404.
+  const absDir = path.resolve(dir);
   const result = new Map<string, string>();
   const glob = new Bun.Glob('**/*');
-  // Bun.Glob yields backslash separators on Windows, so normalize to forward
-  // slashes before use: the URL key must be `/a/b` (not `/a\b`) and
-  // isExcludedDotPath() splits on `/`. The disk value goes back through
-  // path.join to pick up native separators.
+  // Bun.Glob yields backslash separators on Windows, so normalizing first keeps the URL key at `/a/b` and lets
+  // `isExcludedDotPath()` split on `/`; the disk value goes back through `path.join` for native separators.
   for await (const relative of glob.scan({ cwd: dir, dot: true })) {
     const rel = toPosixPath(relative);
     if (isExcludedDotPath(rel)) {
       continue;
     }
-    result.set('/' + rel, path.join(dir, rel));
+    result.set('/' + rel, path.join(absDir, rel));
   }
   return result;
 }
 
 /**
- * Resolve the public files to serve, identically for the startup and
- * dev-watcher-reload paths so they can't drift. Dev mode scans the public dir
- * live; production reads the prebuilt manifest map (copied so the
- * `publicDir:scan` filter can't mutate the registry's own copy). Both run the
- * filter so user-registered virtual entries appear the same way every time.
+ * Resolve the public files to serve, shared by the startup and dev-watcher-reload paths so they can't drift. Every mode
+ * scans the directory live, since the build copies nothing into the out-dir and `publicDir` is where these bytes live.
+ * `development` survives as filter context for extensions to branch on.
  */
-export async function resolvePublicFiles(opts: { publicDir: string; development: boolean; prebuilt?: Map<string, string> }): Promise<Map<string, string>> {
-  const source = opts.development ? await scanPublicDir(opts.publicDir) : new Map(opts.prebuilt ?? []);
+export async function resolvePublicFiles(opts: { publicDir: string; development: boolean }): Promise<Map<string, string>> {
+  const source = await scanPublicDir(opts.publicDir);
   return applyFilter('publicDir:scan', source, { publicDir: opts.publicDir, development: opts.development });
 }
 
 /**
- * Register public files as Bun routes under their encoded keys, skipping any
- * URL already claimed by a user route (user routes always win). Shared by the
- * startup and dev-watcher-reload paths so the encoding and conflict rules stay
- * in lockstep — registering under a raw key here is what made spaced filenames
- * 404 until this was centralized.
+ * Wraps serving a public file (used by protection mode): either short-circuit with a blocked Response, or call `serve`
+ * and decorate its result — a gate that read the clearance cookie must add `Vary: Cookie` to the served file too, or a
+ * shared cache would replay a cleared visitor's copy to unverified ones.
  */
-export function registerPublicRoutes(routes: Record<string, BunRouteValue>, files: Map<string, string>): void {
+export type PublicRouteGuard = (req: Request, server: Server<undefined>, serve: () => Promise<Response>) => Promise<Response>;
+
+/**
+ * Register public files as Bun routes under their encoded keys, skipping any URL a user route already claims. Shared by
+ * the startup and dev-watcher-reload paths so the encoding and conflict rules stay in lockstep — registering under a raw
+ * key here is what made spaced filenames 404 before this was centralized.
+ */
+export function registerPublicRoutes(routes: Record<string, BunRouteValue>, files: Map<string, string>, guard?: PublicRouteGuard): void {
   for (const [urlPath, diskPath] of files) {
     const routeKey = publicRouteKey(urlPath);
     if (routeKey in routes) {
-      logger.warn(`Public file "${diskPath}" skipped: URL "${urlPath}" is already registered as a route.`);
+      logger.warn(`Public file "${relForDisplay(diskPath)}" skipped: URL "${urlPath}" is already registered as a route.`);
       continue;
     }
-    routes[routeKey] = Bun.file(diskPath);
+    // A guarded file becomes a handler route: static BunFile values can't run the check. The file re-checks existence so
+    // a deletion 404s instead of surfacing Bun.file's lazy ENOENT as a 500.
+    routes[routeKey] = guard
+      ? (req: Request, server: Server<undefined>): Promise<Response> =>
+          guard(req, server, async () => {
+            const file = Bun.file(diskPath);
+            if (!(await file.exists())) {
+              return new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+            }
+            return new Response(file);
+          })
+      : Bun.file(diskPath);
   }
 }

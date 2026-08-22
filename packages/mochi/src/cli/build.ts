@@ -3,71 +3,52 @@ import { ComponentRegistry, formatCompileErrors } from '../compiler/ComponentReg
 import { buildInlineWebComponent } from '../compiler/buildInlineWebComponent';
 import { DEFAULT_ERROR_PAGE_PATH } from '../runtime/errors';
 import { CLIENT_STATS_COMPONENT } from '../dev/clientStatsRoutes';
+import { PROTECTION_SHELL_COMPONENT } from '../protection/config';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from '../types';
-import type { MarkdownConfig, MochiBarrelWarningOptions, MochiRouteValue, MochiSvelteShakerOptions } from '../types';
+import type { MarkdownConfig, MochiBarrelWarningOptions, MochiFontOptions, MochiRouteValue, MochiSvelteShakerOptions } from '../types';
+import type { MochiProtectionOptions } from '../protection/types';
+import type { MochiSvelteCompiler } from '../compiler/svelteCompilerBackend';
 import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { scanPublicDir, publicRouteKey } from '../runtime/publicDir';
+import { scanEmailTemplates } from '../email/templates';
+import { encodeSourcePath } from '../compiler/manifestPaths';
 import { loadSvelteConfig } from '../compiler/svelteConfig';
 import { logger, setLogLevel } from '../utils/log';
 import { consoleLogger } from '../dev/consoleLogger';
 import { mochiEvents } from '../events';
+import type { MochiCompileCompleteEvent } from '../events';
 import { styleText } from 'node:util';
 import prettyBytes from '../vendor/pretty-bytes';
-import { collectImageResources, printResourceTree } from './resourceReport';
+import { collectFontResources, collectImageResources, mergeResourceRows, printResourceTree } from './resourceReport';
 
 export interface MochiBuildOptions {
   routes: Record<string, MochiRouteValue>;
   development?: boolean;
-  /**
-   * Base directory for build output (cwd-relative). Default: `./.mochi`.
-   * A `--dev` build nests under `<outDir>/dev`; production writes to the root.
-   */
+  /** Base directory for build output (cwd-relative). Default: `./.mochi`. A `--dev` build nests under `<outDir>/dev`; production writes to the root. */
   outDir?: string;
   /** Static assets directory (cwd-relative). Default: `./public`. */
   publicDir?: string;
-  /**
-   * URL prefix under which framework client assets and the server island
-   * endpoint are served. Baked into the prebuilt manifest so the runtime
-   * server uses the same value. Default: `/_mochi`.
-   */
+  /** Baked into the prebuilt manifest so the runtime server uses the same value. Default: `/_mochi`. See `MochiServeOptions['assetPrefix']`. */
   assetPrefix?: string;
-  /**
-   * Path to a Svelte config file (cwd-relative or absolute). Default:
-   * `./svelte.config.js`. The file's `compilerOptions` are merged into
-   * Mochi's defaults; missing file → defaults only.
-   */
+  /** Path to a Svelte config file (cwd-relative or absolute). Default: `./svelte.config.js`. See `MochiServeOptions['svelteConfigPath']`. */
   svelteConfigPath?: string;
-  /**
-   * Dependency-injected markdown (`.md` / `.svx`) support. Mirror the value
-   * passed to `Mochi.serve({ markdown })` so the prebuild and the runtime
-   * use the same pipeline. Omit to leave markdown unhandled.
-   */
+  /** Mirror the value passed to `Mochi.serve({ svelteCompiler })`. Default: `'svelte'`. See `MochiServeOptions['svelteCompiler']`. */
+  svelteCompiler?: MochiSvelteCompiler;
+  /** Mirror the value passed to `Mochi.serve({ markdown })` so the prebuild and the runtime share one pipeline. Omit to leave markdown unhandled. See `MochiServeOptions['markdown']`. */
   markdown?: MarkdownConfig;
-  /**
-   * Run the whole-program svelte-shaker pass before compiling. Mirror the value
-   * passed to `Mochi.serve({ optimize })` so the prebuilt manifest and the
-   * runtime agree. Default: `false`.
-   */
+  /** Mirror the value passed to `Mochi.serve({ optimize })` so the prebuilt manifest and the runtime agree. Default: `false`. See `MochiServeOptions['optimize']`. */
   optimize?: boolean | MochiSvelteShakerOptions;
-  /**
-   * Heavy barrel-import warning. Mirror the value passed to `Mochi.serve({ barrelWarnings })`
-   * so the build honors the same silencing. In a build the offenders are collapsed into one
-   * grouped summary line. Default: enabled. See `MochiServeOptions['barrelWarnings']`.
-   */
+  /** Mirror the value passed to `Mochi.serve({ barrelWarnings })`; a build collapses offenders into one grouped summary line. Default: enabled. See `MochiServeOptions['barrelWarnings']`. */
   barrelWarnings?: boolean | MochiBarrelWarningOptions;
-  /**
-   * Path to a custom error page component. Mirror the value passed to
-   * `Mochi.serve({ errorPage })` so it lands in the manifest and the runtime
-   * skips compiling it at startup. Default: Mochi's built-in error page.
-   */
+  /** Mirror the value passed to `Mochi.serve({ fonts })` so the prebuilt CSS and extracted font files match the runtime. See `MochiServeOptions['fonts']`. */
+  fonts?: MochiFontOptions;
+  /** Mirror the value passed to `Mochi.serve({ errorPage })` so it lands in the manifest and the runtime skips compiling it at startup. Default: Mochi's built-in error page. */
   errorPage?: string;
-  /**
-   * Print the emitted-resources list (local image imports). Mirror the value
-   * passed to `Mochi.serve({ build: { resources } })`. The summary line keeps
-   * its asset count either way. Default: enabled.
-   */
+  /** Mirror the value passed to `Mochi.serve({ build: { resources } })`. Default: enabled. See `MochiBuildReportOptions['resources']`. */
   resources?: boolean;
+  /** Mirror the value passed to `Mochi.serve({ protection })` so the interstitial page prebuilds into the manifest. Default: disabled. See `MochiServeOptions['protection']`. */
+  protection?: MochiProtectionOptions;
 }
 
 type RouteKind = 'page' | 'api' | 'ws' | 'sse';
@@ -104,9 +85,14 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     clientBundleCount += 1;
     clientBundleMs += durationMs;
   };
+  const compileStats = new Map<string, { ssrSizeBytes: number; hydratableCount: number; serverIslandCount: number }>();
+  const onCompileComplete = ({ path: p, ssrSizeBytes, hydratableCount, serverIslandCount }: MochiCompileCompleteEvent) => {
+    compileStats.set(p, { ssrSizeBytes, hydratableCount, serverIslandCount });
+  };
   // Removed in the trailing finally — build() runs in-process from tests, so a
   // leaked listener would survive into subsequent builds in the same process.
   mochiEvents.on('client-bundle:complete', onClientBundle);
+  mochiEvents.on('compile:complete', onCompileComplete);
   try {
     const development = options.development ?? false;
     const baseOutDir = options.outDir ?? './.mochi';
@@ -121,24 +107,21 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     mkdirSync(path.join(outDir, 'svelte-client'), { recursive: true });
     mkdirSync(path.join(outDir, 'svelte-css'), { recursive: true });
 
-    // Kick off the compile-independent work now so it overlaps the compile
-    // phases; both promises are awaited before the manifest. The `.catch(() => {})`
-    // guards only mark a rejection as handled in case compileAll throws first —
-    // the real error still surfaces at the trailing `await`. `timed` wraps the
-    // work itself (not the trailing await), so the phase line reports each
-    // phase's real duration rather than the residual wait after the overlap.
+    // Started now so it overlaps the compile phases, and awaited before the manifest. The `.catch(() => {})` guard only
+    // marks a rejection handled in case compileAll throws first; the real error still surfaces at the trailing `await`.
+    // `timed` wraps the work rather than that await, so the phase line reports real duration, not residual wait.
     const serverIslandScriptPromise = timed('island-script', () => buildInlineWebComponent('./web-components/ServerIsland.ts'));
     serverIslandScriptPromise.catch(() => {});
-    // Copy publicDir into <outDir>/public and build the URL→disk map. First
-    // ensure no public file collides with a user-declared route, so deploying
-    // never silently drops assets.
-    const publicPipelinePromise = timed('public', async () => {
+    // The runtime serves static files straight from publicDir in every mode, so all the build adds is proof that no
+    // public file shadows a declared route and a deploy silently drops an asset. The runtime's own
+    // `registerPublicRoutes` check stays warn-and-skip, covering the case this one can't — a file dropped into publicDir
+    // after the build. Awaited inline, since a glob with no copy fails a collision in milliseconds.
+    const publicFileCount = await timed('public', async () => {
       const publicSrc = await scanPublicDir(publicDir);
       const conflicts: string[] = [];
       for (const urlPath of publicSrc.keys()) {
-        // Runtime registers public files under the percent-encoded `publicRouteKey`,
-        // so a route declared in encoded form (e.g. `/a%20b.txt`) would collide there
-        // but slip past a raw-key check. Compare both forms.
+        // The runtime registers public files under the percent-encoded `publicRouteKey`, so a route declared encoded
+        // (`/a%20b.txt`) collides there while slipping past a raw-key check — hence comparing both forms.
         if (urlPath in options.routes || publicRouteKey(urlPath) in options.routes) {
           conflicts.push(urlPath);
         }
@@ -150,23 +133,8 @@ export async function build(options: MochiBuildOptions): Promise<void> {
             `\nRemove the file from ${publicDir} or rename the route.`,
         );
       }
-      const publicFiles = new Map<string, string>();
-      // Copy in bounded batches — public/ can hold tens of thousands of files,
-      // and an unbounded Promise.all over Bun.write would exhaust file descriptors.
-      const copyEntries = [...publicSrc];
-      const COPY_BATCH = 64;
-      for (let i = 0; i < copyEntries.length; i += COPY_BATCH) {
-        await Promise.all(
-          copyEntries.slice(i, i + COPY_BATCH).map(async ([urlPath, srcPath]) => {
-            const destPath = path.join(outDir, 'public', ...urlPath.split('/').filter(Boolean));
-            await Bun.write(destPath, Bun.file(srcPath));
-            publicFiles.set(urlPath, destPath);
-          }),
-        );
-      }
-      return publicFiles;
+      return publicSrc.size;
     });
-    publicPipelinePromise.catch(() => {});
 
     const svelteConfig = await loadSvelteConfig(options.svelteConfigPath);
     const registry = new ComponentRegistry({
@@ -174,29 +142,28 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       outDir,
       assetPrefix: options.assetPrefix,
       svelteConfig,
+      svelteCompiler: options.svelteCompiler,
       markdown: options.markdown,
       optimize: options.optimize,
       barrelWarnings: options.barrelWarnings,
+      fonts: options.fonts,
       // Group offenders into one summary for the one-shot production build; a
       // `--dev` build keeps the dev server's immediate per-package lines.
       bufferBarrelWarnings: !development,
     });
     await timed('shake', () => registry.prepareShake());
 
-    // Compile all Mochi.page() handlers in one Bun.build so transitive deps
-    // (devalue, mochi-framework internals) emit as shared chunks alongside the
-    // per-page `.server.js` files instead of being inlined into every page.
+    // One `Bun.build` for every `Mochi.page()` handler emits transitive deps as shared chunks alongside the per-page
+    // `.server.js` files instead of inlining them into each page.
     const compiledPages: string[] = [];
-    // Seed with the framework components that Mochi.serve() otherwise compiles at
-    // startup (the error page + the client-stats admin page). Baking them into the
-    // manifest makes the boot-time compileAll a no-op in production.
-    const ssrEntrypoints: string[] = [options.errorPage ?? DEFAULT_ERROR_PAGE_PATH, CLIENT_STATS_COMPONENT];
+    // Seeding the framework components `Mochi.serve()` would otherwise compile at startup — the error page and the
+    // client-stats admin page — makes the boot-time compileAll a no-op in production.
+    const errorPagePath = options.errorPage ?? DEFAULT_ERROR_PAGE_PATH;
+    const ssrEntrypoints: string[] = [errorPagePath, CLIENT_STATS_COMPONENT];
+    if (options.protection?.enabled === true) {
+      ssrEntrypoints.push(options.protection.page ?? PROTECTION_SHELL_COMPONENT);
+    }
     const allRoutes: RouteEntry[] = [];
-
-    const compileStats = new Map<string, { ssrSizeBytes: number; hydratableCount: number }>();
-    mochiEvents.on('compile:complete', ({ path: p, ssrSizeBytes, hydratableCount }) => {
-      compileStats.set(p, { ssrSizeBytes, hydratableCount });
-    });
 
     for (const [pattern, handler] of Object.entries(options.routes)) {
       if (isMochiPage(handler)) {
@@ -212,6 +179,11 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       }
     }
 
+    // Email templates are reachable only through `Mochi.email({ component })` at runtime, so no import graph leads here
+    // from a route. Walking the conventional directory is what keeps them out of a cold compile on the first send.
+    const emailTemplates = scanEmailTemplates();
+    ssrEntrypoints.push(...emailTemplates);
+
     if (ssrEntrypoints.length > 0) {
       await timed('pages', () => registry.compileAll(ssrEntrypoints, { deferClientBundle: true }));
     }
@@ -221,20 +193,47 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       throw new Error(`[mochi:build] ${formatCompileErrors(compileErrors)}`);
     }
 
-    // Precompile server islands (mochi:defer) as standalone SSR modules so the
-    // production runtime never compiles on a request path. Otherwise the first
-    // fetch of each deferred island triggers an on-demand compile at runtime
-    // (registry.compile in the server-island endpoint). Discovery is eager — a
-    // `mochi:defer` island's import stays in its compiled source (only the
-    // markup usage is rewritten), so compiling a page transitively resolves
-    // every island it references. If eager discovery is ever defeated (e.g. a
-    // `mochi:defer` target resolved through something other than a static
-    // import), the island simply won't be in the manifest — the server-island
-    // endpoint in Mochi.ts warns and falls back to an on-demand compile rather
-    // than throwing here.
+    // The pass above compiled every one of these, so a missing stat is a framework regression rather than anything the
+    // user did — throwing keeps it loud instead of silently disarming both island guards below.
+    const emailStats = emailTemplates.map((file) => {
+      const stats = compileStats.get(path.resolve(file));
+      if (!stats) {
+        throw new Error(`[mochi:build] no compile stats for email template ${file} — its island guards can't run.`);
+      }
+      return { file, ...stats };
+    });
+
+    // Until the build compiled these, an island in an email template surfaced only as a render-time throw on the first
+    // send. Now that they're in the bundle it would also emit client JS no email client can run, so fail here instead.
+    // Mirrors renderStatic()'s hydratable guard, which is import-graph based and fires regardless of props.
+    const emailWithIslands = emailStats.filter((s) => s.hydratableCount > 0).map((s) => s.file);
+    if (emailWithIslands.length > 0) {
+      throw new Error(
+        `[mochi:build] Email templates can't contain islands:\n` +
+          emailWithIslands.map((f) => `  - ${f}`).join('\n') +
+          `\nmochi:hydrate* / mochi:clientOnly need client JS, which an email can't run — render the content inline instead.`,
+      );
+    }
+
+    // Stricter than renderStatic()'s own server-island guard, which is post-render and greps the output for the
+    // placeholder, so it lets through a `mochi:defer` behind a branch that never renders. The import graph catches that
+    // one too — an email template has no business referencing a server island at all.
+    const emailWithServerIslands = emailStats.filter((s) => s.serverIslandCount > 0).map((s) => s.file);
+    if (emailWithServerIslands.length > 0) {
+      throw new Error(
+        `[mochi:build] Email templates can't contain server islands:\n` +
+          emailWithServerIslands.map((f) => `  - ${f}`).join('\n') +
+          `\nmochi:defer* loads over a follow-up request an email can't make — render the content inline instead.`,
+      );
+    }
+
+    // Precompiling `mochi:defer` islands as standalone SSR modules keeps the production runtime off the compile path,
+    // which the first fetch of each deferred island would otherwise trigger. Discovery is eager because a
+    // `mochi:defer` island's import survives in its compiled source — only the markup usage is rewritten — so compiling
+    // a page transitively resolves every island it references. Anything eager discovery misses just stays out of the
+    // manifest, and the server-island endpoint warns and falls back to an on-demand compile.
     const islandPaths = [...new Set(registry.getServerIslandPaths().values())];
     if (islandPaths.length > 0) {
-      logger.info(`[mochi:build] precompiling ${islandPaths.length} server island(s): ${islandPaths.map((p) => path.basename(p)).join(', ')}`);
       await timed('islands', () => registry.compileAll(islandPaths, { deferClientBundle: true }));
       compileErrors = registry.getErrors();
       if (compileErrors.length > 0) {
@@ -251,13 +250,22 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     registry.flushBarrelWarnings();
 
     allRoutes.sort((a, b) => a.pattern.localeCompare(b.pattern, undefined, { numeric: true }));
-    printRouteTree(allRoutes, compileStats);
+    printBuildTree({
+      routes: allRoutes,
+      errorPage: errorPagePath,
+      emails: emailStats,
+      // Sorted by name, not by the map's compile order, so a rebuild of unchanged sources prints an identical tree.
+      islands: [...registry.getServerIslandPaths()].sort(([a], [b]) => a.localeCompare(b)),
+      assetPrefix: registry.assetPrefix,
+      stats: compileStats,
+    });
 
     // After finalizeClientBundle() above, so assets the client pass emitted are
     // in the map too (both passes share it, keyed by served URL).
     const imageAssets = registry.getLocalImageAssets();
+    const fontAssets = registry.getFontAssets();
     if (options.resources !== false) {
-      printResourceTree(collectImageResources(imageAssets.values()));
+      printResourceTree(mergeResourceRows(collectImageResources(imageAssets.values()), collectFontResources(fontAssets.values())));
     }
 
     // Clean up intermediate .raw.css files
@@ -267,12 +275,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       rmSync(path.join(cssDir, raw));
     }
 
-    const publicFiles = await publicPipelinePromise;
-    registry.setPublicFiles(publicFiles);
-
-    // Prebuilt (started before compilation) framework ServerIsland inline
-    // web-component script — the production runtime loads it from disk instead
-    // of running Bun.build at boot.
+    // Prebuilt so the production runtime loads it from disk instead of running `Bun.build` at boot.
     const serverIslandScriptPath = path.join(outDir, 'server-island.js');
     const serverIslandJs = await serverIslandScriptPromise;
     await Bun.write(serverIslandScriptPath, serverIslandJs);
@@ -281,18 +284,23 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     // Write manifest
     const manifestPath = path.join(outDir, 'manifest.json');
     const manifest = registry.toManifest();
+    // Recorded here rather than in `toManifest()`, since the registry holds no public files: this is the build's own
+    // count, and the only evidence at boot that static files existed when it ran.
+    manifest.publicFileCount = publicFileCount;
     await Bun.write(manifestPath, JSON.stringify(manifest, null, 2));
 
     const clientFileCount = Object.keys(manifest.clientFiles).length;
-    const publicFileCount = publicFiles.size;
     const phaseSummary = phases.map((p) => `${p.name} ${formatDuration(p.ms)}`).join(' · ');
     logger.info(`build: phases — ${phaseSummary} (client bundle ×${clientBundleCount}, ${formatDuration(clientBundleMs)})`);
     const elapsed = formatDuration(performance.now() - startedAt);
+    const emailSummary = emailTemplates.length > 0 ? `, ${emailTemplates.length} email template(s)` : '';
+    const fontSummary = fontAssets.size > 0 ? `, ${fontAssets.size} font(s)` : '';
     logger.info(
-      `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s), ${imageAssets.size} image asset(s). Manifest written to ${manifestPath}`,
+      `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s), ${imageAssets.size} image asset(s)${fontSummary}${emailSummary}. Manifest written to ${manifestPath}`,
     );
   } finally {
     mochiEvents.off('client-bundle:complete', onClientBundle);
+    mochiEvents.off('compile:complete', onCompileComplete);
   }
 }
 
@@ -329,6 +337,12 @@ function pageSymbol(hyd: number | null): string {
   return hyd != null && hyd > 0 ? styleText('green', '●') : styleText('cyan', '○');
 }
 
+// Same full/empty distinction as `pageSymbol`, in the server island's own colour: a server island is a render of its
+// own, so it can carry hydratable children just like a page can.
+function serverIslandSymbol(hyd: number | null): string {
+  return styleText('magenta', hyd != null && hyd > 0 ? '◐' : '○');
+}
+
 function kindSymbol(kind: Exclude<RouteKind, 'page'>): string {
   switch (kind) {
     case 'api':
@@ -340,50 +354,126 @@ function kindSymbol(kind: Exclude<RouteKind, 'page'>): string {
   }
 }
 
-function printRouteTree(routes: RouteEntry[], stats: Map<string, { ssrSizeBytes: number; hydratableCount: number }>): void {
-  if (routes.length === 0) {
+interface TreeRow {
+  symbol: string;
+  /** Rendered with `:param` segments highlighted, so it must stay plain text until print time. */
+  label: string;
+  hyd: number | null;
+  ssr: string | null;
+}
+
+interface TreeGroup {
+  heading: string;
+  rows: TreeRow[];
+}
+
+function statRow(symbol: string, label: string, stats: BuildTreeInput['stats'], componentPath: string | undefined): TreeRow {
+  // `compile:complete` reports resolved absolute paths; route registrations and
+  // `errorPage` are whatever the user wrote (usually './src/X.svelte').
+  const s = componentPath ? stats.get(path.resolve(componentPath)) : undefined;
+  return { symbol, label, hyd: s?.hydratableCount ?? null, ssr: s ? prettyBytes(s.ssrSizeBytes) : null };
+}
+
+interface BuildTreeInput {
+  routes: RouteEntry[];
+  /** As passed to `Mochi.serve({ errorPage })`, or Mochi's built-in when unset — either way it lands in the manifest. */
+  errorPage: string;
+  emails: { file: string; ssrSizeBytes: number }[];
+  /** `[islandName, resolvedPath]`, as `ComponentRegistry.getServerIslandPaths()` records them. */
+  islands: [string, string][];
+  assetPrefix: string;
+  stats: Map<string, { ssrSizeBytes: number; hydratableCount: number }>;
+}
+
+/**
+ * Every SSR entrypoint the build produced, as one connected list: routes, then the error page, email templates, and
+ * server islands. The trailing groups are separated because no route reaches them — they render on a throw, on a send,
+ * and on a fetch of their own endpoint — but they share the column widths and the legend so the whole thing reads as a
+ * single report.
+ */
+function printBuildTree({ routes, errorPage, emails, islands, assetPrefix, stats }: BuildTreeInput): void {
+  const routeRows = routes.map(({ pattern, kind, componentPath }) => {
+    const row = statRow('', pattern, stats, componentPath);
+    // A page's symbol depends on its hydratable count, so it can only be picked once the stats lookup has resolved.
+    return { ...row, symbol: kind === 'page' ? pageSymbol(row.hyd) : kindSymbol(kind), kind };
+  });
+
+  const groups: TreeGroup[] = [{ heading: 'Route', rows: routeRows }];
+  groups.push({ heading: 'Error page', rows: [statRow(styleText('yellow', '⚠'), encodeSourcePath(errorPage), stats, errorPage)] });
+  if (emails.length > 0) {
+    groups.push({
+      heading: 'Email template',
+      // `hyd: null` renders as `-` rather than `0`: an island in a template fails the build, so the column can't apply.
+      rows: emails.map((e) => ({ symbol: styleText('cyan', '✉'), label: e.file, hyd: null, ssr: prettyBytes(e.ssrSizeBytes) })),
+    });
+  }
+  // Labelled by endpoint rather than by file: the name is what the browser fetches, and two islands can share a source
+  // file (named exports) while each keeps its own URL.
+  const islandRows = islands.map(([name, resolvedPath]) => {
+    const row = statRow('', `${assetPrefix}/island/${name}`, stats, resolvedPath);
+    return { ...row, symbol: serverIslandSymbol(row.hyd) };
+  });
+  if (islandRows.length > 0) {
+    groups.push({ heading: 'Server island', rows: islandRows });
+  }
+
+  const allRows = groups.flatMap((g) => g.rows);
+  if (allRows.length === 0) {
     return;
   }
 
-  const rows = routes.map(({ pattern, kind, componentPath }) => {
-    const s = componentPath ? stats.get(componentPath) : undefined;
-    return { pattern, kind, hyd: s?.hydratableCount ?? null, ssr: s ? prettyBytes(s.ssrSizeBytes) : null };
-  });
-
-  const patternWidth = Math.max('Route'.length, ...rows.map((r) => r.pattern.length));
+  const labelWidth = Math.max(...groups.map((g) => g.heading.length), ...allRows.map((r) => r.label.length));
   const islandsWidth = 'islands'.length;
-  const bundleWidth = Math.max('bundle'.length, ...rows.map((r) => r.ssr?.length ?? 0));
+  const bundleWidth = Math.max('bundle'.length, ...allRows.map((r) => r.ssr?.length ?? 0));
 
-  // "  ┌ ● " = 6 chars — header indent matches
-  console.log(styleText('dim', `      ${'Route'.padEnd(patternWidth + 2)}  ${'islands'.padStart(islandsWidth)}  ${'bundle'.padStart(bundleWidth)}`));
+  const n = allRows.length;
+  let i = 0;
+  for (const [groupIndex, group] of groups.entries()) {
+    if (groupIndex === 0) {
+      // "  ┌ ● " = 6 chars — header indent matches
+      console.log(styleText('dim', `      ${group.heading.padEnd(labelWidth + 2)}  ${'islands'.padStart(islandsWidth)}  ${'bundle'.padStart(bundleWidth)}`));
+    } else {
+      // The `│` keeps the run unbroken across the gap, so the groups read as sections of one list rather than as
+      // separate tables that happen to share a column layout.
+      console.log(styleText('dim', '  │'));
+      console.log(styleText('dim', `  │   ${group.heading}`));
+    }
 
-  const n = routes.length;
-  for (let i = 0; i < n; i++) {
-    const { pattern, kind, hyd, ssr } = rows[i]!;
-    const char = styleText('dim', n === 1 ? '─' : i === 0 ? '┌' : i === n - 1 ? '└' : '├');
-    const symbol = kind === 'page' ? pageSymbol(hyd) : kindSymbol(kind);
-    const coloredPattern = pattern.padEnd(patternWidth + 2).replace(/:[^/\s]+/g, (s: string) => styleText('cyan', s));
-    const isPage = kind === 'page';
-    const hydStr = isPage && hyd != null ? styleText('green', String(hyd).padStart(islandsWidth)) : styleText('dim', '-'.padStart(islandsWidth));
-    const ssrStr = isPage && ssr != null ? styleText('dim', ssr.padStart(bundleWidth)) : styleText('dim', '-'.padStart(bundleWidth));
-    console.log(`  ${char} ${symbol} ${coloredPattern}  ${hydStr}  ${ssrStr}`);
+    for (const { symbol, label, hyd, ssr } of group.rows) {
+      const char = styleText('dim', n === 1 ? '─' : i === 0 ? '┌' : i === n - 1 ? '└' : '├');
+      const coloredLabel = label.padEnd(labelWidth + 2).replace(/:[^/\s]+/g, (s: string) => styleText('cyan', s));
+      const hydStr = hyd != null ? styleText('green', String(hyd).padStart(islandsWidth)) : styleText('dim', '-'.padStart(islandsWidth));
+      const ssrStr = styleText('dim', (ssr ?? '-').padStart(bundleWidth));
+      console.log(`  ${char} ${symbol} ${coloredLabel}  ${hydStr}  ${ssrStr}`);
+      i++;
+    }
   }
 
   const legendEntries: string[] = [];
-  if (rows.some((r) => r.kind === 'page' && r.hyd != null && r.hyd > 0)) {
+  if (routeRows.some((r) => r.kind === 'page' && r.hyd != null && r.hyd > 0)) {
     legendEntries.push(`${styleText('green', '●')} page with islands`);
   }
-  if (rows.some((r) => r.kind === 'page' && (r.hyd === null || r.hyd === 0))) {
+  if (routeRows.some((r) => r.kind === 'page' && (r.hyd === null || r.hyd === 0))) {
     legendEntries.push(`${styleText('cyan', '○')} ssr-only page`);
   }
-  if (rows.some((r) => r.kind === 'api')) {
+  if (routeRows.some((r) => r.kind === 'api')) {
     legendEntries.push(`${styleText('magenta', 'λ')} api`);
   }
-  if (rows.some((r) => r.kind === 'ws')) {
+  if (routeRows.some((r) => r.kind === 'ws')) {
     legendEntries.push(`${styleText('blue', '⇄')} websocket`);
   }
-  if (rows.some((r) => r.kind === 'sse')) {
+  if (routeRows.some((r) => r.kind === 'sse')) {
     legendEntries.push(`${styleText('green', '→')} sse`);
+  }
+  legendEntries.push(`${styleText('yellow', '⚠')} error page`);
+  if (emails.length > 0) {
+    legendEntries.push(`${styleText('cyan', '✉')} email template`);
+  }
+  if (islandRows.some((r) => r.hyd != null && r.hyd > 0)) {
+    legendEntries.push(`${styleText('magenta', '◐')} server island with islands`);
+  }
+  if (islandRows.some((r) => r.hyd === null || r.hyd === 0)) {
+    legendEntries.push(`${styleText('magenta', '○')} server island`);
   }
   console.log(`\n  ${legendEntries.join(styleText('dim', '  ·  '))}`);
 }

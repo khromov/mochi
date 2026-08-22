@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { freshImport } from '../compiler/freshImport';
+import { runInEntryImportScope } from '../utils/buildFlag';
 import type { MochiServeOptions } from '../types';
 
 // Thrown by the capturing serve() stub to unwind the entry module's top-level
@@ -15,15 +16,11 @@ let pluginRegistrationDone = false;
 let captured: Partial<MochiServeOptions> | null = null;
 
 /**
- * Import a Mochi entry module (e.g. `src/index.ts`) far enough to capture the
- * options object it passes to `Mochi.serve()`, without starting the server.
- *
- * A `Bun.plugin` virtual module overrides the bare `mochi-framework` specifier:
- * it re-exports the real framework entry (imported by absolute file path so the
- * plugin doesn't intercept itself) but replaces `Mochi.serve` with a stub that
- * records its argument and throws a sentinel to halt the entry's top-level
- * `await Mochi.serve(...)`. The captured object is fully evaluated, so options
- * like `optimize` are exactly what the runtime would use.
+ * Import a Mochi entry module far enough to capture the options object it passes to `Mochi.serve()`, leaving the server
+ * unstarted. A `Bun.plugin` virtual module overrides the bare `mochi-framework` specifier, re-exporting the real
+ * framework entry by absolute file path so the plugin can't intercept itself, and replacing `Mochi.serve` with a stub
+ * that records its argument and throws a sentinel to halt the entry's top-level await. The captured object is fully
+ * evaluated, so options like `optimize` match what the runtime would use.
  *
  * Returns the captured options, or `null` if the entry never called `serve()`.
  */
@@ -45,10 +42,9 @@ export async function extractServeOptions(entryPath: string, opts?: { fresh?: bo
           // Synchronous capture + throw, before serve()'s first await, so the
           // sentinel rejects the entry's top-level await and unwinds cleanly.
           return (options: Partial<MochiServeOptions>) => {
-            // A second call within one extraction means the entry swallowed our
-            // halt sentinel (e.g. `try { await Mochi.serve(...) } catch {}`) and
-            // kept running. Throw a real error so the extractor surfaces it
-            // instead of silently capturing duplicate/stale options.
+            // A second call within one extraction means the entry swallowed the halt sentinel — say, a
+            // `try { await Mochi.serve(...) } catch {}` — and kept running, so a real error surfaces it here instead of
+            // silently capturing stale options.
             if (captured !== null) {
               throw new Error(
                 'Mochi.serve() was called more than once while extracting build options. Do not wrap the top-level Mochi.serve() call in try/catch — it must be allowed to throw during extraction.',
@@ -71,6 +67,9 @@ export async function extractServeOptions(entryPath: string, opts?: { fresh?: bo
             ...realMod,
             default: (realMod as { default?: unknown }).default ?? realMod,
             Mochi: mochiProxy,
+            // Overridden rather than read from `realMod`, whose namespace is snapshotted here: only the module graph
+            // imported for extraction is "building", so a dev-watcher re-import must not flip the flag process-wide.
+            isBuilding: true,
           },
         }));
       },
@@ -80,11 +79,15 @@ export async function extractServeOptions(entryPath: string, opts?: { fresh?: bo
 
   captured = null;
   try {
-    if (opts?.fresh) {
-      await freshImport(entryPath);
-    } else {
-      await import(Bun.pathToFileURL(entryPath).href);
-    }
+    // Scoped, not a process-wide flag: the dev watcher calls this inside a live server, where the entry's side effects
+    // must be suppressed only for the duration of the import.
+    await runInEntryImportScope(async () => {
+      if (opts?.fresh) {
+        await freshImport(entryPath);
+      } else {
+        await import(Bun.pathToFileURL(entryPath).href);
+      }
+    });
   } catch (err) {
     if (!isHalt(err)) {
       throw err;

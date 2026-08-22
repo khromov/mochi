@@ -88,6 +88,11 @@ const PACKAGES: Package[] = [
     categories: [],
   },
   {
+    name: 'packages/minimal-rsvelte',
+    root: join(REPO_ROOT, 'packages', 'minimal-rsvelte'),
+    categories: [],
+  },
+  {
     name: 'packages/support',
     root: join(REPO_ROOT, 'packages', 'support'),
     categories: ['src/**/*.test.ts', 'src/admin/**', 'src/components/**', 'src/*.server.ts', 'src/{index,routes}.ts'],
@@ -95,6 +100,16 @@ const PACKAGES: Package[] = [
   {
     name: 'packages/shared',
     root: join(REPO_ROOT, 'packages', 'shared'),
+    categories: [],
+  },
+  {
+    name: 'packages/mochi-rsvelte',
+    root: join(REPO_ROOT, 'packages', 'mochi-rsvelte'),
+    categories: [],
+  },
+  {
+    name: 'packages/mochi-svelte-shaker',
+    root: join(REPO_ROOT, 'packages', 'mochi-svelte-shaker'),
     categories: [],
   },
   {

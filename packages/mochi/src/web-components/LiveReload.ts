@@ -65,11 +65,9 @@ class MochiLiveReload extends HTMLElement {
     this.dropSocket();
 
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // window.__mochi_page_entry is the abs path of the entry that rendered
-    // this page, injected by the shell renderer in dev. Sending it lets the
-    // server scope `reload` signals to the tabs whose entry was actually
-    // recompiled. Tabs loaded against an older shell omit it and conserva-
-    // tively reload on every change.
+    // `window.__mochi_page_entry` is the absolute path of the entry that rendered this page, injected by the dev shell
+    // renderer, so sending it lets the server scope `reload` signals to tabs whose entry actually recompiled. A tab
+    // loaded against an older shell omits it and conservatively reloads on every change.
     const entry = window.__mochi_page_entry;
     const query = entry ? '?entry=' + encodeURIComponent(entry) : '';
 
@@ -101,11 +99,9 @@ class MochiLiveReload extends HTMLElement {
         return;
       }
       if (e.data.startsWith('boot:')) {
-        // `boot:<process id>:<reload generation>` — the id moves when the dev
-        // server restarts, the generation when a reload signal was broadcast
-        // for this page's entry. Either means the page may be rendered from
-        // stale code; neither means the socket merely blipped and the page
-        // state is still worth keeping.
+        // `boot:<process id>:<reload generation>`: the id moves when the dev server restarts, the generation when a
+        // reload was broadcast for this page's entry. Either means the page may be rendered from stale code; with
+        // neither, the socket merely blipped and the page state is still worth keeping.
         const [id, gen] = splitGreeting(e.data.slice('boot:'.length));
         if (this.bootId === null) {
           this.bootId = id;
@@ -115,11 +111,9 @@ class MochiLiveReload extends HTMLElement {
         }
         return;
       }
-      // A dev-outbox email landed (message is `email:new:<id>`). On the outbox page
-      // itself, full-reload so the new message shows up live; anywhere else, hand the
-      // captured id to the debug bar so it can mark it unread. assetPrefix is only
-      // injected with the debug bar, which is also what mounts the outbox route — so
-      // it's present whenever it matters.
+      // A dev-outbox email landed. The outbox page full-reloads so the message shows up live; anywhere else the
+      // captured id goes to the debug bar to mark it unread. `assetPrefix` ships with the debug bar, which also mounts
+      // the outbox route, so it's present whenever it matters.
       if (e.data.startsWith('email:new:')) {
         const id = e.data.slice('email:new:'.length);
         const prefix = window.__mochi_asset_prefix;
@@ -191,11 +185,9 @@ class MochiLiveReload extends HTMLElement {
         this.scheduleReconnect(0);
         return;
       }
-      // Background tabs throttle timers to about one tick a minute and a
-      // sleeping machine stops them altogether, so a long gap since the last
-      // tick says nothing about the socket — silence we never gave the server
-      // a chance to break. Re-arm the budget and judge on the next tick
-      // instead of recycling a healthy socket every minute the tab is hidden.
+      // Background tabs throttle timers to roughly one tick a minute and a sleeping machine stops them entirely, so a
+      // long gap since the last tick says nothing about the socket — it's silence the server never had a chance to
+      // break. Re-arming the budget and judging on the next tick avoids recycling a healthy socket every hidden minute.
       if (sinceTick > HEARTBEAT_MS * 1.5) {
         this.lastMessageAt = now;
       } else if (now - this.lastMessageAt > HEARTBEAT_TIMEOUT_MS) {
@@ -255,10 +247,9 @@ class MochiLiveReload extends HTMLElement {
     location.reload();
   }
 
-  // `pagehide` also fires when the page enters the back/forward cache, where the
-  // element is never re-created — so release the socket but leave the retry loop
-  // armed for `pageshow` to restart. Treating this as terminal is what used to
-  // leave a restored tab permanently disconnected.
+  // `pagehide` also fires when the page enters the back/forward cache, where the element is never re-created, so the
+  // socket is released while the retry loop stays armed for `pageshow`. Treating it as terminal used to leave a
+  // restored tab permanently disconnected.
   private handlePageHide = () => {
     this.clearRetry();
     this.dropSocket(1000, 'hidden');

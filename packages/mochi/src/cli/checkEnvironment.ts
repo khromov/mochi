@@ -1,8 +1,8 @@
-const MIN_BUN_VERSION = '1.3.14';
+const MIN_BUN_VERSION = '1.4.0';
 const MIN_SVELTE_VERSION = '5.55.1';
 
 export function compareVersions(actual: string, required: string): boolean {
-  // Strip any prerelease/build suffix (e.g. `1.3.14-canary.5`) before parsing —
+  // Strip any prerelease/build suffix (e.g. `1.4.0-canary.5`) before parsing —
   // otherwise `Number('14-canary')` is NaN, `NaN !== 0` is true, and `NaN > 0`
   // is false, which would reject an otherwise-valid canary runtime.
   const parse = (v: string): number[] => v.split('.').map((seg) => parseInt(seg, 10) || 0);

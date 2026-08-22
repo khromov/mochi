@@ -6,7 +6,7 @@
     "packages/*"
   ],
   "engines": {
-    "bun": ">=1.3.14"
+    "bun": ">=1.4.0"
   },
   "scripts": {
     "build": "bun --filter='*' run build",
@@ -17,24 +17,34 @@
     "start:demos": "bun --cwd=packages/demos run start",
     "start:all": "bun --filter='*' run start",
     "dev": "bun scripts/dev.ts",
+    "dev:full": "bun scripts/dev.ts --full",
     "dev:site": "bun --cwd=packages/site run dev",
     "dev:demos": "bun --cwd=packages/demos run dev",
+    "db:stop": "bun --cwd=packages/docker run stop",
+    "db:down": "bun --cwd=packages/docker run down",
+    "db:reset": "bun --cwd=packages/docker run reset",
     "test": "bun --filter='*' run test",
     "test:leak": "bun packages/mochi/scripts/leak/runLeakTest.ts",
+    "memtest:loop": "bash memtest/loop.sh",
+    "memtest:rerun": "bash memtest/rerun.sh",
+    "memtest:pull": "bash memtest/pull.sh",
+    "memtest:analyze": "bun memtest/analyze.ts",
     "typecheck": "bun --filter='*' run typecheck",
     "tsc": "bun run typecheck",
     "clean": "bun --filter='*' run clean",
-    "format:check": "prettier --check .",
-    "format": "prettier --write .",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
+    "format:check": "prettier --check --cache .",
+    "format": "prettier --write --cache .",
+    "lint": "eslint . --cache --concurrency=6",
+    "lint:fix": "eslint . --cache --concurrency=6 --fix",
     "checks": "bun run lint:fix && bun run format && bun run typecheck && bun run test",
     "syncpack": "syncpack lint",
     "syncpack:fix": "syncpack fix",
     "loc": "bun .github/scripts/loc-report.ts",
     "cli-test": "bun .github/scripts/cli-regression-test.ts",
+    "svelte-latest-test": "bun .github/scripts/svelte-latest-test.ts",
     "flamegraph": "bun scripts/flamegraph.ts",
     "check-links": "bun scripts/check-links.ts",
+    "check-llms": "bun scripts/check-llms.ts",
     "check-site": "bun scripts/site-health.ts",
     "check-vendored-versions": "bun scripts/check-vendored-versions.ts",
     "update": "bun update --interactive --recursive",
@@ -47,22 +57,19 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/bun": "1.3.14",
-    "@types/chrome-remote-interface": "0.34.0",
-    "chrome-launcher": "1.2.1",
-    "chrome-remote-interface": "0.34.0",
-    "eslint": "^10.7.0",
+    "@memlab/api": "^2.0.4",
+    "@types/bun": "1.4.0",
+    "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-svelte": "^3.22.0",
     "prettier": "^3.9.6",
     "prettier-plugin-svelte": "^4.1.1",
-    "rimraf": "^6.1.3",
     "syncpack": "^15.3.2",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.65.0"
   },
   "patchedDependencies": {
-    "svelte-check@4.7.3": "packages/mochi/patches/svelte-check@4.7.3.patch"
+    "svelte-check@4.7.4": "packages/mochi/patches/svelte-check@4.7.4.patch"
   },
   "overrides": {
     "msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*"

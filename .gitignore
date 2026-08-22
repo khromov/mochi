@@ -6,6 +6,7 @@ out
 .mochi
 *.tgz
 cli-tests
+svelte-latest-tests
 packages/site/src/lib/docComponents.generated.ts
 packages/site/src/lib/blogComponents.generated.ts
 packages/demos/src/todo/app.generated.css
@@ -56,3 +57,5 @@ REPORT.md
 GEMINI.md
 tasks*
 snapshots*
+.memtest-out
+paseo.json

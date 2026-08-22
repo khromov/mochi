@@ -3,7 +3,6 @@
 
   let { defaultUsername = 'mochi_fan' } = $props();
 
-  // Read cookies on both server and client
   // svelte-ignore state_referenced_locally
   let username = $state(cookies.get('mochi_username') || defaultUsername);
   let theme = $state(cookies.get('mochi_theme') || 'auto');

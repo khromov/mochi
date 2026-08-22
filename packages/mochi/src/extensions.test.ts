@@ -1,9 +1,15 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import type { MochiServeOptions } from './types';
+import { CLIENT_BUILD_DEFINE } from './compiler/serverOnlyModuleGuard';
+import { toPosixPath } from './utils/index';
 import { applyFilter, initExtensions, runHook, type MochiFilterContext } from './extensions';
 import { reachedStartupMilestones, resetStartupMilestones } from './lifecycle';
 import type { IslandPropsEntry } from './islands/islandPropsRegistry';
 import type { ResolvedEmailMessage } from './email/types';
+import { DEFAULT_CAPTCHA_BITS } from './captcha/config';
+import { DEFAULT_INLINE_BUDGET } from './islands/inlineServerIslands';
 
 const fakeOptions = {} as MochiServeOptions;
 
@@ -188,6 +194,22 @@ describe('new extension points', () => {
     expect(result).toBe(input);
   });
 
+  test('serverIsland:inlineBudget returns the default unchanged when no filter registered', () => {
+    const request = new Request('http://localhost/_mochi/island/Widget_ab12cd34');
+    expect(applyFilter('serverIsland:inlineBudget', DEFAULT_INLINE_BUDGET, { componentName: 'Widget_ab12cd34', request })).toBe(DEFAULT_INLINE_BUDGET);
+  });
+
+  test('serverIsland:inlineBudget can decide per island fetch from the context', () => {
+    initExtensions({
+      filters: {
+        'serverIsland:inlineBudget': (def, { componentName }) => (componentName.startsWith('Wide_') ? 128 : def),
+      },
+    });
+    const request = new Request('http://localhost/_mochi/island/Wide_ab12cd34');
+    expect(applyFilter('serverIsland:inlineBudget', DEFAULT_INLINE_BUDGET, { componentName: 'Wide_ab12cd34', request })).toBe(128);
+    expect(applyFilter('serverIsland:inlineBudget', DEFAULT_INLINE_BUDGET, { componentName: 'Other_ab12cd34', request })).toBe(DEFAULT_INLINE_BUDGET);
+  });
+
   test('payload:compressMinBytes returns the default unchanged when no filter registered', () => {
     const result = applyFilter('payload:compressMinBytes', 80, { options: fakeOptions, payload: new Uint8Array(120) });
     expect(result).toBe(80);
@@ -202,6 +224,20 @@ describe('new extension points', () => {
     });
     expect(applyFilter('payload:compressMinBytes', 80, { options: fakeOptions, payload: Uint8Array.of(0xff, 1, 2) })).toBe(Infinity);
     expect(applyFilter('payload:compressMinBytes', 80, { options: fakeOptions, payload: Uint8Array.of(0x01, 1, 2) })).toBe(80);
+  });
+
+  test('captcha:bits returns the default unchanged when no filter registered', () => {
+    expect(applyFilter('captcha:bits', DEFAULT_CAPTCHA_BITS, { options: {}, configured: false })).toBe(DEFAULT_CAPTCHA_BITS);
+  });
+
+  test('captcha:bits can raise the difficulty only where the app did not choose one', () => {
+    initExtensions({
+      filters: {
+        'captcha:bits': (def, { configured }) => (configured ? def : 22),
+      },
+    });
+    expect(applyFilter('captcha:bits', DEFAULT_CAPTCHA_BITS, { options: {}, configured: false })).toBe(22);
+    expect(applyFilter('captcha:bits', 12, { options: { bits: 12 }, configured: true })).toBe(12);
   });
 
   test('captcha:minAgeMs returns the default unchanged when no filter registered', () => {
@@ -232,47 +268,42 @@ describe('new extension points', () => {
     expect(applyFilter('captcha:driftAllowanceMs', 30_000, { options: {}, maxAgeMs: 900_000 })).toBe(45_000);
   });
 
-  test('queue:recoveryStallWarningMs returns the default unchanged when no filter registered', () => {
-    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'emails' })).toBe(30_000);
+  test('captcha:solveBudgetMs returns the default unchanged when no filter registered', () => {
+    expect(applyFilter('captcha:solveBudgetMs', 60_000, { options: {}, bits: 19 })).toBe(60_000);
   });
 
-  test('queue:recoveryStallWarningMs can raise the threshold for one queue only', () => {
+  test('captcha:solveBudgetMs can scale off the resolved difficulty', () => {
     initExtensions({
       filters: {
-        'queue:recoveryStallWarningMs': (def, { queue }) => (queue === 'slow-store' ? 120_000 : def),
+        'captcha:solveBudgetMs': (def, { bits }) => (bits > 20 ? def * 2 : def),
       },
     });
-    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'slow-store' })).toBe(120_000);
-    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'emails' })).toBe(30_000);
+    expect(applyFilter('captcha:solveBudgetMs', 60_000, { options: {}, bits: 24 })).toBe(120_000);
+    expect(applyFilter('captcha:solveBudgetMs', 60_000, { options: {}, bits: 19 })).toBe(60_000);
   });
 
-  test('queue:recoveryStallWarningMs passes 0 through, which silences the warning', () => {
-    initExtensions({ filters: { 'queue:recoveryStallWarningMs': () => 0 } });
-    expect(applyFilter('queue:recoveryStallWarningMs', 30_000, { queue: 'emails' })).toBe(0);
+  test('queue:expireInSeconds returns the default unchanged when no filter registered', () => {
+    expect(applyFilter('queue:expireInSeconds', 900, { queue: 'emails', explicit: false })).toBe(900);
   });
 
-  test('queue:lockDurationMs returns the default unchanged when no filter registered', () => {
-    expect(applyFilter('queue:lockDurationMs', 1_800_000, { queue: 'emails', explicit: false })).toBe(1_800_000);
-  });
-
-  test('queue:lockDurationMs can raise the lock for one queue only', () => {
+  test('queue:expireInSeconds can raise the expiry for one queue only', () => {
     initExtensions({
       filters: {
-        'queue:lockDurationMs': (def, { queue }) => (queue === 'transcode' ? 3_600_000 : def),
+        'queue:expireInSeconds': (def, { queue }) => (queue === 'transcode' ? 3_600 : def),
       },
     });
-    expect(applyFilter('queue:lockDurationMs', 1_800_000, { queue: 'transcode', explicit: false })).toBe(3_600_000);
-    expect(applyFilter('queue:lockDurationMs', 1_800_000, { queue: 'emails', explicit: false })).toBe(1_800_000);
+    expect(applyFilter('queue:expireInSeconds', 900, { queue: 'transcode', explicit: false })).toBe(3_600);
+    expect(applyFilter('queue:expireInSeconds', 900, { queue: 'emails', explicit: false })).toBe(900);
   });
 
-  test('queue:lockDurationMs can leave queues that chose their own value alone', () => {
+  test('queue:expireInSeconds can leave queues that chose their own value alone', () => {
     initExtensions({
       filters: {
-        'queue:lockDurationMs': (value, { explicit }) => (explicit ? value : 60_000),
+        'queue:expireInSeconds': (value, { explicit }) => (explicit ? value : 60),
       },
     });
-    expect(applyFilter('queue:lockDurationMs', 50, { queue: 'transcode', explicit: true })).toBe(50);
-    expect(applyFilter('queue:lockDurationMs', 1_800_000, { queue: 'emails', explicit: false })).toBe(60_000);
+    expect(applyFilter('queue:expireInSeconds', 50, { queue: 'transcode', explicit: true })).toBe(50);
+    expect(applyFilter('queue:expireInSeconds', 900, { queue: 'emails', explicit: false })).toBe(60);
   });
 
   test('compile:preprocessors returns the user-supplied list', () => {
@@ -407,7 +438,7 @@ describe('new extension points', () => {
         label: 'QUEUE',
         kind: undefined,
         status: undefined,
-        source: { name: 'queue:added', payload: { queue: 'emails', jobId: 'j1', jobName: 'send' } },
+        source: { name: 'queue:added', payload: { queue: 'emails', jobId: 'j1' } },
       }),
     );
     expect(remapped).toBe('debug');
@@ -831,5 +862,51 @@ describe('new extension points', () => {
     expect(seen!.requestId).toBe('rid-route-matched');
     expect(seen!.pathname).toBe('/users/42');
     expect(seen!.param).toBe('42');
+  });
+});
+
+describe('client bundles', () => {
+  // The guard is a build-time `define` substitution, so the only honest test is
+  // to actually bundle for the browser the way `ComponentRegistry` does and run
+  // the result. `outDir` sits under the package so the emitted module resolves
+  // its deps through the project's own node_modules chain.
+  const tmpDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-extensions-client-'));
+  afterAll(() => rmSync(tmpDir, { recursive: true, force: true }));
+
+  let bundled: typeof import('./extensions');
+
+  beforeAll(async () => {
+    // Source and output must not share a directory: Bun resolves `./entry.js`
+    // back to a sibling `entry.ts` when one exists, so importing the bundle
+    // would silently hand back the unbundled source and the test would pass
+    // against the server build.
+    const srcDir = path.join(tmpDir, 'src');
+    const outDir = path.join(tmpDir, 'dist');
+    mkdirSync(srcDir);
+    const entry = path.join(srcDir, 'entry.ts');
+    writeFileSync(entry, `export { applyFilter, initExtensions, runHook } from '${toPosixPath(path.join(import.meta.dir, 'extensions'))}';\n`);
+    const result = await Bun.build({
+      entrypoints: [entry],
+      target: 'browser',
+      define: { ...CLIENT_BUILD_DEFINE },
+      outdir: outDir,
+      throw: false,
+    });
+    if (!result.success) {
+      throw new Error(result.logs.map((l) => String(l.message ?? l)).join('\n'));
+    }
+    bundled = (await import(result.outputs[0]!.path)) as typeof import('./extensions');
+  });
+
+  test('applyFilter throws instead of silently returning the default', () => {
+    expect(() => bundled.applyFilter('captcha:bits', DEFAULT_CAPTCHA_BITS, { options: {}, configured: false })).toThrow(/applyFilter\('captcha:bits'\) was called in the browser/);
+  });
+
+  test('runHook throws', () => {
+    expect(() => bundled.runHook('mochi:init', { options: fakeOptions })).toThrow(/runHook\('mochi:init'\) was called in the browser/);
+  });
+
+  test('initExtensions throws', () => {
+    expect(() => bundled.initExtensions({})).toThrow(/initExtensions\(\) was called in the browser/);
   });
 });

@@ -29,21 +29,12 @@ const DEFAULT_VERY_SLOW = 2000;
 const state = pinGlobal<{ registered: boolean }>('__mochi_console_logger__', () => ({ registered: false }));
 
 /**
- * Pre-built consumer of `mochiEvents` that prints one formatted line per HTTP
- * request, WebSocket frame, SSE message, server start/stop, and (optionally)
- * cache event. Lines are routed through `logger.info` / `logger.warn`, so they
- * inherit the active log level.
+ * The request/lifecycle formatter: a pre-built consumer of `mochiEvents` that turns the bus into the BOOT/GET/ERR/WS
+ * lines seen during development, one per HTTP request, WebSocket frame, SSE message, server start/stop, and optionally
+ * cache event. Lines route through `logger.info` / `logger.warn`, inheriting the active log level.
  *
- * This is **not** the logger primitive — that's `logger` (in `./log`). This
- * function is the *request/lifecycle formatter* that turns events on the bus
- * into the BOOT/GET/ERR/WS lines you see during development. Subscribe your
- * own observability pipeline (Sentry, OpenTelemetry, JSON stdout) directly to
- * `mochiEvents` and pass `logger: { enabled: false }` to `Mochi.serve()` if
- * you don't want the formatter on top.
- *
- * Normally called automatically by `Mochi.serve()` (enabled by default). Pass
- * `logger: { enabled: false }` to disable, or `logger: { slowThreshold }` to
- * customise. Safe to call manually — duplicate calls are a no-op.
+ * `Mochi.serve()` calls it automatically; pass `logger: { enabled: false }` to disable or `logger: { slowThreshold }` to
+ * customise, and subscribe your own observability pipeline straight to `mochiEvents`. Duplicate calls are a no-op.
  */
 export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
   if (state.registered) {
@@ -70,14 +61,15 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     error: 'log',
   };
 
-  // `source` is auto-built from the event name + payload — call sites only
-  // describe the formatted line, never repeat the event name or rebuild source.
-  // The cast widens `{name: K; payload: M[K]}` to the distributed
-  // `ConsoleLoggerSource` union, which TypeScript can't infer through a
-  // generic closure.
-  function subscribe<K extends keyof MochiEventMap>(name: K, format: (payload: MochiEventMap[K]) => Omit<EmitInput, 'source'>): void {
+  // `source` is auto-built from the event name and payload, so call sites describe only the formatted line. The cast
+  // widens `{name: K; payload: M[K]}` to the distributed `ConsoleLoggerSource` union, which TypeScript can't infer
+  // through a generic closure. A `null` from the formatter suppresses the line (e.g. per-job adds inside a bulk add).
+  function subscribe<K extends keyof MochiEventMap>(name: K, format: (payload: MochiEventMap[K]) => Omit<EmitInput, 'source'> | null): void {
     mochiEvents.on(name, (payload) => {
-      emit({ ...format(payload), source: { name, payload } as ConsoleLoggerSource });
+      const formatted = format(payload);
+      if (formatted) {
+        emit({ ...formatted, source: { name, payload } as ConsoleLoggerSource });
+      }
     });
   }
 
@@ -206,7 +198,18 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     duration: durationMs,
     slow,
     verySlow,
-    level: 'info',
+    level: removed === 0 ? 'debug' : 'info',
+  }));
+  // Pinned at warn: this only fires when the OS is already short of memory, which an operator needs to see in
+  // production, where the default level hides info lines.
+  subscribe('cache:pressure', ({ level, removed, caches, durationMs }) => ({
+    label: 'CACHE',
+    path: 'pressure',
+    note: `${styleText(level === 'critical' ? 'red' : 'yellow', level)} ${styleText('dim', `${removed} entr${removed === 1 ? 'y' : 'ies'} dropped from ${caches} cache${caches === 1 ? '' : 's'}`)}`,
+    duration: durationMs,
+    slow,
+    verySlow,
+    level: 'warn',
   }));
   subscribe('image:cache-sweep', ({ removedVariants, removedOriginals, removedOther, durationMs }) => {
     const removed = removedVariants + removedOriginals + removedOther;
@@ -246,56 +249,64 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     level: 'warn',
   }));
 
-  // Queue lifecycle is operational signal, so `added` and `completed` are
-  // pinned at `warn` to survive the production default level ('warn') — an
-  // `info` default would hide `added` entirely and leave `completed` visible
-  // only when the job trips the slow-escalation. Per-attempt `active` repeats
-  // on every retry and adds nothing over added + completed/failed, so it stays
-  // on `logger.debug`. `failed`/`error` always warn. Apps that find the
-  // lifecycle chatty can demote it with the `consoleLogger:level` filter.
-  subscribe('queue:added', ({ queue, jobName, jobId }) => ({
+  // Queue lifecycle is operational signal, so `added` and `completed` pin at `warn` to survive the production default;
+  // at `info` they'd vanish, leaving `completed` visible only when a job trips the slow-escalation. Per-attempt `active`
+  // repeats on every retry and adds nothing, so it stays on `logger.debug`. The `consoleLogger:level` filter demotes any
+  // of it for apps that find the lifecycle chatty.
+  subscribe('queue:added', ({ queue, jobId, bulk }) =>
+    // Bulk adds print one `queue:addedBulk` summary instead of a line per job — a 100k addBulk must not log 100k lines.
+    bulk
+      ? null
+      : {
+          label: 'QUEUE',
+          path: queue,
+          note: styleText('dim', `+ ${jobId}`),
+          level: 'warn',
+        },
+  );
+  subscribe('queue:addedBulk', ({ queue, count }) => ({
     label: 'QUEUE',
-    path: `${queue}/${jobName}`,
-    note: styleText('dim', `+ ${jobId}`),
+    path: queue,
+    note: styleText('dim', `+ ${count} jobs (bulk)`),
     level: 'warn',
   }));
-  subscribe('queue:active', ({ queue, jobName }) => ({
+  subscribe('queue:active', ({ queue }) => ({
     label: 'QUEUE',
-    path: `${queue}/${jobName}`,
+    path: queue,
     note: styleText('cyan', 'active'),
     level: 'debug',
   }));
-  subscribe('queue:completed', ({ queue, jobName, duration }) => ({
+  subscribe('queue:completed', ({ queue, duration }) => ({
     label: 'QUEUE',
-    path: `${queue}/${jobName}`,
+    path: queue,
     note: styleText('green', 'done'),
     duration,
     slow,
     verySlow,
     level: 'warn',
   }));
-  subscribe('queue:failed', ({ queue, jobName, attempt, error }) => ({
+  subscribe('queue:failed', ({ queue, attempt, error }) => ({
     label: 'QUEUE',
-    path: `${queue}/${jobName}`,
+    path: queue,
     note: `${styleText('red', `failed (attempt ${attempt})`)} ${styleText('dim', error)}`,
     level: 'warn',
   }));
   subscribe('queue:error', ({ queue, error }) => ({
     label: 'QUEUE',
-    path: queue,
+    path: queue ?? 'queue',
     note: `${styleText('red', 'queue error')} ${styleText('dim', error)}`,
     level: 'warn',
   }));
 
+  subscribe('cron:scheduled', ({ job, schedule, nextRun }) => ({
+    label: 'CRON',
+    path: job,
+    note: `${styleText('dim', schedule)}${nextRun === undefined ? '' : styleText('dim', ` → next ${new Date(nextRun).toISOString()}`)}`,
+  }));
   subscribe('email:sent', ({ to, subject, transport, duration }) => {
-    // Four delivery classes:
-    //  - log:        did not send — warn (visible in production) and colour yellow
-    //                so it never reads as a delivered-mail success line.
-    //  - dev:        captured into the outbox — expected in development, so
-    //                info-level and pointed at the viewer, not a warning.
-    //  - suppressed: the `email:message` filter vetoed the send — magenta so it's
-    //                distinct from a real delivery.
-    //  - else:       actually delivered (smtp/custom) — green.
+    // Four delivery classes, coloured so a non-delivery never reads as a success line: `log` didn't send (yellow, warn,
+    // visible in production), `dev` was captured into the outbox (info, pointed at the viewer), `suppressed` was vetoed
+    // by the `email:message` filter (magenta), and anything else was actually delivered over smtp/custom (green).
     const note =
       transport === 'log'
         ? styleText('yellow', 'logged (not sent)')
@@ -401,13 +412,21 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
       return { label: 'HMR ', path: relPath(path), note: styleText('dim', action), duration: durationMs, slow, verySlow };
     });
   }
+
+  // Not gated by `compile`: this is a resource-leak warning, not routine build chatter, so silencing build lines must
+  // not hide it. Drop it with a `consoleLogger:line` filter on `source.name === 'recompile:module-churn'` instead.
+  subscribe('recompile:module-churn', ({ reloadCount }) => ({
+    label: 'HMR ',
+    path: 'module-state',
+    note: `re-imported ${reloadCount}× — module-scoped resources leak on each reload (DB pools, timers, SMTP pools); hold them with ${styleText('cyan', 'pinGlobal()')} → /docs/development-mode`,
+    level: 'warn',
+  }));
 }
 
 /**
- * Built-in `consoleLogger:line` filter that silences framework-internal noise:
- * Chrome's `/.well-known/appspecific/com.chrome.devtools.json` probe,
- * framework admin routes (`/__mochi/admin/*`), framework asset/client routes
- * (`/_mochi/*`), and the dev WebSocket live-reload endpoint (`/__mochi_live_reload`).
+ * Built-in `consoleLogger:line` filter silencing framework-internal noise: Chrome's
+ * `/.well-known/appspecific/com.chrome.devtools.json` probe, admin routes (`/__mochi/admin/*`), asset and client routes
+ * (`/_mochi/*`), and the dev live-reload endpoint (`/__mochi_live_reload`).
  */
 export const silenceInternalRoutes = (line: string, { path }: MochiFilterContext['consoleLogger:line']): MochiFilterReturn['consoleLogger:line'] => {
   if (path === '/.well-known/appspecific/com.chrome.devtools.json') {
@@ -431,10 +450,9 @@ function errorMessage(error: unknown): string {
 
 const REDACTED = '<redacted>';
 
-// Recipients and subject are PII, and `email:error` lines log at `warn` (so they
-// reach production logs). `email.filterPii: true` swaps them for a placeholder in
-// the MAIL line. `scrub` also strips any recipient that leaked into a transport
-// error string (e.g. an SMTP "550 no such user <addr>").
+// Recipients and subject are PII and `email:error` logs at `warn`, so it reaches production logs; `email.filterPii: true`
+// swaps them for a placeholder, and `scrub` also strips any recipient leaked into a transport error string such as an
+// SMTP "550 no such user <addr>".
 function redactMailPii(to: string[], subject: string, cc: string[] = [], bcc: string[] = []): { recipients: string; subject: string; scrub: (s: string) => string } {
   if (!getEmailRuntime().options.filterPii) {
     return { recipients: to.join(', '), subject: JSON.stringify(subject), scrub: (s) => s };
@@ -486,11 +504,9 @@ interface EmitInput {
   slow?: number;
   verySlow?: number;
   /**
-   * Default log level for the line. `'debug'` keeps high-volume request lines
-   * (asset/fallback) hidden unless the user opts into the most verbose level;
-   * `'log'` is for moderately verbose lines. `'warn'` is for degradations that
-   * always warrant attention. Always escalated to `warn` for 5xx or slow
-   * responses regardless of this value.
+   * Default log level for the line: `'debug'` keeps high-volume asset/fallback request lines hidden until the user opts
+   * into the most verbose level, `'log'` suits moderately verbose lines, and `'warn'` marks degradations that always
+   * warrant attention. 5xx and slow responses escalate to `warn` whatever this says.
    */
   level?: ConsoleLoggerLevel;
 }

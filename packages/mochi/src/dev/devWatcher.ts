@@ -9,12 +9,17 @@ import type { MochiFileChangeType } from '../events';
 import { logger } from '../utils/log';
 import { evictPreprocessCacheEntry } from '../compiler/preprocessCache';
 import { extractServeOptions } from '../cli/extractServeOptions';
+import { startCronRuntime, stopCronRuntime } from '../queue';
+import { cronSignature, type MochiCronJob } from '../cron';
+import type { MochiQueueStorage } from '../queue';
 import { buildPublicUrl } from '../runtime/proxy';
-import { resolvePublicFiles, registerPublicRoutes } from '../runtime/publicDir';
+import { resolvePublicFiles, registerPublicRoutes, type PublicRouteGuard } from '../runtime/publicDir';
 import { loadSvelteConfig } from '../compiler/svelteConfig';
 import { recordReloadSignal } from './liveReloadGeneration';
 import type { MochiRateLimitOptions } from '../runtime/rateLimit';
 import { alternateSlashPattern } from '../runtime/trailingSlash';
+import { mirrorsSlashForm } from '../runtime/requestSetup';
+import type { SpeculationRules } from '../runtime/speculationRules';
 import {
   isMochiApi,
   isMochiFile,
@@ -46,6 +51,21 @@ function publicChangeVerb(event: string): string {
   return 'changed';
 }
 
+/**
+ * Whether a changed file belongs to the server-entry bundle graph, so its change must rebuild the entry (route wiring).
+ * A `.svelte` file is never routed here — it recompiles on the page path — even if it is also an entry input.
+ */
+export function isServerEntryDep(filePath: string, serverEntryDeps: Set<string>): boolean {
+  return !filePath.endsWith('.svelte') && serverEntryDeps.has(path.resolve(filePath));
+}
+
+// Each entry reload re-evaluates the whole first-party module graph, so a module-scoped resource (a DB pool, a timer,
+// an SMTP pool) is re-created and the old one orphaned with its handle still open. True exactly at the threshold so the
+// `recompile:module-churn` warning surfaces once per dev session instead of silently exhausting connections.
+export function reachedModuleChurnThreshold(count: number, threshold = 10): boolean {
+  return count === threshold;
+}
+
 export interface DevWatcherDeps {
   registry: ComponentRegistry;
   server: Server<undefined>;
@@ -69,14 +89,16 @@ export interface DevWatcherDeps {
   trailingSlashPolicy?: 'never' | 'always';
   shellPath?: string;
   reloadShell?: () => Promise<void>;
+  reloadSpeculationRules?: (rules: SpeculationRules | undefined) => void;
+  publicRouteGuard?: PublicRouteGuard;
+  /** Signature of the cron array at boot, so a reload re-registers cron only when it actually changed. */
+  initialCronSignature?: string;
 }
 
 /**
- * Wire up the dev-mode file watcher: chokidar over the source tree, public
- * dir, and `svelte.config.js`. Saves are debounced (100 ms) and serialized
- * through a Promise chain so the live-reload signal only fires after client
- * chunks are ready. CSS edits take a fast-path that re-bundles imported CSS
- * without an SSR recompile; public-dir edits rescan and reload the route map.
+ * Wire up the dev-mode file watcher — chokidar over the source tree, public dir, and `svelte.config.js`. Saves debounce
+ * at 100ms and serialize through a Promise chain so the live-reload signal fires only once client chunks are ready. CSS
+ * edits take a fast path that re-bundles imported CSS without an SSR recompile; public-dir edits reload the route map.
  */
 export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   const {
@@ -102,6 +124,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     trailingSlashPolicy,
     shellPath,
     reloadShell,
+    reloadSpeculationRules,
+    publicRouteGuard,
   } = deps;
 
   const liveReloadHandler = (req: Request, srv: Server<undefined>): Response => {
@@ -147,10 +171,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     }
   };
 
-  // Serialize rebuilds through a Promise chain so the WebSocket reload only
-  // fires after client JS chunks are ready. If multiple saves arrive
-  // mid-rebuild, each is appended to the chain — the browser reloads once,
-  // into fresh chunks.
+  // Serializing rebuilds through a Promise chain holds the WebSocket reload until client JS chunks are ready; saves
+  // arriving mid-rebuild append to the chain, so the browser reloads once, into fresh chunks.
   let reloadChain: Promise<void> = Promise.resolve();
   const triggerReload = debounce((filename: string) => {
     reloadChain = reloadChain.then(async () => {
@@ -165,9 +187,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         summary = await registry.recompileChanged(filename);
         if (summary.pages.size === 0) {
           const resolved = path.resolve(filename);
-          const componentPath = routeComponentPaths.get(resolved);
-          if (componentPath) {
-            await registry.compile(componentPath, { force: true });
+          if (routeComponentPaths.has(resolved)) {
+            await registry.compile(resolved, { force: true });
             summary = { pages: new Set([resolved]), clientBundleCount: 0 };
           }
         }
@@ -184,10 +205,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         durationMs: performance.now() - start,
       });
       if (failed) {
-        // Rebuild threw before the affected set could be returned — we
-        // can't scope the reload, so broadcast so every tab refreshes
-        // and the error overlay (rendered into the next response from
-        // accumulated registry errors) surfaces.
+        // The rebuild threw before returning an affected set, leaving the reload unscopable, so every tab refreshes and
+        // the error overlay surfaces from the accumulated registry errors in the next response.
         notifyClients();
       } else if (summary.pages.size > 0) {
         notifyClients(summary.pages);
@@ -222,10 +241,9 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     });
   }, 100);
 
-  // The HTML shell is read once at startup and isn't part of any page's Svelte
-  // dependency graph, so a generic recompile would report 0 affected pages and
-  // skip the reload. Re-read it and broadcast — every page may depend on the
-  // shell's styling/head/scripts, so all tabs reload.
+  // The HTML shell is read once at startup and sits outside every page's Svelte dependency graph, so a generic
+  // recompile would report 0 affected pages and skip the reload. Any page may depend on its styling, head, or scripts,
+  // so re-reading it reloads all tabs.
   const triggerShellReload = reloadShell
     ? debounce((filename: string) => {
         reloadChain = reloadChain.then(async () => {
@@ -249,13 +267,13 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       }, 250)
     : undefined;
 
-  // --- Entry-based route HMR ---
-  // Build the entry module to discover its transitive deps. When a dep changes,
-  // rebuild and re-extract routes via extractServeOptions, then hot-swap
-  // handlers in place so the running server picks up route changes without a
-  // restart.
-  let entryDeps: Set<string> = new Set();
+  // Building the entry module discovers its transitive deps, so a dep change can rebuild, re-extract routes via
+  // `extractServeOptions`, and hot-swap handlers in place for the running server.
+  let serverEntryDeps: Set<string> = new Set();
   const entryBuildOutDir = path.resolve(`${outDir}/entry-hmr`);
+
+  let entryReloadCount = 0;
+  let moduleStateWarned = false;
 
   async function buildEntry(): Promise<Record<string, unknown> | null> {
     const result = await Bun.build({
@@ -280,19 +298,21 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         }
       }
     }
-    entryDeps = newDeps;
+    serverEntryDeps = newDeps;
     const outFile = path.resolve(entryBuildOutDir, 'entry.js');
     const serveOptions = await extractServeOptions(outFile, { fresh: true });
     if (!serveOptions?.routes) {
       logger.warn('Entry rebuild produced no routes — skipping update');
       return null;
     }
+    reloadSpeculationRules?.(serveOptions.speculationRules);
+    await reconcileCron(serveOptions as { cron?: MochiCronJob[]; cronStorage?: MochiQueueStorage; queueShutdownTimeout?: number });
     const freshRoutes = serveOptions.routes as Record<string, unknown>;
 
-    const newComponentPaths = new Map<string, string>();
+    const newComponentPaths = new Set<string>();
     for (const handler of Object.values(freshRoutes)) {
       if (isMochiPage(handler)) {
-        newComponentPaths.set(path.resolve(handler.componentPath), handler.componentPath);
+        newComponentPaths.add(path.resolve(handler.componentPath));
       }
     }
     routeComponentPaths = newComponentPaths;
@@ -301,9 +321,35 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   }
 
   let knownEntryPatterns = new Set<string>();
-  let routeComponentPaths: Map<string, string> = new Map();
+  let routeComponentPaths: Set<string> = new Set();
+  let lastCronSignature = deps.initialCronSignature ?? cronSignature([]);
 
-  function routeType(handler: unknown): 'api' | 'ws' | 'sse' | 'page' | 'file' | null {
+  // Re-register durable cron only when an entry edit actually changes the cron array, so a route-only edit doesn't
+  // churn the scheduler.
+  async function reconcileCron(serveOptions: { cron?: MochiCronJob[]; cronStorage?: MochiQueueStorage; queueShutdownTimeout?: number }): Promise<void> {
+    const cron = serveOptions.cron ?? [];
+    const signature = cronSignature(cron);
+    if (signature === lastCronSignature) {
+      return;
+    }
+    try {
+      if (cron.length === 0) {
+        await stopCronRuntime();
+      } else {
+        await startCronRuntime(cron, { cronStorage: serveOptions.cronStorage ?? 'memory', development: true, jitterMs: 0, shutdownTimeout: serveOptions.queueShutdownTimeout });
+      }
+      // Only a successful re-register advances the signature: startCronRuntime stops the running scheduler before it
+      // rebuilds, so a failure leaves nothing scheduled and the next save must retry rather than short-circuit.
+      lastCronSignature = signature;
+      logger.info(`[cron] re-registered ${cron.length} job(s) after edit`);
+    } catch (err) {
+      logger.warn(`[cron] reload failed — no schedule is running; fix the error and save again: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  type DevRouteType = 'api' | 'ws' | 'sse' | 'page' | 'file' | null;
+
+  function routeType(handler: unknown): DevRouteType {
     if (isMochiApi(handler)) {
       return 'api';
     }
@@ -322,7 +368,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     return null;
   }
 
-  function currentRouteType(pattern: string): 'api' | 'ws' | 'sse' | 'page' | 'file' | null {
+  function currentRouteType(pattern: string): DevRouteType {
     if (apiHandlerMap?.has(pattern)) {
       return 'api';
     }
@@ -344,10 +390,14 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     return null;
   }
 
-  function addBunRoute(pattern: string, value: BunRouteValue): void {
+  function mirrorsAltSlash(type: DevRouteType): boolean {
+    return type === null || mirrorsSlashForm(type);
+  }
+
+  function addBunRoute(pattern: string, value: BunRouteValue, type: DevRouteType): void {
     bunRoutes[pattern] = value;
     baseBunRoutes[pattern] = value;
-    if (trailingSlashPolicy) {
+    if (trailingSlashPolicy && mirrorsAltSlash(type)) {
       const alt = alternateSlashPattern(pattern);
       if (alt && !(alt in bunRoutes)) {
         bunRoutes[alt] = value;
@@ -356,10 +406,11 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     }
   }
 
-  function removeBunRoute(pattern: string): void {
-    if (trailingSlashPolicy) {
+  function removeBunRoute(pattern: string, type: DevRouteType): void {
+    if (trailingSlashPolicy && mirrorsAltSlash(type)) {
       const alt = alternateSlashPattern(pattern);
-      if (alt) {
+      // A pattern the entry declares itself is a sibling route, not our mirror of this one.
+      if (alt && !knownEntryPatterns.has(alt)) {
         delete bunRoutes[alt];
         delete baseBunRoutes[alt];
       }
@@ -385,10 +436,10 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
 
         if (currentType && currentType !== type && registerRoutePattern && unregisterRoutePattern) {
           unregisterRoutePattern(pattern);
-          removeBunRoute(pattern);
+          removeBunRoute(pattern, currentType);
           const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
           if (result) {
-            addBunRoute(pattern, result.bunRouteValue);
+            addBunRoute(pattern, result.bunRouteValue, result.type);
             counts.added.push(pattern);
             counts.removed.push(pattern);
             logger.info(`Route retyped ${currentType}→${type}: ${pattern}`);
@@ -397,10 +448,10 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
           // File routes have no handler map to mutate in place — their source
           // is baked into the registered closure — so swap by re-registering.
           unregisterRoutePattern(pattern);
-          removeBunRoute(pattern);
+          removeBunRoute(pattern, 'file');
           const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
           if (result) {
-            addBunRoute(pattern, result.bunRouteValue);
+            addBunRoute(pattern, result.bunRouteValue, result.type);
             counts.file++;
             counts.updated++;
             logger.info(`Route updated file: ${pattern}`);
@@ -430,7 +481,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         try {
           const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
           if (result) {
-            addBunRoute(pattern, result.bunRouteValue);
+            addBunRoute(pattern, result.bunRouteValue, result.type);
             counts[result.type]++;
             counts.added.push(pattern);
             logger.info(`Route added ${result.type}: ${pattern}`);
@@ -445,10 +496,27 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     if (unregisterRoutePattern) {
       for (const pattern of knownEntryPatterns) {
         if (!freshPatterns.has(pattern)) {
+          const removedType = currentRouteType(pattern);
           unregisterRoutePattern(pattern);
-          removeBunRoute(pattern);
+          removeBunRoute(pattern, removedType);
           counts.removed.push(pattern);
           logger.info(`Route removed: ${pattern}`);
+        }
+      }
+    }
+
+    // Deleting an explicitly-declared sibling (`/a/` alongside `/a`) leaves the survivor without the mirror a cold
+    // boot would have given it, so its canonical form would redirect into a 404 until restart.
+    if (trailingSlashPolicy) {
+      for (const pattern of freshPatterns) {
+        const value = bunRoutes[pattern];
+        if (value === undefined || !mirrorsAltSlash(currentRouteType(pattern))) {
+          continue;
+        }
+        const alt = alternateSlashPattern(pattern);
+        if (alt && !(alt in bunRoutes)) {
+          bunRoutes[alt] = value;
+          baseBunRoutes[alt] = value;
         }
       }
     }
@@ -459,8 +527,10 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
 
   const triggerEntryReload = debounce((filename: string) => {
     reloadChain = reloadChain.then(async () => {
-      mochiEvents.emit('recompile:start', { trigger: 'entry', path: filename, pageCount: 0 });
+      mochiEvents.emit('recompile:start', { trigger: 'entry', path: filename, pageCount: registry.getPageCount() });
       const start = performance.now();
+      let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
+      let failed = false;
       let counts: { updated: number; added: string[]; removed: string[]; api: number; ws: number; sse: number; page: number; file: number } = {
         updated: 0,
         added: [],
@@ -474,6 +544,10 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       try {
         const freshRoutes = await buildEntry();
         if (freshRoutes) {
+          if (!moduleStateWarned && reachedModuleChurnThreshold(++entryReloadCount)) {
+            mochiEvents.emit('recompile:module-churn', { reloadCount: entryReloadCount });
+            moduleStateWarned = true;
+          }
           counts = await applyRouteChanges(freshRoutes);
           const hasChanges = counts.updated > 0 || counts.added.length > 0 || counts.removed.length > 0;
           if (hasChanges) {
@@ -511,25 +585,32 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
             } as Parameters<typeof server.reload>[0]);
           }
         }
+        // A server-entry module can also be inlined into page SSR bundles, so recompile any dependent page here —
+        // before the reload below — so the browser fetches fresh HTML in one reload instead of a stale bundle then a
+        // second reload. No-ops when no page depends on the file.
+        summary = await registry.recompileChanged(filename);
       } catch (e) {
+        failed = true;
         logger.warn(`Entry rebuild failed: ${e instanceof Error ? e.message : e}`);
       }
       mochiEvents.emit('recompile:complete', {
         trigger: 'entry',
         path: filename,
-        pageCount: 0,
-        pages: [],
-        clientBundleCount: 0,
+        pageCount: summary.pages.size,
+        pages: [...summary.pages],
+        clientBundleCount: summary.clientBundleCount,
         durationMs: performance.now() - start,
       });
       const hasChanges = counts.updated > 0 || counts.added.length > 0 || counts.removed.length > 0;
-      if (hasChanges) {
+      if (failed || hasChanges) {
         notifyClients();
+      } else if (summary.pages.size > 0) {
+        notifyClients(summary.pages);
       }
     });
   }, 100);
 
-  // Build once at startup so entryDeps and knownEntryPatterns are populated
+  // Build once at startup so serverEntryDeps and knownEntryPatterns are populated
   // before any file-change events arrive.
   reloadChain = reloadChain.then(async () => {
     try {
@@ -585,16 +666,14 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         });
 
   const publicDirRel = path.relative(process.cwd(), path.resolve(publicDir));
-  // Rebuild from the same helpers the startup path uses, so the encoding and
-  // conflict rules can't diverge between the two. The reload always rescans the
-  // whole dir, so it doesn't need the changed path — logging happens per-event
-  // in the watcher handler below (a rename surfaces as remove-old + add-new).
+  // Rebuilding from the startup path's own helpers keeps the encoding and conflict rules from diverging. The reload
+  // rescans the whole dir, so the changed path is irrelevant here; the watcher handler below logs per event.
   let reloadPublic: (() => void) | undefined;
   if (existsSync(publicDir)) {
     reloadPublic = debounce(async () => {
       const freshPublic = await resolvePublicFiles({ publicDir, development });
       const nextRoutes: Record<string, BunRouteValue> = { ...baseBunRoutes };
-      registerPublicRoutes(nextRoutes, freshPublic);
+      registerPublicRoutes(nextRoutes, freshPublic, publicRouteGuard);
       nextRoutes['/__mochi_live_reload'] = liveReloadHandler;
       server.reload({
         routes: nextRoutes,
@@ -624,7 +703,9 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         reloadPublic();
       } else if (filePath.endsWith('.css')) {
         triggerCssReload(filePath);
-      } else if (!filePath.endsWith('.svelte') && entryDeps.has(path.resolve(filePath))) {
+      } else if (isServerEntryDep(filePath, serverEntryDeps)) {
+        // triggerEntryReload rebuilds the entry AND recompiles any page whose SSR bundle inlines this module, so the
+        // exclusive branch is correct: one serialized task, one reload.
         triggerEntryReload(filePath);
       } else {
         triggerReload(filePath);
@@ -644,10 +725,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
       try {
         registry.svelteConfig = await loadSvelteConfig(undefined, { reload: true, tempDir: outDir });
-        // A config reload can change the compiler options, markdown/mdsvex config,
-        // or user preprocessors. Only the compiler options are in the cache
-        // fingerprint, so the markdown/preprocessor cases need an explicit reset —
-        // without it those entries would serve output built under the old config.
+        // A config reload can change compiler options, markdown/mdsvex config, or user preprocessors, but only the
+        // first is in the cache fingerprint — so an explicit reset keeps the rest from serving old-config output.
         registry.compileCache.reset();
         summary = await registry.recompileAll();
       } catch (e) {

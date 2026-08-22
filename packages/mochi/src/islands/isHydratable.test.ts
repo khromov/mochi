@@ -40,8 +40,8 @@ describe('isHydratable() context', () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-island-context-'));
     registry = new ComponentRegistry({ development: true, outDir });
     warnSpy = spyOn(logger, 'warn');
-    // One compileAll for all entrypoints: a second Bun.build over the same
-    // transitive deps in one process risks the bundler EISDIR bug.
+    // One compileAll for all entrypoints — avoids a double in-process
+    // Bun.build() (see bunfig.toml).
     await registry.compileAll([FIXTURE_PAGE, FIXTURE_PROBE, FIXTURE_SPREAD, FIXTURE_LEGACY, FIXTURE_AMBIGUOUS_PAGE]);
   });
 
@@ -68,14 +68,13 @@ describe('isHydratable() context', () => {
     expect([...result.body.matchAll(/data-ctx="(true|false)"/g)].map((m) => m[1])).toEqual(['false']);
   });
 
-  test('isHydratable() propagates through the island subtree: nested child and snippet child true, outside false', async () => {
+  test('isHydratable() propagates through the island subtree: nested child true, outside false', async () => {
     const result = await requestContext.run(makeCtx(), () => registry.renderComponent(FIXTURE_PAGE));
 
-    // Order in the SSR output: island Probe's internal CtxProbe, the snippet
-    // child passed from the page, the plain Probe's internal CtxProbe, the
-    // page-level sibling after the island.
+    // Order in the SSR output: island Probe's internal CtxProbe, the plain
+    // Probe's internal CtxProbe, the page-level sibling after the island.
     const matches = [...result.body.matchAll(/data-ctx="(true|false)"/g)].map((m) => m[1]);
-    expect(matches).toEqual(['true', 'true', 'false', 'false']);
+    expect(matches).toEqual(['true', 'false', 'false']);
   });
 
   test('standalone render with the hydratable context (also-hydrate server island path) seeds nested context', async () => {

@@ -6,7 +6,7 @@ import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
 import { getLocalImageAsset } from '../image/localAssetRegistry';
 import { toPosixPath } from '../utils';
 import { initExtensions } from '../extensions';
-import type { MochiHookContext } from '../extensions';
+import type { MochiFilterContext, MochiHookContext } from '../extensions';
 import type { LocalImageAsset } from '../image/types';
 
 const GLOBAL_KEY = '__mochi_local_image_assets__';
@@ -146,12 +146,12 @@ describe('image extension points', () => {
     const dir = mkdir();
     const outDir = mkdir();
     const fixture = writeFixture(dir, 'hero.png', PNG_40x30);
+    // Capture ctx and assert after the load, so a never-invoked filter fails loudly.
+    let seenCtx: MochiFilterContext['image:localAssetFilename'] | undefined;
     initExtensions({
       filters: {
         'image:localAssetFilename': (name, ctx) => {
-          expect(ctx.sourcePath).toBe(fixture);
-          expect(ctx.ext).toBe('png');
-          expect(ctx.format).toBe('png');
+          seenCtx = ctx;
           return `custom-${name}`;
         },
       },
@@ -160,21 +160,39 @@ describe('image extension points', () => {
     const loader = createImageAssetLoader({ outDir, assetPrefix: '/_mochi', assets });
     const obj = parseModule((await loader({ path: fixture })).contents);
 
+    expect(seenCtx).toBeDefined();
+    expect(seenCtx!.sourcePath).toBe(fixture);
+    expect(seenCtx!.ext).toBe('png');
+    expect(seenCtx!.format).toBe('png');
     expect(obj.src).toMatch(/^\/_mochi\/asset\/custom-hero-[a-z0-9]+\.png$/);
     const asset = assets.get(obj.src);
     expect(asset!.diskPath).toContain('/assets/custom-hero-');
     expect(existsSync(asset!.diskPath)).toBe(true);
   });
 
+  test('image:localAssetFilename rejects anything that is not a bare filename', async () => {
+    const dir = mkdir();
+    const outDir = mkdir();
+    const fixture = writeFixture(dir, 'hero.png', PNG_40x30);
+    for (const bad of ['../../shared-cdn/hero.png', 'nested/hero.png', 'win\\hero.png', '..', '.', '']) {
+      initExtensions({ filters: { 'image:localAssetFilename': () => bad } });
+      const loader = createImageAssetLoader({ outDir, assetPrefix: '/_mochi', assets: new Map<string, LocalImageAsset>() });
+      await expect(loader({ path: fixture })).rejects.toThrow(/not a bare filename/);
+    }
+  });
+
   test('image:localAssetUrl rewrites the served src and the registry key', async () => {
     const dir = mkdir();
     const outDir = mkdir();
     const fixture = writeFixture(dir, 'hero.png', PNG_40x30);
+    // Capture url + ctx and assert after the load, so a never-invoked filter fails loudly.
+    let seenUrl: string | undefined;
+    let seenCtx: MochiFilterContext['image:localAssetUrl'] | undefined;
     initExtensions({
       filters: {
         'image:localAssetUrl': (url, ctx) => {
-          expect(url).toBe(`/_mochi/asset/${ctx.filename}`);
-          expect(ctx.assetPrefix).toBe('/_mochi');
+          seenUrl = url;
+          seenCtx = ctx;
           return `https://cdn.example.com/${ctx.filename}`;
         },
       },
@@ -183,6 +201,9 @@ describe('image extension points', () => {
     const loader = createImageAssetLoader({ outDir, assetPrefix: '/_mochi', assets });
     const obj = parseModule((await loader({ path: fixture })).contents);
 
+    expect(seenCtx).toBeDefined();
+    expect(seenUrl).toBe(`/_mochi/asset/${seenCtx!.filename}`);
+    expect(seenCtx!.assetPrefix).toBe('/_mochi');
     expect(obj.src).toMatch(/^https:\/\/cdn\.example\.com\/hero-[a-z0-9]+\.png$/);
     // The rewritten URL is the key in both the build map and the request-time registry.
     expect(assets.get(obj.src)).toBeDefined();

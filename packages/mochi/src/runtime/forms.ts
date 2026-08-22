@@ -1,8 +1,7 @@
-import type { MochiFormFail, MochiFormRedirect, MochiFormSuccess } from '../types';
+import type { MochiFormFail, MochiRedirect, MochiFormSuccess } from '../types';
 
 /**
- * Re-render the entry component with `form = { ok: false, ... }` and the
- * given HTTP status. Intended for validation errors from a form action.
+ * Re-render the entry component with `form = { ok: false, action, status, data }` and the given HTTP status, for a form action's validation errors.
  *
  * ```ts
  * if (!username) return fail(400, { error: 'Username required', username });
@@ -13,21 +12,19 @@ export function fail<T extends Record<string, unknown>>(status: number, data: T)
 }
 
 /**
- * Produce an HTTP redirect response after an action runs. Use 303 for the
- * standard POST/Redirect/GET pattern after a successful mutation.
+ * Produce an HTTP redirect response from a form action or a `serverProps` resolver. Use 303 for the standard POST/Redirect/GET pattern after a successful mutation.
  *
  * ```ts
  * return redirect(303, '/dashboard');
  * ```
  */
-export function redirect(status: 301 | 302 | 303 | 307 | 308, location: string): MochiFormRedirect {
-  return { __mochiFormRedirect: true, status, location };
+export function redirect(status: 301 | 302 | 303 | 307 | 308, location: string): MochiRedirect {
+  return { __mochiRedirect: true, status, location };
 }
 
 /**
- * Re-render the entry component with `form = { ok: true, ... }` and HTTP 200.
- * Use this when the action completes but you want to stay on the page
- * (e.g. a search form that shows results inline).
+ * Re-render the entry component with `form = { ok: true, action, data }` and HTTP 200, for an action that completes while staying
+ * on the page — a search form showing results inline.
  *
  * ```ts
  * return success({ message: 'Saved.' });
@@ -41,8 +38,8 @@ export function isFormFail(v: unknown): v is MochiFormFail {
   return typeof v === 'object' && v !== null && (v as MochiFormFail).__mochiFormFail === true;
 }
 
-export function isFormRedirect(v: unknown): v is MochiFormRedirect {
-  return typeof v === 'object' && v !== null && (v as MochiFormRedirect).__mochiFormRedirect === true;
+export function isRedirect(v: unknown): v is MochiRedirect {
+  return typeof v === 'object' && v !== null && (v as MochiRedirect).__mochiRedirect === true;
 }
 
 export function isFormSuccess(v: unknown): v is MochiFormSuccess {

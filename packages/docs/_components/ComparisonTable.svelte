@@ -155,9 +155,8 @@
 
   const labelFor: Record<Status, string> = { yes: 'Yes', no: 'No', partial: 'Partial', planned: 'Planned' };
 
-  // `mochi-only` / `kit-only` show features where one framework leads — its
-  // support (ranked yes > partial > planned > no) is stronger than the other's.
-  // Derived from status, not a per-row tag.
+  // `mochi-only` / `kit-only` show features where one framework's support (ranked
+  // yes > partial > planned > no) beats the other's, derived from status rather than a per-row tag.
   type Filter = Category | 'all' | 'mochi-only' | 'kit-only';
   const rank: Record<Status, number> = { yes: 3, partial: 2, planned: 1, no: 0 };
   const tabs: { id: Filter; label: string }[] = [
@@ -172,9 +171,8 @@
   let { collapsed: collapsedDefault = false }: { collapsed?: boolean } = $props();
 
   let activeTab = $state<Filter>('all');
-  // Collapsed state lives in a shared store so an external "Expand" link (a
-  // separate island) can open this one. Until anyone interacts it's `null`, so
-  // we fall back to the per-instance `collapsed` prop for the initial render.
+  // Collapsed state lives in a shared store so an external "Expand" link (a separate
+  // island) can open this one, falling back to the per-instance `collapsed` prop until the shared value is set.
   const collapsed = $derived(comparisonOpen() === null ? collapsedDefault : !comparisonOpen());
   const filteredRows = $derived.by(() => {
     if (activeTab === 'all') {
@@ -265,9 +263,8 @@
     margin: 1.5rem 0 0.6rem;
   }
 
-  /* Horizontal scroll behind a right-edge fade. `overflow-x: auto` means the
-     scrollbar only exists when the pills overflow; its thumb stays transparent
-     and is only revealed on hover, so it's never visually noisy. No JS. */
+  /* `overflow-x: auto` means the scrollbar only shows when pills overflow, and the
+     thumb stays transparent until hover so it's never visually noisy. */
   .tabs-scroll {
     flex: 1 1 auto;
     min-width: 0;
@@ -396,17 +393,15 @@
     color: var(--text);
   }
 
-  /* Expanded: keep a comfortable min width so wide content scrolls horizontally
-     on mobile (via .comparison's overflow-x) instead of being squished into the
-     viewport width. Inherits the global `.readme table` display/overflow. */
+  /* Keep a comfortable min width so wide content scrolls horizontally on mobile
+     (via .comparison's overflow-x) rather than squishing into the viewport width. */
   .comparison:not(.preview) .comparison-table {
     min-width: 36rem;
   }
 
-  /* Collapsed preview only: force a real fixed-layout, full-width table (out-
-     specifying the global `.readme table { display: block }`) so the header
-     fills 100% and doesn't reflow with no body rows. Must NOT leak to the
-     expanded table, or fixed layout squishes its columns on mobile. */
+  /* Force a real fixed-layout, full-width table (out-specifying the global
+     `.readme table { display: block }`) so the header fills 100% with no body rows — must
+     stay scoped to preview, or fixed layout squishes columns on the expanded table's mobile view. */
   .comparison.preview .comparison-table {
     display: table !important;
     width: 100% !important;
@@ -433,17 +428,13 @@
     width: 42%;
   }
 
-  /* Desktop: the thead row already labels the columns, so the per-cell label is
-     redundant. It's only revealed in the stacked mobile layout below. Declared
-     before the media query so the mobile `display: block` wins on source order. */
+  /* Redundant on desktop since thead already labels columns; declared before the
+     media query below so the mobile override wins on source order. */
   .col-label {
     display: none;
   }
 
-  /* Mobile: drop the horizontal-scroll 3-column table for a stacked layout —
-     each feature becomes a full-width heading with the Mochi/SvelteKit cells
-     snug beneath it in two columns. Scoped to :not(.preview) so the collapsed
-     preview keeps its fixed-layout faded header row. */
+  /* Scoped to :not(.preview) so the collapsed preview keeps its fixed-layout faded header row. */
   @media (max-width: 640px) {
     .comparison:not(.preview) .comparison-table {
       min-width: 0;

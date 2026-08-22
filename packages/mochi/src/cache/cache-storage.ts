@@ -1,9 +1,22 @@
 import { mkdirSync, rmSync, type Dirent } from 'node:fs';
 import { mkdir, open, readdir, rename, rm, stat, unlink, type FileHandle } from 'node:fs/promises';
-import { join, relative } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import type { Storage, SweepOptions, SweepResult } from './cache';
 import { mochiEvents } from '../events';
+import { registerPressureResponder } from '../runtime/memoryPressure';
+import { pinGlobal } from '../utils/globalState';
 import { logger } from '../utils/log';
+
+// A closure rather than the instance, so taking a sweeper over needs no public method on `FileStorage` — the registry
+// may hold an entry from a different bundled copy of this class.
+interface SweeperOwner {
+  stop(): void;
+}
+
+// Dev HMR rebuilds a module-scope FileStorage on every reload while the previous copy becomes unreachable, so nobody
+// is left to dispose() it and its unref'd interval sweeps forever. Keyed by directory since a sweep deletes files by
+// mtime; pinned so duplicate bundled framework copies share one registry.
+const sweeperOwners = pinGlobal('__mochi_cache_sweeper_owners__', () => new Map<string, SweeperOwner>());
 
 /**
  * On-disk sentinel written in place of a binary field: a pointer (relative to the
@@ -15,10 +28,8 @@ interface BlobPointer {
 }
 
 /**
- * What `getItem` returns in place of a binary field — an absolute-path reference
- * the caller resolves on demand via {@link readBlobRef}. Metadata reads never
- * load the bytes, so a large binary value can be persisted through the cache while
- * a freshness/metadata read stays cheap.
+ * What `getItem` returns in place of a binary field: an absolute-path reference the caller resolves on demand via
+ * {@link readBlobRef}, so a large binary value persists through the cache while metadata reads stay cheap.
  */
 export interface BlobRef {
   __mochiBlobRef: true;
@@ -54,11 +65,9 @@ function isInlineBinary(value: unknown): value is InlineBinary {
 }
 
 /**
- * On-disk wrapper written by `FileStorage`: the plaintext cache key alongside the
- * (blob-encoded) value. Since files are named by `sha256(key)`, storing the key
- * is the only way to enumerate keys (`keys()`) for the dev debug bar. A file
- * without the wrapper (corrupt, foreign, or written by an older version) reads
- * as a miss and is overwritten by the next recompute.
+ * On-disk wrapper written by `FileStorage`: the plaintext cache key alongside the blob-encoded value. Files are named
+ * `sha256(key)`, so storing the key is the only way `keys()` can enumerate them for the dev debug bar. A file lacking the
+ * wrapper — corrupt, foreign, or written by an older version — reads as a miss and is overwritten by the next recompute.
  */
 interface KeyedEnvelope {
   __mochiKey: string;
@@ -77,22 +86,22 @@ export interface MemoryStorageOptions {
 }
 
 /**
- * In-memory `Storage` backed by a `Map`. With no options it never evicts, same
- * as before `sweep()` existed. Pass `maxAge` to make `sweep()` reclaim aged-out
- * entries — required for a bounded memory footprint when used as a long-lived
- * backend (e.g. `ImageCache`'s `storage` override), since nothing else here
- * reclaims memory.
+ * In-memory `Storage` backed by a `Map`, which without options holds everything forever. Pass `maxAge` so `sweep()`
+ * reclaims aged-out entries — the only way to bound the footprint of a long-lived backend like `ImageCache`'s `storage` override.
  */
 export class MemoryStorage implements Storage {
   private store = new Map<string, { value: unknown; writtenAt: number }>();
   private readonly maxAge?: number;
   private intervalTimer?: ReturnType<typeof setInterval>;
+  readonly pressureLabel = 'MemoryStorage';
 
   constructor(options: MemoryStorageOptions = {}) {
     this.maxAge = options.maxAge;
     if (options.purgeInterval && options.purgeInterval > 0) {
       this.startSweeper(options.purgeInterval);
     }
+    // This is the backend that actually holds bytes in RAM, so it is the one the OS low-memory signal drains.
+    registerPressureResponder(this);
   }
 
   getItem(key: string): unknown {
@@ -198,6 +207,10 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
   // Ramp to a 100ms poll and keep retrying for a few seconds: under heavy write
   // contention a peer's handle on the destination can linger longer than a short
   // window, and a rename that ultimately succeeds beats a spurious hard failure.
+  // The delay is jittered because a steady cadence can phase-lock with a reader that
+  // reopens the destination on its own steady cycle — every retry then lands inside the
+  // reader's open window and the writer starves until the budget runs out. Jitter keeps
+  // the mean backoff but decorrelates the two, so a retry eventually falls in the gap.
   for (let attempt = 0; ; attempt++) {
     try {
       return await rename(from, to);
@@ -206,15 +219,37 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
       if (attempt >= 50 || !RENAME_RETRY_CODES.has(code)) {
         throw err;
       }
-      await Bun.sleep(Math.min(100, 10 * (attempt + 1)));
+      await Bun.sleep(Math.min(100, 10 * (attempt + 1)) * (0.5 + Math.random()));
     }
   }
 }
 
-// fsync a directory so a rename into it survives a crash. Best-effort: some
-// filesystems reject directory fsync with EINVAL/ENOTSUP — there the data file
-// was still fsynced (no torn read), we only forgo rename-durability, which
-// safely degrades to "revert to the prior version".
+// TODO: This is very hacky and we should check if 1.4.0 solves it and/or remove this asap
+// Windows reports a delete-pending file — a concurrent sweep or removeItem mid-unlink — as EPERM/EACCES
+// on open rather than ENOENT, and an antivirus/indexer handle surfaces the same codes; retrying lets the
+// delete finish into a plain ENOENT miss and a transient lock clear into a successful read. ENOENT itself
+// is never retried — it is the miss signal `getItem` branches on. No-op on POSIX.
+const READ_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
+async function readTextWithRetry(path: string): Promise<string> {
+  if (process.platform !== 'win32') {
+    return Bun.file(path).text();
+  }
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await Bun.file(path).text();
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? '';
+      if (attempt >= 20 || !READ_RETRY_CODES.has(code)) {
+        throw err;
+      }
+      await Bun.sleep(Math.min(100, 10 * (attempt + 1)) * (0.5 + Math.random()));
+    }
+  }
+}
+
+// fsyncing a directory makes a rename into it survive a crash. Some filesystems reject directory fsync with
+// EINVAL/ENOTSUP; the data file is fsynced regardless, so only rename-durability is lost and the failure mode degrades
+// to reverting to the prior version.
 const DIR_FSYNC_UNSUPPORTED = new Set(['EINVAL', 'ENOTSUP', 'EPERM', 'EISDIR']);
 async function fsyncDir(dir: string): Promise<void> {
   let fh: FileHandle | undefined;
@@ -230,28 +265,21 @@ async function fsyncDir(dir: string): Promise<void> {
   }
 }
 
-// The sweep can't tell a crash-orphaned blob folder (safe to reclaim) from the
-// live window between a first write's blob renames and its JSON rename —
-// `setItem` commits blobs before the JSON, so a sidecar-less folder younger than
-// this is treated as an in-flight write and left for a later sweep. Writes
-// complete in milliseconds; a few seconds is comfortably conservative.
+// The sweep can't distinguish a crash-orphaned blob folder from the live window between a first write's blob renames and
+// its JSON rename, since `setItem` commits blobs first — so a sidecar-less folder younger than this counts as in-flight
+// and waits for a later sweep. Writes complete in milliseconds, making a few seconds comfortably conservative.
 const ORPHAN_BLOB_GRACE_MS = 10_000;
 
 /**
- * Persists each cache entry as a JSON file (`<sha256(key)>.json`) under `directory`.
- * The entry's own `createdAt` drives stale-while-revalidate, so this backend is a
- * drop-in for `MemoryStorage` — the sweep only removes files past `maxAge`, which
- * the cache would recompute anyway, so it never deletes a still-servable entry.
+ * Persists each cache entry as `<sha256(key)>.json` under `directory`. The entry's own `createdAt` drives
+ * stale-while-revalidate, making this a drop-in for `MemoryStorage`; the sweep removes only files past `maxAge`, which
+ * the cache would recompute anyway, so a still-servable entry survives.
  *
- * Binary fields (`Uint8Array`/`Buffer`) anywhere in a value round-trip
- * transparently: by default they're inlined as base64 in the JSON and come back
- * as `Uint8Array` — nothing to manage. With `offloadBinary: true` each binary is
- * instead written to its own file in a `<sha256(key)>/` folder and replaced by a
- * pointer in the JSON, so a value can carry large binaries (e.g. image bytes)
- * without base64-bloating it; `getItem` then returns those fields as lazy
- * {@link BlobRef}s (resolved on demand via {@link readBlobRef}), keeping metadata
- * reads cheap. Deleting a key removes its blob folder with it. Pointers already
- * on disk always decode, so flipping the flag never orphans existing entries.
+ * Binary fields (`Uint8Array`/`Buffer`) anywhere in a value round-trip transparently, inlined as base64 by default and
+ * returned as `Uint8Array`. With `offloadBinary: true` each binary is written to its own file in a `<sha256(key)>/`
+ * folder and replaced by a pointer, letting a value carry large image bytes without base64 bloat; `getItem` then returns
+ * those fields as lazy {@link BlobRef}s, keeping metadata reads cheap. Deleting a key removes its blob folder with it,
+ * and pointers already on disk always decode, so flipping the flag leaves existing entries intact.
  */
 export class FileStorage implements Storage {
   private directory: string;
@@ -259,6 +287,8 @@ export class FileStorage implements Storage {
   private offloadBinary: boolean;
   private initialTimer?: ReturnType<typeof setTimeout>;
   private intervalTimer?: ReturnType<typeof setInterval>;
+  private sweepKey?: string;
+  private sweepOwner?: SweeperOwner;
 
   constructor(options: FileStorageOptions) {
     this.directory = options.directory;
@@ -279,7 +309,7 @@ export class FileStorage implements Storage {
   async getItem(key: string): Promise<unknown> {
     let text: string;
     try {
-      text = await Bun.file(this.pathFor(key)).text();
+      text = await readTextWithRetry(this.pathFor(key));
     } catch (err) {
       // A missing file is a cache miss; any other read error propagates so the
       // cache can degrade to a `miss` + `cache:error` rather than serving garbage.
@@ -300,10 +330,9 @@ export class FileStorage implements Storage {
     const path = join(this.directory, `${hash}.json`);
     const blobs: { relPath: string; data: Uint8Array }[] = [];
     const json = this.encodeBlobs(value, hash, blobs);
-    // Write the offloaded blobs first (each durable-write + rename), so a reader
-    // that sees the JSON always sees the blobs it points at. Blob names are
-    // content-addressed, so an identical file already on disk needs no rewrite.
-    // Unlike Bun.write, `open` won't create `<hash>/`, so mkdir it once up front.
+    // Offloaded blobs are written first, each a durable write plus rename, so a reader seeing the JSON always sees the
+    // blobs it points at. Names are content-addressed, so an identical file already on disk needs no rewrite. Unlike
+    // `Bun.write`, `open` won't create `<hash>/`, hence the up-front mkdir.
     if (blobs.length > 0) {
       const blobDir = join(this.directory, hash);
       await mkdir(blobDir, { recursive: true });
@@ -318,10 +347,8 @@ export class FileStorage implements Storage {
       }
       await fsyncDir(blobDir);
     }
-    // Write to a unique temp file (fsynced), then rename into place — rename is
-    // atomic on the same filesystem, so a concurrent `getItem` never reads a
-    // half-written file, and the fsync means a crash can't leave a torn file
-    // either. fsync the directory so the rename itself survives a crash.
+    // A fsynced temp file renamed into place is atomic on the same filesystem, so a concurrent `getItem` can't read a
+    // half-written file and a crash can't leave a torn one; the directory fsync carries the rename through a crash too.
     const tmp = `${path}.${crypto.randomUUID()}.tmp`;
     const envelope: KeyedEnvelope = { __mochiKey: key, __mochiValue: json };
     await writeFileDurable(tmp, new TextEncoder().encode(JSON.stringify(envelope)));
@@ -376,10 +403,9 @@ export class FileStorage implements Storage {
   }
 
   /**
-   * Plaintext keys of every persisted entry, read from each file's stored envelope
-   * (filenames are `sha256(key)`, so the key can't be recovered from the name).
-   * Reads every JSON file — intended for dev observability, not a hot path. Legacy
-   * files without a stored key are skipped.
+   * Plaintext keys of every persisted entry, read from each file's stored envelope since filenames are `sha256(key)`.
+   * This reads every JSON file in the directory, so it suits dev observability rather than a hot path. Legacy files
+   * without a stored key are skipped.
    */
   async keys(): Promise<string[]> {
     const entries = await readdir(this.directory, { withFileTypes: true }).catch((err) => {
@@ -395,17 +421,13 @@ export class FileStorage implements Storage {
   }
 
   /**
-   * Delete files older than `maxAge`, reclaiming each entry's offloaded blob
-   * folder with it, plus any orphaned blob folder whose owning JSON is gone.
-   * Public so callers/tests can sweep on demand.
+   * Delete files older than `maxAge`, reclaiming each entry's offloaded blob folder along with any orphaned folder whose
+   * owning JSON is gone. Public so callers and tests can sweep on demand.
    *
-   * `reportKeys` additionally returns each removed entry's plaintext key, read from
-   * its envelope just before the unlink (filenames are `sha256(key)`, so the key is
-   * not recoverable afterwards). That costs one extra read per *expired* entry, which
-   * is why it's opt-in — but it lets a janitor attribute removals without calling
-   * `keys()`, which reads every file in the directory. `.tmp` writes and corrupt or
-   * legacy files carry no recoverable key, so they count toward `removed` without
-   * appearing in `removedKeys`.
+   * `reportKeys` also returns each removed entry's plaintext key, read from its envelope just before the unlink, after
+   * which the `sha256(key)` filename makes it unrecoverable. It's opt-in because it costs one extra read per expired
+   * entry, but it lets a janitor attribute removals without `keys()` reading the whole directory. `.tmp` writes and
+   * corrupt or legacy files carry no recoverable key, so they count toward `removed` alone.
    */
   async sweep(now: number = Date.now(), options: SweepOptions = {}): Promise<SweepResult> {
     const entries = await readdir(this.directory, { withFileTypes: true }).catch((err) => {
@@ -423,10 +445,8 @@ export class FileStorage implements Storage {
         .filter((entry) => !entry.isDirectory() && (entry.name.endsWith('.json') || entry.name.endsWith('.tmp')))
         .map(async (entry) => {
           const filePath = join(this.directory, entry.name);
-          // A `.tmp` is never a cache entry — only ever crash debris or a live
-          // write's in-flight temp — so age it out by the crash-orphan grace, not
-          // `maxAge`. With a tiny `maxAge` a slow write (Windows) would otherwise
-          // let the sweep unlink a temp file mid-write, ENOENT-ing its own rename.
+          // A `.tmp` is crash debris or a live write's in-flight temp, so it ages out by the crash-orphan grace instead
+          // of `maxAge` — under a tiny `maxAge` a slow Windows write would otherwise be unlinked mid-write, ENOENT-ing its own rename.
           const threshold = entry.name.endsWith('.tmp') ? ORPHAN_BLOB_GRACE_MS : this.maxAge;
           try {
             const info = await stat(filePath);
@@ -452,10 +472,8 @@ export class FileStorage implements Storage {
         }),
     );
 
-    // Pass 2: orphaned blob folders whose owning JSON no longer exists (already
-    // reclaimed in pass 1, lost to a crash — or an in-flight first write whose
-    // JSON hasn't landed yet, which the mtime grace below protects; a rename into
-    // the folder refreshes its mtime). `rm` no-ops if gone.
+    // Pass 2 reclaims blob folders whose owning JSON is gone — swept in pass 1, lost to a crash, or an in-flight first
+    // write whose JSON hasn't landed, which the mtime grace below protects since a rename into the folder refreshes its mtime.
     await Promise.all(
       entries
         .filter((entry) => entry.isDirectory())
@@ -478,8 +496,7 @@ export class FileStorage implements Storage {
     return options.reportKeys ? { removed, removedKeys } : { removed };
   }
 
-  /** Stop the background sweep. Call when the cache is no longer needed (e.g. in tests). */
-  dispose(): void {
+  private stopSweepTimers(): void {
     if (this.initialTimer) {
       clearTimeout(this.initialTimer);
     }
@@ -488,6 +505,17 @@ export class FileStorage implements Storage {
     }
     this.initialTimer = undefined;
     this.intervalTimer = undefined;
+  }
+
+  /** Stop the background sweep. Call when the cache is no longer needed (e.g. in tests). */
+  dispose(): void {
+    this.stopSweepTimers();
+    // A newer instance may have taken the directory over and must keep sweeping it.
+    if (this.sweepKey !== undefined && sweeperOwners.get(this.sweepKey) === this.sweepOwner) {
+      sweeperOwners.delete(this.sweepKey);
+    }
+    this.sweepKey = undefined;
+    this.sweepOwner = undefined;
   }
 
   // The plaintext key stored in a file's envelope, or null if it can't be recovered
@@ -514,14 +542,11 @@ export class FileStorage implements Storage {
     return this.pathFor(key);
   }
 
-  // Deep-clone `value`, replacing binary fields with on-disk pointers and pushing
-  // their bytes onto `blobs` to be written. Never mutates the input. An existing
-  // BlobRef (e.g. re-persisted by `markStale`) is re-pointed at its existing blob
-  // file without rewriting it. Fresh binaries are content-addressed by
-  // `sha256(bytes)`, so a filename always implies its bytes: a rewrite writes a new
-  // file rather than renaming new bytes over one a live lazy BlobRef still points
-  // at, and identical bytes dedupe to one file. Superseded (now-unreferenced) blobs
-  // are reclaimed with the whole entry folder by `removeItem`/the sweep.
+  // Deep-clones `value`, replacing binary fields with on-disk pointers and pushing their bytes onto `blobs`, leaving the
+  // input untouched. An existing BlobRef — one re-persisted by `markStale` — re-points at its current blob file. Fresh
+  // binaries are content-addressed by `sha256(bytes)`, so a filename always implies its bytes: a rewrite lands in a new
+  // file that a live lazy BlobRef can't be reading, and identical bytes dedupe. Superseded blobs are reclaimed with the
+  // whole entry folder by `removeItem` or the sweep.
   private encodeBlobs(value: unknown, hash: string, blobs: { relPath: string; data: Uint8Array }[]): unknown {
     if (isBinary(value)) {
       if (!this.offloadBinary) {
@@ -582,6 +607,13 @@ export class FileStorage implements Storage {
         logger.warn(`Cache sweep failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     };
+    // Newest wins: an older instance is usually a dead HMR copy, and first-wins would pin the sweep to one that
+    // `dispose()` can never reach.
+    const key = resolve(this.directory);
+    sweeperOwners.get(key)?.stop();
+    this.sweepKey = key;
+    this.sweepOwner = { stop: () => this.stopSweepTimers() };
+
     // An initial pass shortly after boot reclaims accrued cruft and makes the
     // sweeper visible right away; both timers are unref'd so they never keep the
     // process alive.
@@ -589,5 +621,6 @@ export class FileStorage implements Storage {
     this.intervalTimer = setInterval(run, intervalMs);
     this.initialTimer.unref?.();
     this.intervalTimer.unref?.();
+    sweeperOwners.set(key, this.sweepOwner);
   }
 }

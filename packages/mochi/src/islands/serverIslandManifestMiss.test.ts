@@ -61,7 +61,16 @@ describe('server-island manifest miss', () => {
       const res = await fetch(`${base}/_mochi/island/${echoKey}?props=${encodeURIComponent(props)}`);
       expect(res.status).toBe(200);
       expect(await res.text()).toContain('>World<');
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(`Server island "${echoKey}" was missing from the prebuilt manifest`));
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('missing from the prebuilt manifest'));
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Echo.svelte'));
+
+      // The on-demand compile above wrote fresh entries into the same maps the
+      // manifest restored. Those two halves have to be keyed identically or the
+      // restored half stops resolving: the page's other server island still has
+      // to link its scoped CSS.
+      const page = await fetch(`${base}/`);
+      expect(page.status).toBe(200);
+      expect(await page.text()).toMatch(/css-url="[^"]+\.css"/);
     } finally {
       warnSpy.mockRestore();
       server?.stop(true);

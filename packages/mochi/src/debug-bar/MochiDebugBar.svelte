@@ -29,10 +29,9 @@
   // toolbar link on the config snapshot rather than always showing it.
   let emailHref = $state<string | null>(null);
 
-  // Ids of dev emails captured but not yet read in the outbox. Persisted in
-  // localStorage so the badge survives reloads and stays in sync across tabs:
-  // LiveReload's `mochi:email-new` adds ids, the outbox's `mochi:outbox-sync`
-  // removes read/cleared ones, and `storage` events mirror other tabs.
+  // Ids of dev emails captured but not yet read, persisted in localStorage so the badge survives reloads and stays in
+  // sync across tabs: LiveReload's `mochi:email-new` adds ids, the outbox's `mochi:outbox-sync` removes read ones, and
+  // `storage` events mirror other tabs.
   let unreadIds = $state<string[]>([]);
 
   function persistUnread() {
@@ -158,17 +157,30 @@
   onDestroy(() => {
     cleanupHighlight();
   });
+
+  // The boundary swallows the fault to spare the host page, so log it here or it vanishes silently; build the bar with
+  // MOCHI_DEBUGBAR_DIAGNOSTIC=1 to get the offending key + an un-minified stack in that log.
+  function reportPanelError(error: unknown) {
+    const err = error as { message?: string; stack?: string } | undefined;
+    console.error('[mochi] debug-bar panel render fault:', err?.message ?? error, err?.stack ?? '');
+  }
 </script>
 
 <div class="mochi-debug-bar-root" bind:this={rootEl}>
-  <WarningsPanel open={activePanel === 'warnings'} onclose={() => (activePanel = null)} />
-  <IslandsPanel open={activePanel === 'islands'} onclose={() => (activePanel = null)} />
-  <ImagesPanel open={activePanel === 'images'} onclose={() => (activePanel = null)} />
-  <BundlesPanel open={activePanel === 'bundles'} onclose={() => (activePanel = null)} />
-  <RequestPanel open={activePanel === 'request'} onclose={() => (activePanel = null)} />
-  <InfoPanel open={activePanel === 'info'} onclose={() => (activePanel = null)} />
-  <CachePanel open={activePanel === 'cache'} onclose={() => (activePanel = null)} />
-  <SettingsPanel open={activePanel === 'settings'} onclose={() => (activePanel = null)} {hiddenPanels} ontoggle={togglePanelVisibility} />
+  <!-- A panel renders from uncontrolled runtime state (live DOM scans, request headers, cache keys); a fault there — a
+       keyed-each duplicate from that state, say — must degrade the non-essential debug UI, never throw an uncaught error
+       onto the host page. The toolbar below stays outside so it keeps working when a panel fails. -->
+  <svelte:boundary onerror={reportPanelError}>
+    <WarningsPanel open={activePanel === 'warnings'} onclose={() => (activePanel = null)} />
+    <IslandsPanel open={activePanel === 'islands'} onclose={() => (activePanel = null)} />
+    <ImagesPanel open={activePanel === 'images'} onclose={() => (activePanel = null)} />
+    <BundlesPanel open={activePanel === 'bundles'} onclose={() => (activePanel = null)} />
+    <RequestPanel open={activePanel === 'request'} onclose={() => (activePanel = null)} />
+    <InfoPanel open={activePanel === 'info'} onclose={() => (activePanel = null)} />
+    <CachePanel open={activePanel === 'cache'} onclose={() => (activePanel = null)} />
+    <SettingsPanel open={activePanel === 'settings'} onclose={() => (activePanel = null)} {hiddenPanels} ontoggle={togglePanelVisibility} />
+    {#snippet failed()}{/snippet}
+  </svelte:boundary>
 
   <div class="bar" class:is-collapsed={collapsed}>
     <button

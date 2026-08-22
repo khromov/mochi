@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from './ComponentRegistry';
+import { encodeSourcePath } from './manifestPaths';
 
 const FIXTURE_DIR = path.join(import.meta.dir, '..', '__fixtures__', 'css-imports');
 const FIXTURE_PAGE = path.join(FIXTURE_DIR, 'Page.svelte');
@@ -26,17 +27,17 @@ describe('CSS imports — happy path', () => {
   test('strips the CSS import from the SSR JS bundle', () => {
     // SSR outputs are hashed, so resolve the on-disk path via the manifest
     // rather than reconstructing it from the source basename.
-    const ssrModulePath = registry.toManifest().components[FIXTURE_PAGE]!.ssrModule;
-    const ssrSource = readFileSync(ssrModulePath, 'utf8');
+    const ssrModulePath = registry.toManifest().components[encodeSourcePath(FIXTURE_PAGE)]!.ssrModule;
+    const ssrSource = readFileSync(path.resolve(outDir, ssrModulePath), 'utf8');
     expect(ssrSource).not.toContain('color: red');
     expect(ssrSource).not.toContain('styles.css');
   });
 
   test('records the CSS path in entryImportedCss for the page', () => {
     const manifest = registry.toManifest();
-    const entryCss = manifest.entryImportedCss?.[FIXTURE_PAGE];
+    const entryCss = manifest.entryImportedCss?.[encodeSourcePath(FIXTURE_PAGE)];
     expect(entryCss).toBeDefined();
-    expect(entryCss).toContain(FIXTURE_CSS);
+    expect(entryCss).toContain(encodeSourcePath(FIXTURE_CSS));
   });
 
   test('getClientStats() includes the bundled CSS as an output', () => {
@@ -45,6 +46,17 @@ describe('CSS imports — happy path', () => {
     const cssOutput = stats?.outputs.find((o) => o.name.startsWith('styles-'));
     expect(cssOutput).toBeDefined();
     expect(cssOutput?.size).toBeGreaterThan(0);
+  });
+
+  test('minifies the bundled CSS', () => {
+    const cssOutput = registry.getClientStats()?.outputs.find((o) => o.name.startsWith('styles-'));
+    expect(cssOutput).toBeDefined();
+    const cssText = registry.getClientFile(`/_mochi/import-css/${cssOutput!.name}`);
+    expect(cssText).toBeDefined();
+    // Minified output drops the source-path banner comment and all indentation.
+    expect(cssText).not.toContain('/*');
+    expect(cssText).not.toMatch(/\n\s{2,}/);
+    expect(cssText!.trim()).toContain('body{color:red}');
   });
 
   test('renderComponent links the bundled CSS URL', async () => {
@@ -62,16 +74,20 @@ describe('CSS imports — happy path', () => {
       getClientAddress: () => null,
     };
     const result = await requestContext.run(ctx, () => registry.renderComponent(FIXTURE_PAGE));
-    const importCssUrl = result.cssUrls.find((u) => u.includes('/import-css/styles-'));
-    expect(importCssUrl).toBeDefined();
+    const cssOutput = registry.getClientStats()?.outputs.find((o) => o.name.startsWith('styles-'));
+    expect(cssOutput).toBeDefined();
+    const importCssUrls = result.cssUrls.filter((u) => u.includes('/import-css/styles-'));
+    expect(importCssUrls).toEqual([`/_mochi/import-css/${cssOutput!.name}`]);
   });
 
+  // Also the idempotence check for the source-path codec: a manifest that
+  // survives encode → decode → encode unchanged proves the two halves agree.
   test('manifest round-trip preserves importedCssUrls and entryImportedCss', async () => {
     const manifest = registry.toManifest();
     const json = JSON.parse(JSON.stringify(manifest));
     const manifestPath = path.join(outDir, 'manifest.json');
     await Bun.write(manifestPath, JSON.stringify(json));
-    const restored = await ComponentRegistry.fromManifest(manifestPath, false, outDir);
+    const restored = await ComponentRegistry.fromManifest(manifestPath, false);
     const restoredManifest = restored.toManifest();
     expect(restoredManifest.importedCssUrls).toEqual(manifest.importedCssUrls);
     expect(restoredManifest.entryImportedCss).toEqual(manifest.entryImportedCss);
@@ -93,9 +109,9 @@ describe('CSS imports — variable-font format() preservation', () => {
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  // Bun's CSS bundler unquotes `format('woff2-variations')` to `format(woff2-variations)`,
-  // which is invalid CSS and causes the browser to silently drop the @font-face src.
-  // The framework re-quotes it after bundling.
+  // Bun >=1.4.0's CSS bundler keeps `format('woff2-variations')` quoted; the bare
+  // unquoted form `format(woff2-variations)` is invalid CSS and makes the browser
+  // silently drop the @font-face src, so guard against a regression back to it.
   test('preserves quoted format() value for woff2-variations', () => {
     const stats = registry.getClientStats();
     const cssOutput = stats?.outputs.find((o) => o.name.startsWith('font-'));
@@ -103,7 +119,8 @@ describe('CSS imports — variable-font format() preservation', () => {
     const cssUrl = `/_mochi/import-css/${cssOutput!.name}`;
     const cssText = registry.getClientFile(cssUrl);
     expect(cssText).toBeDefined();
-    expect(cssText).toContain("format('woff2-variations')");
+    // Either quote style is valid CSS — the bare unquoted form is the real bug.
+    expect(cssText).toMatch(/\bformat\((['"])woff2-variations\1\)/);
     expect(cssText).not.toMatch(/\bformat\(woff2-variations\)/);
   });
 });
@@ -122,12 +139,14 @@ describe('CSS imports — error path', () => {
   });
 
   test('a missing CSS import causes the SSR build to throw', async () => {
-    await expect(registry.compile(FIXTURE_MISSING_PAGE)).rejects.toThrow();
+    await expect(registry.compile(FIXTURE_MISSING_PAGE)).rejects.toThrow(/Could not resolve.*missing\.css/);
   });
 
   test('a bundle-failed CSS import is recorded as a css-bundle-failed error', async () => {
     await registry.compile(FIXTURE_BAD_CSS_PAGE);
     const cssErrors = registry.getErrors().filter((e) => e.kind === 'css-bundle-failed');
-    expect(cssErrors.length).toBeGreaterThan(0);
+    expect(cssErrors.length).toBe(1);
+    expect(cssErrors[0]!.cssPath).toContain('bad.css');
+    expect(cssErrors[0]!.message).toContain('nonexistent-bad-target.css');
   });
 });

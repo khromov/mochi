@@ -6,10 +6,7 @@
 
   const sources = await loadSources(files);
 
-  // Three distinct prop payloads. Each is reused across three cards in its
-  // group, so the page renders nine hydratable islands but only three unique
-  // serialized payloads — Mochi hoists each into a single
-  // <script type="application/json"> block and points the islands at it.
+  // Each payload is reused across three cards so Mochi dedupes it into one hoisted `<script type="application/json">` block instead of shipping it three times.
   const groups = [
     {
       heading: 'Group A — recipes',

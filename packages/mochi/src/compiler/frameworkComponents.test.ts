@@ -7,8 +7,8 @@ import { resolveFrameworkComponent } from './frameworkComponents';
 // must resolve to the right on-disk file and export. Add a line here when a
 // component joins `mochi-framework/components` — the mismatch is the point.
 const EXPECTED: Record<string, { endsWith: string; exportName: string }> = {
-  ViewTransitions: { endsWith: path.join('components', 'ViewTransitions.svelte'), exportName: 'default' },
-  RawScript: { endsWith: path.join('components', 'RawScript.svelte'), exportName: 'default' },
+  ViewTransitions: { endsWith: path.join('components', 'ViewTransitions.server.svelte'), exportName: 'default' },
+  RawScript: { endsWith: path.join('components', 'RawScript.server.svelte'), exportName: 'default' },
   MochiCaptcha: { endsWith: path.join('captcha', 'MochiCaptcha.svelte'), exportName: 'default' },
 };
 

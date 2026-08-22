@@ -79,7 +79,7 @@ describe('FileStorage', () => {
     const file = readdirSync(dir).find((n) => n.endsWith('.json'));
     expect(file).toBeDefined();
     await Bun.write(join(dir, file!), '{ not json');
-    await expect(storage.getItem('k')).rejects.toBeDefined();
+    await expect(storage.getItem('k')).rejects.toThrow(SyntaxError);
 
     // Wired through MochiCache, a read error degrades to a `miss` + recompute.
     const cache = new MochiCache({ storage });
@@ -114,10 +114,8 @@ describe('FileStorage', () => {
 
   test('sweep removes files older than maxAge and keeps fresh ones', async () => {
     const storage = makeStorage({ maxAge: 50 });
-    // Stamp before the write: the file's mtime is necessarily >= this, so a sweep
-    // as-of `before` always sees it as fresh — deterministic regardless of how slow
-    // the durable write (fsync + rename) runs on a loaded CI host. A bare
-    // `sweep()` here would flake whenever the write itself takes longer than maxAge.
+    // Stamping before the write puts the file's mtime at or after it, so a sweep as-of `before` always sees it fresh
+    // however slowly the fsync and rename run on a loaded CI host; a bare `sweep()` flakes when the write outlasts maxAge.
     const before = Date.now();
     await storage.setItem('k', { value: 1, createdAt: 0 });
 
@@ -138,11 +136,9 @@ describe('FileStorage', () => {
     const storage = makeStorage({ maxAge: 5, purgeInterval: 20 });
     await storage.setItem('k', { value: 1, createdAt: 0 });
 
-    // Poll for the actual removal rather than a fixed wait or an event count: the
-    // 20ms interval timer can be starved under parallel CI load, and the sweeper's
-    // initial pass can fire before the entry ages past maxAge (so `events.length`
-    // reaching 1 doesn't yet mean `k` was reclaimed). Waiting for the observable
-    // effect is robust on both counts.
+    // Polls the actual removal rather than a fixed wait or event count: parallel CI load can starve the 20ms interval
+    // timer, and the sweeper's initial pass can fire before the entry ages past maxAge, so `events.length` reaching 1
+    // doesn't yet mean `k` was reclaimed.
     for (let i = 0; i < 200 && ((await storage.getItem('k')) !== null || events.length === 0); i++) {
       await wait(10);
     }
@@ -151,6 +147,48 @@ describe('FileStorage', () => {
     // Windows CI with the entry gone but no event yet recorded. Waiting on both
     // observable effects removes the ordering assumption between them.
     expect(events.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('a second store on the same directory takes the sweeper over instead of adding one', async () => {
+    let ticks = 0;
+    mochiEvents.on('cache:sweep', () => ticks++);
+
+    // Three deep so a take-over that only ever displaces the immediately preceding store is caught too.
+    const dir = makeDir();
+    created.push(new FileStorage({ directory: dir, maxAge: 5, purgeInterval: 20 }));
+    created.push(new FileStorage({ directory: dir, maxAge: 5, purgeInterval: 20 }));
+    const newest = new FileStorage({ directory: dir, maxAge: 5, purgeInterval: 20 });
+    created.push(newest);
+
+    for (let i = 0; i < 200 && ticks === 0; i++) {
+      await wait(10);
+    }
+    expect(ticks).toBeGreaterThanOrEqual(1);
+
+    // Asserts silence after disposing the owner rather than counting events over a window, which flakes when CI load
+    // starves the 20ms interval. The wait before snapshotting lets a sweep already in flight at dispose() land first.
+    newest.dispose();
+    await wait(50);
+    const settled = ticks;
+    await wait(200);
+    expect(ticks).toBe(settled);
+  });
+
+  // Guards the ownership check in `dispose()`: a superseded store must not clear the live owner's registry entry.
+  test('disposing a superseded store leaves the newest one sweeping', async () => {
+    let ticks = 0;
+    mochiEvents.on('cache:sweep', () => ticks++);
+
+    const dir = makeDir();
+    const first = new FileStorage({ directory: dir, maxAge: 5, purgeInterval: 20 });
+    created.push(first);
+    created.push(new FileStorage({ directory: dir, maxAge: 5, purgeInterval: 20 }));
+
+    first.dispose();
+    for (let i = 0; i < 200 && ticks === 0; i++) {
+      await wait(10);
+    }
+    expect(ticks).toBeGreaterThanOrEqual(1);
   });
 
   test('sweep reports the plaintext keys it removed when asked', async () => {
@@ -210,10 +248,9 @@ describe('MochiCache with FileStorage (stale-while-revalidate)', () => {
     expect(stale.value).toBe(1);
     expect(stale.status).toBe('stale');
 
-    // Poll the backing store for the background revalidation's write rather than a
-    // fixed sleep, which flakes when the disk write is slower than the wait (Windows
-    // CI). Read storage directly, not cache.fetch — the latter would kick a second
-    // stale revalidation before the first has landed.
+    // Polls the backing store for the background revalidation's write, since a fixed sleep flakes when the disk write
+    // outlasts it on Windows CI. It reads storage directly because `cache.fetch` would kick a second stale
+    // revalidation before the first landed.
     for (let i = 0; i < 250; i++) {
       if (((await storage.getItem('k')) as { value?: number } | null)?.value === 2) {
         break;
@@ -277,11 +314,9 @@ describe('MochiCache with FileStorage (stale-while-revalidate)', () => {
     // Trigger the stale read; it returns 1 and revalidates in the background.
     expect((await cache.fetchWithStatus('k', fn)).status).toBe('stale');
 
-    // A brand-new FileStorage over the same directory sees the persisted refresh —
-    // proving SWR wrote the new value through to disk, not just in memory. The
-    // background write is fire-and-forget, so poll for it rather than assuming a
-    // fixed sleep is long enough (Windows CI timers/disk I/O are coarser and
-    // occasionally miss a short fixed wait).
+    // A brand-new FileStorage over the same directory seeing the persisted refresh proves SWR wrote the new value
+    // through to disk. The background write is fire-and-forget, so this polls rather than assuming a fixed sleep is
+    // long enough for Windows CI's coarser timers and disk I/O.
     const reopened = new FileStorage({ directory: dir, purgeInterval: 0 });
     created.push(reopened);
     let entry: { value: number } | null = null;
@@ -507,30 +542,23 @@ describe('FileStorage binary inline (offloadBinary off, the default)', () => {
   });
 });
 
-// Two MochiCache instances over one shared directory model two load-balanced
-// processes: each has its own in-process `inflight` Map but a common FileStorage,
-// which reads fresh from disk on every getItem — so the advisory marker one writes
-// is visible to the other.
+// Two MochiCache instances over one shared directory model two load-balanced processes: each keeps its own in-process
+// `inflight` Map over a common FileStorage that reads fresh from disk on every getItem, so the advisory marker one
+// writes is visible to the other.
 describe('MochiCache cross-process in-flight marker (shared FileStorage)', () => {
   // Mirrors MochiCache.markerKey — the tests are deliberately white-box on this.
   const markerKey = (key: string) => `mochi:inflight:${key}`;
 
-  // `inflightTimeout` is doing two jobs in MochiCache: it leases the marker AND
-  // caps how long a recompute may run (cache.ts wraps the run in `withTimeout`).
-  // Every test below is about marker semantics, not about the cap — so the lease
-  // must be far longer than the durable writes a recompute performs. A tight
-  // value (these were 100ms/1s) turns slow disk I/O into a spurious "recompute
-  // timed out" failure: exactly what Windows CI hit, where a single test in this
-  // block takes 400–1300ms while plain FileStorage tests take 10–50ms. Tests that
-  // deliberately exercise the cap set their own short value.
+  // `inflightTimeout` does two jobs in MochiCache: it leases the marker and caps how long a recompute may run. Every
+  // test below is about marker semantics, so the lease must far outlast the durable writes a recompute performs — a
+  // tight value turns slow disk I/O into a spurious "recompute timed out", which Windows CI hit, where one test here
+  // takes 400–1300ms against 10–50ms for plain FileStorage. Tests exercising the cap set their own short value.
   const LEASE = 30_000;
 
-  // How long to sleep to age an entry past a (deliberately tiny) TTL. The entry's
-  // timestamp is stamped when the durable write lands, not when `fetch` was
-  // called, so a wait only a little longer than the TTL leaves no margin for disk
-  // latency — the entry then reads as stale rather than expired and the test sees
-  // the cached value instead of a recompute (observed on Linux CI). Waiting far
-  // longer than any TTL here costs milliseconds and removes the race.
+  // How long to sleep to age an entry past a deliberately tiny TTL. The timestamp is stamped when the durable write
+  // lands rather than when `fetch` was called, so a wait barely longer than the TTL leaves no margin for disk latency
+  // and the entry reads stale instead of expired, handing the test a cached value — observed on Linux CI. Waiting far
+  // longer costs milliseconds and removes the race.
   const AGE_PAST = 200;
 
   async function waitForMarker(storage: FileStorage, key: string, present: boolean): Promise<void> {
@@ -705,10 +733,9 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
       await secondGate;
       return 2;
     });
-    // Wait until run 2's marker (a *different* runId) has actually replaced run 1's:
-    // `waitForMarker(present)` only checks existence, which run 1's leftover already
-    // satisfies, so it can return before run 2 writes — letting run 1's late cleanup
-    // delete its own still-current marker and flaking the assertion below.
+    // Waits until run 2's marker, a different runId, has actually replaced run 1's. `waitForMarker(present)` checks
+    // existence alone, which run 1's leftover already satisfies, so it can return before run 2 writes and let run 1's
+    // late cleanup delete a still-current marker.
     for (let i = 0; i < 250; i++) {
       const marker = (await storageA.getItem(markerKey('k'))) as { runId?: string } | null;
       if (marker != null && marker.runId !== run1Marker?.runId) {
