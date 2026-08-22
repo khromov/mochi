@@ -1,4 +1,4 @@
-export type SourceSpec = { label: string; path: string; lang?: string; showImageConfig?: boolean; showStaticDirs?: boolean; showLocalDirs?: boolean };
+export type SourceSpec = { label: string; path: string; lang?: string; showImageConfig?: boolean; showStaticDirs?: boolean };
 
 export function isDemoIndex(path: string): boolean {
   return path.endsWith('demoIndex.ts');
@@ -39,8 +39,4 @@ export function stripImageConfig(code: string): string {
 
 export function stripStaticDirs(code: string): string {
   return stripServeBlock(code, 'staticDirs');
-}
-
-export function stripLocalDirs(code: string): string {
-  return stripServeBlock(code, 'localDirs');
 }

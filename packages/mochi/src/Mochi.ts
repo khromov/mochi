@@ -104,7 +104,6 @@ import { decryptProps } from './islands/serverIslandCrypto';
 import { DEFAULT_INLINE_BUDGET } from './islands/inlineServerIslands';
 import { createImageHandler } from './image/imageEndpoint';
 import { createLocalAssetHandler } from './image/localAssetRegistry';
-import { createLocalFilesHandler, getLocalDirs } from './runtime/localDirs';
 import { getImageRuntime } from './image/config';
 import { startImageCacheSweeper } from './image/sweeper';
 import { getEmailRuntime, closeEmailTransport } from './email/config';
@@ -1696,16 +1695,6 @@ export class Mochi {
     // of `image.enabled`. The handler reads the global registry the build populated, letting new dev images appear
     // without a route reload.
     bunRoutes[`${registry.assetPrefix}/asset/:filename`] = withHead(createLocalAssetHandler(development));
-
-    // Serve runtime local dirs (`localDirs`) by path — any file type, not just
-    // images. Plain static serving like the asset route, but the content is
-    // mutable (files can be written/replaced while running), so the handler
-    // revalidates instead of caching immutably. Calling getLocalDirs() here
-    // also fail-fast validates the config at boot.
-    const localDirs = getLocalDirs();
-    if (Object.keys(localDirs).length > 0) {
-      bunRoutes[`${registry.assetPrefix}/files/*`] = withHead(createLocalFilesHandler(development));
-    }
 
     // The debug bar's Cache tab reads the entry count (GET) and empties the image cache (POST). It registers with the
     // debug bar rather than the image endpoint, since the tab always shows and acting on an empty cache is a no-op.

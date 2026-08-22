@@ -10,6 +10,7 @@ description: 'On-the-fly image transforms on Bun.Image via named sizes, with enc
   import Callout from './_components/Callout.svelte';
   import PersistenceTable from './_components/PersistenceTable.svelte';
   import placeholderShot from './images/image-placeholder.jpg';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Images
@@ -124,11 +125,13 @@ Two edge cases. With `image.enabled: false` the `/_mochi/asset/…` route still 
 
 ### Local files at runtime
 
-Imports are **build-time**: the file is baked into the build at compile. For a folder whose contents change **while the server runs** — uploads, generated images — declare it under the top-level [`localDirs`](/docs/defining-routes/#local-directories-localdirs) serve option. Any file inside a declared root is addressable by path the moment it exists on disk, with no registration step; `localImage` is the image view of that mechanism:
+<VersionNote since="0.10.0" message="localImage ships in the next Mochi release (0.10.0). This section describes the upcoming API." />
+
+Imports are **build-time**: the file is baked into the build at compile. For a folder whose contents change **while the server runs** — uploads, generated images — mount it with [`staticDirs`](/docs/serve-options/#static-directories). Bun resolves a directory route per request, so a file is servable the moment it exists on disk. `localImage` probes such a file and hands it to the image pipeline:
 
 ```ts
 Mochi.serve({
-  localDirs: { media: './uploads' },
+  staticDirs: { '/uploads': './uploads' },
   image: {
     sizes: { thumb: { width: 240, height: 240 } },
   },
@@ -142,9 +145,9 @@ import { localImage, getImageUrl } from 'mochi-framework';
 // Write any time at runtime…
 await Bun.write('./uploads/cat.jpg', bytes);
 
-// …and read/serve it immediately — no restart, no re-registration.
-const img = await localImage('media/cat.jpg');
-// img → { src: '/_mochi/files/media/cat.jpg', width, height, format }
+// …and read/serve it immediately — no restart, no registration.
+const img = await localImage('/uploads/cat.jpg');
+// img → { src: '/uploads/cat.jpg', width, height, format }
 ```
 
 ```svelte
@@ -152,15 +155,15 @@ const img = await localImage('media/cat.jpg');
 <img src={img.src} width={img.width} height={img.height} alt="" />
 ```
 
-`localImage('<dir>/<path>')` probes the file and returns the same `ImportedImage` shape as a build-time import, so `<Image>`, `getImageUrl(img.src, 'thumb')`, and `placeholder` all work identically; transforms read the bytes from disk. Probes are memoized per file and revalidated by mtime/size, so calling it per request is cheap. It is server-only and needs the running server's config — call it from `serverProps`, handlers, or component scripts, not at module scope of a routes file.
+`localImage(urlPath)` takes the URL path the mount already serves the file at. It returns the same `ImportedImage` shape as a build-time import, so `<Image>`, `getImageUrl(img.src, 'thumb')`, and `placeholder` all work identically, and transforms read the bytes from disk instead of fetching. Probes are memoized per file and revalidated by mtime and size, so calling it per request is cheap. It is server-only and reads the running server's config — call it from `serverProps`, handlers, or component scripts, not at the module scope of a routes file.
 
-Because URLs are **path-addressed** (`/_mochi/files/<dir>/<path>`), they survive restarts — store them in a database, render them years later. The flip side is that the content behind a URL is mutable, so unlike the immutable content-hashed `/_mochi/asset/…` URLs, production serves local-dir files with `Cache-Control: public, max-age=0, must-revalidate` + `Last-Modified`/304 revalidation instead of caching forever.
+Because URLs are **path-addressed**, they survive restarts — store them in a database and render them years later. The flip side is that the bytes behind a URL are mutable, unlike the immutable content-hashed `/_mochi/asset/…` URLs of a build-time import.
 
-The `/files/` route serves **any** file type (see [Local directories](/docs/defining-routes/#local-directories-localdirs) for `localFile`/`localFileBytes`, caching, and the dotfile policy) — but `localImage` and the transform pipeline additionally require a raster-image extension (**png, jpg, jpeg, webp, avif, gif**); a `.zip` src is never a valid transform source. Requests are confined to the declared roots (`../` traversal resolves to a 404).
+A mount serves any file type, but `localImage` and the transform pipeline require a raster-image extension (**png, jpg, jpeg, webp, avif, gif**); a `.zip` src is never a valid transform source. Reads are confined to the mounted root, so a `../` traversal resolves to nothing and throws.
 
 <Callout type="warning">
 
-The transform cache is keyed by `src` and serves stale-while-revalidate: after you **replace** a file in place, `/_mochi/files/…` serves the new bytes immediately, but an already-minted transform URL keeps its cached output until `timeToStale`. Call `invalidateImage(img.src)` after overwriting a file — or write under a new name.
+The transform cache is keyed by `src` and serves stale-while-revalidate. After you **replace** a file in place, the mount serves the new bytes at once, but an already-minted transform URL keeps its cached output until `timeToStale`. Call `invalidateImage(img.src)` after overwriting a file, or write under a new name.
 
 </Callout>
 

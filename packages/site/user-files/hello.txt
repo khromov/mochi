@@ -1,5 +1,0 @@
-Hello from a runtime-served folder!
-
-This file lives in packages/site/user-files/ and is served by the
-localDirs feature — no route entry, no build step. Write a file into
-the folder and it is addressable immediately.

@@ -5,9 +5,8 @@ await Mochi.serve({
   port: 3333,
   development: process.env.MODE === 'development',
   // Mount a directory tree under a URL prefix — one Bun route, files served straight from disk.
-  staticDirs: { '/gallery': './images' },
-  // Named folders served at runtime: any file inside is addressable at /_mochi/files/<name>/<path> the moment it exists on disk.
-  localDirs: { photos: './images', uploads: './uploads', 'user-files': './user-files' },
+  // The route resolves per request, so a file written after boot is servable immediately.
+  staticDirs: { '/gallery': './images', '/uploads': './uploads' },
   // Named image sizes — the URL only carries the src + size name, and the endpoint runs the transform lazily on request.
   image: {
     sizes: {

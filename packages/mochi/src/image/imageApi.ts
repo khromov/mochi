@@ -3,7 +3,7 @@ import { getImageRuntime, getSize } from './config';
 import { getAssetPrefix } from '../mochiConfig';
 import { fetchImageSource } from './fetchSource';
 import { getLocalImageAsset } from './localAssetRegistry';
-import { resolveLocalDirFile } from '../runtime/localDirs';
+import { resolveStaticDirImage } from './localImage';
 import { toPosixPath } from '../utils';
 import { encryptImageRequest } from './imageCrypto';
 import { variantId } from './imageCache';
@@ -178,15 +178,13 @@ export function pushDebugImage(entry: ImageDebugEntry): void {
 }
 
 /**
- * For a locally-imported asset or a local-dir file, recover the original file's
- * display name + a project-relative path (`sourcePath` is recorded only by the
- * in-process dev build loader; local-dir srcs resolve to their disk path). Lets
- * the debug bar show `hero.jpg` and its source path instead of the content-hashed
- * served filename. Returns `undefined` when the src isn't local (or its source
- * path wasn't recorded, e.g. from a manifest).
+ * For a locally-imported asset or a `staticDirs`-served file, recover the original file's display name + a
+ * project-relative path (`sourcePath` is recorded only by the in-process dev build loader; mounted srcs resolve to their
+ * disk path). Lets the debug bar show `hero.jpg` and its source path instead of the content-hashed served filename.
+ * Returns `undefined` when the src isn't local (or its source path wasn't recorded, e.g. from a manifest).
  */
 function localSourceDisplay(src: string): { filename: string; sourcePath: string } | undefined {
-  const abs = getLocalImageAsset(src)?.sourcePath ?? localDirSrc(src)?.diskPath;
+  const abs = getLocalImageAsset(src)?.sourcePath ?? resolveStaticDirImage(src)?.diskPath;
   if (!abs) {
     return undefined;
   }
@@ -195,14 +193,8 @@ function localSourceDisplay(src: string): { filename: string; sourcePath: string
   return { filename: path.basename(abs), sourcePath: toPosixPath(display) };
 }
 
-// Same-origin-shape gate mirrors fetchSource: a remote src must never reach the
-// resolver (it reads the asset prefix from the global config).
-function localDirSrc(src: string): ReturnType<typeof resolveLocalDirFile> {
-  return src.startsWith('/') ? resolveLocalDirFile(src) : undefined;
-}
-
 function isLocalSrc(src: string): boolean {
-  return getLocalImageAsset(src) !== undefined || localDirSrc(src) !== undefined;
+  return getLocalImageAsset(src) !== undefined || resolveStaticDirImage(src) !== undefined;
 }
 
 function recordForDebugBar(url: string, filename: string, req: ImageRequest, size: ResolvedImageSize | undefined): void {
@@ -334,6 +326,6 @@ export async function invalidateImage(src: string, opts: InvalidateImageOptions 
   await cache.invalidateOriginal(src, opts.hard ?? false);
 }
 
-// Runtime local-dir lookup — re-exported here so the `__MOCHI_IMAGE_API__`
+// Runtime staticDirs lookup — re-exported here so the `__MOCHI_IMAGE_API__`
 // virtual-module token covers it for .svelte files alongside the other image APIs.
 export { localImage } from './localImage';

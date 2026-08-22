@@ -63,7 +63,6 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `logger` — built-in request logger. Default: `{ enabled: true }`.
 - `publicDir` — directory served as static assets. Default: `./public`. Scanned from disk at startup in every mode, so it must ship with a production deploy.
 - `staticDirs` — extra directory trees mounted under a URL prefix. See [Static directories](#static-directories).
-- `localDirs` — named directories served at runtime under `<assetPrefix>/files/<name>/…` — any file type, revalidating caching, native `Range` support. Each entry is a root path string or `{ root, includeDotfiles }`. Default: `{}`. See [Local directories](/docs/defining-routes/#local-directories-localdirs).
 - `memoryPressure` — drain in-memory caches when the OS reports low memory. Default: `true`; always off in development. See [Cache](/docs/cache/#memory-pressure).
 - `cron` — durable scheduled jobs to start with the server, from `Mochi.cron(name, schedule, handler)`. See [Scheduled jobs](/docs/scheduled-jobs/).
 - `cronStorage` — where the cron scheduler stores schedules and jobs. Defaults to `memory`. See [Scheduled jobs](/docs/scheduled-jobs/#storage).

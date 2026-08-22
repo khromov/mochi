@@ -51,7 +51,6 @@ import { routes as imageInvalidationRoutes } from './demos/image-invalidation/ro
 import { routes as imageEventsRoutes } from './demos/image-events/routes';
 import { routes as imagePipelineRoutes } from './demos/image-pipeline/routes';
 import { routes as imageFilesystemRoutes } from './demos/image-filesystem/routes';
-import { routes as userFilesRoutes } from './demos/user-files/routes';
 import { routes as hydrationRoutes } from './demos/hydration/routes';
 import { routes as islandPropsRoutes } from './demos/island-props/routes';
 import { routes as lazyRoutes } from './demos/lazy/routes';
@@ -377,7 +376,6 @@ export const routes: Record<string, MochiRouteValue> = {
   ...imageEventsRoutes,
   ...imagePipelineRoutes,
   ...imageFilesystemRoutes,
-  ...userFilesRoutes,
   ...hydrationRoutes,
   ...islandPropsRoutes,
   ...lazyRoutes,

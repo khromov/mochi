@@ -32,9 +32,6 @@ export { deferReloadState, DeferReloadState } from './islands/deferReloadState.s
 export type { DeferredIslandChange } from './islands/deferInvalidation';
 export type { MochiImageOptions, ImageSize, InvalidateImageOptions, ImageFormat, ImageFit, ImportedImage, ImportedImageFormat } from './image/types';
 export { IMAGE_FILE_FILTER } from './image/types';
-export { localFile, localFileBytes } from './runtime/localDirs';
-export type { LocalFile } from './runtime/localDirs';
-export type { MochiLocalDirs, LocalDirEntry } from './types';
 export { EmailError } from './email/types';
 export type {
   MochiEmailOptions,

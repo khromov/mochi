@@ -31,7 +31,6 @@ import { files as imageInvalidation } from '../demos/image-invalidation/files.ts
 import { files as imagePipeline } from '../demos/image-pipeline/files.ts';
 import { files as imageEvents } from '../demos/image-events/files.ts';
 import { files as imageFilesystem } from '../demos/image-filesystem/files.ts';
-import { files as userFiles } from '../demos/user-files/files.ts';
 import { files as islandDepth } from '../demos/island-depth/files.ts';
 import { files as islandProps } from '../demos/island-props/files.ts';
 import { files as lazy } from '../demos/lazy/files.ts';
@@ -238,15 +237,7 @@ export const demos: Demo[] = [
     slug: 'image-filesystem',
     files: imageFilesystem,
     title: 'Image: Filesystem',
-    hook: 'Serve a runtime read/write folder with localDirs — write raw bytes with Bun.write, read with localImage(), and render via <Image> and getImageUrl().',
-    category: 'data',
-  },
-  {
-    href: '/demos/user-files/',
-    slug: 'user-files',
-    files: userFiles,
-    title: 'Serving user-uploaded files',
-    hook: 'Serve any file type from a runtime localDirs folder — list metadata with localFile(), read content with localFileBytes(), download via the path-addressed URL.',
+    hook: 'Serve a runtime read/write folder with staticDirs — write raw bytes with Bun.write, read with localImage(), and render via <Image> and getImageUrl().',
     category: 'data',
   },
   {

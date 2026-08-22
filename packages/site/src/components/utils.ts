@@ -1,7 +1,7 @@
 import { highlightCode } from '../lib/highlight.server';
-import { isDemoIndex, stripImageConfig, stripLocalDirs, stripStaticDirs, type SourceSpec } from './sourceUtils';
+import { isDemoIndex, stripImageConfig, stripStaticDirs, type SourceSpec } from './sourceUtils';
 
-export { isDemoIndex, stripImageConfig, stripLocalDirs, stripStaticDirs, type SourceSpec } from './sourceUtils';
+export { isDemoIndex, stripImageConfig, stripStaticDirs, type SourceSpec } from './sourceUtils';
 
 export function delay(minMs: number, maxMs: number = minMs): Promise<void> {
   const ms = minMs + Math.random() * (maxMs - minMs);
@@ -24,7 +24,7 @@ async function read(path: string): Promise<string> {
 
 export async function loadSources(specs: SourceSpec[]): Promise<Source[]> {
   return Promise.all(
-    specs.map(async ({ label, path, lang, showImageConfig, showStaticDirs, showLocalDirs }) => {
+    specs.map(async ({ label, path, lang, showImageConfig, showStaticDirs }) => {
       let code = stripDemoWrapper(await read(path));
       if (isDemoIndex(path)) {
         if (!showImageConfig) {
@@ -32,9 +32,6 @@ export async function loadSources(specs: SourceSpec[]): Promise<Source[]> {
         }
         if (!showStaticDirs) {
           code = stripStaticDirs(code);
-        }
-        if (!showLocalDirs) {
-          code = stripLocalDirs(code);
         }
       }
       const resolvedLang = inferLang(label, lang);

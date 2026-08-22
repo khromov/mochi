@@ -13,9 +13,9 @@
   const squareUrl = getImageUrl(photo.src, 'square');
 
   const ts = (code) => highlightCode(code, 'typescript');
-  const codeConfig = await ts("localDirs: { photos: './images', uploads: './uploads' },");
-  const codeRead = await ts("const photo = await localImage('photos/mochi-3.jpg');\n// photo → { src: '/_mochi/files/photos/mochi-3.jpg', width, height, format }");
-  const codeWrite = await ts("await Bun.write('./uploads/mochi-copy.jpg', bytes);\nconst uploaded = await localImage('uploads/mochi-copy.jpg');");
+  const codeConfig = await ts("staticDirs: { '/gallery': './images', '/uploads': './uploads' },");
+  const codeRead = await ts("const photo = await localImage('/gallery/mochi-3.jpg');\n// photo → { src: '/gallery/mochi-3.jpg', width, height, format }");
+  const codeWrite = await ts("await Bun.write('./uploads/mochi-copy.jpg', bytes);\nconst uploaded = await localImage('/uploads/mochi-copy.jpg');");
   const codeUrl = await ts("const url = getImageUrl(photo.src, 'square');");
 
   const sources = await loadSources(files);
@@ -23,20 +23,20 @@
 
 <DemoPage
   title="Image: Filesystem"
-  description="Serve images from a runtime read/write folder. localDirs declares allowlisted roots; any image inside one is addressable by path the moment it exists on disk — no build step, no registration, and the path-addressed URLs survive restarts."
+  description="Serve images from a runtime read/write folder. A staticDirs mount is resolved per request, so any image inside one is addressable by path the moment it exists on disk — no build step, no registration, and the path-addressed URLs survive restarts."
   {sources}
 >
-  <h3>Declare the folders</h3>
+  <h3>Mount the folders</h3>
   <p>
-    Build-time imports (<code>import hero from './hero.jpg'</code>) bake the file into the build. A <code>localDirs</code> folder is the runtime counterpart: whatever is in the
-    folder <em>right now</em> is servable, so app code can write images while the server runs:
+    Build-time imports (<code>import hero from './hero.jpg'</code>) bake the file into the build. A <code>staticDirs</code> mount is the runtime counterpart: Bun resolves the
+    directory route per request, so whatever is in the folder <em>right now</em> is servable and app code can write images while the server runs:
   </p>
   <CodeSnippet html={codeConfig} />
 
-  <h3>Read a file from a folder</h3>
+  <h3>Read a file from a mount</h3>
   <p>
-    <code>localImage('&lt;dir&gt;/&lt;path&gt;')</code> probes the file and returns the same <code>{'{ src, width, height, format }'}</code> shape as a build-time import — pass it
-    straight to <code>&lt;Image&gt;</code>:
+    <code>localImage('/&lt;prefix&gt;/&lt;path&gt;')</code> probes the file and returns the same <code>{'{ src, width, height, format }'}</code> shape as a build-time import — pass
+    it straight to <code>&lt;Image&gt;</code>:
   </p>
   <CodeSnippet html={codeRead} />
   <div class="frame">
@@ -56,10 +56,10 @@
   <p class="note">Served from <code>{uploaded.src}</code>.</p>
 
   <h3>Transforms</h3>
-  <p><code>getImageUrl</code> works on a local-dir <code>src</code> exactly as on a remote URL — the endpoint reads the bytes from disk, no network fetch:</p>
+  <p><code>getImageUrl</code> works on a mounted <code>src</code> exactly as on a remote URL — the endpoint reads the bytes from disk, no network fetch:</p>
   <pre class="url">{squareUrl}</pre>
   <div class="frame">
-    <img src={squareUrl} width="400" alt="Local-dir photo resized via getImageUrl()" />
+    <img src={squareUrl} width="400" alt="Mounted photo resized via getImageUrl()" />
   </div>
   <CodeSnippet html={codeUrl} />
 

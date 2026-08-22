@@ -41,7 +41,6 @@ export function renderMochiEnvServer(development: boolean): string {
     __MOCHI_REQUEST_CACHE__: frameworkFile('runtime/requestCache.ts'),
     __MOCHI_CACHE_STORAGE__: frameworkFile('cache/cache-storage.ts'),
     __MOCHI_IMAGE_API__: frameworkFile('image/imageApi.ts'),
-    __MOCHI_LOCAL_FILES__: frameworkFile('runtime/localDirs.ts'),
     __MOCHI_DEFER_API__: frameworkFile('islands/deferInvalidation.ts'),
     __MOCHI_DEFER_REACTIVE__: frameworkFile('islands/deferReloadState.svelte.ts'),
     __MOCHI_ENHANCE_SSR__: frameworkFile('runtime/enhance.ssr.ts'),

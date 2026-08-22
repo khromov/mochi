@@ -1,8 +1,7 @@
 import { assertPublicUrl, SsrfGuardError } from '../utils/assertPublicUrl';
 import { applyFilter } from '../extensions';
 import { getLocalImageAsset } from './localAssetRegistry';
-import { peekLocalDirs } from '../runtime/localDirs';
-import { resolveLocalDirImage } from './localImage';
+import { resolveStaticDirImage } from './localImage';
 import { ImageError } from './types';
 import type { ResolvedImageOptions } from './types';
 
@@ -22,19 +21,16 @@ export async function fetchImageSource(src: string, opts: ResolvedImageOptions):
     return { bytes: await Bun.file(local.diskPath).bytes(), contentType: local.contentType };
   }
 
-  // Runtime local-dir image (`localDirs`): same-origin `/_mochi/files/…` src,
-  // same trust argument as above — the resolver enforces the configured roots,
-  // and the raster gate keeps transforms off non-image files (a .zip src falls
-  // through and is rejected as a URL). Gated on same-origin shape so remote
-  // srcs never touch the resolver (which reads the global config — absent in
-  // remote-only unit tests).
-  const localDir = src.startsWith('/') && Object.keys(peekLocalDirs()).length > 0 ? resolveLocalDirImage(src) : undefined;
-  if (localDir) {
-    const file = Bun.file(localDir.diskPath);
+  // An image served by a `staticDirs` mount: same-origin src, same trust argument as above — the resolver confines
+  // reads to the mounted roots, and the raster gate keeps transforms off non-image files (a `.zip` src falls through
+  // and is rejected as a URL).
+  const mounted = resolveStaticDirImage(src);
+  if (mounted) {
+    const file = Bun.file(mounted.diskPath);
     if (!(await file.exists())) {
       throw new ImageError(404, `Local image not found: ${src}`);
     }
-    return { bytes: await file.bytes(), contentType: localDir.contentType };
+    return { bytes: await file.bytes(), contentType: mounted.contentType };
   }
 
   // One timeout bounds the whole chain (all redirect hops), not each hop.

@@ -1,19 +1,19 @@
 import { Mochi, localImage } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
 
-// localDirs (see index.ts) declares runtime-served folders, among them:
-//   photos  → ./images   (checked-in sample photos)
-//   uploads → ./uploads  (written at runtime, below)
+// staticDirs (see index.ts) mounts two folders this demo reads:
+//   /gallery → ./images   (checked-in sample photos)
+//   /uploads → ./uploads  (written at runtime, below)
 
 async function serverProps() {
-  // Write raw bytes into the uploads folder at runtime — no restart, no
-  // registration: the file is addressable the moment it exists on disk.
+  // Write raw bytes into the uploads folder at runtime. Bun resolves a directory route per request, so the file is
+  // servable the moment it exists on disk — no restart, no registration.
   const bytes = await Bun.file('./images/mochi-7.jpg').bytes();
   await Bun.write('./uploads/mochi-copy.jpg', bytes);
 
   return {
-    photo: await localImage('photos/mochi-3.jpg'),
-    uploaded: await localImage('uploads/mochi-copy.jpg'),
+    photo: await localImage('/gallery/mochi-3.jpg'),
+    uploaded: await localImage('/uploads/mochi-copy.jpg'),
   };
 }
 
