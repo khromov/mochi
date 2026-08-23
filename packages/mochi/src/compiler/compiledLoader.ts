@@ -1,12 +1,12 @@
 import path from 'node:path';
 import { transformCompiled, mayContainCompiled, type CompiledUsage } from './compiledMacro';
 import type { CompiledSerializer } from './compiledSerialize';
-import { relForDisplay } from '../utils/index';
+import { relForDisplay, toPosixPath } from '../utils/index';
 
 export const COMPILED_MODULE_FILTER = /\.(ts|mts|js|mjs)$/;
 
 /** The framework's own `src/`, so its implementation of the macro is never itself macro-processed. */
-const FRAMEWORK_SRC = path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..');
+const FRAMEWORK_SRC = toPosixPath(path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..'));
 
 /**
  * Whether a module is eligible for build-time evaluation.
@@ -14,9 +14,18 @@ const FRAMEWORK_SRC = path.join(path.dirname(Bun.fileURLToPath(import.meta.url))
  * Dependencies and the framework's own source are excluded: `compiled(` occurs in this package's error strings and
  * documentation comments, and processing those would both waste work and, because the transform parses a module by
  * wrapping it in a Svelte script block, choke on any comment that mentions markup.
+ *
+ * Compared POSIX-normalized on both sides. The client build's synthetic island entrypoints are deliberately given
+ * forward-slash paths under this same directory (see `buildClientBundle`), so a native-separator comparison misses them
+ * on Windows and they fall through to the disk read below — which they have no file for.
  */
+export function isAppModulePath(filePath: string, frameworkSrc: string = FRAMEWORK_SRC): boolean {
+  const posix = toPosixPath(filePath);
+  return !posix.includes('/node_modules/') && !posix.startsWith(`${toPosixPath(frameworkSrc)}/`);
+}
+
 function isAppModule(filePath: string): boolean {
-  return !filePath.includes(`${path.sep}node_modules${path.sep}`) && !filePath.startsWith(FRAMEWORK_SRC + path.sep);
+  return isAppModulePath(filePath);
 }
 
 export interface CompiledContext {
@@ -57,7 +66,13 @@ export function createCompiledModuleLoader(ctx: CompiledContext) {
     if (!isAppModule(args.path)) {
       return undefined;
     }
-    const source = await Bun.file(args.path).text();
+    // The filter matches by extension, which also catches modules that exist only in a `Bun.build({ files })` map and
+    // have nothing on disk. Hand those back to the bundler untouched rather than failing the build on a missing file.
+    const file = Bun.file(args.path);
+    if (!(await file.exists())) {
+      return undefined;
+    }
+    const source = await file.text();
     if (!mayContainCompiled(source)) {
       return undefined;
     }
