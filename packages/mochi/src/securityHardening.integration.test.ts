@@ -66,7 +66,7 @@ beforeAll(async () => {
     proxy: { hostHeader: 'host' },
     logger: { enabled: false },
     outDir,
-    secureCookies: true,
+
     publicDir: path.join(assetRoot, 'public'),
     staticDirs: { '/static': path.join(assetRoot, 'static') },
     csrf: { trustedOrigins: ['https://csrf-only.example'] },

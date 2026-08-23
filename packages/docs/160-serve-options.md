@@ -78,7 +78,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `csrf` — `MochiCsrfOptions` for the origin-header check. See below.
 - `proxy` — `MochiProxyOptions` for trusted reverse-proxy headers. See below.
 - `securityHeaders` — baseline response headers (`nosniff`, `Referrer-Policy`). `boolean | MochiSecurityHeadersOptions`; `X-Frame-Options` is opt-in. Default: on. See [Security](/docs/security/).
-- `secureCookies` — give every cookie set through the jar `HttpOnly`, `SameSite=Lax`, and `Secure` (outside development). Default: `false`. See [Security](/docs/security/).
+- `secureCookies` — give every cookie set through the jar `HttpOnly`, `SameSite=Lax`, and `Secure` (outside development). Default: `true`; opt out per cookie with `{ httpOnly: false }` where client JS reads or writes it. See [Security](/docs/security/).
 - `csp` — generate a per-request CSP nonce and stamp it on framework scripts; read it with `getCspNonce()`. Default: `false`. See [Security](/docs/security/).
 - `websocket` — Bun WebSocket tuning shared by all `Mochi.ws` routes (`maxPayloadLength`, `backpressureLimit`, `idleTimeout`, `ping`/`pong`, …); the `open`/`message`/`close`/`drain` lifecycle callbacks are framework-owned. See [Security](/docs/security/).
 - `redirect` — where `redirect()` may send a visitor (`trustedOrigins`). Default: same-origin only. See [Security](/docs/security/).

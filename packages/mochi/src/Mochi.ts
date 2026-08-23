@@ -550,7 +550,10 @@ export class Mochi {
     // Opt-in hardening baseline: HttpOnly keeps session cookies away from XSS, SameSite=Lax blocks the common CSRF
     // vectors, and Secure is gated to production so http://localhost still works. Off by default because it hides
     // server-set cookies from client JS, which existing apps may rely on.
-    const secureCookieDefaults: CookieSerializeOptions = options.secureCookies ? { httpOnly: true, sameSite: 'lax', secure: options.development === false } : {};
+    // `Secure` stays gated on production rather than the request's own protocol: behind a TLS-terminating proxy Bun
+    // sees plain HTTP, and dropping the flag there would downgrade real HTTPS sites to protect the rarer plain-HTTP
+    // deployment, which can opt out explicitly.
+    const secureCookieDefaults: CookieSerializeOptions = (options.secureCookies ?? true) ? { httpOnly: true, sameSite: 'lax', secure: options.development === false } : {};
     const cookieDefaults = applyFilter('cookie:defaults', secureCookieDefaults, { options });
     const securityHeaderDefaults = resolveSecurityHeaders(options);
     const cspEnabled = options.csp ?? false;

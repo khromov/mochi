@@ -142,18 +142,52 @@ A header a route or middleware already set is never overwritten.
 
 ### Secure cookies
 
-<VersionNote since="0.10.0" message="The secureCookies option is new." />
+<VersionNote since="0.10.0" message="Cookies set through the jar are HttpOnly, SameSite=Lax and Secure by default." />
 
-`secureCookies: true` gives every cookie set through the request jar a hardened baseline — `HttpOnly`, `SameSite=Lax`, and (outside development) `Secure`:
+Every cookie set through the request jar gets a hardened baseline — `HttpOnly`, `SameSite=Lax`, and (outside development) `Secure`. This is **on by default**:
 
 ```ts
-await Mochi.serve({ secureCookies: true, routes });
-
 cookies.set('session', token); // HttpOnly; SameSite=Lax; Secure (prod)
 cookies.set('theme', 'dark', { httpOnly: false }); // readable by client JS
 ```
 
-It is off by default, because `HttpOnly` hides server-set cookies from client JS and existing apps may read them. Override per cookie as above, or change the baseline for every cookie with the `cookie:defaults` filter.
+Opt out per cookie as above, for every cookie with the `cookie:defaults` filter, or entirely with `secureCookies: false`.
+
+#### Which cookies need `httpOnly: false`
+
+`HttpOnly` does more than hide a cookie from `document.cookie`: the browser also refuses to let JavaScript **overwrite or delete** it. So a cookie the server sets and the browser later touches needs the opt-out, or the client's writes disappear with no error:
+
+```ts
+// A route sets it…
+cookies.set('theme', theme, { path: '/', httpOnly: false });
+```
+
+```svelte
+<script>
+  import { cookies } from 'mochi-framework';
+
+  // …and an island updates it. Without httpOnly: false above, this write is ignored.
+  cookies.set('theme', 'dark', { path: '/' });
+</script>
+```
+
+Reach for it whenever client JS reads or writes the same name: theme and locale preferences, a dismissed-banner or onboarding-step flag, an analytics or experiment id the browser also updates.
+
+The one that catches people out is the **double-submit CSRF token** — a `XSRF-TOKEN`-style cookie the server sets and client JS reads back to echo into a request header. It looks like a security cookie, so `HttpOnly` feels right, but the whole pattern depends on JavaScript being able to read it.
+
+Leave the default on for anything the browser has no business touching: session tokens above all.
+
+<Callout type="info">
+
+Mochi warns — in development **and** production, once per cookie name — when a client-side `cookies.set()` or `cookies.delete()` has no effect, which is what an HttpOnly collision looks like from the browser. It also warns if you pass `httpOnly: true` to a client-side `set()`, since only a server can set that flag.
+
+</Callout>
+
+<Callout type="warning">
+
+`Secure` is applied outside development, so a **production server reached over plain HTTP sets no jar cookies at all** — browsers drop them. That is the intended outcome for a public site; for an internal tool on a LAN or a bare IP, pass `secureCookies: false` or override `secure` through the `cookie:defaults` filter.
+
+</Callout>
 
 ### Request body size limit
 

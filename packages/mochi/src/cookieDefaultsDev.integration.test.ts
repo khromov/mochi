@@ -5,8 +5,9 @@ import type { Server } from 'bun';
 import { Mochi } from './Mochi';
 import { getRequestContext } from './runtime/requestContext';
 
-// Separate process (one Mochi.serve() per process) for the development-mode side of `secureCookies`:
-// HttpOnly/SameSite still apply, but Secure is dropped so cookies work over http://localhost.
+// Separate process (one Mochi.serve() per process) for the development-mode side of `secureCookies`. The option is
+// deliberately not passed: it is on by default, and this pins that. HttpOnly/SameSite still apply in development, but
+// Secure is dropped so cookies work over http://localhost.
 
 let server: Server<undefined>;
 let outDir: string;
@@ -18,10 +19,13 @@ beforeAll(async () => {
     development: true,
     logger: { enabled: false },
     outDir,
-    secureCookies: true,
     routes: {
       '/set': Mochi.api(() => {
         getRequestContext().cookies.set('session', 'abc');
+        return new Response('ok');
+      }),
+      '/opt-out': Mochi.api(() => {
+        getRequestContext().cookies.set('theme', 'dark', { httpOnly: false });
         return new Response('ok');
       }),
     },
@@ -39,4 +43,12 @@ test('development: cookie keeps HttpOnly/SameSite but drops Secure', async () =>
   expect(setCookie).toContain('httponly');
   expect(setCookie).toContain('samesite=lax');
   expect(setCookie).not.toContain('secure');
+});
+
+test('a per-cookie { httpOnly: false } still wins over the default', async () => {
+  const res = await fetch(`http://localhost:${server.port}/opt-out`);
+  const setCookie = (res.headers.get('set-cookie') ?? '').toLowerCase();
+  expect(setCookie).toContain('theme=dark');
+  expect(setCookie).not.toContain('httponly');
+  expect(setCookie).toContain('samesite=lax');
 });

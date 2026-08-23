@@ -501,10 +501,15 @@ export interface MochiServeOptions {
   securityHeaders?: boolean | MochiSecurityHeadersOptions;
   /**
    * Harden every cookie set through the request jar: `HttpOnly`, `SameSite=Lax`,
-   * and — outside development — `Secure`. Off by default, since it hides
-   * server-set cookies from client JS; override per cookie with
-   * `cookies.set(name, value, { httpOnly: false })` or globally with the
-   * `cookie:defaults` filter.
+   * and — outside development — `Secure`. **On by default.**
+   *
+   * `HttpOnly` hides the cookie from client JS, which also stops the browser
+   * overwriting or deleting it: a cookie you read or write from an island needs
+   * `cookies.set(name, value, { httpOnly: false })`. `Secure` means a production
+   * server reached over plain HTTP sets no jar cookies at all.
+   *
+   * Opt out per cookie as above, globally with the `cookie:defaults` filter, or
+   * entirely with `false`.
    */
   secureCookies?: boolean;
   /**
