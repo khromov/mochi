@@ -13,6 +13,8 @@ description: 'A remote MCP server, an agent skill, and an llms.txt index with co
 
 Mochi offers several ways to give an LLM up-to-date documentation. We recommend either the [**Agent skill**](#agent-skill-recommended) or the [**MCP server**](#mcp-server-recommended). You can also use the older [llms.txt format](#llmstxt).
 
+Upgrading rather than writing new code? [`/docs/migrations/llms.txt`](/docs/migrations/llms.txt) is one page an agent can work through on its own — every breaking change with its symptom, the call sites to grep for, and the option to set.
+
 ### Agent skill (recommended)
 
 Mochi publishes a `SKILL.md` that tells a coding assistant to fetch the relevant docs and demos from `/llms.txt` before writing framework code. Pull the latest copy into your project with the CLI:
