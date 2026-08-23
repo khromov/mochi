@@ -64,6 +64,12 @@ await Mochi.serve({
 });
 ```
 
+<Callout type="info">
+
+This is deliberately **not** `csrf.trustedOrigins`. That list says which origins may send _your server_ a form POST; this one says where your server may send _its visitors_. Adding an OAuth provider to the CSRF list to fix a redirect would let it post to every protected route of yours.
+
+</Callout>
+
 Or waive the guard for one call, when the destination is not known ahead of time:
 
 ```ts
@@ -76,13 +82,15 @@ return redirect(303, `${tenant.ssoEndpoint}?state=${state}`, { external: true })
 
 </Callout>
 
-Header-injection checks are not waivable: a location containing control characters is rejected either way, since it could split the response.
+Header-injection checks are not waivable: a location holding a control character is rejected whatever the origin rules say, `{ external: true }` included. HTTP headers are newline-delimited, so a `\r\n` inside the location ends the `Location` line early and everything after it is read as further headers — or as the start of a second response. That is **response splitting**, and it lets an attacker who controls part of the URL send headers your app never wrote:
 
-<Callout type="info">
-
-This is deliberately **not** `csrf.trustedOrigins`. That list says which origins may send _your server_ a form POST; this one says where your server may send _its visitors_. Adding an OAuth provider to the CSRF list to fix a redirect would let it post to every protected route of yours.
-
-</Callout>
+```ts
+// next = "/ok\r\nSet-Cookie: session=attacker"
+return redirect(303, next); // rejected — the raw response would otherwise read:
+//   HTTP/1.1 303 See Other
+//   Location: /ok
+//   Set-Cookie: session=attacker    ← never sent by the app; the browser honours it anyway
+```
 
 The guard covers `redirect()` from a form action and from `serverProps`. Framework-internal redirects — trailing-slash and proxy canonicalisation — build their own target and are unaffected.
 
