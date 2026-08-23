@@ -128,6 +128,18 @@ export interface MochiRedirect {
   readonly __mochiRedirect: true;
   readonly status: 301 | 302 | 303 | 307 | 308;
   readonly location: string;
+  /** Set by `redirect(status, location, { external: true })`; waives the same-origin guard for this one call. */
+  readonly external?: boolean;
+}
+
+export interface MochiRedirectInit {
+  /**
+   * Send the visitor off-origin without listing the destination in
+   * `redirect.trustedOrigins`. Use it only for a location your own code builds —
+   * never one derived from request data, which is the open-redirect the guard
+   * exists to stop. Header-injection checks still apply.
+   */
+  external?: boolean;
 }
 
 /** Returned by `success()`; re-renders the entry component with a `form` prop marking the action succeeded, with status 200. */

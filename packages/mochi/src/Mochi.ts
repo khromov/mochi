@@ -30,6 +30,7 @@ import type {
   MochiFileConfig,
   MochiFileResolver,
   MochiPageConfig,
+  MochiRedirect,
   MochiPageHandlerConfig,
   MochiFormActionResult,
   MochiFormActions,
@@ -195,13 +196,17 @@ const RELATIVE_BASE = 'https://relative.invalid';
  * `proxy.hostHeader`, leaving only the client's `Host` header to go on) — the same rule the CSRF check applies, since
  * a spoofed `Host` would otherwise make any origin "same-origin".
  */
-function isSafeRedirectLocation(location: string, expectedOrigin: string | null, trustedOrigins: ReadonlySet<string>): boolean {
-  // Control chars and newlines can split headers or trick URL parsers.
+function isSafeRedirectLocation(location: string, expectedOrigin: string | null, trustedOrigins: ReadonlySet<string>, external = false): boolean {
+  // Control chars and newlines can split headers or trick URL parsers. Checked even for an `external` redirect: that
+  // opt-out is about which origin a caller vouches for, never about letting a header injection through.
   for (let i = 0; i < location.length; i++) {
     const code = location.charCodeAt(i);
     if (code <= 0x1f || code === 0x7f) {
       return false;
     }
+  }
+  if (external) {
+    return true;
   }
   let resolved: URL;
   try {
@@ -835,13 +840,18 @@ export class Mochi {
     // Both places a `redirect()` becomes a `Location` — a form action and a `serverProps` resolver — go through here,
     // so neither can grow a bypass of the other's guard. Returns `null` to allow, or the message to fail the render
     // with; development only warns, matching how the CSRF check reports a production-only block.
-    const blockedRedirect = (location: string, req: Request, url: URL): string | null => {
+    const blockedRedirect = (result: MochiRedirect, req: Request, url: URL): string | null => {
+      const { location, external } = result;
       const expectedOrigin = trustedSelfOrigin(req, url, options.proxy);
-      if (isSafeRedirectLocation(location, expectedOrigin, redirectOrigins)) {
+      if (isSafeRedirectLocation(location, expectedOrigin, redirectOrigins, external)) {
         return null;
       }
+      if (external) {
+        logger.warn(`Blocking redirect(): location "${location}" contains control characters, which { external: true } does not waive.`);
+        return 'Unsafe redirect location';
+      }
       const allowed = expectedOrigin ?? '<none: set proxy.origin or proxy.hostHeader>';
-      const detail = `redirect(): off-origin location "${location}" (allowed origin: ${allowed}). Add the origin to redirect.trustedOrigins if intentional.`;
+      const detail = `redirect(): off-origin location "${location}" (allowed origin: ${allowed}). Add the origin to redirect.trustedOrigins, or pass { external: true } to this call, if intentional.`;
       if (development) {
         logger.warn(`${detail} This would be blocked in production.`);
         return null;
@@ -987,7 +997,7 @@ export class Mochi {
           const liveServerProps = pageConfigMap ? pageConfigMap.get(pattern)?.serverProps : serverProps;
           const resolved = isServerPropsResolver(liveServerProps) ? ((await liveServerProps(req, ctx.params)) ?? {}) : (liveServerProps ?? {});
           if (isRedirect(resolved)) {
-            const blocked = blockedRedirect(resolved.location, req, ctx.url);
+            const blocked = blockedRedirect(resolved, req, ctx.url);
             if (blocked) {
               throw new MochiHttpError(500, blocked);
             }
@@ -1219,7 +1229,7 @@ export class Mochi {
                 return applyResolveOptions(result, resolveOpts);
               }
               if (isRedirect(result)) {
-                const blocked = blockedRedirect(result.location, req, ctx.url);
+                const blocked = blockedRedirect(result, req, ctx.url);
                 if (blocked) {
                   const unsafeErr = new Error(`${blocked}: ${result.location}`);
                   const response = enhanced ? jsonError(500, blocked) : await renderErrorResponse({ req, event, resolveOpts, status: 500, message: blocked, thrown: null });

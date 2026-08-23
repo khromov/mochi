@@ -1,4 +1,4 @@
-import type { MochiFormFail, MochiRedirect, MochiFormSuccess } from '../types';
+import type { MochiFormFail, MochiRedirect, MochiRedirectInit, MochiFormSuccess } from '../types';
 
 /**
  * Re-render the entry component with `form = { ok: false, action, status, data }` and the given HTTP status, for a form action's validation errors.
@@ -14,12 +14,16 @@ export function fail<T extends Record<string, unknown>>(status: number, data: T)
 /**
  * Produce an HTTP redirect response from a form action or a `serverProps` resolver. Use 303 for the standard POST/Redirect/GET pattern after a successful mutation.
  *
+ * Off-origin destinations are blocked by the redirect guard. Waive it for a single call with `{ external: true }` — for a
+ * location your own code builds, never one echoed from request data.
+ *
  * ```ts
  * return redirect(303, '/dashboard');
+ * return redirect(303, `https://accounts.google.com/o/oauth2/v2/auth?${params}`, { external: true });
  * ```
  */
-export function redirect(status: 301 | 302 | 303 | 307 | 308, location: string): MochiRedirect {
-  return { __mochiRedirect: true, status, location };
+export function redirect(status: 301 | 302 | 303 | 307 | 308, location: string, init?: MochiRedirectInit): MochiRedirect {
+  return init?.external ? { __mochiRedirect: true, status, location, external: true } : { __mochiRedirect: true, status, location };
 }
 
 /**

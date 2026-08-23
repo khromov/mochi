@@ -64,6 +64,20 @@ await Mochi.serve({
 });
 ```
 
+Or waive the guard for one call, when the destination is not known ahead of time:
+
+```ts
+return redirect(303, `${tenant.ssoEndpoint}?state=${state}`, { external: true });
+```
+
+<Callout type="danger">
+
+`{ external: true }` says _this location is mine, not the visitor's_. Only ever pass it for a URL your own code builds. The moment the location comes from request data — a `?next=` param, a form field, a header — it is the open redirect the guard exists to stop, and the flag hands the attacker exactly what the allow-list denies them.
+
+</Callout>
+
+Header-injection checks are not waivable: a location containing control characters is rejected either way, since it could split the response.
+
 <Callout type="info">
 
 This is deliberately **not** `csrf.trustedOrigins`. That list says which origins may send _your server_ a form POST; this one says where your server may send _its visitors_. Adding an OAuth provider to the CSRF list to fix a redirect would let it post to every protected route of yours.

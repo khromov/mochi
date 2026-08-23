@@ -74,6 +74,8 @@ import { redirect } from 'mochi-framework';
 return redirect(303, '/dashboard');
 ```
 
+Off-origin destinations are blocked unless the origin is in `redirect.trustedOrigins` or the call passes `{ external: true }` — see [Redirect safety](/docs/security/#redirect-safety).
+
 ### Sealed tokens
 
 `encryptPayload(plaintext, { aad?, compress? })` and `decryptPayload(token, { aad? })` seal a string into an opaque, tamper-proof base64url token (AES-256-SIV keyed from `MOCHI_KEY`) and open it again. `decryptPayload` returns `null` on any tamper or `aad` mismatch. This is the same primitive Mochi uses for server-island props. Use it for short-lived signed values such as form challenges or magic links.

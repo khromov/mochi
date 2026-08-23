@@ -83,6 +83,9 @@ beforeAll(async () => {
       }),
       '/ws': Mochi.ws({ message: () => {} }),
       '/plain': Mochi.page(FIXTURE_PAGE),
+      '/loader-external': Mochi.page(FIXTURE_PAGE, {
+        serverProps: () => redirect(303, 'https://anywhere.example/sso', { external: true }),
+      }),
       '/loader-redirect': Mochi.page(FIXTURE_PAGE, {
         serverProps: (req) => redirect(303, new URL(req.url).searchParams.get('next') ?? '/'),
       }),
@@ -93,6 +96,8 @@ beforeAll(async () => {
           evil: () => redirect(303, 'https://evil.example/phish'),
           redirectAllowed: () => redirect(303, 'https://redirect-ok.example/next'),
           csrfTrusted: () => redirect(303, 'https://csrf-only.example/next'),
+          external: () => redirect(303, 'https://anywhere.example/sso', { external: true }),
+          externalInjection: () => redirect(303, 'https://anywhere.example/sso\r\nX-Injected: 1', { external: true }),
         },
       }),
     },
@@ -227,5 +232,36 @@ describe('default security headers', () => {
     });
     expect(res.status).toBe(403);
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+  });
+});
+
+describe('per-call external redirect', () => {
+  test('redirect({ external: true }) leaves an off-origin location alone', async () => {
+    const res = await fetch(`${base}/page?/external`, {
+      method: 'POST',
+      headers: { accept: 'text/html', 'content-type': 'application/x-www-form-urlencoded', origin: base },
+      body: '',
+      redirect: 'manual',
+    });
+    expect(res.status).toBe(303);
+    expect(res.headers.get('location')).toBe('https://anywhere.example/sso');
+  });
+
+  test('works from serverProps too', async () => {
+    const res = await fetch(`${base}/loader-external`, { redirect: 'manual' });
+    expect(res.status).toBe(303);
+    expect(res.headers.get('location')).toBe('https://anywhere.example/sso');
+  });
+
+  test('still rejects a location carrying control characters', async () => {
+    const res = await fetch(`${base}/page?/externalInjection`, {
+      method: 'POST',
+      headers: { accept: 'text/html', 'content-type': 'application/x-www-form-urlencoded', origin: base },
+      body: '',
+      redirect: 'manual',
+    });
+    expect(res.status).toBe(500);
+    expect(res.headers.get('location')).toBeNull();
+    expect(res.headers.get('x-injected')).toBeNull();
   });
 });
