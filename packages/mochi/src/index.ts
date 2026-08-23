@@ -209,6 +209,7 @@ export type {
   MochiSubmitCallback,
   HttpMethod,
   MochiServeOptions,
+  MochiRedirectOptions,
   MochiWorkerOptions,
   MochiWarmupOptions,
   MochiRouteValue,

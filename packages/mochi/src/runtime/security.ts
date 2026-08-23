@@ -86,10 +86,11 @@ export function nonceAttr(nonce: string | undefined): string {
 }
 
 /**
- * Stamp a nonce on every `<script>` in a framework-generated HTML fragment.
- * Only ever applied to strings Mochi itself built — never to rendered page
- * output, which would hand the nonce to whatever a component emitted.
+ * A framework `<script>` with `js` inlined verbatim. The nonce is interpolated at
+ * the tag boundary rather than pattern-matched over the finished string: the body
+ * is a whole minified bundle, and a `'<script'` substring anywhere inside it
+ * would otherwise get an attribute injected into the JavaScript source.
  */
-export function stampNonce(html: string, attr: string): string {
-  return attr ? html.replace(/<script(?=[\s>])/g, `<script${attr}`) : html;
+export function inlineScript(js: string, attr: string): string {
+  return `<script${attr}>${js}</script>`;
 }

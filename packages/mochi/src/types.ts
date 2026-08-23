@@ -15,6 +15,11 @@ import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
 import type { SpeculationRules } from './runtime/speculationRules';
 import type { MochiSecurityHeadersOptions } from './runtime/security';
 
+export interface MochiRedirectOptions {
+  /** Absolute origins `redirect()` may target, beyond this server's own. */
+  trustedOrigins?: string[];
+}
+
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | MochiRedirect | Promise<Record<string, unknown> | MochiRedirect>;
 
 export function isServerPropsResolver(serverProps: Record<string, unknown> | MochiServerPropsResolver | undefined): serverProps is MochiServerPropsResolver {
@@ -504,8 +509,17 @@ export interface MochiServeOptions {
    * cannot be set here — use these to cap resource use:
    * `maxPayloadLength` (reject oversized frames), `backpressureLimit` +
    * `closeOnBackpressureLimit` (drop slow clients), and `idleTimeout`.
+   * `ping`/`pong` are yours: the framework never sets them, and they reach Bun
+   * unchanged.
    */
-  websocket?: Omit<WebSocketHandler<unknown>, 'open' | 'message' | 'close' | 'drain' | 'ping' | 'pong'>;
+  websocket?: Omit<WebSocketHandler<unknown>, 'open' | 'message' | 'close' | 'drain'>;
+  /**
+   * Where `redirect()` may send a visitor. Same-origin and relative locations
+   * always pass; list an absolute origin here to allow it too (an identity
+   * provider, say). Kept separate from `csrf.trustedOrigins` on purpose —
+   * that list says who may send *us* requests, which is a different question.
+   */
+  redirect?: MochiRedirectOptions;
   routes?: Record<string, MochiRouteValue>;
   /**
    * Background job queues to start with the server: an array of `Mochi.queue(name, { process, … })` descriptors.

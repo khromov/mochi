@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { checkWsOrigin } from './csrf';
+import { checkWsOrigin, isWebSocketUpgrade } from './csrf';
 
 // Unit tests for the WebSocket upgrade Origin check (CSWSH defense). Mirrors the
 // CSRF model: safe-by-default in production, warn-and-allow in development.
@@ -56,5 +56,20 @@ describe('checkWsOrigin (development)', () => {
 
   test('allows an unconfigured-origin upgrade', () => {
     expect(checkWsOrigin(req(SAME), url, undefined, undefined, true)).toBeNull();
+  });
+});
+
+describe('isWebSocketUpgrade', () => {
+  test('accepts the token in a comma-separated list, since Bun’s server.upgrade() does', () => {
+    expect(isWebSocketUpgrade('websocket')).toBe(true);
+    expect(isWebSocketUpgrade('WebSocket')).toBe(true);
+    expect(isWebSocketUpgrade('websocket, keep-alive')).toBe(true);
+    expect(isWebSocketUpgrade('keep-alive, websocket')).toBe(true);
+  });
+
+  test('rejects anything that is not an upgrade to websocket', () => {
+    expect(isWebSocketUpgrade(null)).toBe(false);
+    expect(isWebSocketUpgrade('h2c')).toBe(false);
+    expect(isWebSocketUpgrade('websockets')).toBe(false);
   });
 });

@@ -91,6 +91,7 @@ export interface DevWatcherDeps {
   reloadShell?: () => Promise<void>;
   reloadSpeculationRules?: (rules: SpeculationRules | undefined) => void;
   publicRouteGuard?: PublicRouteGuard;
+  securityHeaderDefaults: Record<string, string>;
   /** Signature of the cron array at boot, so a reload re-registers cron only when it actually changed. */
   initialCronSignature?: string;
 }
@@ -126,6 +127,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     reloadShell,
     reloadSpeculationRules,
     publicRouteGuard,
+    securityHeaderDefaults,
   } = deps;
 
   const liveReloadHandler = (req: Request, srv: Server<undefined>): Response => {
@@ -673,7 +675,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     reloadPublic = debounce(async () => {
       const freshPublic = await resolvePublicFiles({ publicDir, development });
       const nextRoutes: Record<string, BunRouteValue> = { ...baseBunRoutes };
-      registerPublicRoutes(nextRoutes, freshPublic, publicRouteGuard);
+      registerPublicRoutes(nextRoutes, freshPublic, publicRouteGuard, securityHeaderDefaults);
       nextRoutes['/__mochi_live_reload'] = liveReloadHandler;
       server.reload({
         routes: nextRoutes,

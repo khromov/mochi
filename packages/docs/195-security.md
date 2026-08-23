@@ -15,7 +15,7 @@ Mochi ships with safe-by-default protections. Most need no configuration in deve
 
 <Callout type="warning">
 
-Set `proxy.origin` (or `proxy.hostHeader`) before deploying. Until it is set, Mochi cannot know which origin to trust, so the CSRF and WebSocket origin checks **block every cross-origin state-changing request in production**. See [Serve options](/docs/serve-options/).
+Set `proxy.origin` (or `proxy.hostHeader`) before deploying. Until it is set, Mochi cannot know which origin to trust, so the CSRF and WebSocket origin checks **block every cross-origin state-changing request in production**, and the redirect guard blocks every absolute `redirect()` target. See [Serve options](/docs/serve-options/).
 
 </Callout>
 
@@ -46,22 +46,43 @@ Upgrades **without** an `Origin` header are always allowed. Browsers always send
 
 ### Redirect safety
 
-<VersionNote since="0.10.0" message="The form-action redirect guard is new." />
+<VersionNote since="0.10.0" message="The redirect guard is new." />
 
-A form action's `redirect()` may only point at a same-origin destination (a relative path, or an absolute URL whose origin matches the request) or an origin listed in `csrf.trustedOrigins`. An off-origin location is blocked with `500` in production and logged in development, preventing open-redirect phishing when the target is influenced by request data such as a `?next=` parameter.
+`redirect()` may only point at a same-origin destination — a relative path, or an absolute URL whose origin matches the request — or an origin listed in `redirect.trustedOrigins`. An off-origin location is blocked with `500` in production and logged in development, preventing open-redirect phishing when the target is influenced by request data such as a `?next=` parameter.
 
 ```ts
 return redirect(303, '/dashboard'); // ok
 return redirect(303, 'https://evil.example'); // blocked unless trusted
 ```
 
-The guard covers `redirect()` returned from a form action. Framework-internal redirects — trailing-slash and proxy canonicalisation — build their own target and are unaffected.
+Allow a legitimate off-origin destination — an identity provider, say — with its own list:
+
+```ts
+await Mochi.serve({
+  redirect: { trustedOrigins: ['https://accounts.google.com'] },
+  routes,
+});
+```
+
+<Callout type="info">
+
+This is deliberately **not** `csrf.trustedOrigins`. That list says which origins may send _your server_ a form POST; this one says where your server may send _its visitors_. Adding an OAuth provider to the CSRF list to fix a redirect would let it post to every protected route of yours.
+
+</Callout>
+
+The guard covers `redirect()` from a form action and from `serverProps`. Framework-internal redirects — trailing-slash and proxy canonicalisation — build their own target and are unaffected.
+
+<Callout type="warning">
+
+Without `proxy.origin`/`proxy.hostHeader`, the only evidence of your own origin is the client's `Host` header, which an attacker sets freely. Production therefore blocks **every** absolute location until one is configured — relative paths keep working. This matches the CSRF check's rule.
+
+</Callout>
 
 ### Security response headers
 
 <VersionNote since="0.10.0" message="securityHeaders and the security:headers filter are new." />
 
-These headers are sent on every framework response (pages, APIs, server islands, SSE streams, `Mochi.file` routes) by default:
+These headers are sent on every framework response (pages, APIs, server islands, SSE streams, `Mochi.file` routes, `publicDir` files, and error pages) by default:
 
 | Header                   | Value                             |
 | ------------------------ | --------------------------------- |
@@ -90,6 +111,12 @@ Prefer CSP `frame-ancestors` when some origins may frame you and others may not 
 </Callout>
 
 A header a route or middleware already set is never overwritten.
+
+<Callout type="warning">
+
+`staticDirs` mounts are the exception: they are served by Bun's own directory router (for ETag, `304` and range support), which has no hook for extra response headers. Serve files that need `nosniff` through `publicDir`, or add the headers at your reverse proxy.
+
+</Callout>
 
 ### Secure cookies
 
@@ -135,11 +162,17 @@ const csp: Handle = async ({ event, resolve }) => {
 await Mochi.serve({ csp: true, handle: csp, routes });
 ```
 
-With `csp: true`, Mochi stamps the nonce on every `<script>` it renders. Scripts your own components emit are never stamped — give them the nonce yourself. When `csp` is off, rendered HTML is byte-for-byte unchanged.
+With `csp: true`, Mochi stamps the nonce on every executable `<script>` it renders, including the ones on the fall-through `404` page. Data blocks (`<script type="application/json">`, island props) carry no nonce — CSP does not gate them, because nothing executes. Scripts your own components emit are never stamped — give them the nonce yourself. When `csp` is off, rendered HTML is byte-for-byte unchanged.
 
 <Callout type="warning">
 
-Keep `'strict-dynamic'` in a nonce-based policy if you use server islands. Deferred island fragments are fetched in separate requests, so their scripts carry a _different_ nonce than the page's CSP header — `'strict-dynamic'` lets the already-trusted bootstrap load them anyway, while a nonce-only policy silently blocks island hydration.
+Keep `'strict-dynamic'` in a nonce-based policy. Every hydratable island is loaded through a dynamic `import()` from the already-trusted bootstrap, and a deferred server island fetches a fragment whose scripts carry a _different_ nonce than the page's header — under a nonce-only policy both are blocked, so islands silently never hydrate.
+
+</Callout>
+
+<Callout type="info">
+
+Responses returned before middleware runs — the protection interstitial, the CSRF `403`, trailing-slash redirects — never reach a `handle` that sets the header, so they ship without your CSP. Add one for those through the `security:headers` filter if you need it.
 
 </Callout>
 
@@ -159,4 +192,4 @@ await Mochi.serve({
 });
 ```
 
-For high-throughput sends, implement the `drain` callback in your `Mochi.ws` handler to resume only when the socket's buffer clears.
+For high-throughput sends, implement the `drain` callback in your `Mochi.ws` handler to resume only when the socket's buffer clears. Only `open`/`message`/`close`/`drain` are framework-owned; `ping`/`pong` belong to you and reach Bun unchanged.

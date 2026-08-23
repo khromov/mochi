@@ -6,6 +6,11 @@ export function getRequestContext() {
   if (!ctx) throw new Error("getRequestContext() called outside of a request.");
   return ctx;
 }
+// Mirrors requestContext.ts's getCspNonce(): the request's nonce, falling back to the
+// ambient one on paths that render outside a full request context.
+export function getCspNonce() {
+  return globalThis.__mochi_request_context__?.getStore()?.cspNonce ?? globalThis.__mochi_csp_nonce__?.getStore();
+}
 function __mochiCtxProxy(key) {
   return new Proxy({}, {
     get(_, p) {

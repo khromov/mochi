@@ -77,9 +77,10 @@ export type OriginBlock = { kind: 'unconfigured'; origin: string | null } | { ki
 /**
  * Single comparison rule for every origin allowlist in the framework (CSRF,
  * WebSocket upgrades, the redirect guard): an origin is allowed when it matches
- * the expected origin or any `csrf.trustedOrigins` entry, all compared with
- * default ports stripped. Keeping one helper means a trusted-origins entry
- * behaves identically everywhere.
+ * the expected origin or any entry in the caller's allow-list, all compared with
+ * default ports stripped. The lists differ per subsystem — `csrf.trustedOrigins`
+ * says who may send us requests, `redirect.trustedOrigins` where we may send our
+ * visitors — but the comparison must not.
  */
 export function matchesAllowedOrigin(origin: string, expectedOrigin: string, trustedOrigins: ReadonlySet<string>): boolean {
   const normalized = normalizeOrigin(origin);
@@ -90,6 +91,16 @@ export function matchesAllowedOrigin(origin: string, expectedOrigin: string, tru
 }
 
 /**
+ * This server's own origin, or `null` when nothing configured makes it trustworthy: without `proxy.origin` or
+ * `proxy.hostHeader` the only evidence is the client's own `Host` header, which an attacker sets freely. Every
+ * origin decision in the framework — CSRF, WebSocket upgrades, the redirect guard — starts here, so none of them
+ * can end up trusting a spoofed host while the others refuse to.
+ */
+export function trustedSelfOrigin(request: Request, url: URL, proxy: MochiProxyOptions | undefined): string | null {
+  return proxy?.origin || proxy?.hostHeader ? resolveExpectedOrigin(request, url, proxy) : null;
+}
+
+/**
  * Shared Origin-comparison core for both the CSRF check (form POSTs) and the
  * WebSocket upgrade check. Returns `null` when the request's `Origin` is trusted
  * (allow), or an `OriginBlock` describing why it should be rejected. The two
@@ -97,17 +108,21 @@ export function matchesAllowedOrigin(origin: string, expectedOrigin: string, tru
  * submissions and socket upgrades differ in both — so that stays out here.
  */
 export function evaluateOrigin(request: Request, url: URL, proxy: MochiProxyOptions | undefined, trustedOrigins: ReadonlySet<string>): OriginBlock | null {
-  const expectedOriginConfigured = Boolean(proxy?.origin || proxy?.hostHeader);
-  if (!expectedOriginConfigured) {
+  const expectedOrigin = trustedSelfOrigin(request, url, proxy);
+  if (expectedOrigin === null) {
     return { kind: 'unconfigured', origin: request.headers.get('origin') };
   }
 
-  const expectedOrigin = resolveExpectedOrigin(request, url, proxy);
   const origin = request.headers.get('origin');
   if (origin && matchesAllowedOrigin(origin, expectedOrigin, trustedOrigins)) {
     return null;
   }
   return { kind: 'mismatch', origin, expectedOrigin };
+}
+
+/** `Upgrade` is a comma-separated token list, so `websocket, keep-alive` is a WebSocket upgrade too — and Bun's `server.upgrade()` accepts it. */
+export function isWebSocketUpgrade(header: string | null): boolean {
+  return header !== null && header.split(',').some((token) => token.trim().toLowerCase() === 'websocket');
 }
 
 /**

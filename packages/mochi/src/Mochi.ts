@@ -47,8 +47,17 @@ import type {
 } from './types';
 import { isFormFail, isFormSuccess, isRedirect } from './runtime/forms';
 import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } from './runtime/formsJson';
-import { csrfCheck, csrfBootWarning, checkWsOrigin, matchesAllowedOrigin, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
-import { applyDefaultSecurityHeaders, nonceAttr, resolveSecurityHeaders, stampNonce } from './runtime/security';
+import {
+  csrfCheck,
+  csrfBootWarning,
+  checkWsOrigin,
+  isWebSocketUpgrade,
+  matchesAllowedOrigin,
+  trustedSelfOrigin,
+  DEFAULT_FORM_CONTENT_TYPES,
+  DEFAULT_PROTECTED_METHODS,
+} from './runtime/csrf';
+import { applyDefaultSecurityHeaders, generateCspNonce, inlineScript, nonceAttr, resolveSecurityHeaders } from './runtime/security';
 import { applyFilter, initExtensions, runHook } from './extensions';
 import { escapeHtmlAttr } from './utils/htmlEscape';
 import { buildPublicUrl } from './runtime/proxy';
@@ -66,6 +75,7 @@ import {
   relForDisplay,
   toPosixPath,
   withHead,
+  mapRouteResponse,
 } from './utils';
 import { serveDiskAsset } from './utils/serveDiskAsset';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './runtime/hooks';
@@ -73,7 +83,7 @@ import { applyResolveOptions } from './runtime/hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './runtime/trailingSlash';
 import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './runtime/warmup';
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
-import { requestContext } from './runtime/requestContext';
+import { requestContext, getCspNonce, cspNonceStore } from './runtime/requestContext';
 import type { MochiRequestContext } from './runtime/requestContext';
 import type { SpeculationRules } from './runtime/speculationRules';
 import {
@@ -171,13 +181,21 @@ function jsonForHtml(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
+// Reserved TLD, so no real destination can collide with it: a location that resolves back to this base carried no
+// origin of its own and is therefore relative — same-origin by construction, whatever host the browser used.
+const RELATIVE_BASE = 'https://relative.invalid';
+
 /**
- * Guard against open redirects from form actions: `redirect()` writes its `location` straight into a `Location` header
- * (and the enhanced client passes it to `window.location.assign`), so a value influenced by request data — an echoed
- * `?next=` param, say — could bounce visitors to a phishing site. Only same-origin destinations and explicitly trusted
- * origins pass.
+ * Guard against open redirects: `redirect()` writes its `location` straight into a `Location` header (and the enhanced
+ * client passes it to `window.location.assign`), so a value influenced by request data — an echoed `?next=` param, say
+ * — could bounce visitors to a phishing site. Relative locations always pass; an absolute one has to match the
+ * expected origin or an entry in `redirect.trustedOrigins`.
+ *
+ * `expectedOrigin` is `null` when nothing configured makes this server's own origin trustworthy (no `proxy.origin` or
+ * `proxy.hostHeader`, leaving only the client's `Host` header to go on) — the same rule the CSRF check applies, since
+ * a spoofed `Host` would otherwise make any origin "same-origin".
  */
-function isSafeRedirectLocation(location: string, expectedOrigin: string, trustedOrigins: ReadonlySet<string>): boolean {
+function isSafeRedirectLocation(location: string, expectedOrigin: string | null, trustedOrigins: ReadonlySet<string>): boolean {
   // Control chars and newlines can split headers or trick URL parsers.
   for (let i = 0; i < location.length; i++) {
     const code = location.charCodeAt(i);
@@ -187,8 +205,14 @@ function isSafeRedirectLocation(location: string, expectedOrigin: string, truste
   }
   let resolved: URL;
   try {
-    resolved = new URL(location, expectedOrigin);
+    resolved = new URL(location, RELATIVE_BASE);
   } catch {
+    return false;
+  }
+  if (resolved.origin === RELATIVE_BASE) {
+    return true;
+  }
+  if (expectedOrigin === null) {
     return false;
   }
   return matchesAllowedOrigin(resolved.origin, expectedOrigin, trustedOrigins);
@@ -331,17 +355,24 @@ export class Mochi {
   ): (result: RenderResult, opts?: { debugInfo?: DebugBarData; pageEntry?: string }) => string {
     const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate, getSpeculationRules, fontPreload } = config;
 
-    const logLevelScript = logLevel === DEFAULT_LOG_LEVEL ? '' : `<script>window.__mochi_log_level=${JSON.stringify(logLevel)}</script>`;
-    // Feeds the debug bar's Warnings panel. When the debug bar is off the
-    // single `window.__mochi_warn?.(...)` call site no-ops via optional chaining.
-    const warnShim = registry.debugBarEnabled
-      ? `<script>window.__mochi_warnings=[];window.__mochi_warn=function(m){console.warn("[mochi] "+m);window.__mochi_warnings.push(m)}</script>`
-      : '';
     const cssStylePrefix = `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty, mochi-hydratable-island[hydrate-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
       registry.development ? ISLAND_FAILURE_DEV_CSS : ''
     }</style>\n`;
-    const serverIslandScript = `<script>(()=>{${serverIslandClientJs}})()</script>`;
-    const liveReloadTail = liveReloadClientJs ? `<script>${liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : '';
+    // Every fragment interpolates the nonce at its own tag boundary — nothing rewrites a finished string, so a
+    // `"<script"` substring inside an inlined bundle can never take an injected attribute. Rebuilt only when the
+    // nonce changes, so with `csp` off (the default) this runs once and the output stays byte-identical.
+    const buildScripts = (attr: string): { logLevel: string; warnShim: string; serverIsland: string; liveReloadTail: string } => ({
+      logLevel: logLevel === DEFAULT_LOG_LEVEL ? '' : inlineScript(`window.__mochi_log_level=${JSON.stringify(logLevel)}`, attr),
+      // Feeds the debug bar's Warnings panel. When the debug bar is off the
+      // single `window.__mochi_warn?.(...)` call site no-ops via optional chaining.
+      warnShim: registry.debugBarEnabled
+        ? inlineScript('window.__mochi_warnings=[];window.__mochi_warn=function(m){console.warn("[mochi] "+m);window.__mochi_warnings.push(m)}', attr)
+        : '',
+      serverIsland: inlineScript(`(()=>{${serverIslandClientJs}})()`, attr),
+      liveReloadTail: liveReloadClientJs ? `${inlineScript(liveReloadClientJs, attr)}<mochi-live-reload></mochi-live-reload>` : '',
+    });
+    let scriptsAttr = '';
+    let scripts = buildScripts('');
     const toolbarDiv = registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : '';
     const assetPrefixJson = JSON.stringify(registry.assetPrefix);
 
@@ -351,7 +382,7 @@ export class Mochi {
 
     // Same deal for the speculation-rules payload: serialize once, re-serialize only when a dev entry edit swaps the object.
     let specRulesFrom: SpeculationRules | undefined | null = null;
-    let speculationRulesScript = '';
+    let specRulesJson = '';
 
     return (result, opts) => {
       const template = getTemplate();
@@ -364,7 +395,7 @@ export class Mochi {
       if (specRules !== specRulesFrom) {
         specRulesFrom = specRules;
         const count = (specRules?.prefetch?.length ?? 0) + (specRules?.prerender?.length ?? 0);
-        speculationRulesScript = count > 0 ? `<script type="speculationrules">${jsonForHtml(specRules)}</script>` : '';
+        specRulesJson = count > 0 ? jsonForHtml(specRules) : '';
       }
 
       const bootstrapUrl = result.bootstrapUrl;
@@ -372,23 +403,27 @@ export class Mochi {
       const fontPreloads = fontPreload ? result.fontPreloadUrls.slice(0, FONT_PRELOAD_MAX).map(fontPreloadTag).join('\n') : '';
       const cssLinks = (fontPreloads ? `${fontPreloads}\n` : '') + result.cssUrls.map(cssLinkTag).join('\n');
       const debugBarUrl = registry.getDebugBarUrl();
-      const debugInfoScript = registry.debugBarEnabled && opts?.debugInfo ? `<script>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
-      const pageEntryScript = liveReloadClientJs && opts?.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
 
-      // Stamped only on framework-built fragments — never on `result.head`/`result.body`, which would hand the nonce to
+      // Carried only by framework-built fragments — never by `result.head`/`result.body`, which would hand the nonce to
       // whatever a page component emitted. Empty (and the output byte-identical) whenever `csp` is off.
-      const nonce = nonceAttr(requestContext.getStore()?.cspNonce);
+      const attr = nonceAttr(getCspNonce());
+      if (attr !== scriptsAttr) {
+        scriptsAttr = attr;
+        scripts = buildScripts(attr);
+      }
 
-      const head = stampNonce(logLevelScript + warnShim + speculationRulesScript, nonce) + result.head;
+      const debugInfoScript = registry.debugBarEnabled && opts?.debugInfo ? inlineScript(`window.__mochi_debug=${jsonForHtml(opts.debugInfo)}`, attr) : '';
+      const pageEntryScript = liveReloadClientJs && opts?.pageEntry ? inlineScript(`window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}`, attr) : '';
+      const speculationRulesScript = specRulesJson ? `<script type="speculationrules"${attr}>${specRulesJson}</script>` : '';
+
+      const head = scripts.logLevel + scripts.warnShim + speculationRulesScript + result.head;
       const css = cssStylePrefix + cssLinks;
-      const body = result.body + stampNonce(debugInfoScript + pageEntryScript, nonce) + toolbarDiv;
-      const script = stampNonce(
-        (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
-          (result.hasServerIslands ? serverIslandScript : '') +
-          (debugBarUrl ? `<script type="module" src="${debugBarUrl}"></script><script>window.__mochi_asset_prefix=${assetPrefixJson}</script>` : '') +
-          liveReloadTail,
-        nonce,
-      );
+      const body = result.body + debugInfoScript + pageEntryScript + toolbarDiv;
+      const script =
+        (bootstrapUrl ? `<script type="module"${attr} src="${bootstrapUrl}"></script>` : '') +
+        (result.hasServerIslands ? scripts.serverIsland : '') +
+        (debugBarUrl ? `<script type="module"${attr} src="${debugBarUrl}"></script>${inlineScript(`window.__mochi_asset_prefix=${assetPrefixJson}`, attr)}` : '') +
+        scripts.liveReloadTail;
 
       let out = '';
       for (const part of parts) {
@@ -503,6 +538,10 @@ export class Mochi {
     const formContentTypes: ReadonlySet<string> = applyFilter('csrf:formContentTypes', new Set(DEFAULT_FORM_CONTENT_TYPES), { options });
     const protectedMethods: ReadonlySet<string> = applyFilter('csrf:protectedMethods', new Set(DEFAULT_PROTECTED_METHODS), { options });
     const trustedOrigins: ReadonlySet<string> = applyFilter('csrf:trustedOrigins', new Set(options.csrf?.trustedOrigins ?? []), { options });
+    // Deliberately not `csrf.trustedOrigins`: that list says which origins may send this server a form POST, which is
+    // a different question from where this server may send its visitors. Sharing one list would mean permitting an
+    // OAuth redirect target also weakened CSRF for it.
+    const redirectOrigins: ReadonlySet<string> = new Set(options.redirect?.trustedOrigins ?? []);
     // Opt-in hardening baseline: HttpOnly keeps session cookies away from XSS, SameSite=Lax blocks the common CSRF
     // vectors, and Secure is gated to production so http://localhost still works. Off by default because it hides
     // server-set cookies from client JS, which existing apps may rely on.
@@ -793,6 +832,24 @@ export class Mochi {
       protection: protectionRuntime?.gate,
     });
 
+    // Both places a `redirect()` becomes a `Location` — a form action and a `serverProps` resolver — go through here,
+    // so neither can grow a bypass of the other's guard. Returns `null` to allow, or the message to fail the render
+    // with; development only warns, matching how the CSRF check reports a production-only block.
+    const blockedRedirect = (location: string, req: Request, url: URL): string | null => {
+      const expectedOrigin = trustedSelfOrigin(req, url, options.proxy);
+      if (isSafeRedirectLocation(location, expectedOrigin, redirectOrigins)) {
+        return null;
+      }
+      const allowed = expectedOrigin ?? '<none: set proxy.origin or proxy.hostHeader>';
+      const detail = `redirect(): off-origin location "${location}" (allowed origin: ${allowed}). Add the origin to redirect.trustedOrigins if intentional.`;
+      if (development) {
+        logger.warn(`${detail} This would be blocked in production.`);
+        return null;
+      }
+      logger.warn(`Blocking ${detail}`);
+      return 'Unsafe redirect location';
+    };
+
     const hasSecurityHeaders = Object.keys(securityHeaderDefaults).length > 0;
 
     // Applied as the outermost wrapper so a middleware `filterResponseHeaders` (which runs inside the handler) can't
@@ -809,25 +866,7 @@ export class Mochi {
       return res;
     };
 
-    const withSecurityHeaders = (value: BunRouteValue): BunRouteValue => {
-      if (!hasSecurityHeaders) {
-        return value;
-      }
-      if (typeof value === 'function') {
-        return (async (req: Request, server: Server<undefined>) =>
-          addSecurityHeaders(await (value as (req: Request, server: Server<undefined>) => Response | Promise<Response>)(req, server))) as unknown as BunRouteValue;
-      }
-      if (value && typeof value === 'object' && !(value instanceof Response) && !(value instanceof Blob)) {
-        const rec = value as unknown as Record<string, (req: Request, server: Server<undefined>) => Response | Promise<Response>>;
-        const wrapped: typeof rec = {};
-        for (const method in rec) {
-          const handler = rec[method]!;
-          wrapped[method] = async (req, server) => addSecurityHeaders(await handler(req, server));
-        }
-        return wrapped as unknown as BunRouteValue;
-      }
-      return value;
-    };
+    const withSecurityHeaders = (value: BunRouteValue): BunRouteValue => (hasSecurityHeaders ? mapRouteResponse(value, addSecurityHeaders) : value);
 
     const internalRoutes: Record<string, MochiPageConfig | MochiApiConfig> = {
       // Gated behind the debug bar, like the page-cache admin routes, since the stats page discloses every bundle's input
@@ -948,6 +987,10 @@ export class Mochi {
           const liveServerProps = pageConfigMap ? pageConfigMap.get(pattern)?.serverProps : serverProps;
           const resolved = isServerPropsResolver(liveServerProps) ? ((await liveServerProps(req, ctx.params)) ?? {}) : (liveServerProps ?? {});
           if (isRedirect(resolved)) {
+            const blocked = blockedRedirect(resolved.location, req, ctx.url);
+            if (blocked) {
+              throw new MochiHttpError(500, blocked);
+            }
             const redirectResponse = new Response(null, {
               status: resolved.status,
               headers: { Location: resolved.location },
@@ -1176,20 +1219,13 @@ export class Mochi {
                 return applyResolveOptions(result, resolveOpts);
               }
               if (isRedirect(result)) {
-                if (!isSafeRedirectLocation(result.location, ctx.url.origin, trustedOrigins)) {
-                  const detail = `redirect(): off-origin location "${result.location}" (allowed origin: ${ctx.url.origin}). Add the origin to csrf.trustedOrigins if intentional.`;
-                  if (development) {
-                    logger.warn(`${detail} This would be blocked in production.`);
-                  } else {
-                    logger.warn(`Blocking ${detail}`);
-                    const unsafeErr = new Error(`Unsafe redirect location: ${result.location}`);
-                    const response = enhanced
-                      ? jsonError(500, 'Unsafe redirect location')
-                      : await renderErrorResponse({ req, event, resolveOpts, status: 500, message: 'Unsafe redirect location', thrown: null });
-                    emitError('action', ctx.requestId, req, ctx.url, response.status, unsafeErr, actionName);
-                    emitActionComplete(actionName, 'error', response.status);
-                    return response;
-                  }
+                const blocked = blockedRedirect(result.location, req, ctx.url);
+                if (blocked) {
+                  const unsafeErr = new Error(`${blocked}: ${result.location}`);
+                  const response = enhanced ? jsonError(500, blocked) : await renderErrorResponse({ req, event, resolveOpts, status: 500, message: blocked, thrown: null });
+                  emitError('action', ctx.requestId, req, ctx.url, response.status, unsafeErr, actionName);
+                  emitActionComplete(actionName, 'error', response.status);
+                  return response;
                 }
                 emitActionComplete(actionName, 'redirect', result.status);
                 if (enhanced) {
@@ -1351,8 +1387,10 @@ export class Mochi {
             });
           });
           // Only a real upgrade can hijack a socket; a non-upgrade probe just fails `server.upgrade()` below, so gating
-          // here keeps the origin check scoped to the actual CSWSH vector.
-          if (req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
+          // here keeps the origin check scoped to the actual CSWSH vector. `Upgrade` is a comma-separated token list
+          // (RFC 7230) and `server.upgrade()` accepts one, so an exact-match gate would let `websocket, keep-alive`
+          // through unchecked.
+          if (isWebSocketUpgrade(req.headers.get('upgrade'))) {
             const wsOriginBlock = checkWsOrigin(req, wsUrl, options.csrf, options.proxy, development, trustedOrigins);
             if (wsOriginBlock) {
               emitWsReject(wsOriginBlock.status);
@@ -1928,15 +1966,15 @@ export class Mochi {
             return blocked ?? finalizeCookieHeaders(await serve(), cookies);
           }
         : undefined;
-    registerPublicRoutes(bunRoutes, initialPublicFiles, publicRouteGuard);
+    registerPublicRoutes(bunRoutes, initialPublicFiles, publicRouteGuard, securityHeaderDefaults);
 
     const userFetch = options.fetch;
 
-    const composedFetch = async (req: Request, server: Server<undefined>): Promise<Response> => {
+    const composedFetchInner = async (req: Request, server: Server<undefined>): Promise<Response> => {
       const url = buildPublicUrl(req, options.proxy);
       const csrfResponse = csrfCheck(req, url, options.csrf, options.proxy, development, formContentTypes, protectedMethods, trustedOrigins);
       if (csrfResponse) {
-        return csrfResponse;
+        return addSecurityHeaders(csrfResponse);
       }
 
       // Non-route requests run middleware too, so static-asset paths (`/_mochi/client/...` bundles) share the chain and a
@@ -2005,6 +2043,13 @@ export class Mochi {
       }
       return addSecurityHeaders(response);
     };
+
+    // Requests answered here never build a request context, so the nonce lives in its own ambient store: `getCspNonce()`
+    // has to work in middleware on the fall-through 404 too, or that page's scripts ship without the policy every
+    // routed page gets.
+    const composedFetch = cspEnabled
+      ? (req: Request, server: Server<undefined>): Promise<Response> => cspNonceStore.run(generateCspNonce(), () => composedFetchInner(req, server))
+      : composedFetchInner;
 
     const {
       routes: _routes,
@@ -2247,6 +2292,7 @@ export class Mochi {
         reloadShell,
         reloadSpeculationRules,
         publicRouteGuard,
+        securityHeaderDefaults,
       });
     }
 

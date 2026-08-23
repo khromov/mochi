@@ -80,7 +80,8 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `securityHeaders` — baseline response headers (`nosniff`, `Referrer-Policy`). `boolean | MochiSecurityHeadersOptions`; `X-Frame-Options` is opt-in. Default: on. See [Security](/docs/security/).
 - `secureCookies` — give every cookie set through the jar `HttpOnly`, `SameSite=Lax`, and `Secure` (outside development). Default: `false`. See [Security](/docs/security/).
 - `csp` — generate a per-request CSP nonce and stamp it on framework scripts; read it with `getCspNonce()`. Default: `false`. See [Security](/docs/security/).
-- `websocket` — Bun WebSocket tuning shared by all `Mochi.ws` routes (`maxPayloadLength`, `backpressureLimit`, `idleTimeout`, …); lifecycle callbacks are framework-owned. See [Security](/docs/security/).
+- `websocket` — Bun WebSocket tuning shared by all `Mochi.ws` routes (`maxPayloadLength`, `backpressureLimit`, `idleTimeout`, `ping`/`pong`, …); the `open`/`message`/`close`/`drain` lifecycle callbacks are framework-owned. See [Security](/docs/security/).
+- `redirect` — where `redirect()` may send a visitor (`trustedOrigins`). Default: same-origin only. See [Security](/docs/security/).
 - `hooks` / `filters` — named lifecycle hooks and value filters. See [Extensions](/docs/extensions/).
 - `warmup` — warm the SSR pipeline at startup by invoking every static page route once. `boolean | { enabledInProd, enabledInDev }`. Default: `false`. See below.
 - `bun` — escape hatch for raw `Bun.serve()` options Mochi does not surface — `idleTimeout`, `maxRequestBodySize`, `reusePort`, `tls`. `fetch` / `websocket` / `routes` / `error` are framework-owned and throw if set. See below.

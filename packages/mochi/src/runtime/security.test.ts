@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { applyDefaultSecurityHeaders, generateCspNonce, resolveSecurityHeaders, stampNonce } from './security';
+import { applyDefaultSecurityHeaders, generateCspNonce, inlineScript, resolveSecurityHeaders } from './security';
 import { initExtensions } from '../extensions';
 import type { MochiServeOptions } from '../types';
 
@@ -66,10 +66,12 @@ describe('generateCspNonce', () => {
   });
 });
 
-describe('stampNonce', () => {
-  test('stamps every script tag and leaves the markup alone with no nonce', () => {
-    const html = '<script>a()</script><script type="module" src="/x.js"></script>';
-    expect(stampNonce(html, ' nonce="abc"')).toBe('<script nonce="abc">a()</script><script nonce="abc" type="module" src="/x.js"></script>');
-    expect(stampNonce(html, '')).toBe(html);
+describe('inlineScript', () => {
+  test('interpolates the nonce at the tag boundary, leaving the body untouched', () => {
+    // Real callers inline whole bundles here, and a rewrite pass over the finished string would inject an
+    // attribute into any `<script` the JavaScript itself contains.
+    const js = 'const marker = "<script>";';
+    expect(inlineScript(js, ' nonce="abc"')).toBe(`<script nonce="abc">${js}</script>`);
+    expect(inlineScript(js, '')).toBe(`<script>${js}</script>`);
   });
 });

@@ -16,7 +16,7 @@ You can host Bun and Mochi at hundreds of hosts. Some popular options are below.
 
 <Callout type="warning">
 
-Before deploying, set `proxy.origin` (or `proxy.hostHeader`) so the CSRF and WebSocket origin checks know which origin to trust — otherwise they block every cross-origin state-changing request in production. See [Security](/docs/security/) for the full production checklist.
+Before deploying, set `proxy.origin` (or `proxy.hostHeader`) so the CSRF, WebSocket and redirect origin checks know which origin to trust — otherwise they block every cross-origin state-changing request, and every absolute `redirect()` target, in production. See [Security](/docs/security/) for the full production checklist.
 
 </Callout>
 

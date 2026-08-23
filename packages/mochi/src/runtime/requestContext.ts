@@ -197,8 +197,16 @@ export function getRequestContext(): MochiRequestContext {
  * `Content-Security-Policy` header matching the nonce Mochi stamped on its own `<script>` tags, e.g. in middleware.
  */
 export function getCspNonce(): string | undefined {
-  return requestContext.getStore()?.cspNonce;
+  return requestContext.getStore()?.cspNonce ?? cspNonceStore.getStore();
 }
+
+/**
+ * The nonce for requests answered outside a full request context — the unmatched-route 404 and
+ * everything else the fetch fallback handles, where middleware still runs and still has to build a
+ * matching `Content-Security-Policy`. Pinned on `globalThis` for the same reason `requestContext`
+ * is: duplicate bundled copies of the framework have to read one store.
+ */
+export const cspNonceStore = pinGlobal('__mochi_csp_nonce__', () => new AsyncLocalStorage<string>());
 
 /**
  * Runs `fn` with the request context cleared, so `getRequestContext()` and anything built on it throws throughout —
