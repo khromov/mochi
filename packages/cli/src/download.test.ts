@@ -3,8 +3,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { archiveSha256, assertArchiveSha256, extractTemplate, parseTemplateSource, tarballUrl } from './download.ts';
-import { TEMPLATES } from './templates.ts';
+import { extractTemplate, parseTemplateSource, tarballUrl } from './download.ts';
+import { TEMPLATE_REVISION, TEMPLATES } from './templates.ts';
+import cliPkg from '../package.json' with { type: 'json' };
 
 describe('parseTemplateSource', () => {
   test('splits owner, repo and subdir, defaulting the ref to HEAD', () => {
@@ -29,18 +30,12 @@ test('tarballUrl targets codeload at the requested ref', () => {
   expect(tarballUrl(parseTemplateSource('khromov/mochi/packages/minimal'))).toBe('https://codeload.github.com/khromov/mochi/tar.gz/HEAD');
 });
 
-test('built-in templates pin an immutable revision and archive digest', () => {
+// Guards the pin against regressing to a hand-written sha, which nothing in the release flow would ever bump.
+test('built-in templates pin the release tag matching this CLI version', () => {
+  expect(TEMPLATE_REVISION).toBe(`create-mochi-v${cliPkg.version}`);
   for (const template of TEMPLATES) {
-    expect(parseTemplateSource(template.source).ref).toMatch(/^[a-f0-9]{40}$/);
-    expect(template.archiveSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(parseTemplateSource(template.source).ref).toBe(TEMPLATE_REVISION);
   }
-});
-
-test('archive integrity rejects changed bytes', () => {
-  const archive = new TextEncoder().encode('trusted template archive');
-  const expected = archiveSha256(archive);
-  expect(() => assertArchiveSha256(archive, expected)).not.toThrow();
-  expect(() => assertArchiveSha256(new TextEncoder().encode('tampered template archive'), expected)).toThrow('integrity check failed');
 });
 
 describe('extractTemplate', () => {

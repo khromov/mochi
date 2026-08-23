@@ -78,7 +78,14 @@ async function runUpdateSkill(args: string[], force: boolean) {
       target,
       confirmUpdate: ({ diff, url }) => {
         process.stdout.write(`\n[mochi] Unsigned update fetched from ${url}:\n\n${diff}\n`);
-        return force || confirm('[mochi] Apply this update?');
+        if (force) {
+          return true;
+        }
+        // confirm() reads false at EOF, so without a terminal an unattended run would silently look like a decline.
+        if (!process.stdin.isTTY) {
+          throw new Error('Refusing to apply an unsigned SKILL.md update without a terminal to confirm at. Re-run with --force to accept the update shown above.');
+        }
+        return confirm('[mochi] Apply this update?');
       },
     });
     const { path: dest, created, action } = result;

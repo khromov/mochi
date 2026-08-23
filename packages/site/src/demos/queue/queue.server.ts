@@ -3,22 +3,34 @@ import type { NotificationJob, ProcessedEntry, QueueStatus } from './types';
 
 export const QUEUE_NAME = 'demo-notifications';
 
-// `inFlight` is tracked off the event bus, not per request, so every connected browser sees the same numbers.
+// Pending jobs are tracked off the event bus, not per request, so every connected browser sees the same numbers.
 const processed: ProcessedEntry[] = [];
 let processedTotal = 0;
-let inFlight = 0;
 let reservations = 0;
 
 export const MAX_PENDING_NOTIFICATION_JOBS = 100;
 
+// Jobs here take under two seconds, so anything still counted after a minute lost its terminal event. Ageing those
+// out matters because the count also gates admission — a stuck counter would wedge the demo at "full" for everyone.
+const PENDING_TTL_MS = 60_000;
+const pendingSince: number[] = [];
+
+function pendingJobs(): number {
+  const cutoff = Date.now() - PENDING_TTL_MS;
+  while (pendingSince.length > 0 && pendingSince[0]! < cutoff) {
+    pendingSince.shift();
+  }
+  return pendingSince.length;
+}
+
 mochiEvents.on('queue:added', (e) => {
   if (e.queue === QUEUE_NAME) {
-    inFlight++;
+    pendingSince.push(Date.now());
   }
 });
 const settle = (e: { queue: string }) => {
   if (e.queue === QUEUE_NAME) {
-    inFlight = Math.max(0, inFlight - 1);
+    pendingSince.shift();
   }
 };
 mochiEvents.on('queue:completed', settle);
@@ -41,8 +53,10 @@ export const notificationQueue = Mochi.queue<NotificationJob>(QUEUE_NAME, {
   },
 });
 
+// `add()` awaits the queue write before `queue:added` fires, so concurrent submissions need the reservation to see
+// each other during that window; the reservation is released once the event has taken over the count.
 export function reserveNotificationSlot(): (() => void) | null {
-  if (inFlight + reservations >= MAX_PENDING_NOTIFICATION_JOBS) {
+  if (pendingJobs() + reservations >= MAX_PENDING_NOTIFICATION_JOBS) {
     return null;
   }
   reservations++;
@@ -69,5 +83,5 @@ export async function enqueueNotification(data: NotificationJob): Promise<boolea
 }
 
 export function queueStatus(): QueueStatus {
-  return { processed: [...processed].reverse(), processedTotal, inFlight };
+  return { processed: [...processed].reverse(), processedTotal, inFlight: pendingJobs() };
 }

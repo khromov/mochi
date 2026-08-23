@@ -7,6 +7,7 @@ description: 'Register WebSocket endpoints with Mochi.ws() and handle upgrade, o
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## WebSocket routes
@@ -136,6 +137,25 @@ Every socket exposes `ws.subscribe(topic)`, `ws.publish(topic, data)`, and `ws.u
 <Callout type="info">
 
 **`ws.publish` does not echo to the sender.** It delivers only to other subscribers. Call `ws.send` alongside `ws.publish` if the publisher should also receive the message.
+
+</Callout>
+
+### Socket limits
+
+<VersionNote since="0.10.0" message="The websocket serve option was added in 0.10.0." />
+
+`Mochi.serve({ websocket })` passes Bun's socket-level options through to every `Mochi.ws()` route. Mochi owns `open`, `message`, `close`, and `drain`; everything else — `maxPayloadLength`, `idleTimeout`, `backpressureLimit`, `perMessageDeflate` — is yours.
+
+```ts
+await Mochi.serve({
+  routes,
+  websocket: { maxPayloadLength: 4 * 1024 },
+});
+```
+
+<Callout type="warning">
+
+`maxPayloadLength` is the only inbound size bound that runs **before** Bun buffers the frame, and it defaults to 16 MB. A length check inside `message` caps what you store, not what the server allocates — set both.
 
 </Callout>
 

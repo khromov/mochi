@@ -2,7 +2,11 @@ import { isIP } from 'node:net';
 import { lookup } from 'node:dns/promises';
 import ipaddr from 'ipaddr.js';
 
-/** Defense-in-depth guard for outbound fetches against user-supplied URLs. */
+/**
+ * Defense-in-depth guard for outbound fetches against user-supplied URLs: validate the host against an optional
+ * allowlist and reject hosts resolving to private, loopback, link-local, or reserved addresses. Callers close the
+ * DNS-rebinding window by connecting to one of the returned `addresses` instead of re-resolving the hostname.
+ */
 export interface UrlGuardOptions {
   allowedHosts?: string[] | undefined;
   blockPrivateNetworks?: boolean;
@@ -10,8 +14,8 @@ export interface UrlGuardOptions {
 
 export interface ResolvedPublicUrl {
   url: URL;
-  /** A validated address that the caller must pin the outbound connection to. */
-  address?: string;
+  /** Every validated address, in resolution order; the caller pins the connection to one and fails over to the rest. */
+  addresses: string[];
 }
 
 /** Thrown for every rejection so callers can map it to their own error type. */
@@ -76,7 +80,7 @@ export async function resolvePublicUrl(src: string, opts: UrlGuardOptions): Prom
     }
   }
 
-  let address: string | undefined;
+  let validated: string[] = [];
   if (opts.blockPrivateNetworks) {
     if (url.hostname.toLowerCase() === 'localhost') {
       throw new SsrfGuardError('Source host resolves to a private address');
@@ -96,12 +100,8 @@ export async function resolvePublicUrl(src: string, opts: UrlGuardOptions): Prom
     if (addresses.length === 0 || addresses.some(isBlockedIp)) {
       throw new SsrfGuardError('Source host resolves to a private address');
     }
-    address = addresses[0];
+    validated = addresses;
   }
 
-  return { url, address };
-}
-
-export async function assertPublicUrl(src: string, opts: UrlGuardOptions): Promise<URL> {
-  return (await resolvePublicUrl(src, opts)).url;
+  return { url, addresses: validated };
 }

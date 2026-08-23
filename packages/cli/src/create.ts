@@ -45,10 +45,9 @@ export async function create(opts: CreateOptions): Promise<CreateResult> {
   const dir = path.resolve(opts.dir);
   await fs.mkdir(dir, { recursive: true });
 
-  // Template files are tied to the reviewed commit and archive digest bundled with this CLI release.
+  // Templates come from this CLI release's own git tag, so a scaffold always matches the CLI that produced it.
   await downloadTemplate(template.source, {
     dir,
-    sha256: template.archiveSha256,
     force: opts.force ?? false,
   });
 

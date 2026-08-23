@@ -1,17 +1,18 @@
+import pkg from '../package.json' with { type: 'json' };
+
 export type TemplateId = 'minimal' | 'demos';
 
 export interface Template {
   id: TemplateId;
   label: string;
   hint: string;
-  /** Immutable `<owner>/<repo>/<subdir>#<commit>` URI. */
+  /** Immutable `<owner>/<repo>/<subdir>#<tag>` URI. */
   source: string;
-  /** SHA-256 of the complete GitHub codeload archive selected by `source`. */
-  archiveSha256: string;
 }
 
-const TEMPLATE_REVISION = '13dc6cb80d459b587a8344e8f8bf6db231def8e7';
-const TEMPLATE_ARCHIVE_SHA256 = '2ecead7ec976eecb24d5de95b339e489da1fccd4da8b43bcce578dc8bb5e078f';
+// release-please tags every create-mochi release `create-mochi-v<version>`, so deriving the ref from our own version
+// pins each published CLI to the tree it shipped with — without a hand-written commit sha that nothing ever bumps.
+export const TEMPLATE_REVISION = `create-mochi-v${pkg.version}`;
 
 export const TEMPLATES: readonly Template[] = [
   {
@@ -19,14 +20,12 @@ export const TEMPLATES: readonly Template[] = [
     label: 'Minimal',
     hint: 'a bare-bones Mochi app with a single page',
     source: `khromov/mochi/packages/minimal#${TEMPLATE_REVISION}`,
-    archiveSha256: TEMPLATE_ARCHIVE_SHA256,
   },
   {
     id: 'demos',
     label: 'Demos',
     hint: 'a larger reference app with multiple demos (HN clone, todo, …)',
     source: `khromov/mochi/packages/demos#${TEMPLATE_REVISION}`,
-    archiveSha256: TEMPLATE_ARCHIVE_SHA256,
   },
 ] as const;
 

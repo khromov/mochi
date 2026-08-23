@@ -16,6 +16,7 @@ import { handle as modeWatcherHandle } from './demos/mode-watcher/routes';
 import { handle as shotHandle } from './shot/routes';
 import { encodeDebugBarGlobals } from './lib/debugBarEncode';
 import { routes, queues, cron } from './routes';
+import { CHAT_MAX_MESSAGE_BYTES } from './demos/chat/routes';
 
 const DEVELOPMENT = process.env.MODE === 'development';
 const IS_DOCKER = process.env.MOCHI_DOCKER === 'true';
@@ -171,6 +172,8 @@ await Mochi.serve({
   development: DEVELOPMENT,
   liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
+  // The only inbound bound that runs before Bun buffers a frame; without it the default is 16 MB per message.
+  websocket: { maxPayloadLength: CHAT_MAX_MESSAGE_BYTES },
   speculationRules,
   trailingSlash: 'always',
   // /ci/dashboard is a chrome-free always-on display — it would otherwise report a pageview every refresh.

@@ -1,4 +1,4 @@
-import { resolvePublicUrl, SsrfGuardError } from '../utils/assertPublicUrl';
+import { resolvePublicUrl, SsrfGuardError } from '../utils/publicUrl';
 import { applyFilter } from '../extensions';
 import { getLocalImageAsset } from './localAssetRegistry';
 import { ImageError } from './types';
@@ -38,8 +38,28 @@ export function createPinnedFetchRequest(url: URL, address: string | undefined, 
   return { url: pinned, init };
 }
 
+/**
+ * Connect to the pre-validated addresses in order, falling back to the next on a connect failure. Every address was
+ * validated together, so this keeps the multi-address failover a plain hostname fetch would have done — one dead
+ * edge of a CDN must not fail the request. Resolves to undefined when none of them answered.
+ */
+export async function fetchPinned(url: URL, addresses: string[], signal: AbortSignal): Promise<Response | undefined> {
+  const candidates: Array<string | undefined> = addresses.length > 0 ? addresses : [undefined];
+  for (const address of candidates) {
+    const request = createPinnedFetchRequest(url, address, signal);
+    try {
+      return await fetch(request.url, request.init);
+    } catch {
+      if (signal.aborted) {
+        return undefined;
+      }
+    }
+  }
+  return undefined;
+}
+
 export async function fetchImageSource(src: string, opts: ResolvedImageOptions): Promise<FetchedSource> {
-  // A locally-imported asset's `src` is a same-origin `/_mochi/asset/…` URL that `assertPublicUrl` would reject, so the
+  // A locally-imported asset's `src` is a same-origin `/_mochi/asset/…` URL that `resolvePublicUrl` would reject, so the
   // bytes are read straight from disk. Only build-registered URLs are readable, since request input acts as a Map key
   // rather than a filesystem path, and the src arrives decrypted from an authenticated token.
   const local = getLocalImageAsset(src);
@@ -71,12 +91,11 @@ export async function fetchImageSource(src: string, opts: ResolvedImageOptions):
       throw e;
     }
 
-    try {
-      const request = createPinnedFetchRequest(resolved.url, resolved.address, signal);
-      res = await fetch(request.url, request.init);
-    } catch {
+    const fetched = await fetchPinned(resolved.url, resolved.addresses, signal);
+    if (!fetched) {
       throw new ImageError(502, 'Failed to fetch source image');
     }
+    res = fetched;
 
     const location = res.headers.get('location');
     if (res.status >= 300 && res.status < 400 && location) {

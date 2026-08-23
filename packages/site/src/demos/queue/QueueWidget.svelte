@@ -45,6 +45,9 @@
         username = randomUsername();
       } else if (result.type === 'failure' && result.data) {
         enqueueError = result.data.error;
+      } else if (result.type === 'error') {
+        // The route limiter answers with a bare 429, which is not an enhance envelope — it surfaces here, not as a failure.
+        enqueueError = result.status === 429 ? 'Too many submissions. Wait a moment and try again.' : 'Could not reach the server. Try again.';
       }
     };
   };
