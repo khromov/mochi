@@ -35,7 +35,7 @@ One block per version: every breaking change, and what to do about it.
 - Cross-origin WebSocket upgrades are rejected in production. Add the origins to `csrf.trustedOrigins`, or set `csrf.checkOrigin: false`, which also disables the form CSRF check.
 - `redirect()` to another origin fails with 500 in production. Add the origin to `redirect.trustedOrigins`, or pass `{ external: true }` on an individual call.
 - `redirect()` rejects any location containing control characters, including tab and DEL. Encode the value before passing it.
-- `redirect()` treats `mailto:`, `tel:` and other non-`http(s)` schemes as off-origin. Pass `{ external: true }` on those calls.
+- `redirect()` rejects `javascript:`, `data:`, `blob:`, `file:` and other script-capable schemes outright. Nothing waives these; send the visitor to a real destination.
 - With no `proxy.origin` or `proxy.hostHeader` set, production blocks every absolute redirect location. Configure `proxy.origin`.
 - `X-Content-Type-Options: nosniff` and `Referrer-Policy` are now sent on every response. Set `securityHeaders: false`, or override an individual header, to keep the old behaviour.
 

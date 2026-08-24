@@ -98,6 +98,11 @@ beforeAll(async () => {
           csrfTrusted: () => redirect(303, 'https://csrf-only.example/next'),
           external: () => redirect(303, 'https://anywhere.example/sso', { external: true }),
           externalInjection: () => redirect(303, 'https://anywhere.example/sso\r\nX-Injected: 1', { external: true }),
+          mailto: () => redirect(303, 'mailto:hi@example.com?subject=Hi'),
+          tel: () => redirect(303, 'tel:+15551234567'),
+          appScheme: () => redirect(303, 'myapp://open/thing'),
+          javascriptScheme: () => redirect(303, 'javascript:alert(1)', { external: true }),
+          dataScheme: () => redirect(303, 'data:text/html,<script>alert(1)</script>'),
         },
       }),
     },
@@ -263,5 +268,69 @@ describe('per-call external redirect', () => {
     expect(res.status).toBe(500);
     expect(res.headers.get('location')).toBeNull();
     expect(res.headers.get('x-injected')).toBeNull();
+  });
+});
+
+describe('redirect() URL schemes', () => {
+  const post = (action: string): Promise<Response> =>
+    fetch(`${base}/page?/${action}`, {
+      method: 'POST',
+      headers: { accept: 'text/html', 'content-type': 'application/x-www-form-urlencoded', origin: base },
+      body: '',
+      redirect: 'manual',
+    });
+
+  test.each([
+    ['mailto', 'mailto:hi@example.com?subject=Hi'],
+    ['tel', 'tel:+15551234567'],
+    ['appScheme', 'myapp://open/thing'],
+  ])('allows a %s redirect without an opt-out — it cannot impersonate a web page', async (action, location) => {
+    const res = await post(action);
+    expect(res.status).toBe(303);
+    expect(res.headers.get('location')).toBe(location);
+  });
+
+  test.each([['javascriptScheme'], ['dataScheme']])('blocks a %s redirect, which { external: true } must not waive', async (action) => {
+    const res = await post(action);
+    expect(res.status).toBe(500);
+    expect(res.headers.get('location')).toBeNull();
+  });
+});
+
+// `/loader-redirect` echoes `?next=` straight into redirect(), which is the shape the guard exists for. The
+// scheme-relative forms matter most: whether `https:/host` is a path or an authority depends on the scheme of the URL
+// it is resolved against, so a guard that resolves against a fixed base disagrees with the browser.
+describe('redirect() location battery', () => {
+  const go = (next: string): Promise<Response> => fetch(`${base}/loader-redirect?next=${encodeURIComponent(next)}`, { redirect: 'manual' });
+
+  test.each([['/ok'], ['/a/b?x=1#f'], ['mailto:a@b.com'], ['tel:+15551234'], ['sms:+1555'], ['myapp://open'], ['intent://scan#Intent;end']])('allows %s', async (next) => {
+    const res = await go(next);
+    expect(res.status).toBe(303);
+    expect(res.headers.get('location')).toBe(next);
+  });
+
+  test.each([
+    ['//evil.example/x'],
+    ['///evil.example'],
+    ['/\\evil.example'],
+    ['\\\\evil.example'],
+    ['https://evil.example'],
+    ['HTTPS://EVIL.example'],
+    ['https://user@evil.example'],
+    ['https:/evil.example'],
+    ['https:evil.example'],
+    ['http:/evil.example'],
+    ['javascript:alert(1)'],
+    ['JavaScript:alert(1)'],
+    [' javascript:alert(1)'],
+    ['data:text/html,<script>alert(1)</script>'],
+    ['vbscript:msgbox(1)'],
+    ['blob:https://evil.example/u'],
+    ['file:///etc/passwd'],
+    ['view-source:https://x.example'],
+  ])('blocks %s', async (next) => {
+    const res = await go(next);
+    expect(res.status).toBe(500);
+    expect(res.headers.get('location')).toBeNull();
   });
 });

@@ -92,6 +92,22 @@ return redirect(303, next); // rejected — the raw response would otherwise rea
 //   Set-Cookie: session=attacker    ← never sent by the app; the browser honours it anyway
 ```
 
+#### Schemes
+
+Only `http:` and `https:` locations are origin-checked, because only those can render the lookalike page an open redirect is used for. A scheme that hands off to another app — `mailto:`, `tel:`, `sms:`, your own deep link — passes without allow-listing:
+
+```ts
+return redirect(303, 'mailto:support@example.com'); // ok
+```
+
+Script-capable schemes are rejected outright, and `{ external: true }` does not waive them:
+
+```ts
+return redirect(303, 'javascript:alert(1)'); // blocked, always
+```
+
+`javascript:`, `data:`, `vbscript:`, `blob:`, `filesystem:`, `file:` and `view-source:` are on that list. The enhanced-form client passes a redirect location to `window.location.assign()`, where a `javascript:` URL executes in the page that is already open — an XSS, not a navigation.
+
 The guard covers `redirect()` from a form action and from `serverProps`. Framework-internal redirects — trailing-slash and proxy canonicalisation — build their own target and are unaffected.
 
 <Callout type="warning">

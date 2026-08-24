@@ -186,6 +186,9 @@ function jsonForHtml(value: unknown): string {
 // origin of its own and is therefore relative — same-origin by construction, whatever host the browser used.
 const RELATIVE_BASE = 'https://relative.invalid';
 
+/** Schemes that can run script or read local content instead of navigating somewhere — never a legitimate `redirect()` target. */
+const SCRIPTABLE_PROTOCOLS: ReadonlySet<string> = new Set(['javascript:', 'data:', 'vbscript:', 'blob:', 'filesystem:', 'file:', 'view-source:']);
+
 /**
  * Guard against open redirects: `redirect()` writes its `location` straight into a `Location` header (and the enhanced
  * client passes it to `window.location.assign`), so a value influenced by request data — an echoed `?next=` param, say
@@ -205,16 +208,34 @@ function isSafeRedirectLocation(location: string, expectedOrigin: string | null,
       return false;
     }
   }
-  if (external) {
-    return true;
-  }
+  // Whether `https:/evil.example` is a path or a host depends on the scheme of the URL it is resolved against, so the
+  // scheme is detected here rather than inferred from a parse: a fixed base would read it as relative while the
+  // browser, resolving against a page on a different scheme, reads it as another origin.
+  const trimmed = location.replace(/^ +/, '');
+  const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed);
   let resolved: URL;
   try {
-    resolved = new URL(location, RELATIVE_BASE);
+    resolved = hasScheme ? new URL(trimmed) : new URL(trimmed, RELATIVE_BASE);
   } catch {
     return false;
   }
-  if (resolved.origin === RELATIVE_BASE) {
+  // Checked on the parsed protocol, so ` JavaScript:…` can't slip past on whitespace or case, and checked before the
+  // `external` waiver: these are never a destination, and the enhanced client hands `location` to
+  // `window.location.assign()`, where `javascript:` executes in the current document.
+  if (SCRIPTABLE_PROTOCOLS.has(resolved.protocol)) {
+    return false;
+  }
+  if (external) {
+    return true;
+  }
+  // A path with no scheme of its own resolves against whatever origin the browser actually used. Anything that landed
+  // off the sentinel — `//host`, `/\host` — carried an authority and is judged on its origin below.
+  if (!hasScheme && resolved.origin === RELATIVE_BASE) {
+    return true;
+  }
+  // A scheme that cannot render a web page — mailto:, tel:, sms:, an app's own deep link — can't host the lookalike
+  // login form this guard exists to prevent, so it needs no allow-listing.
+  if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
     return true;
   }
   if (expectedOrigin === null) {
@@ -850,7 +871,7 @@ export class Mochi {
         return null;
       }
       if (external) {
-        logger.warn(`Blocking redirect(): location "${location}" contains control characters, which { external: true } does not waive.`);
+        logger.warn(`Blocking redirect(): location "${location}" carries a control character or a script-capable scheme, neither of which { external: true } waives.`);
         return 'Unsafe redirect location';
       }
       const allowed = expectedOrigin ?? '<none: set proxy.origin or proxy.hostHeader>';
