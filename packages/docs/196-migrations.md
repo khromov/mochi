@@ -66,7 +66,12 @@ One block per version: every breaking change, and what to do about it.
 
 ## Islands
 
-- Children on a `mochi:hydrate` island are now a build error. Move the content inside the island, or use `mochi:defer`.
+### Island children
+
+    <Counter mochi:hydrate>Total:</Counter>   ← build error
+    <Counter mochi:hydrate label="Total:" />  ← pass it as a prop instead
+
+- Children on a `mochi:hydrate` island are now a build error, because the island hydrates from its serialized props alone. Move the markup inside the component or pass it as serializable props; under `mochi:defer` and `mochi:clientOnly`, children are the loading fallback.
 - A `.server.svelte` component cannot be hydrated. Rename the file if the suffix was incidental.
 - `mochi:defer` inside a `mochi:hydrate` subtree is now a build error. Restructure so the server island sits outside the hydrated subtree.
 - Nested `mochi:defer` islands resolve in a single request, so child islands no longer have their own wrapper, caching or timing. Set `inlineNestedIslands: false` to keep a request per island.
