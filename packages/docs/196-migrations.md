@@ -41,10 +41,14 @@ One block per version: every breaking change, and what to do about it.
 
 ## Queues
 
+    const emails = Mochi.queue('emails', { process: sendEmail });
+    await Mochi.serve({ queues: [emails], routes });
+    await emails.add({ to }, { startAfter: 30, retryLimit: 3 });
+
 - `Mochi.queue()` takes the queue name as its first argument, and `queues` is an array of descriptors rather than an object. Update the call sites.
 - `queue.add()` takes `(data, opts)` and resolves to a job id or `null`. Update the call sites.
 - Job options were renamed: `delay` in milliseconds is now `startAfter` in seconds, `attempts` is `retryLimit`, and `jobId` is `id`. Update the call sites.
-- Jobs now retry twice by default where they previously ran once. Set `retryLimit: 0` for a processor that is not idempotent.
+- Jobs now retry twice by default where they previously ran once. Set `retryLimit: 0` if a job must never run twice.
 - An active job expires after 15 minutes instead of 30. Raise `expireInSeconds` for a longer-running processor.
 - Queue storage uses a new schema, so jobs pending in an existing store are not carried over. Drain the queue before upgrading.
 - A queue whose declared config differs from the stored one throws at boot. Set `queueConfig: 'sync'` to adopt the declared config.
