@@ -61,7 +61,6 @@ One block per version: every breaking change, and what to do about it.
 - Unmatched paths are no longer slash-normalized, so they 404 instead of redirecting. Handle it in your `fetch` fallback if you relied on that redirect.
 - `redirect()` returned from `serverProps` now issues a real 3xx instead of being spread into props. Review any `serverProps` that returned one.
 - `fail()` or `success()` returned from `serverProps` now throws. Return props or a redirect instead.
-- The redirect marker was renamed from `__mochiFormRedirect` to `__mochiRedirect`, and `MochiFormRedirect` to `MochiRedirect`. Update anything that inspects action results structurally.
 
 ## Islands
 
