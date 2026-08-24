@@ -41,6 +41,8 @@ One block per version: every breaking change, and what to do about it.
 
 ## Queues
 
+### New queue API
+
     const emails = Mochi.queue('emails', { process: sendEmail });
     await Mochi.serve({ queues: [emails], routes });
     await emails.add({ to }, { startAfter: 30, retryLimit: 3 });
