@@ -2,7 +2,6 @@ FROM oven/bun:1.4.0-alpine
 WORKDIR /app
 
 COPY package.json bun.lock* ./
-COPY patches ./patches
 RUN bun install --production
 
 COPY . .

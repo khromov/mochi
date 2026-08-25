@@ -1,21 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { bunVersionWarning, resolveMochiVersionRange, setDefaultPort, stringifyJson, transformPackageJson, transformTsconfig, validatePackageName } from './utils.ts';
-
-/** A scaffold dir whose `patches/` folder holds the given `name@version.patch` files (none → no `patches/` dir). */
-function scaffoldDir(patchFiles: string[] = []): string {
-  const dir = mkdtempSync(join(tmpdir(), 'create-mochi-test-'));
-  if (patchFiles.length > 0) {
-    const patchesDir = join(dir, 'patches');
-    mkdirSync(patchesDir);
-    for (const file of patchFiles) {
-      writeFileSync(join(patchesDir, file), '');
-    }
-  }
-  return dir;
-}
 
 describe('bunVersionWarning', () => {
   test('warns below the recommended Bun 1.4', () => {
@@ -82,7 +66,7 @@ describe('transformPackageJson', () => {
       },
     });
 
-    const out = JSON.parse(transformPackageJson(input, { name: 'my-app', mochiVersion: '^0.2.5', dir: scaffoldDir() }));
+    const out = JSON.parse(transformPackageJson(input, { name: 'my-app', mochiVersion: '^0.2.5' }));
     expect(out.name).toBe('my-app');
     expect(out.private).toBe(true);
     expect(out.dependencies['mochi-framework']).toBe('^0.2.5');
@@ -95,41 +79,26 @@ describe('transformPackageJson', () => {
       name: 'pkg',
       dependencies: { 'some-internal-lib': 'workspace:*' },
     });
-    const out = JSON.parse(transformPackageJson(input, { name: 'p', mochiVersion: '^0.1.0', dir: scaffoldDir() }));
+    const out = JSON.parse(transformPackageJson(input, { name: 'p', mochiVersion: '^0.1.0' }));
     expect(out.dependencies['some-internal-lib']).toBe('latest');
   });
 
   test('handles missing dependency fields', () => {
     const input = JSON.stringify({ name: 'pkg' });
-    const out = JSON.parse(transformPackageJson(input, { name: 'my-app', mochiVersion: '^0.1.0', dir: scaffoldDir() }));
+    const out = JSON.parse(transformPackageJson(input, { name: 'my-app', mochiVersion: '^0.1.0' }));
     expect(out.name).toBe('my-app');
   });
 
   test('output ends with a newline', () => {
     const input = JSON.stringify({ name: 'x' });
-    expect(transformPackageJson(input, { name: 'y', mochiVersion: '^0.1.0', dir: scaffoldDir() }).endsWith('\n')).toBe(true);
+    expect(transformPackageJson(input, { name: 'y', mochiVersion: '^0.1.0' }).endsWith('\n')).toBe(true);
   });
 
-  // Derived from the patch files the template ships — not a hardcoded list — so a
-  // published CLI never drifts behind a template's svelte-check bump.
-  test('derives patchedDependencies from the template patches/ dir', () => {
-    const dir = scaffoldDir(['svelte-check@4.7.3.patch', 'svelte-check@4.7.4.patch']);
-    const out = JSON.parse(transformPackageJson(JSON.stringify({ name: 'mochi-minimal' }), { name: 'my-app', mochiVersion: '^0.1.0', dir }));
-    expect(out.patchedDependencies).toEqual({
-      'svelte-check@4.7.3': 'patches/svelte-check@4.7.3.patch',
-      'svelte-check@4.7.4': 'patches/svelte-check@4.7.4.patch',
-    });
-  });
-
-  test('omits patchedDependencies when the template ships no patches/ dir', () => {
-    const out = JSON.parse(transformPackageJson(JSON.stringify({ name: 'mochi-minimal' }), { name: 'my-app', mochiVersion: '^0.1.0', dir: scaffoldDir() }));
+  // svelte-check is patched at runtime by `mochi-framework prepare`, so a scaffold must not
+  // carry a version-pinned bun patch entry that goes stale on the next svelte-check bump.
+  test('does not wire up bun patchedDependencies', () => {
+    const out = JSON.parse(transformPackageJson(JSON.stringify({ name: 'mochi-minimal' }), { name: 'my-app', mochiVersion: '^0.1.0' }));
     expect(out.patchedDependencies).toBeUndefined();
-  });
-
-  test('ignores non-.patch files in patches/', () => {
-    const dir = scaffoldDir(['svelte-check@4.7.4.patch', 'README.md']);
-    const out = JSON.parse(transformPackageJson(JSON.stringify({ name: 'mochi-minimal' }), { name: 'my-app', mochiVersion: '^0.1.0', dir }));
-    expect(out.patchedDependencies).toEqual({ 'svelte-check@4.7.4': 'patches/svelte-check@4.7.4.patch' });
   });
 });
 

@@ -118,8 +118,6 @@ export interface PackageJsonTransform {
   name: string;
   /** Version range to swap in for any `workspace:*` dep on `mochi-framework`. */
   mochiVersion: string;
-  /** Scaffold root; its `patches/` dir seeds `patchedDependencies`. */
-  dir: string;
 }
 
 export function transformPackageJson(contents: string, opts: PackageJsonTransform): string {
@@ -138,32 +136,10 @@ export function transformPackageJson(contents: string, opts: PackageJsonTransfor
     }
   }
 
-  // Can't live in the committed template `package.json` because bun resolves a workspace's
-  // `patchedDependencies` path against the monorepo root, so we wire it up here instead.
-  // Deriving the map from the template's own `patches/` files (rather than a hardcoded list)
-  // means a published CLI never drifts behind a template's dep bumps.
-  const patched = derivePatchedDependencies(path.join(opts.dir, 'patches'));
-  if (Object.keys(patched).length > 0) {
-    pkg.patchedDependencies = patched;
-  }
-
+  // No `patchedDependencies` wiring: svelte-check is patched at runtime by `mochi-framework prepare`
+  // (and on dev startup), so a scaffold stays decoupled from the exact svelte-check version.
+  // See `packages/mochi/src/cli/svelteCheckPatch.ts`.
   return stringifyJson(pkg);
-}
-
-// bun's convention makes each patch filename (`svelte-check@4.7.4.patch`) exactly
-// the `name@version` key, so the map is the directory listing — no version parsing.
-function derivePatchedDependencies(patchesDir: string): Record<string, string> {
-  if (!fs.existsSync(patchesDir)) {
-    return {};
-  }
-  const map: Record<string, string> = {};
-  for (const file of fs.readdirSync(patchesDir).sort()) {
-    if (!file.endsWith('.patch')) {
-      continue;
-    }
-    map[file.slice(0, -'.patch'.length)] = `patches/${file}`;
-  }
-  return map;
 }
 
 export function transformTsconfig(contents: string): string {

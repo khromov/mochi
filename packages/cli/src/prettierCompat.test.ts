@@ -20,7 +20,7 @@ describe('generated output matches real prettier', () => {
   for (const template of ['minimal', 'demos'] as const) {
     test(`${template} package.json survives the full transform chain`, async () => {
       const dir = join(TEMPLATES_DIR, template);
-      const transformed = transformPackageJson(readFileSync(join(dir, 'package.json'), 'utf8'), { name: 'my-app', mochiVersion: '^0.9.1', dir });
+      const transformed = transformPackageJson(readFileSync(join(dir, 'package.json'), 'utf8'), { name: 'my-app', mochiVersion: '^0.9.1' });
       await expectPrettierClean(addLintTooling(transformed, { eslint: true, prettier: true }), 'json');
     });
 

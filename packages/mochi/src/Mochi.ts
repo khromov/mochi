@@ -130,6 +130,7 @@ import { resolveProtectionOptions, PROTECTION_SHELL_COMPONENT } from './protecti
 import { mintClearanceToken } from './protection/clearance';
 import { verifyCaptcha } from './captcha/captcha';
 import { getCaptchaRuntime } from './captcha/config';
+import { ensureSvelteCheckPatched } from './cli/svelteCheckPatch';
 
 const DEFAULT_HTML_SHELL = await Bun.file(new URL('./templates/default-shell.html', import.meta.url)).text();
 
@@ -574,6 +575,9 @@ export class Mochi {
         for (const sub of ['svelte-client', 'svelte-compile', 'svelte-css']) {
           mkdirSync(path.join(outDir, sub), { recursive: true });
         }
+        // svelte-check's bundled svelte2tsx reads the raw `.svelte` source, so no preprocessor or
+        // ambient type can teach it `mochi:` attributes — self-heal the installed copy instead.
+        ensureSvelteCheckPatched();
       } else {
         // Production without a prebuilt manifest is valid but much slower, compiling components at boot and server islands
         // on the request path; the error level keeps a forgotten build from masquerading as a healthy deploy.

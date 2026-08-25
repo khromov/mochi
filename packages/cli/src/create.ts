@@ -54,7 +54,7 @@ export async function create(opts: CreateOptions): Promise<CreateResult> {
 
   const mochiVersion = opts.mochiVersion ?? resolveMochiVersionRange(await fetchLatestMochiVersion());
 
-  await rewriteFile(path.join(dir, 'package.json'), (raw) => transformPackageJson(raw, { name: opts.name, mochiVersion, dir }));
+  await rewriteFile(path.join(dir, 'package.json'), (raw) => transformPackageJson(raw, { name: opts.name, mochiVersion }));
   await rewriteFile(path.join(dir, 'tsconfig.json'), transformTsconfig);
   await rewriteFile(path.join(dir, 'src/index.ts'), (raw) => setDefaultPort(raw, SCAFFOLDED_PORT));
 
