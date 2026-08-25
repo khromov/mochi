@@ -45,6 +45,7 @@ export function renderMochiEnvServer(development: boolean): string {
     __MOCHI_DEFER_REACTIVE__: frameworkFile('islands/deferReloadState.svelte.ts'),
     __MOCHI_ENHANCE_SSR__: frameworkFile('runtime/enhance.ssr.ts'),
     __MOCHI_RATE_LIMIT__: frameworkFile('runtime/rateLimit.ts'),
+    __MOCHI_OPTIONS__: frameworkFile('options.ts'),
     // A baked literal, not a module re-export: config.ts computes the path off `import.meta.url`,
     // which inside a compiled SSR chunk would point into the build dir instead of the framework src.
     __MOCHI_PROTECTION_SHELL_PATH__: frameworkFile('templates/ProtectionShell/ProtectionShell.svelte'),

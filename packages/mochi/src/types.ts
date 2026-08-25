@@ -10,6 +10,7 @@ import type { MochiCaptchaOptions } from './captcha/types';
 import type { MochiProtectionOptions } from './protection/types';
 import type { MochiCronHandler, MochiCronRuntimeOptions } from './cron';
 import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions, MochiQueueStorage } from './queue';
+import type { MochiOptionsStorage } from './options';
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
 import type { SpeculationRules } from './runtime/speculationRules';
@@ -290,6 +291,8 @@ export interface MochiWorkerOptions {
   queues: MochiQueueConfig[];
   /** The app's queue storage; may instead come from a `storage` declared on the descriptors. */
   storage?: MochiQueueStorage;
+  /** Registers where `MochiOptions` connects in this process, since `Mochi.serve({ optionsStorage })` never runs here. */
+  optionsStorage?: MochiOptionsStorage;
   /**
    * `'verify'` (default): a stored queue whose config differs from its declaration is a start() error — code is
    * authoritative. `'sync'`: write the declared config to storage instead, logging each change. `MOCHI_QUEUE_SYNC=1`
@@ -491,6 +494,12 @@ export interface MochiServeOptions {
    * forces `'sync'` process-wide and wins over this option.
    */
   queueConfig?: 'verify' | 'sync';
+  /**
+   * Persistent backend for the `MochiOptions` key/value store: `{ sqlite: 'path/to.db' }` for a single-process store,
+   * `{ postgres: url }` for a shared one (a `mochi_options` schema), or `{ pglite: instance }` for an embedded
+   * Postgres you own. No memory backend; validated at boot, connected lazily on the first MochiOptions call.
+   */
+  optionsStorage?: MochiOptionsStorage;
   /**
    * Grace period (ms) on shutdown for in-flight queue jobs to drain before the boss is stopped and the store closed.
    * Default: `10000`. Distinct from `shutdownTimeout`, which bounds the HTTP server drain. Raise it for queues whose

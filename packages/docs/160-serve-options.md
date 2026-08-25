@@ -61,6 +61,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `compressServerIslandProps` — deflate server-island props when it reduces size. Default: `true`.
 - `inlineNestedIslands` — render nested `mochi:defer` islands in-process during an island fetch instead of emitting more client fetches. `mochi:defer:visible` children keep their own fetch; one call site opts out with `mochi:defer={{ inline: false }}`. Default: `true`. See [Server islands](/docs/server-islands/).
 - `logger` — built-in request logger. Default: `{ enabled: true }`.
+- `optionsStorage` — persistent backend for the [`MochiOptions`](/docs/options/) key/value store: `{ sqlite: path }`, `{ postgres: url }`, or `{ pglite: instance }`. There is no memory backend; without it every `MochiOptions` call throws. See [Options](/docs/options/).
 - `publicDir` — directory served as static assets. Default: `./public`. Scanned from disk at startup in every mode, so it must ship with a production deploy.
 - `staticDirs` — extra directory trees mounted under a URL prefix. See [Static directories](#static-directories).
 - `memoryPressure` — drain in-memory caches when the OS reports low memory. Default: `true`; always off in development. See [Cache](/docs/cache/#memory-pressure).

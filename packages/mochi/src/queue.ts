@@ -2,10 +2,10 @@
 // backend swap would need.
 import { BunBoss, fromBunSqlite, fromPglite, queueOptionDefaults } from 'bun-boss';
 import type { JobInsert, JobResult, JobWithMetadata, PGliteLike, SendOptions, UpdateQueueOptions, WorkOptions, Warning } from 'bun-boss';
-import { SQL } from 'bun';
-import { mkdirSync } from 'node:fs';
+import type { SQL } from 'bun';
 import path from 'node:path';
 import { toPosixPath } from './utils';
+import { STORAGE_SHAPE_HINT, isValidStorageObject, openSqliteFile } from './utils/storageConfig';
 import { isBuildingEntry } from './utils/buildFlag';
 import { pinGlobal } from './utils/globalState';
 import { applyFilter } from './extensions';
@@ -14,6 +14,10 @@ import { mochiEvents } from './events';
 import { logger } from './utils/log';
 import type { MochiCronJob, MochiCronRun } from './cron';
 
+// options.ts's pglite driver must use this exact bun-boss: the adapter's per-instance lock is module-level, and an
+// SSR bundle carries its own copy of options.ts whose own 'bun-boss' import would be a second, disjoint lock.
+pinGlobal('__mochi_bun_boss__', () => ({ fromPglite }));
+
 /**
  * Where queue jobs live: `'memory'` (SQLite `:memory:`, lost on restart), a SQLite file, a Postgres database, or a
  * caller-owned embedded PGlite instance (Mochi never closes it).
@@ -21,29 +25,9 @@ import type { MochiCronJob, MochiCronRun } from './cron';
 export type MochiQueueStorage = 'memory' | { sqlite: string } | { postgres: string } | { pglite: PGliteLike };
 export type { PGliteLike };
 
-const storageChecks: Record<string, (value: unknown) => boolean> = {
-  sqlite: (value) => typeof value === 'string' && value.length > 0,
-  postgres: (value) => typeof value === 'string' && value.length > 0,
-  pglite: (value) => {
-    const instance = value as Partial<PGliteLike> | null;
-    return typeof instance === 'object' && instance !== null && typeof instance.query === 'function' && typeof instance.exec === 'function';
-  },
-};
-
 /** Runtime-validates what the types already promise, because `queueStorage` often arrives from untyped config. */
 export function isValidQueueStorage(storage: MochiQueueStorage): boolean {
-  if (storage === 'memory') {
-    return true;
-  }
-  if (typeof storage !== 'object' || storage === null) {
-    return false;
-  }
-  const [entry, ...extra] = Object.entries(storageChecks).filter(([key]) => key in storage);
-  if (!entry || extra.length > 0) {
-    return false;
-  }
-  const [key, check] = entry;
-  return check((storage as unknown as Record<string, unknown>)[key]);
+  return storage === 'memory' || isValidStorageObject(storage);
 }
 
 /** Deliberately narrow — data, not bun-boss's job row — so userland can't reach behind the abstraction. */
@@ -487,11 +471,7 @@ function constructBoss(storage: MochiQueueStorage, opts: ConstructBossOptions): 
     ...(opts.cronWorkerIntervalSeconds ? { cronWorkerIntervalSeconds: opts.cronWorkerIntervalSeconds } : {}),
   };
   if (storage === 'memory' || 'sqlite' in storage) {
-    const file = storage === 'memory' ? ':memory:' : storage.sqlite;
-    if (file !== ':memory:') {
-      mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
-    }
-    const sql = new SQL(`sqlite://${file}`);
+    const sql = openSqliteFile(storage === 'memory' ? ':memory:' : storage.sqlite);
     // The sqlite backend has no schemas, so bun-boss folds `schema` into a table-name prefix instead — without it both
     // bosses would default to `bunboss.*` and cron would share the queue tables inside one file.
     return { boss: new BunBoss({ backend: 'sqlite', db: fromBunSqlite(sql), schema: opts.schema, ...extra }), ownedSql: sql };
@@ -1008,7 +988,7 @@ export function createQueueDescriptor<T = unknown, R = unknown>(name: string, co
   }
   const { process, on, storage, ...options } = config;
   if (storage !== undefined && !isValidQueueStorage(storage)) {
-    throw new Error(`Mochi.queue("${name}", { storage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
+    throw new Error(`Mochi.queue("${name}", { storage }): expected 'memory', ${STORAGE_SHAPE_HINT}.`);
   }
   const base = producerMethods<T>(name);
   const descriptor: MochiQueueDescriptor<T, R> = {
@@ -1127,7 +1107,7 @@ export function createWorker(
   }
   if (storage !== undefined) {
     if (!isValidQueueStorage(storage)) {
-      throw new Error(`Mochi.worker({ storage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
+      throw new Error(`Mochi.worker({ storage }): expected 'memory', ${STORAGE_SHAPE_HINT}.`);
     }
     if (declared && !storageEquals(declared.storage, storage)) {
       throw new Error(`Mochi.worker({ storage }): "${declared.name}" declares a different storage — an app has one queue storage.`);

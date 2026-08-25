@@ -92,6 +92,8 @@ import {
   stopCronRuntime,
   CRON_JITTER_MS,
 } from './queue';
+import { assertValidOptionsStorage, initOptionsStorage, shutdownOptionsStorage } from './options';
+import { STORAGE_SHAPE_HINT } from './utils/storageConfig';
 import { pinGlobal } from './utils/globalState';
 import { resetStartupMilestones } from './lifecycle';
 import type { MochiQueue, MochiQueueOptions, MochiQueueDescriptor, MochiQueueStorage, MochiWorker } from './queue';
@@ -264,9 +266,14 @@ export class Mochi {
    * Declare a standalone worker: consume queues in a process that never calls `Mochi.serve()`. `start()` connects to
    * the app's queue storage (from the descriptors or the `storage` option), creates-or-verifies the declared queue
    * config (code is authoritative — see `queueConfig`), and begins polling. No hooks or milestones fire, and signal
-   * handling is yours to wire (`Mochi.stop()` drains and closes the runtime).
+   * handling is yours to wire (`Mochi.stop()` drains and closes the runtime). Pass `optionsStorage` to make
+   * `MochiOptions` usable from processors, since `Mochi.serve({ optionsStorage })` never runs here.
    */
   static worker(options: MochiWorkerOptions): MochiWorker {
+    if (options.optionsStorage !== undefined) {
+      assertValidOptionsStorage(options.optionsStorage, 'Mochi.worker({ optionsStorage })');
+      initOptionsStorage(options.optionsStorage);
+    }
     return createWorker(options.queues, options.storage, options.queueConfig, options.queueShutdownTimeout);
   }
 
@@ -427,7 +434,7 @@ export class Mochi {
     }
     const queueStorage = options.queueStorage ?? declaredStorage?.storage ?? 'memory';
     if (!isValidQueueStorage(queueStorage)) {
-      throw new Error(`Mochi.serve({ queueStorage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
+      throw new Error(`Mochi.serve({ queueStorage }): expected 'memory', ${STORAGE_SHAPE_HINT}.`);
     }
     if (options.queueStorage !== undefined && declaredQueues.length === 0) {
       logger.warn(`Mochi.serve({ queueStorage }) has no effect without a non-empty queues array — the queue runtime only starts when queues are declared.`);
@@ -435,6 +442,10 @@ export class Mochi {
     if (declaredQueues.length > 0) {
       // Fail before the config singleton pins and the server binds — rejecting this deep in the boot would wedge the process.
       assertNoConflictingStandaloneRuntime(queueStorage);
+    }
+    if (options.optionsStorage !== undefined) {
+      assertValidOptionsStorage(options.optionsStorage, 'Mochi.serve({ optionsStorage })');
+      initOptionsStorage(options.optionsStorage);
     }
 
     // Same fail-fast rule for cron: a bad descriptor or duplicate name rejects before the config singleton pins and
@@ -2002,37 +2013,40 @@ export class Mochi {
     {
       const sweeperStop = stopImageSweeper;
       const stopServer = server.stop.bind(server);
-      // The shutdown path calls `stop()` twice — graceful, then forced once the grace period lapses — and a second
-      // teardown would double-close an already-closed transport.
-      let cleanedUp = false;
-      server.stop = (async (closeActiveConnections?: boolean) => {
-        if (cleanedUp) {
-          return stopServer(closeActiveConnections);
-        }
-        cleanedUp = true;
-        // Subsystem cleanup must never gate the socket close: a transport whose
-        // close() throws (e.g. a nodemailer pool) would otherwise leave the
-        // listener open and hang shutdown. Best-effort, then always stop.
-        try {
-          sweeperStop?.();
-          removeMemoryPressureHandler();
-          // The cron boss is a timekeeper and a SQL handle outliving the socket: without this, an embedded caller that
-          // stops the server directly (rather than via a signal or Mochi.stop()) keeps enqueuing runs into a dead app.
-          await stopCronRuntime();
-          stopEmailBadgeBroadcast?.();
-          await closeEmailTransport();
-          for (const store of rateLimitStores) {
-            // Per-store guard: one failing shutdown must not skip the rest.
+      // The shutdown path calls `stop()` twice — graceful, then forced once the grace period lapses — and both must
+      // await the same single teardown: a boolean guard would let the second stop() resolve (and the signal handler
+      // process.exit) while the first is still mid-close.
+      let cleanupPromise: Promise<void> | null = null;
+      const cleanupSubsystems = (): Promise<void> =>
+        (cleanupPromise ??= (async () => {
+          const steps: Array<[string, () => unknown]> = [
+            ['Image sweeper', () => sweeperStop?.()],
+            ['Memory pressure handler', () => removeMemoryPressureHandler()],
+            // The cron boss is a timekeeper and a SQL handle outliving the socket: without this, an embedded caller that
+            // stops the server directly (rather than via a signal or Mochi.stop()) keeps enqueuing runs into a dead app.
+            ['Cron runtime', () => stopCronRuntime()],
+            ['Email badge broadcast', () => stopEmailBadgeBroadcast?.()],
+            ['Email transport', () => closeEmailTransport()],
+            ['Options storage', () => shutdownOptionsStorage()],
+            ...[...rateLimitStores].map((store): [string, () => unknown] => ['Rate limit store', () => store.shutdown?.()]),
+          ];
+          // Per-step guard: one failing close (e.g. a nodemailer pool) must not skip the rest.
+          for (const [name, step] of steps) {
             try {
-              await store.shutdown?.();
+              await step();
             } catch (err) {
-              logger.warn(`Rate limit store shutdown failed: ${err instanceof Error ? err.message : err}`);
+              logger.warn(`${name} shutdown failed: ${err instanceof Error ? err.message : err}`);
             }
           }
-        } catch (err) {
-          logger.warn(`Subsystem cleanup failed during shutdown: ${err instanceof Error ? err.message : err}`);
+        })());
+      server.stop = (async (closeActiveConnections?: boolean) => {
+        // Sockets close first, subsystems after: requests still draining keep their options/email backends, and
+        // cleanup can never gate (or hang) the socket close.
+        try {
+          return await stopServer(closeActiveConnections);
+        } finally {
+          await cleanupSubsystems();
         }
-        return stopServer(closeActiveConnections);
       }) as typeof server.stop;
     }
 
@@ -2206,8 +2220,9 @@ const shutdownState = pinGlobal<ShutdownState>('__mochi_shutdown_state__', () =>
 async function runShutdown(signal?: NodeJS.Signals): Promise<void> {
   const { server, options } = shutdownState;
   if (!server || !options) {
-    // Nothing served in this process — at most a standalone producer queue runtime is up.
+    // Nothing served in this process — at most a standalone worker/producer queue runtime and its options storage are up.
     await closeAllQueueResources();
+    await shutdownOptionsStorage();
     resetStartupMilestones();
     return;
   }

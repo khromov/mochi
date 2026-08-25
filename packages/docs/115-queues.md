@@ -143,6 +143,8 @@ process.on('SIGTERM', async () => {
 });
 ```
 
+A processor that uses [`MochiOptions`](/docs/options/) needs the worker declaring its store: pass `optionsStorage` to `Mochi.worker()`, the standalone counterpart of `Mochi.serve({ optionsStorage })`.
+
 Queue config follows the same rule as every other path — [code is authoritative](#storage): a worker creates missing queues with their full declared config ([`deadLetter`](#dead-letter-queues) links included, targets first) and refuses to start when storage disagrees; `Mochi.worker({ queueConfig: 'sync' })` writes the declared config to storage instead. `worker.stop()` deregisters the worker's queues (waiting for in-flight jobs) while the runtime stays up for producing; `Mochi.stop()` tears the runtime down.
 
 <Callout type="info">

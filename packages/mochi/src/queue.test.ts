@@ -1,5 +1,6 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, existsSync, writeFileSync } from 'node:fs';
+import { rmWithRetry } from './__fixtures__/rmWithRetry';
 import path from 'node:path';
 import { startQueueRuntime, mountQueues, getQueue, getBoss, closeAllQueueResources, formatQueueWarning, DEFAULT_EXPIRE_IN_SECONDS } from './queue';
 import type { MochiJob, MochiQueueStorage } from './queue';
@@ -39,18 +40,7 @@ afterEach(async () => {
   await closeAllQueueResources();
 });
 
-afterAll(async () => {
-  // Windows releases SQLite file locks asynchronously, so an immediate rm can throw EBUSY. (Bun ignores rmSync's
-  // maxRetries option, so retry by hand.) Best-effort cleanup of an ephemeral temp dir — never fail the suite over it.
-  for (let attempt = 0; attempt < 25; attempt++) {
-    try {
-      rmSync(dataDir, { recursive: true, force: true });
-      return;
-    } catch {
-      await Bun.sleep(100);
-    }
-  }
-});
+afterAll(() => rmWithRetry(dataDir));
 
 describe('Mochi queue', () => {
   test('roundtrips a job from producer to consumer', async () => {
