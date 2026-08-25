@@ -26,6 +26,7 @@ import { files as helloWorld } from '../demos/hello-world/files.ts';
 import { files as hydratable } from '../demos/hydratable/files.ts';
 import { files as isHydratableFiles } from '../demos/is-hydratable/files.ts';
 import { files as hydration } from '../demos/hydration/files.ts';
+import { files as i18nCookie } from '../demos/i18n-cookie/files.ts';
 import { files as image } from '../demos/image/files.ts';
 import { files as imageInvalidation } from '../demos/image-invalidation/files.ts';
 import { files as imagePipeline } from '../demos/image-pipeline/files.ts';
@@ -149,6 +150,14 @@ export const demos: Demo[] = [
     files: cookies,
     title: 'Cookies',
     hook: 'How cookies work — read and write on the server and the client through one MochiCookieJar API (cookies.get/set/delete).',
+    category: 'data',
+  },
+  {
+    href: '/demos/i18n-cookie/',
+    slug: 'i18n-cookie',
+    files: i18nCookie,
+    title: 'Internationalization (cookies)',
+    hook: 'Store the visitor’s language in a cookie — read during SSR, switched in place on the client with Wuchale.',
     category: 'data',
   },
   {
@@ -552,6 +561,12 @@ export const demos: Demo[] = [
     href: 'https://demos.mochi.fast/todo',
     title: 'Tailwind Todo App',
     hook: 'Classic todo app styled with Tailwind CSS.',
+    category: 'sites',
+  },
+  {
+    href: 'https://demos.mochi.fast/i18n',
+    title: 'Internationalization',
+    hook: 'URL-based locales (English, Swedish, Ukrainian) with Wuchale — translated SSR plus a hydrated island.',
     category: 'sites',
   },
   {

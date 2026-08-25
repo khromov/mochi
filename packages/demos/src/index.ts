@@ -2,7 +2,10 @@ import { Mochi, silenceInternalRoutes } from 'mochi-framework';
 import type { Handle } from 'mochi-framework';
 import { routes as adminRoutes } from './admin/routes';
 import { routes as hnRoutes } from './hn/routes';
+import { routes as i18nRoutes } from './i18n/routes';
 import { routes as todoRoutes } from './todo/routes';
+
+const I18N_LOCALES = ['en', 'sv', 'uk'];
 
 const IS_DOCKER = process.env.MOCHI_DOCKER === 'true';
 const immutableAssets: Handle = async ({ event, resolve }) => {
@@ -29,11 +32,21 @@ await Mochi.serve({
   filters: {
     'consoleLogger:line': (line, ctx) => (ctx.path.startsWith('/health') ? null : silenceInternalRoutes(line, ctx)),
   },
+  i18n: {
+    locales: I18N_LOCALES,
+    sourceLocale: 'en',
+    // Locale lives in the path: /i18n/sv, /i18n/uk; everything else is English.
+    resolveLocale: ({ url }) => {
+      const seg = url.pathname.split('/')[2] ?? '';
+      return I18N_LOCALES.includes(seg) ? seg : 'en';
+    },
+  },
   routes: {
     '/': Mochi.page('./src/Landing.svelte'),
     '/health': Mochi.api(({ method }) => Response.json({ status: 'ok', method })),
     ...adminRoutes,
     ...hnRoutes,
+    ...i18nRoutes,
     ...todoRoutes,
   },
 });

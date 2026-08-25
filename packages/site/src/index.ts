@@ -2,7 +2,7 @@ import path from 'node:path';
 import { compile as mdsvexCompile } from 'mdsvex';
 import rehypeSlug from 'rehype-slug';
 import rehypeExternalLinks from './lib/rehypeExternalLinks';
-import { Mochi, mochiEvents, sequence, logger, noCache, compress, silenceInternalRoutes } from 'mochi-framework';
+import { Mochi, mochiEvents, sequence, logger, noCache, compress, silenceInternalRoutes, getRequestContext } from 'mochi-framework';
 import type { Handle, HandleError, MarkdownConfig, SpeculationRules } from 'mochi-framework';
 import { analytics } from 'mochi-shared';
 import { generateDocsBarrel } from './lib/generateDocsBarrel';
@@ -239,6 +239,15 @@ await Mochi.serve({
     },
   },
   markdown: markdownConfig,
+  i18n: {
+    locales: ['en', 'sv', 'uk'],
+    sourceLocale: 'en',
+    // The i18n-cookie demo stores the visitor's language in this cookie.
+    resolveLocale: () => {
+      const v = getRequestContext().cookies.get('mochi_locale');
+      return v && ['en', 'sv', 'uk'].includes(v) ? v : 'en';
+    },
+  },
   eventHooks: {
     'mochi:init': ({ options }) => {
       logger.info(`init: starting on port ${options.port}`);

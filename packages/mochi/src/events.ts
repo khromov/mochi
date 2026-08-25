@@ -348,7 +348,7 @@ export interface MochiCompileCompleteEvent {
   durationMs: number;
 }
 
-export type MochiRecompileTrigger = 'file' | 'css' | 'svelte-config' | 'html-shell' | 'entry';
+export type MochiRecompileTrigger = 'file' | 'css' | 'svelte-config' | 'html-shell' | 'entry' | 'i18n';
 
 export interface MochiRecompileStartEvent {
   trigger: MochiRecompileTrigger;

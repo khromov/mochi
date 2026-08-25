@@ -1,0 +1,133 @@
+msgid ""
+msgstr ""
+"Plural-Forms: nplurals=2; plural=n == 1 ? 0 : 1;\n"
+"Source-Language: en\n"
+"Language: sv\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: src/i18n/About.svelte
+msgid "Mochi · About internationalization"
+msgstr "Mochi · Om internationalisering"
+
+#: src/i18n/About.svelte
+msgid "About this demo"
+msgstr "Om den här demon"
+
+#: src/i18n/About.svelte
+msgid "Strings are extracted at build time and compiled into compact catalogs — no string keys ship to the browser. The active language comes from the URL, so every translated page has its own address and can be shared or indexed."
+msgstr "Texter extraheras vid bygget och kompileras till kompakta kataloger — inga textnycklar skickas till webbläsaren. Det aktiva språket kommer från URL:en, så varje översatt sida har sin egen adress och kan delas eller indexeras."
+
+#: src/i18n/About.svelte
+msgid "Try opening this page in another language using the menu, then copy the address bar."
+msgstr "Prova att öppna den här sidan på ett annat språk via menyn och kopiera sedan adressfältet."
+
+#: src/i18n/About.svelte
+#: src/i18n/Demos.svelte
+#: src/i18n/Home.svelte
+msgid "Pagination"
+msgstr "Sidnavigering"
+
+#: src/i18n/About.svelte
+msgid "← Previous page: Home"
+msgstr "← Föregående sida: Hem"
+
+#: src/i18n/Greeter.svelte
+msgid "This box is a hydrated island — it became interactive in the browser, in the active language."
+msgstr "Den här rutan är en hydrerad ö — den blev interaktiv i webbläsaren, på det aktiva språket."
+
+#. 0: count
+#: src/i18n/Greeter.svelte
+msgid "Clicked {0} times"
+msgstr "Klickad {0} gånger"
+
+#: src/i18n/Home.svelte
+msgid "Mochi · Internationalization"
+msgstr "Mochi · Internationalisering"
+
+#: src/i18n/Home.svelte
+msgid "Hello, Mochi speaks your language"
+msgstr "Hej, Mochi talar ditt språk"
+
+#: src/i18n/Home.svelte
+msgid "This whole page is server-rendered in the language you picked. Switch languages from the menu above and the page reloads, freshly translated."
+msgstr "Hela den här sidan renderas på servern på det språk du valt. Byt språk i menyn ovan så laddas sidan om, nyöversatt."
+
+#: src/i18n/Home.svelte
+msgid "Next page: About →"
+msgstr "Nästa sida: Om →"
+
+#: src/i18n/Nav.svelte
+msgid "mochi"
+msgstr "mochi"
+
+#: src/i18n/Nav.svelte
+msgid "Main"
+msgstr "Huvudmeny"
+
+#: src/i18n/Nav.svelte
+msgid "Home"
+msgstr "Hem"
+
+#: src/i18n/Nav.svelte
+msgid "About"
+msgstr "Om"
+
+#~ msgid "Documentation"
+#~ msgstr "Dokumentation"
+
+#: src/i18n/Nav.svelte
+msgid "Choose language"
+msgstr "Välj språk"
+
+#~ msgid "Language"
+#~ msgstr "Språk"
+
+#: src/i18n/Nav.svelte
+msgid "Demos"
+msgstr "Demos"
+
+#: src/i18n/About.svelte
+msgid "Next page: Demos →"
+msgstr "Nästa sida: Demos →"
+
+#: src/i18n/Demos.svelte
+msgid "Mochi · Demos"
+msgstr "Mochi · Demos"
+
+#~ msgid "Explore the other demos"
+#~ msgstr "Utforska våra andra demos"
+
+#~ msgid "Each of these is a standalone Mochi app running on this same site. They are not translated — this internationalization demo is the only multilingual one."
+#~ msgstr "Var och en av dessa är en fristående Mochi-app som körs på samma webbplats. De är inte översatta — den här internationaliseringsdemon är den enda flerspråkiga."
+
+#~ msgid "Hacker News"
+#~ msgstr "Hacker News"
+
+#~ msgid "A faithful clone with hydrated islands for comments."
+#~ msgstr "En trogen klon med hydrerade öar för kommentarer."
+
+#~ msgid "Admin dashboard"
+#~ msgstr "Adminpanel"
+
+#~ msgid "A server-rendered dashboard with live, hydrated widgets."
+#~ msgstr "En serverrenderad panel med live-uppdaterade, hydrerade widgetar."
+
+#~ msgid "Todo app"
+#~ msgstr "Att göra-app"
+
+#~ msgid "Form actions and optimistic updates over plain HTTP."
+#~ msgstr "Formuläråtgärder och optimistiska uppdateringar över vanlig HTTP."
+
+#: src/i18n/Demos.svelte
+msgid "← Previous page: About"
+msgstr "← Föregående sida: Om"
+
+#: src/i18n/Demos.svelte
+msgid "More demos"
+msgstr "Fler demos"
+
+#: src/i18n/Demos.svelte
+msgid "This is just another translated page, here to show the menu can grow. Find all the other Mochi demos on the <0>home page</0>."
+msgstr "Det här är bara ännu en översatt sida, för att visa att menyn kan växa. Hitta alla andra Mochi-demos på <0>startsidan</0>."

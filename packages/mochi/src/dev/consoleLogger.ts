@@ -406,6 +406,8 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
         action = 'shell changed → reloading all tabs';
       } else if (trigger === 'svelte-config') {
         action = `config reload → rebuilt ${pages}, ${bundles}`;
+      } else if (trigger === 'i18n') {
+        action = `i18n catalog → rebuilt ${pages}, ${bundles}`;
       } else {
         action = `rebuilt ${pages}, ${bundles}`;
       }

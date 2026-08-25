@@ -5,9 +5,10 @@ import { DEFAULT_ERROR_PAGE_PATH } from '../runtime/errors';
 import { CLIENT_STATS_COMPONENT } from '../dev/clientStatsRoutes';
 import { PROTECTION_SHELL_COMPONENT } from '../protection/config';
 import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from '../types';
-import type { MarkdownConfig, MochiBarrelWarningOptions, MochiFontOptions, MochiRouteValue, MochiSvelteShakerOptions } from '../types';
+import type { MarkdownConfig, MochiBarrelWarningOptions, MochiFontOptions, MochiI18nOptions, MochiRouteValue, MochiSvelteShakerOptions } from '../types';
 import type { MochiProtectionOptions } from '../protection/types';
 import type { MochiSvelteCompiler } from '../compiler/svelteCompilerBackend';
+import { setupWuchaleI18n } from '../i18n/wuchale';
 import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { scanPublicDir, publicRouteKey } from '../runtime/publicDir';
@@ -49,6 +50,8 @@ export interface MochiBuildOptions {
   resources?: boolean;
   /** Mirror the value passed to `Mochi.serve({ protection })` so the interstitial page prebuilds into the manifest. Default: disabled. See `MochiServeOptions['protection']`. */
   protection?: MochiProtectionOptions;
+  /** Mirror the value passed to `Mochi.serve({ i18n })` so the prebuild applies the same compile-time transform (and regenerates the catalogs/loaders) that the runtime expects. See `MochiI18nOptions`. */
+  i18n?: MochiI18nOptions;
 }
 
 type RouteKind = 'page' | 'api' | 'ws' | 'sse';
@@ -106,6 +109,12 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     mkdirSync(path.join(outDir, 'svelte-compile'), { recursive: true });
     mkdirSync(path.join(outDir, 'svelte-client'), { recursive: true });
     mkdirSync(path.join(outDir, 'svelte-css'), { recursive: true });
+
+    // Register the i18n transform (and regenerate loaders/catalogs) before
+    // compiling, so the prebuilt components carry the Wuchale runtime calls.
+    if (options.i18n) {
+      await setupWuchaleI18n(options.i18n, { development, projectRoot: process.cwd() });
+    }
 
     // Started now so it overlaps the compile phases, and awaited before the manifest. The `.catch(() => {})` guard only
     // marks a rejection handled in case compileAll throws first; the real error still surfaces at the trailing `await`.

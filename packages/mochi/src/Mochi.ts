@@ -68,7 +68,8 @@ import {
 } from './utils';
 import { serveDiskAsset } from './utils/serveDiskAsset';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './runtime/hooks';
-import { applyResolveOptions } from './runtime/hooks';
+import { applyResolveOptions, sequence } from './runtime/hooks';
+import { setupWuchaleI18n, type MochiI18nWatchHook } from './i18n/wuchale';
 import { alternateSlashPattern, trailingSlashRedirect } from './runtime/trailingSlash';
 import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './runtime/warmup';
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
@@ -485,7 +486,16 @@ export class Mochi {
     const warmupEnabled = resolveWarmupEnabled(options.warmup, development);
     const debugBarEnabled = development && (options.debugBar ?? true);
     const liveReloadEnabled = options.liveReload ?? development;
-    const middleware = options.handle;
+    // i18n (Wuchale) wiring runs before component compilation so its transform
+    // is registered as a `compile:preprocessors` filter; its locale middleware
+    // is composed to the front of the user's handle chain.
+    let middleware = options.handle;
+    let i18nWatch: MochiI18nWatchHook | undefined;
+    if (options.i18n) {
+      const { handle: i18nHandle, i18n } = await setupWuchaleI18n(options.i18n, { development, projectRoot: process.cwd() });
+      i18nWatch = i18n;
+      middleware = middleware ? sequence(i18nHandle, middleware) : i18nHandle;
+    }
     const protectionEnabled = options.protection?.enabled === true;
     const baseOutDir = options.outDir ?? './.mochi';
     // Nesting dev artifacts keeps a stale prod manifest and dev chunks apart across a later `start`, while prod stays at
@@ -2145,6 +2155,7 @@ export class Mochi {
         reloadShell,
         reloadSpeculationRules,
         publicRouteGuard,
+        i18n: i18nWatch,
       });
     }
 

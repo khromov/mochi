@@ -9,6 +9,7 @@
     "build": "bun scripts/prebuild.ts && mochi-framework build",
     "start": "bun src/index.ts",
     "dev": "MODE=development bun src/index.ts",
+    "extract": "wuchale",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
     "test": "bun test",
     "clean": "rm -rf .mochi"
@@ -19,11 +20,13 @@
     "@lucide/svelte": "^1.28.0",
     "@tailwindcss/node": "^4.3.3",
     "@tailwindcss/oxide": "^4.3.3",
+    "@wuchale/svelte": "0.20.0",
     "html-entities": "^2.6.0",
     "mochi-framework": "workspace:*",
     "svelte": "^5.56.8",
     "svelte-meta-tags": "^5.0.2",
-    "tailwindcss": "^4.3.3"
+    "tailwindcss": "^4.3.3",
+    "wuchale": "^0.24.1"
   },
   "devDependencies": {
     "@types/bun": "1.4.0",

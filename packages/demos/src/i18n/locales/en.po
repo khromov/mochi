@@ -1,0 +1,133 @@
+msgid ""
+msgstr ""
+"Plural-Forms: nplurals=2; plural=n == 1 ? 0 : 1;\n"
+"Source-Language: en\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: src/i18n/About.svelte
+msgid "Mochi · About internationalization"
+msgstr "Mochi · About internationalization"
+
+#: src/i18n/About.svelte
+msgid "About this demo"
+msgstr "About this demo"
+
+#: src/i18n/About.svelte
+msgid "Strings are extracted at build time and compiled into compact catalogs — no string keys ship to the browser. The active language comes from the URL, so every translated page has its own address and can be shared or indexed."
+msgstr "Strings are extracted at build time and compiled into compact catalogs — no string keys ship to the browser. The active language comes from the URL, so every translated page has its own address and can be shared or indexed."
+
+#: src/i18n/About.svelte
+msgid "Try opening this page in another language using the menu, then copy the address bar."
+msgstr "Try opening this page in another language using the menu, then copy the address bar."
+
+#: src/i18n/About.svelte
+#: src/i18n/Demos.svelte
+#: src/i18n/Home.svelte
+msgid "Pagination"
+msgstr "Pagination"
+
+#: src/i18n/About.svelte
+msgid "← Previous page: Home"
+msgstr "← Previous page: Home"
+
+#: src/i18n/Greeter.svelte
+msgid "This box is a hydrated island — it became interactive in the browser, in the active language."
+msgstr "This box is a hydrated island — it became interactive in the browser, in the active language."
+
+#. 0: count
+#: src/i18n/Greeter.svelte
+msgid "Clicked {0} times"
+msgstr "Clicked {0} times"
+
+#: src/i18n/Home.svelte
+msgid "Mochi · Internationalization"
+msgstr "Mochi · Internationalization"
+
+#: src/i18n/Home.svelte
+msgid "Hello, Mochi speaks your language"
+msgstr "Hello, Mochi speaks your language"
+
+#: src/i18n/Home.svelte
+msgid "This whole page is server-rendered in the language you picked. Switch languages from the menu above and the page reloads, freshly translated."
+msgstr "This whole page is server-rendered in the language you picked. Switch languages from the menu above and the page reloads, freshly translated."
+
+#: src/i18n/Home.svelte
+msgid "Next page: About →"
+msgstr "Next page: About →"
+
+#: src/i18n/Nav.svelte
+msgid "mochi"
+msgstr "mochi"
+
+#: src/i18n/Nav.svelte
+msgid "Main"
+msgstr "Main"
+
+#: src/i18n/Nav.svelte
+msgid "Home"
+msgstr "Home"
+
+#: src/i18n/Nav.svelte
+msgid "About"
+msgstr "About"
+
+#~ msgid "Documentation"
+#~ msgstr "Documentation"
+
+#: src/i18n/Nav.svelte
+msgid "Choose language"
+msgstr "Choose language"
+
+#~ msgid "Language"
+#~ msgstr "Language"
+
+#: src/i18n/Nav.svelte
+msgid "Demos"
+msgstr "Demos"
+
+#: src/i18n/About.svelte
+msgid "Next page: Demos →"
+msgstr "Next page: Demos →"
+
+#: src/i18n/Demos.svelte
+msgid "Mochi · Demos"
+msgstr "Mochi · Demos"
+
+#~ msgid "Explore the other demos"
+#~ msgstr "Explore the other demos"
+
+#~ msgid "Each of these is a standalone Mochi app running on this same site. They are not translated — this internationalization demo is the only multilingual one."
+#~ msgstr "Each of these is a standalone Mochi app running on this same site. They are not translated — this internationalization demo is the only multilingual one."
+
+#~ msgid "Hacker News"
+#~ msgstr "Hacker News"
+
+#~ msgid "A faithful clone with hydrated islands for comments."
+#~ msgstr "A faithful clone with hydrated islands for comments."
+
+#~ msgid "Admin dashboard"
+#~ msgstr "Admin dashboard"
+
+#~ msgid "A server-rendered dashboard with live, hydrated widgets."
+#~ msgstr "A server-rendered dashboard with live, hydrated widgets."
+
+#~ msgid "Todo app"
+#~ msgstr "Todo app"
+
+#~ msgid "Form actions and optimistic updates over plain HTTP."
+#~ msgstr "Form actions and optimistic updates over plain HTTP."
+
+#: src/i18n/Demos.svelte
+msgid "← Previous page: About"
+msgstr "← Previous page: About"
+
+#: src/i18n/Demos.svelte
+msgid "More demos"
+msgstr "More demos"
+
+#: src/i18n/Demos.svelte
+msgid "This is just another translated page, here to show the menu can grow. Find all the other Mochi demos on the <0>home page</0>."
+msgstr "This is just another translated page, here to show the menu can grow. Find all the other Mochi demos on the <0>home page</0>."

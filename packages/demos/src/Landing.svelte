@@ -6,6 +6,7 @@
   import Newspaper from '@lucide/svelte/icons/newspaper';
   import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
   import ListChecks from '@lucide/svelte/icons/list-checks';
+  import Languages from '@lucide/svelte/icons/languages';
   import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import type { Component } from 'svelte';
 
@@ -42,6 +43,14 @@
       accent: '#5f6bbf',
       accentSoft: '#e0e3f4',
       icon: ListChecks,
+    },
+    {
+      href: '/i18n/',
+      title: 'Internationalization',
+      hook: 'URL-based locales (English, Swedish, Ukrainian) with Wuchale — translated SSR plus a hydrated island.',
+      accent: '#b9772e',
+      accentSoft: '#f2e3cf',
+      icon: Languages,
     },
   ];
 

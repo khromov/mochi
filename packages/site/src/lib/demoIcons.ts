@@ -62,6 +62,8 @@ import Table from '@lucide/svelte/icons/table';
 import SunMoon from '@lucide/svelte/icons/sun-moon';
 import CalendarClock from '@lucide/svelte/icons/calendar-clock';
 import FolderOpen from '@lucide/svelte/icons/folder-open';
+import Languages from '@lucide/svelte/icons/languages';
+import Earth from '@lucide/svelte/icons/earth';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -78,6 +80,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   Hydratable: { icon: Snowflake, label: 'Server-computed value reused on hydration' },
   'isHydratable()': { icon: Droplets, label: 'Will this subtree hydrate on this page load?' },
   Cookies: { icon: Cookie, label: 'Server + client cookies' },
+  'Internationalization (cookies)': { icon: Languages, label: 'Cookie-based i18n with Wuchale' },
   'Cache Events': { icon: DatabaseZap, label: 'Custom cache event subscriber' },
   'Request Cache': { icon: Recycle, label: 'Memoize repeated work within one request' },
   'Request ID': { icon: Barcode, label: 'Per-request correlation id' },
@@ -120,6 +123,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Hacker News Clone': { icon: Flame, label: 'Hacker News reader (WIP)' },
   'Realtime Admin Panel': { icon: LayoutDashboard, label: 'Live admin dashboard' },
   'Tailwind Todo App': { icon: ListTodo, label: 'Todo app on Tailwind' },
+  Internationalization: { icon: Earth, label: 'URL-based locales with Wuchale' },
   'Cookie Vary Test': { icon: Fingerprint, label: 'Response-driven Vary: Cookie' },
   'Isomorphic URL': { icon: Link, label: 'Same url import on server and client' },
   'Image: Component': { icon: ImageIcon, label: '<Image> with named sizes and blur-up placeholders' },
