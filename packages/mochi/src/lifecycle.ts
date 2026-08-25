@@ -22,7 +22,7 @@ export function startupMilestoneReached(milestone: MochiStartupMilestone): boole
   return milestones.has(milestone);
 }
 
-/** In milestone order, for diagnostics. */
+/** In milestone order; no runtime caller — exists for tests and ad-hoc diagnostics. */
 export function reachedStartupMilestones(): MochiStartupMilestone[] {
   return [...milestones];
 }

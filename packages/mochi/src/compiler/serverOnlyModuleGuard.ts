@@ -8,10 +8,7 @@
 import path from 'node:path';
 import type { BunPlugin } from 'bun';
 import { relForDisplay, resolveArgsPath } from '../utils/index';
-
-// This file lives in `src/compiler/`, so climb one level for `src/` — same
-// convention as `SRC_DIR` in `ComponentRegistry.ts`.
-const SRC_DIR = path.resolve(import.meta.dir, '..');
+import { SRC_DIR } from './paths';
 
 const SERVER_ONLY_MODULES = new Map<string, string>([
   [path.join(SRC_DIR, 'extensions.ts'), 'hooks and filters'],

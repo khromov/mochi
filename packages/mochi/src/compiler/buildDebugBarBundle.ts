@@ -11,9 +11,8 @@ import { registerServerOnlyComponentStubs } from './serverOnlyComponents';
 import { registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
 import { mergeCompilerOptions } from './svelteConfig';
 import { formatBuildMessages } from './formatBuildMessages';
+import { SRC_DIR } from './paths';
 import type { SvelteCompilerBackend } from './svelteCompilerBackend';
-
-const SRC_DIR = path.resolve(import.meta.dir, '..');
 
 export interface DebugBarBundle {
   fileName: string;

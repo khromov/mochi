@@ -21,9 +21,18 @@ export function toPosixPath(p: string): string {
   return p.replace(/\\/g, '/');
 }
 
-/** Cwd-relative path for logs, error messages, and reports, always forward-slash so user-facing output and the tests asserting on it match across platforms. */
+/**
+ * Cwd-relative path for logs, error messages, and reports, always forward-slash so user-facing output and the tests
+ * asserting on it match across platforms. A path escaping the cwd (`..`-prefixed, or cross-drive on Windows) displays
+ * absolute instead — `../../home/user/x` reads worse than the real location. The cwd itself stays `''` (callers lean on
+ * `relForDisplay(p) || fallback`).
+ */
 export function relForDisplay(p: string): string {
-  return toPosixPath(path.relative(process.cwd(), p));
+  const rel = path.relative(process.cwd(), p);
+  if (rel !== '' && (rel.startsWith('..') || path.isAbsolute(rel))) {
+    return toPosixPath(p);
+  }
+  return toPosixPath(rel);
 }
 
 /** Absolutize a Bun plugin `onResolve` specifier against its importer's directory. */

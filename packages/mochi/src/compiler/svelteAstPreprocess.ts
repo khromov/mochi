@@ -13,6 +13,18 @@ interface Positioned {
   end: number;
 }
 
+/**
+ * Source text of a directive's `{...}` options expression, or null for a bare directive (`value === true`) or a
+ * quoted-string value (Svelte represents those as an array of nodes).
+ */
+function directiveOptionsExpr(attr: AST.Attribute, source: string): string | null {
+  if (attr.value === true || Array.isArray(attr.value)) {
+    return null;
+  }
+  const expr = attr.value.expression as unknown as Positioned;
+  return source.slice(expr.start, expr.end);
+}
+
 export interface HydratableComponent {
   /** Unique identity key (`<localName>_<hash>`, see `islandIdentity`) — the registry map key, `component-name` attribute, and placeholder key. */
   name: string;
@@ -243,11 +255,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // `mochi:clientOnly:visible` defers `mount()` until the wrapper enters the viewport, reusing the hydratable visible path.
         const isVisible = directives.clientOnly.name === 'mochi:clientOnly:visible';
         if (isVisible) {
-          let visibleOptionsExpr: string | null = null;
-          if (directives.clientOnly.value !== true && !Array.isArray(directives.clientOnly.value)) {
-            const expr = directives.clientOnly.value.expression as unknown as Positioned;
-            visibleOptionsExpr = source.slice(expr.start, expr.end);
-          }
+          const visibleOptionsExpr = directiveOptionsExpr(directives.clientOnly, source);
           attrs += ` hydrate-on="visible" css-url="__MOCHI_CSS_URL__${islandKey}__"`;
           if (visibleOptionsExpr) {
             attrs += ` hydrate-options={JSON.stringify(${visibleOptionsExpr})}`;
@@ -270,14 +278,8 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         const alsoHydrateMode: AlsoHydrateMode | null = directives.hydrate ? (directives.hydrate.name === 'mochi:hydrate:visible' ? 'visible' : 'eager') : null;
         const isServerVisible = directives.server.name === 'mochi:defer:visible';
 
-        // Extract directive options (e.g. mochi:defer={{retries: 10}} or
-        // mochi:defer:visible={{rootMargin: '200px', retries: 5}})
-        let serverOptionsExpr: string | null = null;
-        if (directives.server.value !== true && !Array.isArray(directives.server.value)) {
-          const exprTag = directives.server.value;
-          const expr = exprTag.expression as unknown as Positioned;
-          serverOptionsExpr = source.slice(expr.start, expr.end);
-        }
+        // Options ride on visible and non-visible defer alike (e.g. mochi:defer={{retries: 10}}).
+        const serverOptionsExpr = directiveOptionsExpr(directives.server, source);
 
         if (directives.hydrate && !seen.has(dedupKey)) {
           seen.add(dedupKey);
@@ -366,12 +368,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           .join(' ');
 
         const isVisible = mochiAttr.name === 'mochi:hydrate:visible';
-        let visibleOptionsExpr: string | null = null;
-        if (isVisible && mochiAttr.value !== true && !Array.isArray(mochiAttr.value)) {
-          const exprTag = mochiAttr.value;
-          const expr = exprTag.expression as unknown as Positioned;
-          visibleOptionsExpr = source.slice(expr.start, expr.end);
-        }
+        const visibleOptionsExpr = isVisible ? directiveOptionsExpr(mochiAttr, source) : null;
 
         const propsExpr = buildPropsFromAst(source, comp.attributes);
         let attrs = `component-name="${islandKey}" component-url="__MOCHI_COMPONENT_URL__${islandKey}__"`;

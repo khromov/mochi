@@ -238,6 +238,13 @@ describe('relForDisplay', () => {
   test('returns empty string for the cwd itself (callers fall back with ||)', () => {
     expect(relForDisplay(process.cwd())).toBe('');
   });
+
+  test('a path escaping the cwd displays absolute, not ..-relative', () => {
+    const outside = path.join(path.dirname(process.cwd()), 'elsewhere', 'file.ts');
+    const shown = relForDisplay(outside);
+    expect(shown).toBe(toPosixPath(outside));
+    expect(shown).not.toContain('..');
+  });
 });
 
 describe('headResponse', () => {

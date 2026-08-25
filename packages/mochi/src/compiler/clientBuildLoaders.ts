@@ -8,8 +8,9 @@ import type { CompileOptions } from 'svelte/compiler';
 import { renderMochiEnvClient } from './virtualModuleTemplate';
 import type { SvelteCompilerBackend } from './svelteCompilerBackend';
 import { toPosixPath } from '../utils';
+import { SRC_DIR } from './paths';
 
-const SRC_DIR = path.resolve(import.meta.dir, '..');
+const tsScriptTranspiler = new Bun.Transpiler({ loader: 'ts' });
 
 // Bun can't propagate constants through esm-env's conditional exports, so stripping the imports turns DEV/BROWSER/NODE
 // into free variables that Bun's `define` replaces with literal booleans, letting `if (DEV)` blocks be eliminated.
@@ -37,8 +38,7 @@ export function registerSvelteModuleLoader(build: PluginBuilder, backend: Svelte
   build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
     let source = await Bun.file(args.path).text();
     if (args.path.endsWith('.ts')) {
-      const transpiler = new Bun.Transpiler({ loader: 'ts' });
-      source = transpiler.transformSync(source);
+      source = tsScriptTranspiler.transformSync(source);
     }
     const { js } = backend.compileModule(source, { ...options, filename: args.path });
     return { contents: js.code, loader: 'js' };

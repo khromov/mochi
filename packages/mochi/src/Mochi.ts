@@ -71,7 +71,7 @@ import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './runtime/
 import { applyResolveOptions } from './runtime/hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './runtime/trailingSlash';
 import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './runtime/warmup';
-import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
+import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH, resolveErrorOverride } from './runtime/errors';
 import { requestContext } from './runtime/requestContext';
 import type { MochiRequestContext } from './runtime/requestContext';
 import type { SpeculationRules } from './runtime/speculationRules';
@@ -112,6 +112,7 @@ import { sendEmail } from './email/mailer';
 import type { MochiEmailMessage, MochiEmailResult } from './email/types';
 import { initMochiConfig } from './mochiConfig';
 import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './utils/log';
+import { readMochiVersion } from './utils/version';
 import { mochiEvents } from './events';
 import type { MochiActionResult, MochiErrorEvent, MochiErrorKind, MochiServerStartEvent, MochiServerStopEvent } from './events';
 import type { DebugBarData, DebugBarRuntimeData } from './runtime/requestContext';
@@ -132,14 +133,6 @@ import { verifyCaptcha } from './captcha/captcha';
 import { getCaptchaRuntime } from './captcha/config';
 
 const DEFAULT_HTML_SHELL = await Bun.file(new URL('./templates/default-shell.html', import.meta.url)).text();
-
-let mochiVersionPromise: Promise<string | null> | undefined;
-function readMochiVersion(): Promise<string | null> {
-  return (mochiVersionPromise ??= Bun.file(path.join(import.meta.dir, '..', 'package.json'))
-    .json()
-    .then((pkg) => (pkg as { version: string }).version)
-    .catch(() => null));
-}
 
 type ShellSlot = 'head' | 'css' | 'body' | 'script';
 type ShellPart = { text: string } | { slot: ShellSlot };
@@ -710,25 +703,15 @@ export class Mochi {
       proxy: options.proxy,
     });
 
-    // Mirrors the handleError logic in renderErrorResponse, skipping the HTML render for the enhanced JSON path.
+    // Same handleError protocol as renderErrorResponse, skipping the HTML render for the enhanced JSON path.
     const handleEnhancedError = async (err: unknown, event: MochiEvent): Promise<Response> => {
-      let status = err instanceof MochiHttpError ? err.status : 500;
-      let message = err instanceof Error ? err.message : 'Internal Error';
-      if (options.handleError) {
-        try {
-          const override = await options.handleError({ error: err, event, status, message });
-          if (override instanceof Response) {
-            return override;
-          }
-          if (override && typeof override === 'object' && typeof (override as { status?: unknown }).status === 'number') {
-            status = (override as { status: number }).status;
-            message = (override as { message: string }).message;
-          }
-        } catch (hookErr) {
-          logger.error('handleError hook threw:', hookErr);
-        }
+      const status = err instanceof MochiHttpError ? err.status : 500;
+      const message = err instanceof Error ? err.message : 'Internal Error';
+      const resolved = await resolveErrorOverride(options.handleError, err, event, status, message);
+      if (resolved instanceof Response) {
+        return resolved;
       }
-      return jsonError(status, message);
+      return jsonError(resolved.status, resolved.message);
     };
 
     // Pre-compile Mochi.page() handlers so SSR is ready at startup

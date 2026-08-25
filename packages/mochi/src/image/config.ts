@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { getMochiConfig } from '../mochiConfig';
+import { logger } from '../utils/log';
 import { ImageCache } from './imageCache';
 import type { ImageFormat, ImageSize, MochiImageOptions, ResolvedImageOptions, ResolvedImageSize } from './types';
 
@@ -141,6 +142,22 @@ export function getSize(name: string | undefined, options: ResolvedImageOptions)
   // Object.hasOwn guards a `sizes` that arrived as a plain object literal (tests,
   // user-constructed options) against prototype-chain hits like "constructor".
   return name !== undefined && Object.hasOwn(options.sizes, name) ? options.sizes[name] : undefined;
+}
+
+const warnedUnknownSize = new Set<string>();
+
+/**
+ * `getSize` plus a warn-once on an unresolved name. Callers supply the message because mint time and serve time mean
+ * different things ("never defined" vs "removed since minting"); deduping on the message keeps each phase's warning
+ * independent per name.
+ */
+export function resolveSizeOrWarn(name: string, options: ResolvedImageOptions, message: string): ResolvedImageSize | undefined {
+  const size = getSize(name, options);
+  if (!size && !warnedUnknownSize.has(message)) {
+    warnedUnknownSize.add(message);
+    logger.warn(message);
+  }
+  return size;
 }
 
 export function getImageAssetPrefix(): string {

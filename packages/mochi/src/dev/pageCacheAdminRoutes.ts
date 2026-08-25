@@ -1,3 +1,4 @@
+import { bothSlashForms } from '../runtime/trailingSlash';
 import type { MochiApiConfig, MochiPageConfig } from '../types';
 
 export const PAGE_CACHE_ADMIN_PATH = '/__mochi/admin/page-cache';
@@ -55,11 +56,8 @@ export function buildPageCacheAdminRoutes(): Record<string, MochiPageConfig | Mo
     handler: () => Response.json(STUB_ENTRIES, { headers: { 'Cache-Control': 'no-store' } }),
   };
   return {
-    [PAGE_CACHE_ADMIN_PATH]: pageConfig,
-    [`${PAGE_CACHE_ADMIN_PATH}/`]: pageConfig,
-    [`${PAGE_CACHE_ADMIN_PATH}/stats`]: statsApi,
-    [`${PAGE_CACHE_ADMIN_PATH}/stats/`]: statsApi,
-    [`${PAGE_CACHE_ADMIN_PATH}/entries`]: entriesApi,
-    [`${PAGE_CACHE_ADMIN_PATH}/entries/`]: entriesApi,
+    ...bothSlashForms(PAGE_CACHE_ADMIN_PATH, pageConfig),
+    ...bothSlashForms(`${PAGE_CACHE_ADMIN_PATH}/stats`, statsApi),
+    ...bothSlashForms(`${PAGE_CACHE_ADMIN_PATH}/entries`, entriesApi),
   };
 }

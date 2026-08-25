@@ -1,8 +1,8 @@
 import path from 'node:path';
-import { getImageAssetPrefix, getImageRuntime, getSize } from './config';
+import { getImageAssetPrefix, getImageRuntime, resolveSizeOrWarn } from './config';
 import { fetchImageSource } from './fetchSource';
 import { getLocalImageAsset } from './localAssetRegistry';
-import { toPosixPath } from '../utils';
+import { relForDisplay } from '../utils';
 import { encryptImageRequest } from './imageCrypto';
 import { variantId } from './imageCache';
 import { computePlaceholder, runPipeline } from './resize';
@@ -11,10 +11,8 @@ import { requestContext, type ImageDebugEntry } from '../runtime/requestContext'
 import { requestMemo } from '../runtime/requestCache';
 import { applyFilter } from '../extensions';
 import { logger } from '../utils/log';
-import type { ImageCache, ImageCacheStatus } from './imageCache';
+import type { CacheEntry, ImageCache, ImageCacheStatus } from './imageCache';
 import type { ImageRequest, InvalidateImageOptions, ResolvedImageOptions, ResolvedImageSize } from './types';
-
-const warnedUnknownSize = new Set<string>();
 
 // Resolve a size name against the config, warning once per unknown name.
 // An unknown/absent name degrades to the full-size original.
@@ -22,12 +20,7 @@ function resolveNamed(name: string | undefined, options: ResolvedImageOptions): 
   if (name === undefined) {
     return undefined;
   }
-  const size = getSize(name, options);
-  if (!size && !warnedUnknownSize.has(name)) {
-    warnedUnknownSize.add(name);
-    logger.warn(`Image size "${name}" is not defined in image.sizes; serving the full-size original.`);
-  }
-  return size;
+  return resolveSizeOrWarn(name, options, `Image size "${name}" is not defined in image.sizes; serving the full-size original.`);
 }
 
 // Resolve the size and mint the signed URL in one pass (so callers that also
@@ -117,17 +110,33 @@ export async function getImage(src: string, size?: string): Promise<ResolvedImag
     return result;
   }
 
-  const id = variantId(src, resolved.configHash);
-  const { entry } = await cache.getVariant(src, id, async () => {
-    // Shared request-cached original — read-only. `runPipeline` decodes without
-    // mutating its input, so passing the shared buffer is safe.
-    const { bytes, createdAt } = await getCachedOriginal(src, options, cache);
-    const out = await runPipeline(bytes, resolved, options);
-    return { bytes: out.bytes, contentType: out.contentType, width: out.width, height: out.height, format: out.format, originalCreatedAt: createdAt };
-  });
+  const { entry } = await getOrRegenerateVariant(src, resolved, options, cache);
   const result = { bytes: entry.bytes, contentType: entry.meta.contentType, width: entry.meta.width, height: entry.meta.height, format: entry.meta.format };
   recordInlineForDebugBar(src, resolved, result);
   return result;
+}
+
+/**
+ * Read-or-regenerate a variant's cache entry, shared by `getImage` and the image endpoint so the regeneration recipe
+ * (one request-cached origin download → `runPipeline`) can't drift between them. Errors propagate; the endpoint maps
+ * `ImageError` to a response itself. `id` is returned for the endpoint's generation-aware ETag.
+ */
+export function getOrRegenerateVariant(
+  src: string,
+  size: ResolvedImageSize,
+  options: ResolvedImageOptions,
+  cache: ImageCache,
+): Promise<{ entry: CacheEntry; status: ImageCacheStatus; id: string }> {
+  const id = variantId(src, size.configHash);
+  return cache
+    .getVariant(src, id, async () => {
+      // Shared request-cached original — read-only. `runPipeline` decodes without
+      // mutating its input, so passing the shared buffer is safe.
+      const { bytes, createdAt } = await getCachedOriginal(src, options, cache);
+      const out = await runPipeline(bytes, size, options);
+      return { bytes: out.bytes, contentType: out.contentType, width: out.width, height: out.height, format: out.format, originalCreatedAt: createdAt };
+    })
+    .then(({ entry, status }) => ({ entry, status, id }));
 }
 
 /**
@@ -187,9 +196,7 @@ function localSourceDisplay(src: string): { filename: string; sourcePath: string
   if (!abs) {
     return undefined;
   }
-  const rel = path.relative(process.cwd(), abs);
-  const display = rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel : abs;
-  return { filename: path.basename(abs), sourcePath: toPosixPath(display) };
+  return { filename: path.basename(abs), sourcePath: relForDisplay(abs) };
 }
 
 function recordForDebugBar(url: string, filename: string, req: ImageRequest, size: ResolvedImageSize | undefined): void {

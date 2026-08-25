@@ -8,6 +8,7 @@ import { extractServeOptions } from './extractServeOptions';
 import { updateSkill, SKILL_TARGETS, SKILL_DESTS, DEFAULT_SKILL_TARGET, type SkillTarget } from './updateSkill';
 import { generateKey } from './generateKey';
 import { relForDisplay } from '../utils';
+import { readMochiVersion } from '../utils/version';
 import { markBuilding } from '../utils/buildFlag';
 
 const TARGET_ALIASES: Record<string, SkillTarget> = { agy: 'antigravity' };
@@ -124,9 +125,7 @@ async function main() {
   }
 
   if (values.version) {
-    const pkgPath = path.join(import.meta.dir, '..', '..', 'package.json');
-    const pkg = (await Bun.file(pkgPath).json()) as { version: string };
-    process.stdout.write(`${pkg.version}\n`);
+    process.stdout.write(`${(await readMochiVersion()) ?? 'unknown'}\n`);
     return;
   }
 

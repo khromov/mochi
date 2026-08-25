@@ -37,6 +37,7 @@ import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { backendId, resolveSvelteCompiler, type MochiSvelteCompiler, type SvelteCompilerBackend } from './svelteCompilerBackend';
 import { applyFilter } from '../extensions';
 import { decodeSourcePath, encodeSourcePath } from './manifestPaths';
+import { SRC_DIR } from './paths';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { registerServerOnlyComponentStubs, SSR_ONLY_COMPONENT_NAMESPACE } from './serverOnlyComponents';
@@ -89,10 +90,6 @@ const builtinTsPreprocessor: PreprocessorGroup = {
     return { code: tsScriptTranspiler.transformSync(content) };
   },
 };
-
-// Climbs one level out of `src/compiler/`, so every path built from SRC_DIR below reads relative to `src/`, matching the
-// layout on disk and in the published package.
-const SRC_DIR = path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..');
 
 /** Manifest schema version this runtime writes; see `MochiManifest.version` for the path families it implies. */
 const MANIFEST_VERSION = 3;
@@ -712,8 +709,7 @@ export class ComponentRegistry {
         build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
           let source = await Bun.file(args.path).text();
           if (args.path.endsWith('.ts')) {
-            const transpiler = new Bun.Transpiler({ loader: 'ts' });
-            source = transpiler.transformSync(source);
+            source = tsScriptTranspiler.transformSync(source);
           }
           const { js } = backend.compileModule(
             source,

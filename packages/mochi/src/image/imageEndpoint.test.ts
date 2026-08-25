@@ -193,6 +193,23 @@ describe('createImageHandler', () => {
     expect(Buffer.from(await res.arrayBuffer())).toEqual(Buffer.from(SOURCE_BYTES));
   });
 
+  test('a non-raster original (SVG) serves as an octet-stream attachment, never inline', async () => {
+    installConfig();
+    const cache = installRuntime({});
+    initExtensions({});
+    const svgSrc = 'https://example.com/logo.svg';
+    const svgBytes = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>');
+    await cache.getOriginal(svgSrc, async () => ({ bytes: svgBytes, contentType: 'image/svg+xml' }));
+    const handler = createImageHandler();
+
+    const res = await handler(request(getImageUrl(svgSrc)));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('application/octet-stream');
+    expect(res.headers.get('Content-Disposition')).toBe('attachment');
+    expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(Buffer.from(svgBytes));
+  });
+
   test('maps ImageError to its HTTP status (blocked private source → 400)', async () => {
     installConfig();
     installRuntime({ sizes: { thumb: { width: 20, height: 20 } } });

@@ -3,9 +3,8 @@
 
 import '../debug-bar/types';
 import { isReloadableIslandName, notifyDeferredIslandChange, registerDeferredIsland, unregisterDeferredIsland } from '../islands/deferInvalidation';
-
-// Key must match sharedCssTracker.ts for cross-bundle dedup with HydratableIsland.
-const _css: Set<string> = ((globalThis as unknown as Record<string, unknown>).__mochi_loaded_css__ ??= new Set()) as Set<string>;
+import { isLoadedCss, markLoadedCss } from './sharedCssTracker';
+import { observeVisible } from './sharedVisibilityObserver';
 
 class ServerIsland extends HTMLElement {
   _loaded = false;
@@ -40,20 +39,11 @@ class ServerIsland extends HTMLElement {
       // `display:contents` leaves this element without a layout box, so the firstElementChild is observed instead; with
       // no fallback children, the global `:empty { min-height: 1px }` rule keeps the wrapper itself observable.
       const target = this.firstElementChild || this;
-      new IntersectionObserver(
-        (entries, obs) => {
-          for (const e of entries) {
-            if (e.isIntersecting) {
-              obs.disconnect();
-              // Queued behind any manual reload already running so the two can never race, and
-              // skipped when one of them has already delivered content.
-              this._track((this._inflight ?? Promise.resolve(true)).then(() => this._everLoaded || this._fetchContent(this._options)));
-              return;
-            }
-          }
-        },
-        { rootMargin: options.rootMargin || '0px' },
-      ).observe(target);
+      observeVisible(target, options.rootMargin || '0px', () => {
+        // Queued behind any manual reload already running so the two can never race, and
+        // skipped when one of them has already delivered content.
+        this._track((this._inflight ?? Promise.resolve(true)).then(() => this._everLoaded || this._fetchContent(this._options)));
+      });
       return;
     }
 
@@ -171,8 +161,8 @@ class ServerIsland extends HTMLElement {
         }
 
         const cssUrl = g('css-url');
-        if (cssUrl && !_css.has(cssUrl)) {
-          _css.add(cssUrl);
+        if (cssUrl && !isLoadedCss(cssUrl)) {
+          markLoadedCss(cssUrl);
           const link = document.createElement('link');
           link.rel = 'stylesheet';
           link.href = cssUrl;
