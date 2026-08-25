@@ -11,6 +11,7 @@ import type { MochiProtectionOptions } from './protection/types';
 import type { MochiCronHandler, MochiCronRuntimeOptions } from './cron';
 import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions, MochiQueueStorage } from './queue';
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
+import type { MochiStorage } from './migrations/storage';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
 import type { SpeculationRules } from './runtime/speculationRules';
 
@@ -289,7 +290,12 @@ export function isMochiCron(value: unknown): value is MochiCronConfig {
 export interface MochiWorkerOptions {
   queues: MochiQueueConfig[];
   /** The app's queue storage; may instead come from a `storage` declared on the descriptors. */
-  storage?: MochiQueueStorage;
+  queueStorage?: MochiQueueStorage;
+  /**
+   * The app database Mochi manages — same meaning as `Mochi.serve({ storage })`: pending `.sql` migrations are
+   * applied against it on `start()`, before the worker begins polling.
+   */
+  storage?: MochiStorage;
   /**
    * `'verify'` (default): a stored queue whose config differs from its declaration is a start() error — code is
    * authoritative. `'sync'`: write the declared config to storage instead, logging each change. `MOCHI_QUEUE_SYNC=1`
@@ -477,6 +483,12 @@ export interface MochiServeOptions {
    * Add jobs via the descriptor itself or `Mochi.getQueue(name)`. Queues drain gracefully on shutdown.
    */
   queues?: MochiQueueConfig[];
+  /**
+   * The app database Mochi manages: `{ type: 'sqlite', path }` or `{ type: 'postgres', url }`. On startup, pending `.sql`
+   * migrations from the project's `migrations/<sqlite|postgres>/` folder are applied against it (framework-internal
+   * migrations first, into `mochi_migrations`), before the server binds. Unset, no migrations run.
+   */
+  storage?: MochiStorage;
   /**
    * Where queue jobs live: `'memory'` (default — lost on restart), `{ sqlite: 'path/to.db' }` for a durable
    * single-process store, `{ postgres: url }` for a shared multi-process store (installed into a `mochi_queue` schema),

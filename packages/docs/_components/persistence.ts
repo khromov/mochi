@@ -29,6 +29,15 @@ export const persistenceRows: PersistenceRow[] = [
     postgres: { status: 'yes' },
   },
   {
+    key: 'migrations',
+    feature: 'Migrations',
+    href: '/docs/migrations/',
+    memory: { status: 'no' },
+    file: { status: 'no' },
+    sqlite: { status: 'yes' },
+    postgres: { status: 'yes' },
+  },
+  {
     key: 'cache',
     feature: 'Cache',
     href: '/docs/cache/',

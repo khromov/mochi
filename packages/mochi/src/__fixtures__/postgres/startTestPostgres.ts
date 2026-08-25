@@ -17,7 +17,11 @@ export interface TestPostgres {
 
 export async function startTestPostgres(opts?: { initSql?: string }): Promise<TestPostgres> {
   const db = await PGlite.create();
-  const server = new PGLiteSocketServer({ db, port: 0, host: '127.0.0.1' });
+  // Uncapped because the default `maxConnections: 1` is a trap: the server reaps a closed connection
+  // asynchronously, so a client that disconnects and immediately reconnects (one `SQL` per migration run)
+  // trips the cap — and once tripped, Bun's net server stops accepting for good, hanging every later
+  // connect until bun:sql's 30s timeout. PGlite still serializes all queries through one backend.
+  const server = new PGLiteSocketServer({ db, port: 0, host: '127.0.0.1', maxConnections: Infinity });
 
   // `PGLiteSocketServer.port` is private; the only way to learn the OS-assigned port from
   // `port: 0` is the `listening` event it fires from inside start().
