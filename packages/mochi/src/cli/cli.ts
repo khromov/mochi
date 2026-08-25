@@ -4,7 +4,7 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { build } from './build';
 import { closeAllQueueResources } from '../queue';
-import { extractServeOptions } from './extractServeOptions';
+import { extractEntryCall } from './extractServeOptions';
 import { updateSkill, SKILL_TARGETS, SKILL_DESTS, DEFAULT_SKILL_TARGET, type SkillTarget } from './updateSkill';
 import { generateKey } from './generateKey';
 import { relForDisplay } from '../utils';
@@ -41,6 +41,8 @@ ${SKILL_TARGETS.map((t) => {
 Options for "build":
   --entry <path>           Runtime entry whose \`Mochi.serve()\` call supplies
                            \`routes\`, \`markdown\`, and \`optimize\`.
+                           An entry calling \`Mochi.standalone()\` builds the
+                           static SPA instead.
                            Default: ./src/index.ts
   --out-dir <path>         Build output directory. Default: ./.mochi
   --public-dir <path>      Static assets directory. Default: ./public
@@ -156,16 +158,25 @@ async function main() {
   markBuilding();
 
   const entryPath = path.resolve(process.cwd(), values.entry ?? './src/index.ts');
-  let serveOptions: Awaited<ReturnType<typeof extractServeOptions>> = null;
+  let entryCall: Awaited<ReturnType<typeof extractEntryCall>> = null;
   if (existsSync(entryPath)) {
     try {
-      serveOptions = await extractServeOptions(entryPath);
+      entryCall = await extractEntryCall(entryPath);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[mochi] Could not read ${entryPath}: ${msg}\n`);
     }
   }
 
+  // A standalone entry builds the static SPA instead of the SSR manifest.
+  if (entryCall?.fn === 'standalone') {
+    const { runStandalone } = await import('../standalone/standalone');
+    await runStandalone({ ...entryCall.options, development: values.dev ?? false, outDir: values['out-dir'] ?? entryCall.options.outDir }, { entryPath });
+    await closeAllQueueResources();
+    process.exit(0);
+  }
+
+  const serveOptions = entryCall?.fn === 'serve' ? entryCall.options : null;
   const routes = serveOptions?.routes;
   if (!routes || typeof routes !== 'object') {
     process.stderr.write(`[mochi] No \`routes\` found. Ensure ${entryPath} calls Mochi.serve({ routes }).\n`);

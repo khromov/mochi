@@ -1,4 +1,4 @@
-export type TemplateId = 'minimal' | 'demos';
+export type TemplateId = 'minimal' | 'demos' | 'capacitor-ios-android';
 
 export interface Template {
   id: TemplateId;
@@ -23,6 +23,12 @@ export const TEMPLATES: readonly Template[] = [
     label: 'Demos',
     hint: 'a larger reference app with multiple demos (HN clone, todo, …)',
     source: 'khromov/mochi/packages/demos',
+  },
+  {
+    id: 'capacitor-ios-android',
+    label: 'Capacitor (iOS/Android)',
+    hint: 'a web app plus a Mochi.standalone() SPA build for packaging with Capacitor',
+    source: 'khromov/mochi/packages/capacitor-ios-android',
   },
 ] as const;
 

@@ -18,6 +18,18 @@
         "typescript-eslint": "^8.65.0",
       },
     },
+    "packages/capacitor-ios-android": {
+      "name": "mochi-capacitor-ios-android",
+      "dependencies": {
+        "mochi-framework": "workspace:*",
+        "svelte": "^5.56.8",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.0",
+        "svelte-check": "4.7.4",
+        "typescript": "^6.0.3",
+      },
+    },
     "packages/cli": {
       "name": "create-mochi",
       "version": "0.3.1",
@@ -1174,6 +1186,8 @@
     "minimist": ["minimist@1.2.8", "", {}, "sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA=="],
 
     "mitt": ["mitt@3.0.1", "", {}, "sha512-vKivATfr97l2/QBCYAkXYDbrIWPM2IIKEl7YPhjCvKlG3kE2gm+uBo6nEXK3M5/Ffh/FLpKExzOQ3JJoJGFKBw=="],
+
+    "mochi-capacitor-ios-android": ["mochi-capacitor-ios-android@workspace:packages/capacitor-ios-android"],
 
     "mochi-demos": ["mochi-demos@workspace:packages/demos"],
 

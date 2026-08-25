@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { extractServeOptions } from './extractServeOptions';
+import { extractServeOptions, extractStandaloneOptions } from './extractServeOptions';
 import { isBuilding } from '../utils/buildFlag';
 import { Mochi } from '../Mochi';
 import { startQueueRuntime, mountQueues, closeAllQueueResources } from '../queue';
@@ -24,6 +24,13 @@ describe('extractServeOptions', () => {
   function writeEntry(body: string): string {
     dir = mkdtempSync(path.join(tmpdir(), 'extract-serve-'));
     const entry = path.join(dir, 'entry.ts');
+    writeFileSync(entry, body);
+    return entry;
+  }
+
+  // A sibling of the first entry, so afterEach's single `dir` cleanup covers both.
+  function writeSecondEntry(body: string): string {
+    const entry = path.join(dir!, 'entry2.ts');
     writeFileSync(entry, body);
     return entry;
   }
@@ -111,5 +118,28 @@ try { await Mochi.serve({ routes: {} }); } catch {}
 await Mochi.serve({ routes: {} });`);
 
     await expect(extractServeOptions(entry)).rejects.toThrow('called more than once');
+  });
+
+  test('captures Mochi.standalone options without building or serving', async () => {
+    const entry = writeEntry(`import { Mochi } from 'mochi-framework';
+await Mochi.standalone({ port: 4100, routes: { '/': Mochi.page('./src/Home.svelte', { clientProps: () => ({ n: 1 }) }) } });
+throw new Error('standalone should have halted execution before this line');`);
+
+    const options = await extractStandaloneOptions(entry);
+
+    expect(options).not.toBeNull();
+    expect(options?.port).toBe(4100);
+    expect(options?.routes['/']?.componentPath).toBe('./src/Home.svelte');
+    expect(typeof options?.routes['/']?.clientProps).toBe('function');
+  });
+
+  test('extractServeOptions returns null for a standalone entry, and vice versa', async () => {
+    const entry = writeEntry(`import { Mochi } from 'mochi-framework';
+await Mochi.standalone({ routes: { '/': Mochi.page('./src/Home.svelte') } });`);
+    expect(await extractServeOptions(entry)).toBeNull();
+
+    const serveEntry = writeSecondEntry(`import { Mochi } from 'mochi-framework';
+await Mochi.serve({ routes: {} });`);
+    expect(await extractStandaloneOptions(serveEntry)).toBeNull();
   });
 });

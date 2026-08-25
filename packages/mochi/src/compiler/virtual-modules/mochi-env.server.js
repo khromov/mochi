@@ -1,6 +1,8 @@
 export const isServer = true; export const isBrowser = false; export const DEV = __MOCHI_DEV__; export const isDev = __MOCHI_DEV__;
 // Always false in components: they are compiled but never executed during a build, so a compiled component only ever runs while serving.
 export const isBuilding = false;
+// Always false server-side: SSR only ever runs in a Mochi.serve() app, never a standalone build (which has no SSR).
+export const isStandalone = false;
 export function getRequestContext() {
   const ctx = globalThis.__mochi_request_context__?.getStore();
   if (!ctx) throw new Error("getRequestContext() called outside of a request.");
@@ -74,6 +76,9 @@ export { deferReloadState, DeferReloadState } from "__MOCHI_DEFER_REACTIVE__";
 export { enhance, deserialize } from "__MOCHI_ENHANCE_SSR__";
 // Rate-limit stores — server-only (bun:sqlite / Bun SQL).
 export { memoryStore, sqliteStore, postgresStore } from "__MOCHI_RATE_LIMIT__";
+// Isomorphic devalue-fetch helper for Mochi.apiDevalue() endpoints — a real
+// re-export on the server too (SSR code may fetch a sibling service).
+export { fetchDevalue, MochiFetchError } from "__MOCHI_FETCH_DEVALUE__";
 // The built-in protection interstitial's absolute path — lets a docs/tooling
 // component read the default `protection.page` source straight from disk.
 export const PROTECTION_SHELL_COMPONENT = "__MOCHI_PROTECTION_SHELL_PATH__";

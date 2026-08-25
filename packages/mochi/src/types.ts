@@ -13,12 +13,16 @@ import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions, Moc
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
 import type { SpeculationRules } from './runtime/speculationRules';
+import type { LogLevel } from './utils/log';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | MochiRedirect | Promise<Record<string, unknown> | MochiRedirect>;
 
 export function isServerPropsResolver(serverProps: Record<string, unknown> | MochiServerPropsResolver | undefined): serverProps is MochiServerPropsResolver {
   return typeof serverProps === 'function';
 }
+
+/** `serverProps`' standalone counterpart: resolves a route's props in the browser before the component mounts. */
+export type MochiClientPropsResolver = (params: Record<string, string>) => Record<string, unknown> | Promise<Record<string, unknown>>;
 
 /**
  * A `mochi:defer mochi:hydrate` island's authored hydration mode, riding inside the encrypted server-island
@@ -39,6 +43,16 @@ export interface MochiPageHandlerConfig {
   actions?: MochiFormActions;
 }
 
+/** The config object accepted by `Mochi.page()`. */
+export interface MochiPageOptions {
+  serverProps?: Record<string, unknown> | MochiServerPropsResolver;
+  actions?: MochiFormActions;
+  /** Per-route rate limit. Overrides the global `rateLimit` serve option; `false` opts this route out. */
+  rateLimit?: MochiRateLimitOptions | false;
+  /** Standalone-only (`Mochi.standalone()`): resolves the route's props in the browser. Ignored by `Mochi.serve()`. */
+  clientProps?: MochiClientPropsResolver;
+}
+
 export interface MochiPageConfig {
   readonly __mochiPage: true;
   readonly componentPath: string;
@@ -46,6 +60,8 @@ export interface MochiPageConfig {
   readonly actions?: MochiFormActions;
   /** Per-route rate limit. Overrides the global `rateLimit` serve option; `false` opts this route out. */
   readonly rateLimit?: MochiRateLimitOptions | false;
+  /** Standalone-only (`Mochi.standalone()`): resolves the route's props in the browser. Ignored by `Mochi.serve()`. */
+  readonly clientProps?: MochiClientPropsResolver;
 }
 
 export function isMochiPage(value: unknown): value is MochiPageConfig {
@@ -85,6 +101,37 @@ export interface MochiApiConfig {
 
 export function isMochiApi(value: unknown): value is MochiApiConfig {
   return typeof value === 'object' && value !== null && (value as MochiApiConfig).__mochiApi === true;
+}
+
+/**
+ * A `Mochi.apiDevalue()` handler: return any devalue-serializable value and the framework turns it into the response,
+ * or return a `Response` directly to bypass serialization.
+ */
+export type MochiDevalueApiHandler = (event: MochiApiEvent) => unknown;
+
+/** Options for `Mochi.standalone()` — the static-SPA counterpart of `Mochi.serve()`. */
+export interface MochiStandaloneOptions {
+  /** Hash-routed pages. `Mochi.page()` values only — API/WS/SSE/file routes need a server. */
+  routes: Record<string, MochiPageConfig>;
+  /** Rendered when no route matches the hash. Its `clientProps` resolver receives empty params. */
+  notFound?: MochiPageConfig;
+  /** Rendered while a route's async `clientProps` resolves. Must not declare `clientProps` of its own. */
+  loading?: MochiPageConfig;
+  /** `true` (default) boots the dev server with live reload; `false` writes the static build to `outDir` and returns. */
+  development?: boolean;
+  /** Path to an `.html` shell file, or an inline template string. Same `{{mochi.head|css|body|script}}` placeholders as `htmlShell`. */
+  htmlShell?: string;
+  /** Where the static build is written. Default `./dist` — point Capacitor's `webDir` here. */
+  outDir?: string;
+  /** Static files copied verbatim into the build (and served by the dev server). Default `./public`. */
+  publicDir?: string;
+  /** Dev server port. Default 3000. */
+  port?: number;
+  hostname?: string;
+  svelteConfigPath?: string;
+  /** Extra paths the dev server watches for full-page reload, beyond `src/`, `publicDir`, and the shell. */
+  additionalWatchPaths?: string[];
+  logger?: { level?: LogLevel };
 }
 
 /** Resolves the disk path of the file to serve for a `Mochi.file()` route. */

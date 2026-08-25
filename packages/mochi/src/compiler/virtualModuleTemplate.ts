@@ -45,15 +45,17 @@ export function renderMochiEnvServer(development: boolean): string {
     __MOCHI_DEFER_REACTIVE__: frameworkFile('islands/deferReloadState.svelte.ts'),
     __MOCHI_ENHANCE_SSR__: frameworkFile('runtime/enhance.ssr.ts'),
     __MOCHI_RATE_LIMIT__: frameworkFile('runtime/rateLimit.ts'),
+    __MOCHI_FETCH_DEVALUE__: frameworkFile('runtime/fetchDevalue.ts'),
     // A baked literal, not a module re-export: config.ts computes the path off `import.meta.url`,
     // which inside a compiled SSR chunk would point into the build dir instead of the framework src.
     __MOCHI_PROTECTION_SHELL_PATH__: frameworkFile('templates/ProtectionShell/ProtectionShell.svelte'),
   });
 }
 
-export function renderMochiEnvClient(development: boolean, cookiesClientPath: string, enhanceClientPath: string): string {
+export function renderMochiEnvClient(development: boolean, cookiesClientPath: string, enhanceClientPath: string, standalone = false): string {
   return fill(CLIENT_TEMPLATE, {
     __MOCHI_DEV__: String(development),
+    __MOCHI_STANDALONE__: String(standalone),
     __MOCHI_COOKIES_CLIENT__: cookiesClientPath,
     __MOCHI_LOG__: frameworkFile('utils/log.ts'),
     __MOCHI_GLOBAL_STATE__: frameworkFile('utils/globalState.ts'),
@@ -62,5 +64,7 @@ export function renderMochiEnvClient(development: boolean, cookiesClientPath: st
     __MOCHI_DEFER_API__: frameworkFile('islands/deferInvalidation.ts'),
     __MOCHI_DEFER_REACTIVE__: frameworkFile('islands/deferReloadState.svelte.ts'),
     __MOCHI_ENHANCE_CLIENT__: enhanceClientPath,
+    __MOCHI_FETCH_DEVALUE__: frameworkFile('runtime/fetchDevalue.ts'),
+    __MOCHI_STANDALONE_MOCHI__: frameworkFile('standalone/mochiClient.ts'),
   });
 }

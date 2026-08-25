@@ -12,6 +12,8 @@ declare module 'mochi-framework' {
   export const DEV: boolean;
   /** True when the server was started with `development: true`. */
   export const isDev: boolean;
+  /** True inside a `Mochi.standalone()` client build; false in SSR and in `Mochi.serve()` island bundles. Lets shared components branch (e.g. hash-router links vs real paths). */
+  export const isStandalone: boolean;
 
   type CookieSerializeOptions = import('./runtime/cookies').CookieSerializeOptions;
 
@@ -86,4 +88,7 @@ declare module 'mochi-framework' {
     Success extends import('./types').MochiFormShape = import('./types').MochiFormShape,
     Failure extends import('./types').MochiFormShape = import('./types').MochiFormShape,
   >(text: string): import('./types').MochiEnhanceResult<Success, Failure>;
+
+  // `fetchDevalue` / `MochiFetchError` are real exports of the package (see ./runtime/fetchDevalue and ./index
+  // re-exports), so they flow into Svelte files via the package's exports map; no augmentation entry needed.
 }

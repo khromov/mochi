@@ -1,6 +1,9 @@
 export const isServer = false; export const isBrowser = true; export const DEV = __MOCHI_DEV__; export const isDev = __MOCHI_DEV__;
 // Always false in the browser: a build never runs client-side, so nothing that executes here is ever mid-build.
 export const isBuilding = false;
+// True only inside a Mochi.standalone() client bundle — false in a Mochi.serve() island bundle — so shared components
+// can branch behavior (e.g. hash-router links vs real paths). Filled true only by the standalone build.
+export const isStandalone = __MOCHI_STANDALONE__;
 // Shared thrower for the server-only stubs below. Each stub stays a pure
 // declaration (tree-shaken when unused); this helper is pulled in only if one is.
 const __serverOnly = (n) => { throw new Error(n + " is only available on the server"); };
@@ -135,5 +138,11 @@ export { enhance, deserialize } from "__MOCHI_ENHANCE_CLIENT__";
 // every component that executes in the browser is part of a hydrating (or
 // client-only mounting) subtree. No context lookup needed.
 export function isHydratable() { return true; }
+// Isomorphic devalue-fetch helper for Mochi.apiDevalue() endpoints — a real
+// re-export, since standalone clientProps and hydrated islands call it in the browser.
+export { fetchDevalue, MochiFetchError } from "__MOCHI_FETCH_DEVALUE__";
+// The standalone client bootstrap: `Mochi.standalone()` boots the hash router in
+// the browser, descriptor factories return plain data, and server-only statics throw.
+export { Mochi } from "__MOCHI_STANDALONE_MOCHI__";
 // Server filesystem path — meaningless in the browser.
 export const PROTECTION_SHELL_COMPONENT = undefined;

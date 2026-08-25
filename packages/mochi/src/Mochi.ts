@@ -29,12 +29,13 @@ import type {
   MochiApiHandler,
   MochiFileConfig,
   MochiFileResolver,
+  MochiDevalueApiHandler,
   MochiPageConfig,
   MochiPageHandlerConfig,
+  MochiPageOptions,
+  MochiStandaloneOptions,
   MochiFormActionResult,
-  MochiFormActions,
   MochiRouteValue,
-  MochiServerPropsResolver,
   MochiServeOptions,
   MochiWorkerOptions,
   RouteRegistrationResult,
@@ -141,13 +142,14 @@ function readMochiVersion(): Promise<string | null> {
     .catch(() => null));
 }
 
-type ShellSlot = 'head' | 'css' | 'body' | 'script';
-type ShellPart = { text: string } | { slot: ShellSlot };
+export type ShellSlot = 'head' | 'css' | 'body' | 'script';
+export type ShellPart = { text: string } | { slot: ShellSlot };
 
 // Parsing once per template turns per-request filling into a walk over these parts instead of a global-regex scan.
 // Splitting the template rather than the assembled output also keeps an injected body containing a literal
-// `{{mochi.script}}` from being re-expanded.
-function parseShellTemplate(template: string): ShellPart[] {
+// `{{mochi.script}}` from being re-expanded. Exported for the standalone build, which fills the same placeholders once
+// at build time instead of per request.
+export function parseShellTemplate(template: string): ShellPart[] {
   const parts: ShellPart[] = [];
   const re = /\{\{mochi\.(head|css|body|script)\}\}/g;
   let last = 0;
@@ -198,25 +200,44 @@ async function appendDebugTail(response: Response, ctx: MochiRequestContext, dev
 }
 
 export class Mochi {
-  static page(
-    componentPath: string,
-    config?: {
-      serverProps?: Record<string, unknown> | MochiServerPropsResolver;
-      actions?: MochiFormActions;
-      rateLimit?: MochiRateLimitOptions | false;
-    },
-  ): MochiPageConfig {
+  static page(componentPath: string, config?: MochiPageOptions): MochiPageConfig {
     return {
       __mochiPage: true,
       componentPath,
       serverProps: config?.serverProps,
       actions: config?.actions,
       rateLimit: config?.rateLimit,
+      clientProps: config?.clientProps,
     };
   }
 
   static api(handler: MochiApiHandler, config?: { rateLimit?: MochiRateLimitOptions | false }): MochiApiConfig {
     return { __mochiApi: true, handler, rateLimit: config?.rateLimit };
+  }
+
+  /**
+   * Like `Mochi.api()`, but the handler returns a plain value that is devalue-serialized into the response, so rich
+   * types (Date, Map, Set, BigInt) survive the wire — pair with `fetchDevalue()` on the consumer. Returning a
+   * `Response` bypasses serialization; a thrown `MochiHttpError` maps to its status like any API route.
+   */
+  static apiDevalue(handler: MochiDevalueApiHandler, config?: { rateLimit?: MochiRateLimitOptions | false }): MochiApiConfig {
+    return Mochi.api(async (event) => {
+      const result = await handler(event);
+      if (result instanceof Response) {
+        return result;
+      }
+      return new Response(devalueStringify(result), { headers: { 'Content-Type': 'application/devalue+json; charset=utf-8' } });
+    }, config);
+  }
+
+  /**
+   * The static-SPA counterpart of `Mochi.serve()`, for packaging an app with Capacitor: in development it boots a
+   * small static dev server with full-page live reload; otherwise it writes the app (index.html + client JS/CSS) to
+   * `outDir` and returns. Everything mounts client-side — there is no SSR pipeline.
+   */
+  static async standalone(options: MochiStandaloneOptions): Promise<void> {
+    const { runStandalone } = await import('./standalone/standalone');
+    return runStandalone(options);
   }
 
   static ws<T = unknown>(handlers: MochiWsHandlers<T>): MochiWsConfig {
@@ -859,6 +880,9 @@ export class Mochi {
       if (isMochiPage(handler)) {
         mochiPageMap.set(pattern, handler);
         const { componentPath, serverProps, actions } = handler;
+        if (development && handler.clientProps) {
+          logger.warn(`Route "${pattern}" declares \`clientProps\`, which only Mochi.standalone() uses — Mochi.serve() ignores it.`);
+        }
         resolveLimiter(handler.rateLimit, pattern);
         if (pageConfigMap) {
           pageConfigMap.set(pattern, { serverProps, actions });

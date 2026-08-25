@@ -20,7 +20,7 @@ export function registerEsmEnvStrip(build: PluginBuilder): void {
   }));
 }
 
-export function registerMochiEnvClient(build: PluginBuilder, development: boolean): void {
+export function registerMochiEnvClient(build: PluginBuilder, development: boolean, standalone = false): void {
   const cookiesClientPath = toPosixPath(path.join(SRC_DIR, 'runtime/cookies.client.ts'));
   const enhanceClientPath = toPosixPath(path.join(SRC_DIR, 'runtime/enhance.client.ts'));
   build.onResolve({ filter: /^mochi-framework$/ }, () => ({
@@ -28,7 +28,7 @@ export function registerMochiEnvClient(build: PluginBuilder, development: boolea
     namespace: 'mochi-env',
   }));
   build.onLoad({ filter: /.*/, namespace: 'mochi-env' }, () => ({
-    contents: renderMochiEnvClient(development, cookiesClientPath, enhanceClientPath),
+    contents: renderMochiEnvClient(development, cookiesClientPath, enhanceClientPath, standalone),
     loader: 'js',
   }));
 }
