@@ -1,7 +1,11 @@
 import path from 'node:path';
 import fs from 'node:fs';
 
-const MOCHI_FRAMEWORK_FALLBACK = '^0.1.1';
+// Only used when the registry lookup fails. Pre-1.0 carets do not cross the minor,
+// so this floor must be at least the release that added the `mochi-framework/svelte.config.js`
+// export the templates re-export — otherwise an offline scaffold installs a version
+// whose package `exports` lacks that subpath and dies on `svelte-check` and at boot.
+const MOCHI_FRAMEWORK_FALLBACK = '^0.9.0';
 
 const PRINT_WIDTH = 180;
 
