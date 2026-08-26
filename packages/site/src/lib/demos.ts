@@ -55,6 +55,7 @@ import { files as serverProps } from '../demos/server-props/files.ts';
 import { files as sharedState } from '../demos/shared-state/files.ts';
 import { files as staticDirs } from '../demos/static-dirs/files.ts';
 import { files as streams } from '../demos/streams/files.ts';
+import { files as sync } from '../demos/sync/files.ts';
 import { files as tanstackTable } from '../demos/tanstack-table/files.ts';
 import { files as url } from '../demos/url/files.ts';
 import { files as varlock } from '../demos/varlock/files.ts';
@@ -293,6 +294,14 @@ export const demos: Demo[] = [
     files: streams,
     title: 'Real-time Streams',
     hook: 'How server-sent events and WebSocket streaming work — live SSE and WebSocket clocks, lazily hydrated via mochi:hydrate:visible.',
+    category: 'endpoints',
+  },
+  {
+    href: '/demos/sync/',
+    slug: 'sync',
+    files: sync,
+    title: 'Realtime sync',
+    hook: 'How Mochi sync works — declare a typed schema once, then read and write a live server-authoritative dataset from islands with a runes-backed sync() over WebSocket.',
     category: 'endpoints',
   },
   {

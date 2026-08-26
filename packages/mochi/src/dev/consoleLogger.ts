@@ -129,6 +129,32 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     neutral: true,
   }));
 
+  subscribe('sync:open', (payload) => ({
+    label: 'SYNC',
+    path: payload.clientId,
+    note: styleText('cyan', 'open'),
+  }));
+
+  subscribe('sync:op', (payload) => ({
+    label: 'SYNC',
+    path: payload.clientId,
+    note: `${styleText('cyan', 'ops')} ${styleText('green', `+${payload.accepted}`)} ${payload.rejected > 0 ? styleText('red', `-${payload.rejected}`) : styleText('dim', '-0')}`,
+  }));
+
+  subscribe('sync:close', (payload) => ({
+    label: 'SYNC',
+    path: payload.clientId,
+    note: styleText('dim', 'close'),
+    neutral: true,
+  }));
+
+  subscribe('sync:error', (payload) => ({
+    label: 'SYNC',
+    path: payload.clientId ?? '-',
+    note: `${styleText('red', payload.reason)}${payload.error ? ' ' + styleText('dim', payload.error) : ''}`,
+    level: 'warn',
+  }));
+
   subscribe('server:start', ({ port, hostname, development, routes }) => {
     const where = `${hostname ?? 'localhost'}:${port}`;
     const mode = styleText('dim', development ? 'dev' : 'prod');

@@ -11,6 +11,7 @@ import type { MochiProtectionOptions } from './protection/types';
 import type { MochiCronHandler, MochiCronRuntimeOptions } from './cron';
 import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions, MochiQueueStorage } from './queue';
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
+import type { MochiSyncOptions } from './sync/types';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
 import type { SpeculationRules } from './runtime/speculationRules';
 
@@ -680,6 +681,13 @@ export interface MochiServeOptions {
    * function for HTTP email APIs, or the default `log` transport, which logs in place of sending. See `MochiEmailOptions`.
    */
   email?: MochiEmailOptions;
+  /**
+   * Realtime data sync (reflectdb-backed): declare typed queries once with `defineSyncQueries`, implement
+   * `query`/`mutate` per table, and read/write live rows from islands with `sync()`. Auth is pluggable via a
+   * signed-ticket bridge; storage is `'memory'`, `{ sqlite }`, or `{ postgres }`; transport is WebSocket. Build the
+   * value with `defineSync({ … })`. See `MochiSyncOptions`. Default: disabled.
+   */
+  sync?: MochiSyncOptions;
   /**
    * Slide-to-verify captcha backing `mintCaptcha()` / `verifyCaptcha()` and the `<MochiCaptcha>` component, tuning proof-of-work
    * difficulty, the token timing floor and expiry, and the one-time nonce store used for replay protection. See `MochiCaptchaOptions`.

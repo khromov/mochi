@@ -52,6 +52,32 @@ export interface MochiSseMessageEvent {
   event?: string;
 }
 
+export interface MochiSyncOpenEvent {
+  /** reflectdb client id of the socket that just connected. */
+  clientId: string;
+}
+
+export interface MochiSyncCloseEvent {
+  clientId: string;
+}
+
+export interface MochiSyncOpEvent {
+  clientId: string;
+  /** Ops the server accepted in this batch. */
+  accepted: number;
+  /** Ops the server rejected (conflict, rate limit, validation). */
+  rejected: number;
+}
+
+export interface MochiSyncErrorEvent {
+  /** Absent for connection-independent failures (e.g. an eager-flush error). */
+  clientId?: string;
+  /** The reflectdb `SyncEvent` type that produced this — `auth_failed`, `message_invalid`, `query_error`, `queue_overflow`, `eager_flush_failed`. */
+  reason: string;
+  /** Error message, when the underlying event carried one. */
+  error?: string;
+}
+
 export type MochiFileChangeType = 'add' | 'change' | 'unlink' | 'addDir' | 'unlinkDir';
 
 export interface MochiFileChangeEvent {
@@ -429,6 +455,10 @@ export type MochiEventMap = {
   'sse:open': MochiSseOpenEvent;
   'sse:message': MochiSseMessageEvent;
   'sse:close': MochiSseCloseEvent;
+  'sync:open': MochiSyncOpenEvent;
+  'sync:close': MochiSyncCloseEvent;
+  'sync:op': MochiSyncOpEvent;
+  'sync:error': MochiSyncErrorEvent;
   'file:change': MochiFileChangeEvent;
   'island:error': MochiIslandErrorEvent;
   'captcha:verify': MochiCaptchaVerifyEvent;

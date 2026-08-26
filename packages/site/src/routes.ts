@@ -79,6 +79,7 @@ import { routes as serverPropsRoutes } from './demos/server-props/routes';
 import { routes as sharedStateRoutes } from './demos/shared-state/routes';
 import { routes as staticDirsRoutes } from './demos/static-dirs/routes';
 import { routes as streamsRoutes } from './demos/streams/routes';
+import { routes as syncRoutes, sync } from './demos/sync/routes';
 import { routes as tanstackTableRoutes } from './demos/tanstack-table/routes';
 import { routes as urlRoutes } from './demos/url/routes';
 import { routes as varlockRoutes } from './demos/varlock/routes';
@@ -402,6 +403,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...sharedStateRoutes,
   ...staticDirsRoutes,
   ...streamsRoutes,
+  ...syncRoutes,
   ...tanstackTableRoutes,
   ...urlRoutes,
   ...varlockRoutes,
@@ -415,3 +417,5 @@ export const queues: MochiQueueConfig[] = [...queueQueues];
 
 // Scheduled jobs, mounted in Mochi.serve({ cron }) (see src/index.ts).
 export const cron: MochiCronConfig[] = [...cronJobs];
+
+export { sync };

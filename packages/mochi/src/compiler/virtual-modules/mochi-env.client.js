@@ -131,6 +131,8 @@ export function memoryStore() { __serverOnly("memoryStore()"); }
 export function sqliteStore() { __serverOnly("sqliteStore()"); }
 export function postgresStore() { __serverOnly("postgresStore()"); }
 export { enhance, deserialize } from "__MOCHI_ENHANCE_CLIENT__";
+// The real runes-backed sync client — ships only in island bundles.
+export { sync } from "__MOCHI_SYNC_CLIENT__";
 // Constant by construction: client bundles are built only for islands, so
 // every component that executes in the browser is part of a hydrating (or
 // client-only mounting) subtree. No context lookup needed.

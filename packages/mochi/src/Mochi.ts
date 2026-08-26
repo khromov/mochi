@@ -130,6 +130,11 @@ import { resolveProtectionOptions, PROTECTION_SHELL_COMPONENT } from './protecti
 import { mintClearanceToken } from './protection/clearance';
 import { verifyCaptcha } from './captcha/captcha';
 import { getCaptchaRuntime } from './captcha/config';
+import { closeSyncRuntime, requireSyncServer, resolveSyncOptions, setSyncRuntime, validateSyncOptions } from './sync/config';
+import { createSyncTokenHandler, createSyncWsHandlers, startSyncRuntime } from './sync/server';
+import type { MochiSyncWsData } from './sync/server';
+import type { SyncQueryMap } from 'reflectdb';
+import type { TypedSyncServer } from 'reflectdb/server';
 
 const DEFAULT_HTML_SHELL = await Bun.file(new URL('./templates/default-shell.html', import.meta.url)).text();
 
@@ -280,6 +285,15 @@ export class Mochi {
   }
 
   /**
+   * The live reflectdb sync server behind `Mochi.serve({ sync })` — the escape hatch for out-of-band server writes:
+   * `.emit(table, payload)`, `.applyServerOp(...)`, `.notifyChange(...)`, `.tx(...)`, and the rest of the typed server
+   * surface. Throws with a clear message when `sync` was never configured.
+   */
+  static sync<TQueries extends SyncQueryMap = SyncQueryMap>(): TypedSyncServer<TQueries> {
+    return requireSyncServer() as unknown as TypedSyncServer<TQueries>;
+  }
+
+  /**
    * Send a transactional email, configured under `Mochi.serve({ email })`. The body is `html`, `text`, or a Svelte
    * `component` rendered to HTML with its scoped CSS inlined. Callable from any server-side code — route actions,
    * API handlers, or queue jobs.
@@ -303,9 +317,11 @@ export class Mochi {
       /** Reads the current speculation rules (reassigned on dev entry edits). */
       getSpeculationRules: () => SpeculationRules | undefined;
       fontPreload: boolean;
+      /** `window.__mochi_sync` endpoint bootstrap, injected ahead of island bundles when `sync` is configured. */
+      syncScript: string;
     },
   ): (result: RenderResult, opts?: { debugInfo?: DebugBarData; pageEntry?: string }) => string {
-    const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate, getSpeculationRules, fontPreload } = config;
+    const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate, getSpeculationRules, fontPreload, syncScript } = config;
 
     const logLevelScript = logLevel === DEFAULT_LOG_LEVEL ? '' : `<script>window.__mochi_log_level=${JSON.stringify(logLevel)}</script>`;
     // Feeds the debug bar's Warnings panel. When the debug bar is off the
@@ -355,6 +371,7 @@ export class Mochi {
       const css = cssStylePrefix + cssLinks;
       const body = result.body + debugInfoScript + pageEntryScript + toolbarDiv;
       const script =
+        syncScript +
         (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
         (result.hasServerIslands ? serverIslandScript : '') +
         (debugBarUrl ? `<script type="module" src="${debugBarUrl}"></script><script>window.__mochi_asset_prefix=${assetPrefixJson}</script>` : '') +
@@ -457,6 +474,12 @@ export class Mochi {
     const cronStorage = options.cronStorage ?? 'memory';
     if (declaredCron.length > 0 && !isValidQueueStorage(cronStorage)) {
       throw new Error(`Mochi.serve({ cronStorage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
+    }
+
+    // Same fail-fast rule for sync: an empty schema, bad storage shape, unsupported transport, or a tables/views key
+    // that doesn't match the schema rejects here, before the config singleton pins and the socket binds.
+    if (options.sync !== undefined) {
+      validateSyncOptions(options.sync, queueStorage !== 'memory' && 'sqlite' in queueStorage ? queueStorage.sqlite : undefined);
     }
 
     // Same fail-fast rule: an unmountable prefix rejects here rather than 404ing at runtime.
@@ -676,6 +699,10 @@ export class Mochi {
 
     // Precompute request-invariant shell fragments once; `getTemplate` reads the
     // live `shellTemplate` so dev shell edits (reloadShell) are picked up.
+    const syncTokenPath = `${registry.assetPrefix}/sync/token`;
+    const syncWsPattern = `${registry.assetPrefix}/sync/ws`;
+    const syncScript = options.sync ? `<script>window.__mochi_sync=${JSON.stringify({ t: syncTokenPath, w: syncWsPattern })}</script>` : '';
+
     const renderShell = Mochi.createShellRenderer(registry, {
       serverIslandClientJs,
       liveReloadClientJs,
@@ -683,6 +710,7 @@ export class Mochi {
       getTemplate: () => shellTemplate,
       getSpeculationRules: () => speculationRules,
       fontPreload: options.fonts?.preload !== false,
+      syncScript,
     });
 
     // The interstitial renders through the app shell like error pages do, so a custom `protection.page`
@@ -1526,6 +1554,44 @@ export class Mochi {
     // After the mirroring pass on purpose: a `/*` pattern must not be mirrored to `/*\/`.
     registerStaticDirRoutes(bunRoutes, staticDirMounts);
 
+    // Start the sync runtime before its WS/token routes are wired: a mid-boot failure closes storage and rethrows,
+    // failing the serve rather than leaving a half-started server listening. Registered before the baseBunRoutes
+    // snapshot below so the dev-watcher rebuild preserves both routes across reloads.
+    const syncRuntime = options.sync ? await startSyncRuntime(resolveSyncOptions(options.sync)) : undefined;
+    if (syncRuntime) {
+      setSyncRuntime(syncRuntime);
+      const syncTokenHandler = createSyncTokenHandler(syncRuntime, syncTokenPath, buildRequestContext);
+      bunRoutes[syncTokenPath] = syncTokenHandler;
+      bunRoutes[`${syncTokenPath}/`] = syncTokenHandler;
+
+      // Bridge reflectdb's Bun WS handlers onto Mochi's shared dispatcher (keyed by `__mochiRoutePattern`).
+      wsHandlersMap.set(syncWsPattern, createSyncWsHandlers(syncRuntime) as MochiWsHandlers<unknown>);
+      const syncWsUpgrade = (async (req: Request, server: Server<undefined>) => {
+        const setup = await buildRequestContext(req, server, { kind: 'ws', pattern: syncWsPattern });
+        if ('earlyResponse' in setup) {
+          return setup.earlyResponse;
+        }
+        const { start, requestId, url } = setup;
+        const wsPath = url.pathname + url.search;
+        const success = (server as unknown as { upgrade: (req: Request, opts: Record<string, unknown>) => boolean }).upgrade(req, {
+          data: {
+            __mochiRoutePattern: syncWsPattern,
+            __mochiOpenedAt: performance.now(),
+            __mochiPath: wsPath,
+            user: { id: crypto.randomUUID(), req } satisfies MochiSyncWsData,
+          } satisfies MochiWsData<MochiSyncWsData>,
+        });
+        if (!success) {
+          mochiEvents.emit('request', { requestId, kind: 'error', method: req.method, path: wsPath, status: 500, duration: performance.now() - start });
+          return new Response('WebSocket upgrade failed', { status: 500 });
+        }
+        mochiEvents.emit('ws:open', { path: wsPath, duration: performance.now() - start });
+        return undefined;
+      }) as unknown as BunRouteValue;
+      bunRoutes[syncWsPattern] = syncWsUpgrade;
+      bunRoutes[`${syncWsPattern}/`] = syncWsUpgrade;
+    }
+
     // Register server island endpoint
     bunRoutes[`${registry.assetPrefix}/island/:componentName`] = withHead(async (req: Request, server: Server<undefined>): Promise<Response> => {
       const setup = await buildRequestContext(req, server, {
@@ -2021,6 +2087,7 @@ export class Mochi {
           await stopCronRuntime();
           stopEmailBadgeBroadcast?.();
           await closeEmailTransport();
+          await closeSyncRuntime();
           for (const store of rateLimitStores) {
             // Per-store guard: one failing shutdown must not skip the rest.
             try {
