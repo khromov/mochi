@@ -18,6 +18,7 @@
     "typescript/no-explicit-any": "warn",
     "typescript/no-this-alias": "error",
     "typescript/triple-slash-reference": "error",
-    "no-control-regex": "error"
+    "no-control-regex": "error",
+    "complexity": ["warn", 15]
   }
 }
