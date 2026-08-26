@@ -24,17 +24,27 @@ function wsUrl(path: string): string {
   return `${proto}//${location.host}${path}`;
 }
 
+// crypto.randomUUID only exists in secure contexts (https/localhost); plain-http LAN dev needs the getRandomValues path.
+function randomId(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 function loadClientId(): string {
   try {
     const key = '__mochi_sync_client_id__';
     let id = localStorage.getItem(key);
     if (!id) {
-      id = crypto.randomUUID();
+      id = randomId();
       localStorage.setItem(key, id);
     }
     return id;
   } catch {
-    return crypto.randomUUID();
+    return randomId();
   }
 }
 
@@ -211,7 +221,7 @@ class SyncManager {
         return state.total;
       },
       insert: (payload, id) => {
-        const rowId = id ?? crypto.randomUUID();
+        const rowId = id ?? randomId();
         this.mutate((client) => client.insert(table, rowId, payload as Record<string, unknown>), table, true);
         return rowId;
       },
