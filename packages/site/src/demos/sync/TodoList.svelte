@@ -141,6 +141,7 @@
     align-items: center;
     gap: 0.5rem;
     font-size: 0.8rem;
+    min-height: 1.5rem;
   }
   .status {
     font-variant-numeric: tabular-nums;
