@@ -74,7 +74,7 @@ export { deferReloadState, DeferReloadState } from "__MOCHI_DEFER_REACTIVE__";
 export { enhance, deserialize } from "__MOCHI_ENHANCE_SSR__";
 // `sync()` in an island runs during SSR too — the server export is an inert stub
 // (empty rows, no-op mutators). The real reactive client ships only to the browser.
-export { sync } from "__MOCHI_SYNC_SSR__";
+export { sync, syncConnection } from "__MOCHI_SYNC_SSR__";
 // Rate-limit stores — server-only (bun:sqlite / Bun SQL).
 export { memoryStore, sqliteStore, postgresStore } from "__MOCHI_RATE_LIMIT__";
 // The built-in protection interstitial's absolute path — lets a docs/tooling

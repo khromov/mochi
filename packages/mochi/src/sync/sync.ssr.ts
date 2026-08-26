@@ -1,11 +1,11 @@
-import type { MochiSyncHandle } from './types';
+import type { MochiSyncConnection, MochiSyncHandle, MochiSyncOptions_Client } from './types';
 
 /**
- * Server-side inert stub for `sync()`. Islands run their top-level code during SSR, so this must never throw — it
- * returns an empty, frozen handle. The real reactive client only runs after hydration in the browser (see
- * `sync.client.svelte.ts`), so an island shows empty rows server-side until it connects.
+ * Server-side inert stubs for `sync()` / `syncConnection()`. Islands run their top-level code during SSR, so these
+ * must never throw — they return empty, inert handles. The real reactive client only runs after hydration in the
+ * browser (see `sync.client.svelte.ts`), so an island shows empty rows server-side until it connects.
  */
-export function sync<Row = Record<string, unknown>>(_table: string, _params?: Record<string, unknown>): MochiSyncHandle<Row> {
+export function sync<Row = Record<string, unknown>>(_table: string, _params?: Record<string, unknown>, _opts?: MochiSyncOptions_Client): MochiSyncHandle<Row> {
   return {
     rows: [] as Row[],
     status: 'connecting',
@@ -16,5 +16,14 @@ export function sync<Row = Record<string, unknown>>(_table: string, _params?: Re
     remove: () => {},
     loadMore: () => {},
     destroy: () => {},
+  };
+}
+
+export function syncConnection(_name = 'default'): MochiSyncConnection {
+  return {
+    online: true,
+    status: 'connecting',
+    pending: 0,
+    setOnline: () => {},
   };
 }

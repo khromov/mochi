@@ -93,3 +93,28 @@ export interface MochiSyncHandle<Row> {
   /** Release this handle's subscription (refcounted; the shared client stays up for other handles). */
   destroy(): void;
 }
+
+/** Options for `sync(table, params?, opts?)`. */
+export interface MochiSyncOptions_Client {
+  /**
+   * Which named connection this subscription rides. Each name gets its own client, WebSocket, and local store, so two
+   * connections can diverge (e.g. one taken offline). Shared per name per tab. Default: `'default'`.
+   */
+  connection?: string;
+}
+
+/**
+ * A control handle for one named sync connection, from `syncConnection(name)`. `online`, `status`, and `pending` are
+ * reactive ($state-backed); `setOnline(false)` drops the socket while keeping local rows and queuing writes locally,
+ * and `setOnline(true)` reconnects and resyncs, delivering the queued writes.
+ */
+export interface MochiSyncConnection {
+  /** `false` while the connection is held offline via `setOnline(false)`. */
+  readonly online: boolean;
+  /** Connection status (`'disconnected'` while offline). */
+  readonly status: MochiSyncHandle<unknown>['status'];
+  /** Ops queued locally but not yet acknowledged by the server. */
+  readonly pending: number;
+  /** Take the connection offline (`false`) or bring it back online and resync (`true`). */
+  setOnline(value: boolean): void;
+}

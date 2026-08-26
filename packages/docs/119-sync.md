@@ -151,13 +151,43 @@ Inside a hydrated island, `sync<Row>(table)` returns a reactive handle. `rows`, 
 >
 ```
 
-`insert(payload, id?)` returns the row id. The handle also exposes `loadMore(count)` for windowed queries and `destroy()` (called automatically on component teardown). One client is shared per tab across every island.
+`insert(payload, id?)` returns the row id. The handle also exposes `loadMore(count)` for windowed queries and `destroy()` (called automatically on component teardown).
 
 <Callout type="warning">
 
-reflectdb keys subscriptions by table name, so a table has **one params set per tab** — the last `sync(table, params)` wins for that table. Split by table for independent parameterized views.
+reflectdb keys subscriptions by table name, so a table has **one params set per connection** — the last `sync(table, params)` wins for that table. Split by table for independent parameterized views.
 
 </Callout>
+
+### Connections
+
+Every island shares one connection by default (`'default'`) — one client, one socket, one local store per tab. Pass `{ connection }` to put an island on its own named connection, so two islands can hold **independent** state (each has its own client, socket, and local store):
+
+```ts
+const todos = sync<Todo>('todos', undefined, { connection: 'island-a' });
+```
+
+Connections are shared per name per tab, so two islands naming the same connection stay together.
+
+### Offline & resync
+
+`syncConnection(name?)` returns a control handle for a named connection (default `'default'`), with reactive `online`, `status`, and `pending`:
+
+```svelte
+<script lang="ts">
+  import { sync, syncConnection } from 'mochi-framework';
+
+  const todos = sync<Todo>('todos', undefined, { connection: 'island-a' });
+  const conn = syncConnection('island-a');
+</script>
+
+<button onclick={() => conn.setOnline(!conn.online)}>
+  {conn.online ? 'Go offline' : 'Go online'}
+</button>
+<p>{conn.status}{conn.pending ? ` · ${conn.pending} queued` : ''}</p>
+```
+
+`setOnline(false)` drops the socket while keeping local rows; writes made offline queue locally (watch `pending` climb) and stop reaching the server or other connections. `setOnline(true)` reconnects, resyncs a fresh snapshot, and pushes the queued writes — every side converges.
 
 ### Server-side writes
 

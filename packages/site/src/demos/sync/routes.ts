@@ -5,6 +5,13 @@ import { queries, type Todo } from './schema';
 
 // A per-server in-memory store keyed by table. Real apps back this with a database; a Map keeps the demo self-contained.
 const todos = new Map<string, Todo>();
+for (const todo of [
+  { id: 'seed-1', text: 'Try the offline toggle', done: false },
+  { id: 'seed-2', text: 'Add a todo in the other island', done: false },
+  { id: 'seed-3', text: 'Watch both islands stay in sync', done: true },
+] satisfies Todo[]) {
+  todos.set(todo.id, todo);
+}
 
 function isValidTodo(payload: Record<string, unknown> | null): payload is Partial<Todo> {
   if (!payload) {

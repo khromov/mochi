@@ -1,9 +1,10 @@
 import { onDestroy } from 'svelte';
 import { SyncClient, pushSafely } from 'reflectdb/client';
 import type { SyncClientState } from 'reflectdb/client';
+import type { ClientMessage, ClientTransport, ServerMessage } from 'reflectdb';
 import { createWsClientTransport } from 'reflectdb/transport/ws';
 import { pinGlobal } from '../utils/globalState';
-import type { MochiSyncHandle } from './types';
+import type { MochiSyncConnection, MochiSyncHandle, MochiSyncOptions_Client } from './types';
 
 type Status = MochiSyncHandle<unknown>['status'];
 
@@ -26,7 +27,9 @@ function wsUrl(path: string): string {
 
 // crypto.randomUUID only exists in secure contexts (https/localhost); plain-http LAN dev needs the getRandomValues path.
 function randomId(): string {
-  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  if (typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   bytes[6] = (bytes[6]! & 0x0f) | 0x40;
   bytes[8] = (bytes[8]! & 0x3f) | 0x80;
@@ -34,7 +37,7 @@ function randomId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-function loadClientId(): string {
+function baseClientId(): string {
   try {
     const key = '__mochi_sync_client_id__';
     let id = localStorage.getItem(key);
@@ -75,6 +78,62 @@ function mapStatus(state: SyncClientState): Status {
   }
 }
 
+/**
+ * A client transport whose socket can be dropped and recreated on demand. Going offline closes and discards the
+ * underlying `createWsClientTransport` (so the server session ends and no deltas arrive) without feeding the
+ * SyncClient a `disconnect` message — that would trigger reflectdb's own backoff reconnect and fight this control.
+ * While offline `send` throws, so `doPush` clears its in-flight marks and the ops stay cleanly pending for the next
+ * push after reconnect.
+ */
+class ManagedTransport implements ClientTransport {
+  private inner: (ClientTransport & { getSocket(): WebSocket | null }) | null = null;
+  private handler: ((message: ServerMessage) => void) | null = null;
+  online = true;
+
+  constructor(private url: string) {}
+
+  private ensureInner(): ClientTransport {
+    if (!this.inner) {
+      this.inner = createWsClientTransport({ url: this.url });
+      if (this.handler) {
+        this.inner.subscribe(this.handler);
+      }
+    }
+    return this.inner;
+  }
+
+  setOnline(value: boolean): void {
+    if (value === this.online) {
+      return;
+    }
+    this.online = value;
+    if (!value) {
+      void this.inner?.close();
+      this.inner = null;
+    }
+  }
+
+  async send(message: ClientMessage): Promise<void> {
+    if (!this.online) {
+      throw new Error('sync connection is offline');
+    }
+    return this.ensureInner().send(message);
+  }
+
+  subscribe(handler: (message: ServerMessage) => void): void {
+    this.handler = handler;
+    if (this.inner) {
+      this.inner.subscribe(handler);
+    }
+  }
+
+  async close(): Promise<void> {
+    this.online = false;
+    await this.inner?.close();
+    this.inner = null;
+  }
+}
+
 class TableState {
   rows = $state<Record<string, unknown>[]>([]);
   status = $state<Status>('connecting');
@@ -84,11 +143,26 @@ class TableState {
   unsub: (() => void) | null = null;
 }
 
-class SyncManager {
-  private clientId = loadClientId();
+/**
+ * One named sync connection: its own SyncClient, WebSocket, clientId, and per-table state. Two connections in the
+ * same tab are fully independent, so one can be taken offline and diverge from the other before resyncing.
+ */
+class SyncConnection {
+  private clientId: string;
+  private transport: ManagedTransport;
   private client: SyncClient | null = null;
   private ready: Promise<SyncClient> | null = null;
   private tables = new Map<string, TableState>();
+
+  online = $state(true);
+  connStatus = $state<Status>('connecting');
+  connPending = $state(0);
+
+  constructor(name: string) {
+    // Namespace the clientId per connection so reflectdb server sessions and client stores never collide.
+    this.clientId = `${baseClientId()}:${name}`;
+    this.transport = new ManagedTransport(wsUrl(endpoints().w));
+  }
 
   private ensureReady(): Promise<SyncClient> {
     if (this.ready) {
@@ -96,10 +170,9 @@ class SyncManager {
     }
     this.ready = (async () => {
       const token = await fetchTicket();
-      const transport = createWsClientTransport({ url: wsUrl(endpoints().w) });
       const client = new SyncClient({
         clientId: this.clientId,
-        transport,
+        transport: this.transport,
         token,
         onReauth: fetchTicket,
         onError: () => this.markError(),
@@ -114,6 +187,13 @@ class SyncManager {
     return this.ready;
   }
 
+  private statusOf(): Status {
+    if (!this.online) {
+      return 'disconnected';
+    }
+    return this.client ? mapStatus(this.client.getState()) : 'connecting';
+  }
+
   private refreshTable(table: string): void {
     const state = this.tables.get(table);
     if (!state || !this.client) {
@@ -121,16 +201,15 @@ class SyncManager {
     }
     state.rows = this.client.getRows(table);
     state.total = this.client.getTotalCount(table);
-    state.status = mapStatus(this.client.getState());
+    state.status = this.statusOf();
     state.pending = this.client.getPendingCount();
   }
 
   private refreshStatus(): void {
-    if (!this.client) {
-      return;
-    }
-    const status = mapStatus(this.client.getState());
-    const pending = this.client.getPendingCount();
+    const status = this.statusOf();
+    const pending = this.client?.getPendingCount() ?? 0;
+    this.connStatus = status;
+    this.connPending = pending;
     for (const state of this.tables.values()) {
       state.status = status;
       state.pending = pending;
@@ -141,9 +220,14 @@ class SyncManager {
     for (const table of this.tables.keys()) {
       this.refreshTable(table);
     }
+    this.refreshStatus();
   }
 
   private markError(): void {
+    if (!this.online) {
+      return;
+    }
+    this.connStatus = 'error';
     for (const state of this.tables.values()) {
       state.status = 'error';
     }
@@ -195,13 +279,64 @@ class SyncManager {
     this.ensureReady()
       .then((client) => {
         fn(client);
-        if (push) {
-          // insert/update/delete only queue a pending op locally — pushSafely transmits it (and coalesces bursts).
+        // insert/update/delete only queue a pending op locally — pushSafely transmits it. Skip the push while offline
+        // (the send would throw and reflectdb would log it); the queued op ships on the reconnect re-push instead.
+        if (push && this.online) {
           void pushSafely(client);
         }
         this.refreshTable(table);
       })
       .catch(() => this.markError());
+  }
+
+  setOnline(value: boolean): void {
+    if (value === this.online) {
+      return;
+    }
+    if (!value) {
+      this.transport.setOnline(false);
+      this.online = false;
+      this.refreshStatus();
+      return;
+    }
+
+    this.transport.setOnline(true);
+    this.online = true;
+    this.refreshStatus();
+    // Drive reflectdb's reconnect sequence explicitly: reconnect, re-declare every subscription, pull a fresh
+    // snapshot, and push the ops queued while offline. A fresh push (in-flight marks were cleared on the failed
+    // offline sends) re-sends everything pending.
+    void (async () => {
+      const client = this.client ?? (await this.ensureReady());
+      try {
+        await client.connect();
+        await Promise.allSettled([...this.tables.keys()].map((table) => client.sync(table)));
+        client.scheduleBootstrap();
+        await client.push();
+      } catch {
+        this.markError();
+      }
+      this.refreshAll();
+    })();
+  }
+
+  connection(): MochiSyncConnection {
+    // Reactive getters over the connection's $state, plus the offline/online control.
+    const self = this;
+    return {
+      get online() {
+        return self.online;
+      },
+      get status() {
+        return self.connStatus;
+      },
+      get pending() {
+        return self.connPending;
+      },
+      setOnline(value: boolean) {
+        self.setOnline(value);
+      },
+    };
   }
 
   sync<Row>(table: string, params?: Record<string, unknown>): MochiSyncHandle<Row> {
@@ -244,23 +379,47 @@ class SyncManager {
   }
 }
 
-function manager(): SyncManager {
-  return pinGlobal('__mochi_sync_client__', () => new SyncManager());
+class SyncRegistry {
+  private connections = new Map<string, SyncConnection>();
+
+  get(name: string): SyncConnection {
+    let connection = this.connections.get(name);
+    if (!connection) {
+      connection = new SyncConnection(name);
+      this.connections.set(name, connection);
+    }
+    return connection;
+  }
+}
+
+function registry(): SyncRegistry {
+  return pinGlobal('__mochi_sync_client__', () => new SyncRegistry());
 }
 
 /**
  * Subscribe an island to a live sync table. Returns a reactive handle whose `rows`/`status`/`pending`/`total` update
- * as the shared per-tab client syncs, plus optimistic `insert`/`update`/`remove`/`loadMore` mutators.
+ * as the connection syncs, plus optimistic `insert`/`update`/`remove`/`loadMore` mutators.
  *
- * v1 limitation: reflectdb keys subscriptions by table name, so one params set per table per tab — the last `sync()`
- * call for a table wins its params.
+ * Pass `{ connection }` to ride a named connection (each name has its own client, socket, and local store, shared per
+ * name per tab); omit it for the shared `'default'` connection. reflectdb keys subscriptions by table name, so one
+ * params set per table per connection — the last `sync()` call for a table wins its params.
  */
-export function sync<Row = Record<string, unknown>>(table: string, params?: Record<string, unknown>): MochiSyncHandle<Row> {
-  const handle = manager().sync<Row>(table, params);
+export function sync<Row = Record<string, unknown>>(table: string, params?: Record<string, unknown>, opts?: MochiSyncOptions_Client): MochiSyncHandle<Row> {
+  const handle = registry()
+    .get(opts?.connection ?? 'default')
+    .sync<Row>(table, params);
   try {
     onDestroy(() => handle.destroy());
   } catch {
     // Called outside a component init — the caller owns destroy().
   }
   return handle;
+}
+
+/**
+ * Control handle for a named sync connection (default `'default'`). Reactive `online`/`status`/`pending`, plus
+ * `setOnline(false)` to drop the socket while queuing local writes and `setOnline(true)` to reconnect and resync.
+ */
+export function syncConnection(name = 'default'): MochiSyncConnection {
+  return registry().get(name).connection();
 }

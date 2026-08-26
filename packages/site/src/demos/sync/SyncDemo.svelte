@@ -9,12 +9,12 @@
 
 <DemoPage
   title="Realtime sync"
-  description="Two independent islands share one live todo list over a WebSocket. Add or toggle a todo in one and it appears in the other — the server is authoritative, writes are optimistic, and every tab stays in sync."
+  description="Two islands, each on its own connection, share one live todo list over a WebSocket. Add or toggle a todo in one and it appears in the other. Take an island offline to watch it diverge — its writes queue locally — then bring it back online to reconnect and converge."
   {sources}
 >
   <div class="sync-grid">
-    <TodoList label="Island A" mochi:hydrate />
-    <TodoList label="Island B" mochi:hydrate />
+    <TodoList label="Island A" connection="island-a" mochi:hydrate />
+    <TodoList label="Island B" connection="island-b" mochi:hydrate />
   </div>
 </DemoPage>
 
