@@ -5,7 +5,7 @@ import { mochiEvents } from '../events';
 import type { MochiCaptchaReason } from '../events';
 import { getCaptchaRuntime } from './config';
 import { CAPTCHA_AAD, deriveChain, powInput, leadingZeroBits } from './pow';
-import type { CaptchaResult, NonceStore } from './types';
+import type { CaptchaResult } from './types';
 
 // The chain and proof-of-work are re-derived here with node:crypto while the widget uses the sync JS implementation in
 // pow.ts. Keeping the two independent lets pow.test.ts assert they agree, checking the JS digest against a known-good
@@ -51,16 +51,10 @@ export function mintCaptcha(options?: { bits?: number; solveBudgetMs?: number })
   return { token, bits, solveBudgetMs };
 }
 
-/**
- * Verify the `captcha_token` / `captcha_pow` fields `<MochiCaptcha />` adds to the form, consuming the one-time nonce on
- * success unless `consume: false`, where you call {@link consumeCaptcha} once the submission is committed. A failure
- * carries a ready-to-render `error` plus a `reason` for your own copy — see {@link CaptchaFailureReason} for why
- * `reason` is deliberately coarse. `minAgeMs` overrides the configured timing floor for this call alone — for flows with
- * nothing to fill in (protection mode's auto-solve submits the instant the proof-of-work lands); being explicit and
- * per-call, it also bypasses the app-wide `captcha:minAgeMs` filter. `minBits` refuses tokens minted below a difficulty
- * floor — without it, any endpoint minting easier tokens (a low-bits form captcha) devalues a harder one's proof.
- */
-function parseCaptchaClaims(opened: string): { iat: number; nonce: string; bits: number } | null {
+function parseCaptchaClaims(opened: string | null): { iat: number; nonce: string; bits: number } | null {
+  if (opened === null) {
+    return null;
+  }
   try {
     const parsed = JSON.parse(opened) as { iat?: unknown; nonce?: unknown; bits?: unknown };
     if (typeof parsed.iat !== 'number' || typeof parsed.nonce !== 'string' || typeof parsed.bits !== 'number') {
@@ -79,10 +73,6 @@ function captchaPowSatisfies(token: string, pow: string, bits: number): boolean 
   return leadingZeroBits(createHash('sha256').update(powInput(challenge, pow)).digest()) >= bits;
 }
 
-async function captchaReplayRejected(store: NonceStore, consume: boolean | undefined, nonce: string, expiresAt: number): Promise<boolean> {
-  return consume !== false && !(await store.consume(nonce, expiresAt));
-}
-
 function resolveCaptchaMinAgeMs(override: number | undefined, resolvedMin: number, limitMs: number, bits: number, ageMs: number): number {
   const minAgeMs = override ?? applyFilter('captcha:minAgeMs', resolvedMin, { bits, ageMs, limitMs });
   if (!Number.isFinite(minAgeMs) || minAgeMs < 0 || minAgeMs >= limitMs) {
@@ -91,15 +81,19 @@ function resolveCaptchaMinAgeMs(override: number | undefined, resolvedMin: numbe
   return minAgeMs;
 }
 
+/**
+ * Verify the `captcha_token` / `captcha_pow` fields `<MochiCaptcha />` adds to the form, consuming the one-time nonce on
+ * success unless `consume: false`, where you call {@link consumeCaptcha} once the submission is committed. A failure
+ * carries a ready-to-render `error` plus a `reason` for your own copy — see {@link CaptchaFailureReason} for why
+ * `reason` is deliberately coarse. `minAgeMs` overrides the configured timing floor for this call alone — for flows with
+ * nothing to fill in (protection mode's auto-solve submits the instant the proof-of-work lands); being explicit and
+ * per-call, it also bypasses the app-wide `captcha:minAgeMs` filter. `minBits` refuses tokens minted below a difficulty
+ * floor — without it, any endpoint minting easier tokens (a low-bits form captcha) devalues a harder one's proof.
+ */
 export async function verifyCaptcha(formData: FormData, options?: { consume?: boolean; minAgeMs?: number; minBits?: number }): Promise<CaptchaResult> {
   const token = String(formData.get('captcha_token') ?? '');
   const pow = String(formData.get('captcha_pow') ?? '');
-  const opened = token ? decryptPayload(token, { aad: CAPTCHA_AAD }) : null;
-  if (opened === null) {
-    return reject('malformed');
-  }
-
-  const claims = parseCaptchaClaims(opened);
+  const claims = parseCaptchaClaims(token ? decryptPayload(token, { aad: CAPTCHA_AAD }) : null);
   if (claims === null) {
     return reject('malformed');
   }
@@ -132,7 +126,7 @@ export async function verifyCaptcha(formData: FormData, options?: { consume?: bo
   // Tracks the acceptance bound rather than `maxAgeMs`: a token accepted inside the drift pad would otherwise carry an
   // already-past expiry, and both stores prune on `expiresAt < now`, sweeping the nonce back out so the token replays.
   const expiresAt = iat + limitMs;
-  if (await captchaReplayRejected(store, options?.consume, nonce, expiresAt)) {
+  if (options?.consume !== false && !(await store.consume(nonce, expiresAt))) {
     return reject('replay', { bits, ageMs });
   }
   mochiEvents.emit('captcha:verify', { ok: true, reason: 'ok', bits, ageMs });

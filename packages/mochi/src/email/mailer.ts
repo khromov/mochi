@@ -67,7 +67,6 @@ export function htmlToText(html: string): string {
   return decodeHtmlEntities(out).replace(/\s+/g, ' ').trim();
 }
 
-/** Send one transactional message through the configured transport, falling back to the `log` transport. Callable from route actions, API handlers, and queue jobs alike. */
 async function resolveEmailMessage(runtime: ReturnType<typeof getEmailRuntime>, message: MochiEmailMessage): Promise<ResolvedEmailMessage> {
   const from = message.from ?? runtime.options.from;
   if (!from) {
@@ -107,6 +106,7 @@ async function resolveEmailMessage(runtime: ReturnType<typeof getEmailRuntime>, 
   };
 }
 
+/** Send one transactional message through the configured transport, falling back to the `log` transport. Callable from route actions, API handlers, and queue jobs alike. */
 export async function sendEmail(message: MochiEmailMessage): Promise<MochiEmailResult> {
   const runtime = getEmailRuntime();
   const { options } = runtime;

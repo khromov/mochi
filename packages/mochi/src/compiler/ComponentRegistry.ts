@@ -347,8 +347,20 @@ function indexHydratables(hydratables: HydratableComponent[]): {
   };
 }
 
-type BuildOutputsMeta = Record<string, { entryPoint?: string; inputs: Record<string, unknown>; imports?: { path: string }[]; bytes?: number }>;
 type ClientBuildMetafile = NonNullable<Awaited<ReturnType<typeof Bun.build>>['metafile']>;
+type BuildOutputsMeta = ClientBuildMetafile['outputs'];
+
+// Everything one compile batch accumulates in the build plugin's onLoad hooks and consumes after the build. Passed as
+// one object so the structurally-identical hydratable/server-island maps can never be transposed between call sites.
+interface CompileBatch {
+  cssMap: Map<string, string>;
+  importedCssPaths: Set<string>;
+  allHydratables: HydratableComponent[];
+  allServerIslands: ServerIslandComponent[];
+  fileHydratables: Map<string, HydratableComponent[]>;
+  fileServerIslands: Map<string, ServerIslandComponent[]>;
+  filePreprocessErrors: Map<string, PreprocessIslandError[]>;
+}
 
 export class ComponentRegistry {
   private compiledComponents: Map<
@@ -551,14 +563,13 @@ export class ComponentRegistry {
     if (exclude.length === 0) {
       return 0;
     }
-    const cwd = process.cwd();
     const globs = exclude.map((p) => new Bun.Glob(p));
     let excluded = 0;
     // Snapshot the keys: the loop deletes from `shaken` while iterating it.
     // oxlint-disable-next-line no-useless-spread
     for (const id of [...shaken.keys()]) {
       // Glob patterns are written with forward slashes, so match against POSIX-ified paths or Windows never excludes anything.
-      const rel = toPosixPath(path.relative(cwd, id));
+      const rel = relForDisplay(id);
       // Excluded files compile from original source. Safe regardless: the whole-app scan still covered them as call sites of other components.
       if (globs.some((g) => g.match(rel) || g.match(toPosixPath(id)))) {
         shaken.delete(id);
@@ -659,15 +670,18 @@ export class ComponentRegistry {
     }
     const compileStart = performance.now();
 
-    const cssMap = new Map<string, string>();
-    const importedCssPaths = new Set<string>();
-    const allHydratables: HydratableComponent[] = [];
-    const allServerIslands: ServerIslandComponent[] = [];
+    const batch: CompileBatch = {
+      cssMap: new Map(),
+      importedCssPaths: new Set(),
+      allHydratables: [],
+      allServerIslands: [],
+      fileHydratables: new Map(),
+      fileServerIslands: new Map(),
+      filePreprocessErrors: new Map(),
+    };
+    const { cssMap, importedCssPaths, allHydratables, allServerIslands, fileHydratables, fileServerIslands, filePreprocessErrors } = batch;
     const preprocessCacheStats = createPreprocessCacheStats();
     const compileCacheStats = createCompileCacheStats();
-    const fileHydratables = new Map<string, HydratableComponent[]>();
-    const fileServerIslands = new Map<string, ServerIslandComponent[]>();
-    const filePreprocessErrors = new Map<string, PreprocessIslandError[]>();
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
     const backend = await resolveSvelteCompiler(this.svelteCompiler);
@@ -823,11 +837,11 @@ export class ComponentRegistry {
       throw: false,
     });
 
-    this.recordPreprocessErrors(filePreprocessErrors, fileHydratables, fileServerIslands);
+    this.recordPreprocessErrors(batch);
 
     this.warnOnBarrelImports(result.metafile);
 
-    this.detectNestedIslandErrors(fileHydratables, fileServerIslands, allHydratables);
+    this.detectNestedIslandErrors(batch);
 
     if (!result.success) {
       const message = `Svelte SSR build failed:\n${formatBuildMessages(result.logs)}`;
@@ -841,14 +855,15 @@ export class ComponentRegistry {
       throw new Error(message);
     }
 
-    await this.registerCompiledEntries(todo, result.metafile?.outputs ?? {}, compileOutDir, fileHydratables, fileServerIslands, cssMap, importedCssPaths, compileStart);
+    await this.registerCompiledEntries(todo, result.metafile?.outputs ?? {}, compileOutDir, batch, compileStart);
 
     mochiEvents.emit('compile:batch-complete', {
       count: todo.length,
       durationMs: performance.now() - compileStart,
     });
 
-    emitCompileCacheSummaries(preprocessCacheStats, compileCacheStats);
+    emitCacheSummary('preprocess-cache:summary', preprocessCacheStats);
+    emitCacheSummary('compile-cache:summary', compileCacheStats);
 
     await this.writeComponentCss(cssMap);
 
@@ -885,11 +900,8 @@ export class ComponentRegistry {
   // a fixed mistake keeps 500-ing every page until a restart and an unfixed one is duplicated on every save. Runs BEFORE
   // the `result.success` throw on purpose: the hydration maps come from the svelte `onLoad`, which fires for every entry
   // before Bun resolves transitive JS deps, so a later bundler failure must not swallow a structural error already detected.
-  private recordPreprocessErrors(
-    filePreprocessErrors: Map<string, PreprocessIslandError[]>,
-    fileHydratables: Map<string, HydratableComponent[]>,
-    fileServerIslands: Map<string, ServerIslandComponent[]>,
-  ): void {
+  private recordPreprocessErrors(batch: CompileBatch): void {
+    const { filePreprocessErrors, fileHydratables, fileServerIslands } = batch;
     this.errors = this.errors.filter(
       (e) =>
         !(e.kind === 'nested-hydration' && fileHydratables.has(e.parentPath)) &&
@@ -919,11 +931,8 @@ export class ComponentRegistry {
 
   // Detect nested hydration and server-islands-inside-hydratables — both one file deep: a hydratable subtree can't
   // contain another hydratable directive or a server island, which the client can't render on hydration.
-  private detectNestedIslandErrors(
-    fileHydratables: Map<string, HydratableComponent[]>,
-    fileServerIslands: Map<string, ServerIslandComponent[]>,
-    allHydratables: HydratableComponent[],
-  ): void {
+  private detectNestedIslandErrors(batch: CompileBatch): void {
+    const { fileHydratables, fileServerIslands, allHydratables } = batch;
     const hydratablePaths = new Set(allHydratables.map((h) => h.resolvedPath));
     for (const [filePath, children] of fileHydratables) {
       if (hydratablePaths.has(filePath) && children.length > 0) {
@@ -937,6 +946,9 @@ export class ComponentRegistry {
       }
     }
 
+    // A server island inside a hydratable subtree can never work: client bundles skip the island preprocessor, so on
+    // hydration the client renders the raw child where SSR emitted a placeholder (observed: HYDRATION_ERROR + client
+    // remount wiping the island). Same one-file-deep limitation as the nested-hydration guard above.
     for (const [filePath, children] of fileServerIslands) {
       if (hydratablePaths.has(filePath) && children.length > 0) {
         const parent = allHydratables.find((h) => h.resolvedPath === filePath)!;
@@ -954,16 +966,8 @@ export class ComponentRegistry {
   // hydratables/CSS/server-islands, and dev-watcher dep tracking. `outputs[outKey].inputs` is the flat record of every
   // source file that fed a chunk — stable to compare against `cssMap`/`importedCssPaths`, unlike the importer-relative
   // `inputs[].imports[].path`.
-  private async registerCompiledEntries(
-    todo: string[],
-    outputsMeta: BuildOutputsMeta,
-    compileOutDir: string,
-    fileHydratables: Map<string, HydratableComponent[]>,
-    fileServerIslands: Map<string, ServerIslandComponent[]>,
-    cssMap: Map<string, string>,
-    importedCssPaths: Set<string>,
-    compileStart: number,
-  ): Promise<void> {
+  private async registerCompiledEntries(todo: string[], outputsMeta: BuildOutputsMeta, compileOutDir: string, batch: CompileBatch, compileStart: number): Promise<void> {
+    const { fileHydratables, fileServerIslands, cssMap, importedCssPaths } = batch;
     const entryToOutKey = new Map<string, string>();
     for (const [outKey, outMeta] of Object.entries(outputsMeta)) {
       if (outMeta.entryPoint) {
@@ -1295,14 +1299,7 @@ export class ComponentRegistry {
       durationMs: performance.now() - bundleStart,
     });
 
-    const compileCacheFiles = compileCacheStats.hits + compileCacheStats.misses;
-    if (compileCacheFiles > 0) {
-      mochiEvents.emit('compile-cache:summary', {
-        hits: compileCacheStats.hits,
-        misses: compileCacheStats.misses,
-        files: compileCacheFiles,
-      });
-    }
+    emitCacheSummary('compile-cache:summary', compileCacheStats);
   }
 
   // Map each client-build entry-point output back to its component (or the bootstrap) via metafile.entryPoint, avoiding
@@ -1549,7 +1546,7 @@ export class ComponentRegistry {
 
     const debugBarData = this.buildRenderDebugBarData(ctx, hydratables.length > 0, renderedIslandNames);
 
-    const { cssUrls, fontPreloadUrls } = this.collectRenderCssUrls(entryKey, cssComponents, islandPaths, hydratablesByPath, lazyIslandPaths, renderedIslandNames);
+    const { cssUrls, fontPreloadUrls } = this.collectRenderCssUrls({ entryKey, cssComponents, islandPaths, hydratablesByPath, lazyIslandPaths, renderedIslandNames });
 
     // Collapse the doubled-marker Svelte SSR bug (`$state` arrays + `{@attach}`); only island wrappers can carry it,
     // so island-free renders skip the scan.
@@ -1559,7 +1556,7 @@ export class ComponentRegistry {
       body: normalized,
       head: shouldStrip ? stripHydrationMarkers(headStr) : headStr,
       cssUrls,
-      fontPreloadUrls: [...fontPreloadUrls],
+      fontPreloadUrls,
       // Gated on wrappers actually present in the output — the entry's compile-time hydratables may all sit in branches
       // this render never took.
       bootstrapUrl: renderedIslandNames.size > 0 ? this.islandBootstrapUrl : null,
@@ -1570,14 +1567,21 @@ export class ComponentRegistry {
 
   // Scoped CSS URLs for this render: each component's own stylesheet, minus lazy islands and islands that didn't render,
   // plus the side-effect CSS imports reachable from the entry and their font preloads.
-  private collectRenderCssUrls(
-    entryKey: string,
-    cssComponents: Set<string>,
-    islandPaths: Set<string>,
-    hydratablesByPath: Map<string, HydratableComponent[]>,
-    lazyIslandPaths: Set<string>,
-    renderedIslandNames: Set<string>,
-  ): { cssUrls: string[]; fontPreloadUrls: string[] } {
+  private collectRenderCssUrls({
+    entryKey,
+    cssComponents,
+    islandPaths,
+    hydratablesByPath,
+    lazyIslandPaths,
+    renderedIslandNames,
+  }: {
+    entryKey: string;
+    cssComponents: Set<string>;
+    islandPaths: Set<string>;
+    hydratablesByPath: Map<string, HydratableComponent[]>;
+    lazyIslandPaths: Set<string>;
+    renderedIslandNames: Set<string>;
+  }): { cssUrls: string[]; fontPreloadUrls: string[] } {
     const cssUrls: string[] = [];
     for (const componentPath of cssComponents) {
       const cssUrl = this.cssFileUrls.get(componentPath);
@@ -2555,7 +2559,6 @@ function resolveExportedComponent(mod: { default: any } & Record<string, any>, e
   return component;
 }
 
-// One virtual client entry per island: import the component (default or named) and register it under its island key.
 function buildIslandEntrypoints(
   unique: Map<string, HydratableComponent>,
   hydratableIslandPath: string,
@@ -2577,14 +2580,10 @@ function buildIslandEntrypoints(
   return { entrypoints, filesMap };
 }
 
-function emitCompileCacheSummaries(preprocessCacheStats: { hits: number; misses: number }, compileCacheStats: { hits: number; misses: number }): void {
-  const files = preprocessCacheStats.hits + preprocessCacheStats.misses;
+function emitCacheSummary(event: 'preprocess-cache:summary' | 'compile-cache:summary', stats: { hits: number; misses: number }): void {
+  const files = stats.hits + stats.misses;
   if (files > 0) {
-    mochiEvents.emit('preprocess-cache:summary', { hits: preprocessCacheStats.hits, misses: preprocessCacheStats.misses, files });
-  }
-  const compileCacheFiles = compileCacheStats.hits + compileCacheStats.misses;
-  if (compileCacheFiles > 0) {
-    mochiEvents.emit('compile-cache:summary', { hits: compileCacheStats.hits, misses: compileCacheStats.misses, files: compileCacheFiles });
+    mochiEvents.emit(event, { hits: stats.hits, misses: stats.misses, files });
   }
 }
 

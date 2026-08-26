@@ -636,7 +636,7 @@ function producerMethods<T>(name: string): MochiQueue<T> {
   };
 }
 
-const QUEUE_NAME_RE = /^[\w.\-/]+$/;
+export const QUEUE_NAME_RE = /^[\w.\-/]+$/;
 
 function noStorageError(name: string): Error {
   return new Error(

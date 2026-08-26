@@ -104,7 +104,6 @@ export async function runPipeline(input: Uint8Array, size: ResolvedImageSize, op
   };
 }
 
-// resize → rotate → flip → flop → modulate → format-encode, in that fixed order.
 function applyImageTransforms(img: Bun.Image, size: ResolvedImageSize, width: number | undefined, height: number | undefined): Bun.Image {
   let pipe = img;
   if (width) {

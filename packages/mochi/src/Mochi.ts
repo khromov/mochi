@@ -44,6 +44,7 @@ import type {
   MochiWsConfig,
   MochiWsHandlers,
   MochiWsData,
+  AlsoHydrateMode,
 } from './types';
 import { isFormFail, isFormSuccess, isRedirect } from './runtime/forms';
 import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } from './runtime/formsJson';
@@ -91,6 +92,7 @@ import {
   startCronRuntime,
   stopCronRuntime,
   CRON_JITTER_MS,
+  QUEUE_NAME_RE,
 } from './queue';
 import { pinGlobal } from './utils/globalState';
 import { resetStartupMilestones } from './lifecycle';
@@ -180,22 +182,6 @@ function buildDebugHeadScripts(
   return { debugInfoScript, pageEntryScript };
 }
 
-function buildShellScripts(
-  bootstrapUrl: string | null | undefined,
-  hasServerIslands: boolean,
-  serverIslandScript: string,
-  debugBarUrl: string | null | undefined,
-  assetPrefixJson: string,
-  liveReloadTail: string,
-): string {
-  return (
-    (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
-    (hasServerIslands ? serverIslandScript : '') +
-    (debugBarUrl ? `<script type="module" src="${debugBarUrl}"></script><script>window.__mochi_asset_prefix=${assetPrefixJson}</script>` : '') +
-    liveReloadTail
-  );
-}
-
 // Reject before initMochiConfig pins the process singleton, so a bad `bun` passthrough fails fast without wedging it.
 function assertValidBunOverrides(options: MochiServeOptions): void {
   if (options.bun && typeof options.bun === 'object') {
@@ -207,22 +193,27 @@ function assertValidBunOverrides(options: MochiServeOptions): void {
   }
 }
 
+// The charset rule is queue.ts's QUEUE_NAME_RE, so serve-time validation can never drift from what ensureQueue accepts.
+function assertUniqueValidName(scope: 'queues' | 'cron', noun: 'queue' | 'cron job', name: unknown, seen: Set<string>): asserts name is string {
+  if (typeof name !== 'string' || !QUEUE_NAME_RE.test(name)) {
+    throw new Error(`Mochi.serve({ ${scope} }): "${String(name)}" is not a valid ${noun} name. Names may only contain letters, digits, underscores, dots, dashes, and slashes.`);
+  }
+  if (seen.has(name)) {
+    throw new Error(`Mochi.serve({ ${scope} }): two ${noun}s are named "${name}". ${noun.charAt(0).toUpperCase() + noun.slice(1)} names must be unique.`);
+  }
+  seen.add(name);
+}
+
 function assertValidQueueNames(declaredQueues: NonNullable<MochiServeOptions['queues']>): void {
   const queueNames = new Set<string>();
   for (const config of declaredQueues) {
     if (!isMochiQueue(config)) {
       throw new Error(`Mochi.serve({ queues }): every element must be a descriptor created with Mochi.queue(name, …).`);
     }
-    if (typeof config.name !== 'string' || !/^[\w.\-/]+$/.test(config.name)) {
-      throw new Error(`Mochi.serve({ queues }): "${config.name}" is not a valid queue name. Names may only contain letters, digits, underscores, dots, dashes, and slashes.`);
-    }
+    assertUniqueValidName('queues', 'queue', config.name, queueNames);
     if (config.name.startsWith('cron-')) {
       throw new Error(`Mochi.serve({ queues }): "${config.name}" uses the reserved "cron-" prefix — that namespace is for scheduled jobs (Mochi.cron). Rename the queue.`);
     }
-    if (queueNames.has(config.name)) {
-      throw new Error(`Mochi.serve({ queues }): two queues are named "${config.name}". Queue names must be unique.`);
-    }
-    queueNames.add(config.name);
     // Descriptor form is self-sufficient — the target is ensured on its own; only a bare name needs the array.
     const deadLetter = config.options?.deadLetter;
     if (typeof deadLetter === 'string' && !declaredQueues.some((q) => q.name === deadLetter)) {
@@ -285,13 +276,7 @@ function resolveCronConfig(options: MochiServeOptions): { declaredCron: NonNulla
     if (!isMochiCron(job)) {
       throw new Error(`Mochi.serve({ cron }): every element must be a descriptor created with Mochi.cron(name, schedule, …).`);
     }
-    if (typeof job.name !== 'string' || !/^[\w.\-/]+$/.test(job.name)) {
-      throw new Error(`Mochi.serve({ cron }): "${job.name}" is not a valid cron job name. Names may only contain letters, digits, underscores, dots, dashes, and slashes.`);
-    }
-    if (cronNames.has(job.name)) {
-      throw new Error(`Mochi.serve({ cron }): two cron jobs are named "${job.name}". Cron job names must be unique.`);
-    }
-    cronNames.add(job.name);
+    assertUniqueValidName('cron', 'cron job', job.name, cronNames);
   }
   // Independent of queueStorage: cron always runs on its own bun-boss instance, defaulting to in-process memory.
   const cronStorage = options.cronStorage ?? 'memory';
@@ -313,14 +298,10 @@ function assertServerPropsShape(resolved: Record<string, unknown>, pattern: stri
   }
 }
 
-function fillShellParts(parts: ShellPart[], head: string, css: string, body: string, script: string): string {
+function fillShellParts(parts: ShellPart[], slots: { head: string; css: string; body: string; script: string }): string {
   let out = '';
   for (const part of parts) {
-    if ('text' in part) {
-      out += part.text;
-    } else {
-      out += part.slot === 'head' ? head : part.slot === 'css' ? css : part.slot === 'body' ? body : script;
-    }
+    out += 'text' in part ? part.text : slots[part.slot];
   }
   return out;
 }
@@ -350,6 +331,50 @@ async function appendDebugTail(response: Response, ctx: MochiRequestContext, dev
     statusText: response.statusText,
     headers: response.headers,
   });
+}
+
+// Wraps a server island's rendered body for the wire: the also-hydrate wrapper element, the self-hydration bootstrap
+// script, and `<link>`s for CSS first seen inside this deferred content.
+function finalizeIslandBody(
+  result: RenderResult,
+  island: { hydrateMode: AlsoHydrateMode | null; componentName: string; componentPath: string; props: Record<string, unknown> },
+  registry: ComponentRegistry,
+): string {
+  const { hydrateMode, componentName, componentPath, props } = island;
+  let body = result.body;
+
+  if (hydrateMode !== null) {
+    const componentUrl = registry.getComponentEntryUrl(componentName);
+    const serializedProps = devalueStringify(props);
+
+    let hydrateAttrs = `component-name="${componentName}"`;
+    if (Object.keys(props).length > 0) {
+      hydrateAttrs += ` props="${escapeHtmlAttr(serializedProps)}"`;
+    }
+    if (componentUrl) {
+      hydrateAttrs += ` component-url="${componentUrl}"`;
+    }
+
+    body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
+  }
+
+  // Appended whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain
+  // mochi:hydrate children, or inlined also-hydrate islands — so the fragment self-hydrates even on a page that
+  // shipped no bootstrap of its own; duplicate module scripts are no-ops by src.
+  const bootstrapUrl = result.bootstrapUrl ?? (hydrateMode !== null ? registry.getIslandBootstrapUrl() : null);
+  if (bootstrapUrl) {
+    body += `<script type="module" src="${bootstrapUrl}"></script>`;
+  }
+
+  // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`
+  // tags are prepended here along with side-effect CSS imports; browsers honour a `<link>` assigned via `innerHTML`.
+  // The island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
+  const ownCss = registry.getComponentCssUrl(componentPath);
+  const extraCss = result.cssUrls.filter((url) => url !== ownCss);
+  if (extraCss.length > 0) {
+    body = extraCss.map(cssLinkTag).join('') + body;
+  }
+  return body;
 }
 
 export class Mochi {
@@ -508,9 +533,13 @@ export class Mochi {
       const head = logLevelScript + warnShim + speculationRulesScript + result.head;
       const css = cssStylePrefix + cssLinks;
       const body = result.body + debugInfoScript + pageEntryScript + toolbarDiv;
-      const script = buildShellScripts(bootstrapUrl, result.hasServerIslands, serverIslandScript, debugBarUrl, assetPrefixJson, liveReloadTail);
+      const script =
+        (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
+        (result.hasServerIslands ? serverIslandScript : '') +
+        (debugBarUrl ? `<script type="module" src="${debugBarUrl}"></script><script>window.__mochi_asset_prefix=${assetPrefixJson}</script>` : '') +
+        liveReloadTail;
 
-      return fillShellParts(parts, head, css, body, script);
+      return fillShellParts(parts, { head, css, body, script });
     };
   }
 
@@ -990,6 +1019,74 @@ export class Mochi {
           return applyResolveOptions(response, resolveOpts);
         };
 
+        // Registration-scoped (not per-request) so each form POST reuses one finalizer; the per-request state arrives
+        // as explicit parameters instead of a capture web.
+        const finalizeActionResult = async (
+          result: MochiFormActionResult,
+          state: {
+            actionName: string;
+            enhanced: boolean;
+            ctx: MochiRequestContext;
+            req: Request;
+            event: MochiEvent;
+            resolveOpts: MochiResolveOptions | undefined;
+            emitActionComplete: (actionName: string, result: MochiActionResult, status?: number) => void;
+          },
+        ): Promise<Response> => {
+          const { actionName, enhanced, ctx, req, event, resolveOpts, emitActionComplete } = state;
+          if (result instanceof Response) {
+            emitActionComplete(actionName, 'success', result.status);
+            return applyResolveOptions(result, resolveOpts);
+          }
+          if (isRedirect(result)) {
+            emitActionComplete(actionName, 'redirect', result.status);
+            if (enhanced) {
+              return jsonRedirect(result.status, result.location);
+            }
+            const redirectResponse = new Response(null, {
+              status: result.status,
+              headers: { Location: result.location },
+            });
+            return applyResolveOptions(redirectResponse, resolveOpts);
+          }
+          try {
+            if (isFormFail(result)) {
+              if (enhanced) {
+                emitActionComplete(actionName, 'fail', result.status);
+                return jsonFailure(result.status, result.data);
+              }
+              ctx.form = {
+                ok: false,
+                action: actionName,
+                status: result.status,
+                data: result.data,
+              };
+              emitActionComplete(actionName, 'fail', result.status);
+              return await renderComponent(req, ctx, resolveOpts, result.status);
+            }
+            if (enhanced) {
+              emitActionComplete(actionName, 'success');
+              if (result === undefined || result === null) {
+                return jsonSuccess(undefined, { emptyResult: true });
+              }
+              return jsonSuccess(isFormSuccess(result) ? result.data : {});
+            }
+            const data = isFormSuccess(result) ? result.data : {};
+            ctx.form = { ok: true, action: actionName, data };
+            emitActionComplete(actionName, 'success');
+            return await renderComponent(req, ctx, resolveOpts);
+          } catch (err) {
+            if (enhanced) {
+              const response = await handleEnhancedError(err, event);
+              emitError('action', ctx.requestId, req, ctx.url, response.status, err, actionName);
+              return response;
+            }
+            const response = await routeErrorResponse(req, event, resolveOpts, err);
+            emitError('action', ctx.requestId, req, ctx.url, response.status, err, actionName);
+            return response;
+          }
+        };
+
         const wrapRequest = async (
           req: Request,
           server: Server<undefined>,
@@ -1072,60 +1169,6 @@ export class Mochi {
                   payload.status = status;
                 }
                 mochiEvents.emit('action:complete', payload);
-              };
-
-              const finalizeActionResult = async (result: MochiFormActionResult, actionName: string): Promise<Response> => {
-                if (result instanceof Response) {
-                  emitActionComplete(actionName, 'success', result.status);
-                  return applyResolveOptions(result, resolveOpts);
-                }
-                if (isRedirect(result)) {
-                  emitActionComplete(actionName, 'redirect', result.status);
-                  if (enhanced) {
-                    return jsonRedirect(result.status, result.location);
-                  }
-                  const redirectResponse = new Response(null, {
-                    status: result.status,
-                    headers: { Location: result.location },
-                  });
-                  return applyResolveOptions(redirectResponse, resolveOpts);
-                }
-                try {
-                  if (isFormFail(result)) {
-                    if (enhanced) {
-                      emitActionComplete(actionName, 'fail', result.status);
-                      return jsonFailure(result.status, result.data);
-                    }
-                    ctx.form = {
-                      ok: false,
-                      action: actionName,
-                      status: result.status,
-                      data: result.data,
-                    };
-                    emitActionComplete(actionName, 'fail', result.status);
-                    return await renderComponent(req, ctx, resolveOpts, result.status);
-                  }
-                  if (enhanced) {
-                    emitActionComplete(actionName, 'success');
-                    if (result === undefined || result === null) {
-                      return jsonSuccess(undefined, { emptyResult: true });
-                    }
-                    return jsonSuccess(isFormSuccess(result) ? result.data : {});
-                  }
-                  const data = isFormSuccess(result) ? result.data : {};
-                  ctx.form = { ok: true, action: actionName, data };
-                  emitActionComplete(actionName, 'success');
-                  return await renderComponent(req, ctx, resolveOpts);
-                } catch (err) {
-                  if (enhanced) {
-                    const response = await handleEnhancedError(err, event);
-                    emitError('action', ctx.requestId, req, ctx.url, response.status, err, actionName);
-                    return response;
-                  }
-                  const response = await routeErrorResponse(req, event, resolveOpts, err);
-                  emitError('action', ctx.requestId, req, ctx.url, response.status, err, actionName);
-                  return response;
-                }
               };
 
               const livePostActions = pageConfigMap ? pageConfigMap.get(pattern)?.actions : actions;
@@ -1211,7 +1254,7 @@ export class Mochi {
                 return response;
               }
 
-              return finalizeActionResult(result, actionName);
+              return finalizeActionResult(result, { actionName, enhanced, ctx, req, event, resolveOpts, emitActionComplete });
             });
 
           return {
@@ -1638,43 +1681,6 @@ export class Mochi {
         ctx.islandInline = { budget: applyFilter('serverIsland:inlineBudget', DEFAULT_INLINE_BUDGET, { componentName, request: req }) };
       }
 
-      const finalizeIslandBody = (result: RenderResult): string => {
-        let body = result.body;
-
-        if (isAlsoHydrateMode(hydrateMode)) {
-          const componentUrl = registry.getComponentEntryUrl(componentName);
-          const serializedProps = devalueStringify(props);
-
-          let hydrateAttrs = `component-name="${componentName}"`;
-          if (Object.keys(props as Record<string, unknown>).length > 0) {
-            hydrateAttrs += ` props="${escapeHtmlAttr(serializedProps)}"`;
-          }
-          if (componentUrl) {
-            hydrateAttrs += ` component-url="${componentUrl}"`;
-          }
-
-          body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
-        }
-
-        // Appended whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain
-        // mochi:hydrate children, or inlined also-hydrate islands — so the fragment self-hydrates even on a page that
-        // shipped no bootstrap of its own; duplicate module scripts are no-ops by src.
-        const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
-        if (bootstrapUrl) {
-          body += `<script type="module" src="${bootstrapUrl}"></script>`;
-        }
-
-        // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`
-        // tags are prepended here along with side-effect CSS imports; browsers honour a `<link>` assigned via `innerHTML`.
-        // The island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
-        const ownCss = registry.getComponentCssUrl(componentPath);
-        const extraCss = result.cssUrls.filter((url) => url !== ownCss);
-        if (extraCss.length > 0) {
-          body = extraCss.map(cssLinkTag).join('') + body;
-        }
-        return body;
-      };
-
       return requestContext.run(ctx, async () => {
         // A miss here means the build's eager discovery (see build.ts) didn't
         // find this island; `compileAll` warns about any manifest miss, so the
@@ -1722,7 +1728,7 @@ export class Mochi {
           });
         }
 
-        const body = finalizeIslandBody(result);
+        const body = finalizeIslandBody(result, { hydrateMode, componentName, componentPath, props: props as Record<string, unknown> }, registry);
 
         return new Response(body, {
           headers: {

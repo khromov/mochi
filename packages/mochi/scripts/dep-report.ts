@@ -45,13 +45,6 @@ function loadInstalledFromLock(): Set<string> {
   return installed;
 }
 
-/**
- * Bun's isolated install layout is `node_modules/.bun/<name>@<version>/node_modules/<name>/package.json`.
- * Scan the store once and index by package name (first hit wins on duplicates,
- * which is good enough for a counts report). For non-Bun installs (npm/pnpm hoisted)
- * fall back to scanning `node_modules/<name>/package.json` directly.
- */
-// Scan each glob under `cwd`, indexing every readable package.json by name (first hit wins).
 async function scanPackagesInto(index: Map<string, IndexEntry>, cwd: string, globs: Bun.Glob[]): Promise<void> {
   for (const glob of globs) {
     for await (const rel of glob.scan({ cwd })) {
@@ -68,6 +61,12 @@ async function scanPackagesInto(index: Map<string, IndexEntry>, cwd: string, glo
   }
 }
 
+/**
+ * Bun's isolated install layout is `node_modules/.bun/<name>@<version>/node_modules/<name>/package.json`.
+ * Scan the store once and index by package name (first hit wins on duplicates,
+ * which is good enough for a counts report). For non-Bun installs (npm/pnpm hoisted)
+ * fall back to scanning `node_modules/<name>/package.json` directly.
+ */
 async function indexPackages(): Promise<Map<string, IndexEntry>> {
   const index = new Map<string, IndexEntry>();
   // Scoped packages live one folder deeper (`<store>/<flat>/node_modules/@scope/<name>/`), so we need both glob depths.

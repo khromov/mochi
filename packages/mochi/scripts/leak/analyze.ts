@@ -79,7 +79,6 @@ export type VerdictInput = {
   latencyCreepPct: number; // (last-window p95 / first-window p95 - 1) * 100
 };
 
-// A GC dip is any sample whose RSS fell below its predecessor — evidence the heap is being reclaimed under load.
 function hasGcDip(samples: RssSample[]): boolean {
   for (let i = 1; i < samples.length; i++) {
     const cur = samples[i];
