@@ -253,7 +253,7 @@ export class MochiCache {
    */
   async whenIdle(): Promise<void> {
     while (this.inflight.size > 0) {
-      await Promise.allSettled([...this.inflight.values()]);
+      await Promise.allSettled(this.inflight.values());
     }
   }
 
