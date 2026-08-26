@@ -68,11 +68,8 @@ export function htmlToText(html: string): string {
 }
 
 /** Send one transactional message through the configured transport, falling back to the `log` transport. Callable from route actions, API handlers, and queue jobs alike. */
-export async function sendEmail(message: MochiEmailMessage): Promise<MochiEmailResult> {
-  const runtime = getEmailRuntime();
-  const { options } = runtime;
-
-  const from = message.from ?? options.from;
+async function resolveEmailMessage(runtime: ReturnType<typeof getEmailRuntime>, message: MochiEmailMessage): Promise<ResolvedEmailMessage> {
+  const from = message.from ?? runtime.options.from;
   if (!from) {
     throw new EmailError('No `from` address. Set a message `from` or configure `email.from` in Mochi.serve().');
   }
@@ -99,7 +96,7 @@ export async function sendEmail(message: MochiEmailMessage): Promise<MochiEmailR
   // `component`/`props` are stripped — already rendered into `html` — and the normalized fields are overridden, keeping
   // the raw `string`/array union and an unfilled `from` away from any transport.
   const { component: _component, props: _props, ...passthrough } = message;
-  const resolved: ResolvedEmailMessage = {
+  return {
     ...passthrough,
     from,
     to,
@@ -108,6 +105,13 @@ export async function sendEmail(message: MochiEmailMessage): Promise<MochiEmailR
     html,
     text,
   };
+}
+
+export async function sendEmail(message: MochiEmailMessage): Promise<MochiEmailResult> {
+  const runtime = getEmailRuntime();
+  const { options } = runtime;
+
+  const resolved = await resolveEmailMessage(runtime, message);
 
   // The seam for application code to rewrite an outgoing message — audit BCC, List-Unsubscribe headers, a staging
   // catch-all — or veto it by returning null. It runs before the transport, so the dev outbox and SMTP both deliver the

@@ -203,6 +203,14 @@ function parseWindow(window: string | number): number {
  * own `rateLimit` config, while the shared global limiter passes nothing and its routes share one bucket. An explicit
  * `group` wins, and is how you opt back into cross-route sharing.
  */
+function resolveHeaderConfig(headers: MochiRateLimitOptions['headers']): { standard: boolean; legacy: boolean; retryAfter: boolean } {
+  return {
+    standard: headers?.standard ?? true,
+    legacy: headers?.legacy ?? true,
+    retryAfter: headers?.retryAfter ?? true,
+  };
+}
+
 export function createRouteLimiter(options: MochiRateLimitOptions, autoGroup?: string): RouteLimiter {
   const store = options.store ?? memoryStore();
   const userKey = options.key;
@@ -223,11 +231,7 @@ export function createRouteLimiter(options: MochiRateLimitOptions, autoGroup?: s
     tiers: options.tiers,
     tier: userTier ? (req) => userTier(req, getRequestContext()) : undefined,
     response: options.response ?? { hitlimit: true, message: DEFAULT_MESSAGE },
-    headers: {
-      standard: options.headers?.standard ?? true,
-      legacy: options.headers?.legacy ?? true,
-      retryAfter: options.headers?.retryAfter ?? true,
-    },
+    headers: resolveHeaderConfig(options.headers),
     store,
     onStoreError: options.onStoreError ?? (() => 'allow'),
     skip: userSkip ? (req) => userSkip(req, getRequestContext()) : undefined,

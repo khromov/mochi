@@ -15,6 +15,50 @@ export function deserialize<Success extends MochiFormShape = MochiFormShape, Fai
 }
 
 // Shallow-cloning keeps attribute-named inputs like `<input name="action">` from shadowing real form properties on read.
+// An `<input type="file">` without `enctype="multipart/form-data"` silently coerces the file to its filename, or an
+// empty string, on the wire. See https://github.com/sveltejs/kit/issues/9819.
+function assertMultipartForFiles(formData: FormData, enctype: string): void {
+  if (enctype === 'multipart/form-data') {
+    return;
+  }
+  for (const value of formData.values()) {
+    if (typeof value !== 'string') {
+      throw new Error('Form contains <input type="file"> but is missing enctype="multipart/form-data". Native and enhanced submissions would behave differently.');
+    }
+  }
+}
+
+// POST the form as an enhanced action; returns the deserialized result, or null when the request was aborted mid-flight.
+async function performEnhancedSubmit<Success extends MochiFormShape, Failure extends MochiFormShape>(
+  action: URL,
+  enctype: string,
+  formData: FormData,
+  controller: AbortController,
+): Promise<MochiEnhanceResult<Success, Failure> | null> {
+  const headers = new Headers({ accept: 'application/json', 'x-mochi-action': 'true' });
+  // For multipart, leave Content-Type unset so fetch can generate the full `multipart/form-data; boundary=...` header —
+  // setting it ourselves would drop the boundary and the server couldn't parse the body.
+  if (enctype !== 'multipart/form-data') {
+    headers.set('Content-Type', enctype === 'text/plain' ? 'text/plain' : 'application/x-www-form-urlencoded');
+  }
+  // `URLSearchParams` accepts `FormData` at runtime via its iterable interface, but lib.dom.d.ts types it more narrowly.
+  // @ts-expect-error - FormData is iterable and accepted at runtime
+  const body: BodyInit = enctype === 'multipart/form-data' ? formData : new URLSearchParams(formData);
+  try {
+    const response = await fetch(action, { method: 'POST', headers, cache: 'no-store', body, signal: controller.signal });
+    const result = deserialize<Success, Failure>(await response.text());
+    if (result.type === 'error') {
+      result.status = response.status;
+    }
+    return result;
+  } catch (err: unknown) {
+    if ((err as { name?: string } | null)?.name === 'AbortError') {
+      return null;
+    }
+    return { type: 'error', error: err };
+  }
+}
+
 function clone<T extends HTMLElement>(element: T): T {
   return HTMLElement.prototype.cloneNode.call(element) as T;
 }
@@ -82,15 +126,7 @@ export function enhance<Success extends MochiFormShape = MochiFormShape, Failure
       const enctype = submitter?.hasAttribute('formenctype') ? submitter.formEnctype : formClone.enctype;
       const formData = new FormData(formElement, submitter);
 
-      // An `<input type="file">` without `enctype="multipart/form-data"` silently coerces the file to its filename, or
-      // an empty string, on the wire. See https://github.com/sveltejs/kit/issues/9819.
-      if (enctype !== 'multipart/form-data') {
-        for (const value of formData.values()) {
-          if (typeof value !== 'string') {
-            throw new Error('Form contains <input type="file"> but is missing enctype="multipart/form-data". Native and enhanced submissions would behave differently.');
-          }
-        }
-      }
+      assertMultipartForFiles(formData, enctype);
 
       const controller = new AbortController();
 
@@ -115,41 +151,10 @@ export function enhance<Success extends MochiFormShape = MochiFormShape, Failure
 
         const callback = userCallback ?? fallbackCallback;
 
-        let result: MochiEnhanceResult<Success, Failure>;
-        try {
-          const headers = new Headers({
-            accept: 'application/json',
-            'x-mochi-action': 'true',
-          });
-          // For multipart, leave Content-Type unset so fetch can generate the full
-          // `multipart/form-data; boundary=...` header — setting it ourselves would
-          // drop the boundary and the server couldn't parse the body.
-          if (enctype !== 'multipart/form-data') {
-            headers.set('Content-Type', enctype === 'text/plain' ? 'text/plain' : 'application/x-www-form-urlencoded');
-          }
-          // `URLSearchParams` accepts `FormData` at runtime via its iterable
-          // interface, but lib.dom.d.ts only types `string | string[][] |
-          // Record<string,string> | URLSearchParams`. See
-          // https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams/URLSearchParams.
-          // @ts-expect-error - FormData is iterable and accepted at runtime
-          const body: BodyInit = enctype === 'multipart/form-data' ? formData : new URLSearchParams(formData);
-
-          const response = await fetch(action, {
-            method: 'POST',
-            headers,
-            cache: 'no-store',
-            body,
-            signal: controller.signal,
-          });
-          result = deserialize<Success, Failure>(await response.text());
-          if (result.type === 'error') {
-            result.status = response.status;
-          }
-        } catch (err: unknown) {
-          if ((err as { name?: string } | null)?.name === 'AbortError') {
-            return;
-          }
-          result = { type: 'error', error: err };
+        const result = await performEnhancedSubmit<Success, Failure>(action, enctype, formData, controller);
+        // AbortError: the submit was cancelled mid-flight, so skip the callback dispatch entirely.
+        if (result === null) {
+          return;
         }
 
         // Logged before the callback dispatch so a custom handler that only branches on

@@ -79,21 +79,25 @@ export type VerdictInput = {
   latencyCreepPct: number; // (last-window p95 / first-window p95 - 1) * 100
 };
 
+// A GC dip is any sample whose RSS fell below its predecessor — evidence the heap is being reclaimed under load.
+function hasGcDip(samples: RssSample[]): boolean {
+  for (let i = 1; i < samples.length; i++) {
+    const cur = samples[i];
+    const prev = samples[i - 1];
+    if (cur && prev && cur.rssKb < prev.rssKb) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function judge(input: VerdictInput): VerdictDetail {
   const reg = leastSquares(input.workloadSamples);
   const slopeMbPerMin = reg.slopeMbPerMin;
   const r2 = reg.r2;
   const deltaMb = (input.finalRssKb - input.baselineRssKb) / 1024;
 
-  let hadGcDip = false;
-  for (let i = 1; i < input.workloadSamples.length; i++) {
-    const cur = input.workloadSamples[i];
-    const prev = input.workloadSamples[i - 1];
-    if (cur && prev && cur.rssKb < prev.rssKb) {
-      hadGcDip = true;
-      break;
-    }
-  }
+  const hadGcDip = hasGcDip(input.workloadSamples);
 
   const reasons: string[] = [];
   const severity: Record<Verdict, number> = { pass: 0, warn: 1, fail: 2 };

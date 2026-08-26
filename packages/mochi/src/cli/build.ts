@@ -94,12 +94,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   mochiEvents.on('client-bundle:complete', onClientBundle);
   mochiEvents.on('compile:complete', onCompileComplete);
   try {
-    const development = options.development ?? false;
-    const baseOutDir = options.outDir ?? './.mochi';
-    // Mirror the dev/prod split in Mochi.serve(): a `--dev` build nests under
-    // `dev/` so it can't clobber the production manifest at the root.
-    const outDir = development ? path.join(baseOutDir, 'dev') : baseOutDir;
-    const publicDir = options.publicDir ?? './public';
+    const { development, outDir, publicDir } = resolveBuildDirs(options);
 
     // Clean previous build artifacts
     rmSync(outDir, { recursive: true, force: true });
@@ -163,21 +158,10 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     if (options.protection?.enabled === true) {
       ssrEntrypoints.push(options.protection.page ?? PROTECTION_SHELL_COMPONENT);
     }
-    const allRoutes: RouteEntry[] = [];
-
-    for (const [pattern, handler] of Object.entries(options.routes)) {
-      if (isMochiPage(handler)) {
-        allRoutes.push({ pattern, kind: 'page', componentPath: handler.componentPath });
-        ssrEntrypoints.push(handler.componentPath);
-        compiledPages.push(pattern);
-      } else if (isMochiApi(handler)) {
-        allRoutes.push({ pattern, kind: 'api' });
-      } else if (isMochiWs(handler)) {
-        allRoutes.push({ pattern, kind: 'ws' });
-      } else if (isMochiSse(handler)) {
-        allRoutes.push({ pattern, kind: 'sse' });
-      }
-    }
+    const classified = classifyRoutes(options.routes);
+    const allRoutes = classified.allRoutes;
+    ssrEntrypoints.push(...classified.pagePaths);
+    compiledPages.push(...classified.compiledPages);
 
     // Email templates are reachable only through `Mochi.email({ component })` at runtime, so no import graph leads here
     // from a route. Walking the conventional directory is what keeps them out of a cold compile on the first send.
@@ -203,29 +187,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       return { file, ...stats };
     });
 
-    // Until the build compiled these, an island in an email template surfaced only as a render-time throw on the first
-    // send. Now that they're in the bundle it would also emit client JS no email client can run, so fail here instead.
-    // Mirrors renderStatic()'s hydratable guard, which is import-graph based and fires regardless of props.
-    const emailWithIslands = emailStats.filter((s) => s.hydratableCount > 0).map((s) => s.file);
-    if (emailWithIslands.length > 0) {
-      throw new Error(
-        `[mochi:build] Email templates can't contain islands:\n` +
-          emailWithIslands.map((f) => `  - ${f}`).join('\n') +
-          `\nmochi:hydrate* / mochi:clientOnly need client JS, which an email can't run — render the content inline instead.`,
-      );
-    }
-
-    // Stricter than renderStatic()'s own server-island guard, which is post-render and greps the output for the
-    // placeholder, so it lets through a `mochi:defer` behind a branch that never renders. The import graph catches that
-    // one too — an email template has no business referencing a server island at all.
-    const emailWithServerIslands = emailStats.filter((s) => s.serverIslandCount > 0).map((s) => s.file);
-    if (emailWithServerIslands.length > 0) {
-      throw new Error(
-        `[mochi:build] Email templates can't contain server islands:\n` +
-          emailWithServerIslands.map((f) => `  - ${f}`).join('\n') +
-          `\nmochi:defer* loads over a follow-up request an email can't make — render the content inline instead.`,
-      );
-    }
+    assertNoEmailIslands(emailStats);
 
     // Precompiling `mochi:defer` islands as standalone SSR modules keeps the production runtime off the compile path,
     // which the first fetch of each deferred island would otherwise trigger. Discovery is eager because a
@@ -301,6 +263,59 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   } finally {
     mochiEvents.off('client-bundle:complete', onClientBundle);
     mochiEvents.off('compile:complete', onCompileComplete);
+  }
+}
+
+function resolveBuildDirs(options: MochiBuildOptions): { development: boolean; outDir: string; publicDir: string } {
+  const development = options.development ?? false;
+  const baseOutDir = options.outDir ?? './.mochi';
+  // Mirror the dev/prod split in Mochi.serve(): a `--dev` build nests under `dev/` so it can't clobber the production manifest at the root.
+  const outDir = development ? path.join(baseOutDir, 'dev') : baseOutDir;
+  const publicDir = options.publicDir ?? './public';
+  return { development, outDir, publicDir };
+}
+
+function classifyRoutes(routes: MochiBuildOptions['routes']): { allRoutes: RouteEntry[]; pagePaths: string[]; compiledPages: string[] } {
+  const allRoutes: RouteEntry[] = [];
+  const pagePaths: string[] = [];
+  const compiledPages: string[] = [];
+  for (const [pattern, handler] of Object.entries(routes)) {
+    if (isMochiPage(handler)) {
+      allRoutes.push({ pattern, kind: 'page', componentPath: handler.componentPath });
+      pagePaths.push(handler.componentPath);
+      compiledPages.push(pattern);
+    } else if (isMochiApi(handler)) {
+      allRoutes.push({ pattern, kind: 'api' });
+    } else if (isMochiWs(handler)) {
+      allRoutes.push({ pattern, kind: 'ws' });
+    } else if (isMochiSse(handler)) {
+      allRoutes.push({ pattern, kind: 'sse' });
+    }
+  }
+  return { allRoutes, pagePaths, compiledPages };
+}
+
+function assertNoEmailIslands(emailStats: { file: string; hydratableCount: number; serverIslandCount: number }[]): void {
+  // Until the build compiled these, an island in an email template surfaced only as a render-time throw on the first
+  // send. Now that they're in the bundle it would also emit client JS no email client can run, so fail here instead.
+  const emailWithIslands = emailStats.filter((s) => s.hydratableCount > 0).map((s) => s.file);
+  if (emailWithIslands.length > 0) {
+    throw new Error(
+      `[mochi:build] Email templates can't contain islands:\n` +
+        emailWithIslands.map((f) => `  - ${f}`).join('\n') +
+        `\nmochi:hydrate* / mochi:clientOnly need client JS, which an email can't run — render the content inline instead.`,
+    );
+  }
+
+  // Stricter than renderStatic()'s own server-island guard: the import graph catches a `mochi:defer` behind a branch
+  // that never renders — an email template has no business referencing a server island at all.
+  const emailWithServerIslands = emailStats.filter((s) => s.serverIslandCount > 0).map((s) => s.file);
+  if (emailWithServerIslands.length > 0) {
+    throw new Error(
+      `[mochi:build] Email templates can't contain server islands:\n` +
+        emailWithServerIslands.map((f) => `  - ${f}`).join('\n') +
+        `\nmochi:defer* loads over a follow-up request an email can't make — render the content inline instead.`,
+    );
   }
 }
 
@@ -449,6 +464,11 @@ function printBuildTree({ routes, errorPage, emails, islands, assetPrefix, stats
     }
   }
 
+  const legendEntries = buildLegendEntries(routeRows, emails.length > 0, islandRows);
+  console.log(`\n  ${legendEntries.join(styleText('dim', '  ·  '))}`);
+}
+
+function buildLegendEntries(routeRows: { kind: RouteKind; hyd: number | null }[], hasEmails: boolean, islandRows: { hyd: number | null }[]): string[] {
   const legendEntries: string[] = [];
   if (routeRows.some((r) => r.kind === 'page' && r.hyd != null && r.hyd > 0)) {
     legendEntries.push(`${styleText('green', '●')} page with islands`);
@@ -466,7 +486,7 @@ function printBuildTree({ routes, errorPage, emails, islands, assetPrefix, stats
     legendEntries.push(`${styleText('green', '→')} sse`);
   }
   legendEntries.push(`${styleText('yellow', '⚠')} error page`);
-  if (emails.length > 0) {
+  if (hasEmails) {
     legendEntries.push(`${styleText('cyan', '✉')} email template`);
   }
   if (islandRows.some((r) => r.hyd != null && r.hyd > 0)) {
@@ -475,5 +495,5 @@ function printBuildTree({ routes, errorPage, emails, islands, assetPrefix, stats
   if (islandRows.some((r) => r.hyd === null || r.hyd === 0)) {
     legendEntries.push(`${styleText('magenta', '○')} server island`);
   }
-  console.log(`\n  ${legendEntries.join(styleText('dim', '  ·  '))}`);
+  return legendEntries;
 }

@@ -67,6 +67,10 @@ export function resolveExpectedOrigin(request: Request, url: URL, options: Mochi
     return url.origin;
   }
 
+  return originFromHeaders(request, url, protocolHeader, hostHeader, portHeader);
+}
+
+function originFromHeaders(request: Request, url: URL, protocolHeader: string | undefined, hostHeader: string | undefined, portHeader: string | undefined): string {
   const protocolFromHeader = protocolHeader ? request.headers.get(protocolHeader) : null;
   const hostFromHeader = hostHeader ? request.headers.get(hostHeader) : null;
   const portFromHeader = portHeader ? request.headers.get(portHeader) : null;

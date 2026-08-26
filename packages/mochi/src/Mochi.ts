@@ -170,6 +170,161 @@ function jsonForHtml(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
+function buildDebugHeadScripts(
+  debugBarEnabled: boolean,
+  liveReloadEnabled: boolean,
+  opts?: { debugInfo?: DebugBarData; pageEntry?: string },
+): { debugInfoScript: string; pageEntryScript: string } {
+  const debugInfoScript = debugBarEnabled && opts?.debugInfo ? `<script>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
+  const pageEntryScript = liveReloadEnabled && opts?.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
+  return { debugInfoScript, pageEntryScript };
+}
+
+function buildShellScripts(
+  bootstrapUrl: string | null | undefined,
+  hasServerIslands: boolean,
+  serverIslandScript: string,
+  debugBarUrl: string | null | undefined,
+  assetPrefixJson: string,
+  liveReloadTail: string,
+): string {
+  return (
+    (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
+    (hasServerIslands ? serverIslandScript : '') +
+    (debugBarUrl ? `<script type="module" src="${debugBarUrl}"></script><script>window.__mochi_asset_prefix=${assetPrefixJson}</script>` : '') +
+    liveReloadTail
+  );
+}
+
+// Reject before initMochiConfig pins the process singleton, so a bad `bun` passthrough fails fast without wedging it.
+function assertValidBunOverrides(options: MochiServeOptions): void {
+  if (options.bun && typeof options.bun === 'object') {
+    for (const key of FRAMEWORK_OWNED_BUN_KEYS) {
+      if (key in options.bun) {
+        throw new Error(`Mochi.serve({ bun }): "${key}" is owned by the framework and cannot be overridden. Use the top-level Mochi.serve() option instead.`);
+      }
+    }
+  }
+}
+
+function assertValidQueueNames(declaredQueues: NonNullable<MochiServeOptions['queues']>): void {
+  const queueNames = new Set<string>();
+  for (const config of declaredQueues) {
+    if (!isMochiQueue(config)) {
+      throw new Error(`Mochi.serve({ queues }): every element must be a descriptor created with Mochi.queue(name, …).`);
+    }
+    if (typeof config.name !== 'string' || !/^[\w.\-/]+$/.test(config.name)) {
+      throw new Error(`Mochi.serve({ queues }): "${config.name}" is not a valid queue name. Names may only contain letters, digits, underscores, dots, dashes, and slashes.`);
+    }
+    if (config.name.startsWith('cron-')) {
+      throw new Error(`Mochi.serve({ queues }): "${config.name}" uses the reserved "cron-" prefix — that namespace is for scheduled jobs (Mochi.cron). Rename the queue.`);
+    }
+    if (queueNames.has(config.name)) {
+      throw new Error(`Mochi.serve({ queues }): two queues are named "${config.name}". Queue names must be unique.`);
+    }
+    queueNames.add(config.name);
+    // Descriptor form is self-sufficient — the target is ensured on its own; only a bare name needs the array.
+    const deadLetter = config.options?.deadLetter;
+    if (typeof deadLetter === 'string' && !declaredQueues.some((q) => q.name === deadLetter)) {
+      throw new Error(
+        `Mochi.serve({ queues }): "${config.name}" names "${deadLetter}" as its deadLetter queue, but no queue with that name is declared in the same queues array. Declare it there, or pass its descriptor (deadLetter: Mochi.queue("${deadLetter}", …)) so it is ensured on its own.`,
+      );
+    }
+  }
+}
+
+function detectDeclaredQueueStorage(declaredQueues: NonNullable<MochiServeOptions['queues']>): { name: string; storage: MochiQueueStorage } | undefined {
+  let declaredStorage: { name: string; storage: MochiQueueStorage } | undefined;
+  for (const { name, storage } of collectQueueClosure(declaredQueues, 'Mochi.serve({ queues })')) {
+    if (storage === undefined) {
+      continue;
+    }
+    if (declaredStorage && !storageEquals(declaredStorage.storage, storage)) {
+      throw new Error(`Mochi.serve({ queues }): "${name}" and "${declaredStorage.name}" declare different storages — an app has one queue storage.`);
+    }
+    declaredStorage ??= { name, storage };
+  }
+  return declaredStorage;
+}
+
+// An app has one queue storage: declared on the descriptors (deadLetter targets included), app-wide via queueStorage, or both when they agree.
+function resolveQueueStorage(declaredQueues: NonNullable<MochiServeOptions['queues']>, options: MochiServeOptions): MochiQueueStorage {
+  const declaredStorage = detectDeclaredQueueStorage(declaredQueues);
+  if (options.queueStorage !== undefined && declaredStorage && !storageEquals(declaredStorage.storage, options.queueStorage)) {
+    throw new Error(
+      `Mochi.serve({ queueStorage }): "${declaredStorage.name}" declares a different storage — an app has one queue storage. Align the two declarations, or drop one.`,
+    );
+  }
+  const queueStorage = options.queueStorage ?? declaredStorage?.storage ?? 'memory';
+  if (!isValidQueueStorage(queueStorage)) {
+    throw new Error(`Mochi.serve({ queueStorage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
+  }
+  if (options.queueStorage !== undefined && declaredQueues.length === 0) {
+    logger.warn(`Mochi.serve({ queueStorage }) has no effect without a non-empty queues array — the queue runtime only starts when queues are declared.`);
+  }
+  if (declaredQueues.length > 0) {
+    // Fail before the config singleton pins and the server binds — rejecting this deep in the boot would wedge the process.
+    assertNoConflictingStandaloneRuntime(queueStorage);
+  }
+  return queueStorage;
+}
+
+// Validate the queue declarations, resolve the single app-wide storage, and fail before the config singleton pins.
+function resolveQueueConfig(options: MochiServeOptions): { declaredQueues: NonNullable<MochiServeOptions['queues']>; queueStorage: MochiQueueStorage } {
+  const declaredQueues = options.queues ?? [];
+  assertValidQueueNames(declaredQueues);
+  const queueStorage = resolveQueueStorage(declaredQueues, options);
+  return { declaredQueues, queueStorage };
+}
+
+// Validate the cron declarations and resolve their storage; same fail-fast rule as the queue config.
+function resolveCronConfig(options: MochiServeOptions): { declaredCron: NonNullable<MochiServeOptions['cron']>; cronStorage: MochiQueueStorage } {
+  const declaredCron = options.cron ?? [];
+  const cronNames = new Set<string>();
+  for (const job of declaredCron) {
+    if (!isMochiCron(job)) {
+      throw new Error(`Mochi.serve({ cron }): every element must be a descriptor created with Mochi.cron(name, schedule, …).`);
+    }
+    if (typeof job.name !== 'string' || !/^[\w.\-/]+$/.test(job.name)) {
+      throw new Error(`Mochi.serve({ cron }): "${job.name}" is not a valid cron job name. Names may only contain letters, digits, underscores, dots, dashes, and slashes.`);
+    }
+    if (cronNames.has(job.name)) {
+      throw new Error(`Mochi.serve({ cron }): two cron jobs are named "${job.name}". Cron job names must be unique.`);
+    }
+    cronNames.add(job.name);
+  }
+  // Independent of queueStorage: cron always runs on its own bun-boss instance, defaulting to in-process memory.
+  const cronStorage = options.cronStorage ?? 'memory';
+  if (declaredCron.length > 0 && !isValidQueueStorage(cronStorage)) {
+    throw new Error(`Mochi.serve({ cronStorage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
+  }
+  return { declaredCron, cronStorage };
+}
+
+function assertServerPropsShape(resolved: Record<string, unknown>, pattern: string, hasActions: boolean): void {
+  if (isFormFail(resolved) || isFormSuccess(resolved)) {
+    throw new Error(
+      `[mochi] Route "${pattern}" serverProps returned ${isFormFail(resolved) ? 'fail()' : 'success()'} — those are form-action results. ` +
+        `serverProps may return props or redirect(status, location).`,
+    );
+  }
+  if (hasActions && 'form' in resolved) {
+    throw new Error(`[mochi] Route "${pattern}" has form actions and also returns a prop named "form". ` + `"form" is reserved for the form action result — rename your prop.`);
+  }
+}
+
+function fillShellParts(parts: ShellPart[], head: string, css: string, body: string, script: string): string {
+  let out = '';
+  for (const part of parts) {
+    if ('text' in part) {
+      out += part.text;
+    } else {
+      out += part.slot === 'head' ? head : part.slot === 'css' ? css : part.slot === 'body' ? body : script;
+    }
+  }
+  return out;
+}
+
 /**
  * `createShellRenderer` bakes the static `window.__mochi_debug` fields into the cached body, so per-request headers and cookies have to be appended
  * afterwards for cache hits to stay accurate. The trailing script is synchronous so it lands before the deferred debug-bar module runs `onMount`.
@@ -348,116 +503,22 @@ export class Mochi {
       const fontPreloads = fontPreload ? result.fontPreloadUrls.slice(0, FONT_PRELOAD_MAX).map(fontPreloadTag).join('\n') : '';
       const cssLinks = (fontPreloads ? `${fontPreloads}\n` : '') + result.cssUrls.map(cssLinkTag).join('\n');
       const debugBarUrl = registry.getDebugBarUrl();
-      const debugInfoScript = registry.debugBarEnabled && opts?.debugInfo ? `<script>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
-      const pageEntryScript = liveReloadClientJs && opts?.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
+      const { debugInfoScript, pageEntryScript } = buildDebugHeadScripts(registry.debugBarEnabled, Boolean(liveReloadClientJs), opts);
 
       const head = logLevelScript + warnShim + speculationRulesScript + result.head;
       const css = cssStylePrefix + cssLinks;
       const body = result.body + debugInfoScript + pageEntryScript + toolbarDiv;
-      const script =
-        (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
-        (result.hasServerIslands ? serverIslandScript : '') +
-        (debugBarUrl ? `<script type="module" src="${debugBarUrl}"></script><script>window.__mochi_asset_prefix=${assetPrefixJson}</script>` : '') +
-        liveReloadTail;
+      const script = buildShellScripts(bootstrapUrl, result.hasServerIslands, serverIslandScript, debugBarUrl, assetPrefixJson, liveReloadTail);
 
-      let out = '';
-      for (const part of parts) {
-        if ('text' in part) {
-          out += part.text;
-        } else {
-          out += part.slot === 'head' ? head : part.slot === 'css' ? css : part.slot === 'body' ? body : script;
-        }
-      }
-      return out;
+      return fillShellParts(parts, head, css, body, script);
     };
   }
 
   static async serve(options: MochiServeOptions): Promise<Server<undefined>> {
-    // Reject before initMochiConfig pins the process singleton, so a bad `bun` passthrough fails fast without wedging it.
-    if (options.bun && typeof options.bun === 'object') {
-      for (const key of FRAMEWORK_OWNED_BUN_KEYS) {
-        if (key in options.bun) {
-          throw new Error(`Mochi.serve({ bun }): "${key}" is owned by the framework and cannot be overridden. Use the top-level Mochi.serve() option instead.`);
-        }
-      }
-    }
-
-    // Same fail-fast rule for the queue declarations: a bad descriptor, duplicate name, deadLetter, or storage shape rejects here.
-    const declaredQueues = options.queues ?? [];
-    const queueNames = new Set<string>();
-    for (const config of declaredQueues) {
-      if (!isMochiQueue(config)) {
-        throw new Error(`Mochi.serve({ queues }): every element must be a descriptor created with Mochi.queue(name, …).`);
-      }
-      if (typeof config.name !== 'string' || !/^[\w.\-/]+$/.test(config.name)) {
-        throw new Error(`Mochi.serve({ queues }): "${config.name}" is not a valid queue name. Names may only contain letters, digits, underscores, dots, dashes, and slashes.`);
-      }
-      if (config.name.startsWith('cron-')) {
-        throw new Error(`Mochi.serve({ queues }): "${config.name}" uses the reserved "cron-" prefix — that namespace is for scheduled jobs (Mochi.cron). Rename the queue.`);
-      }
-      if (queueNames.has(config.name)) {
-        throw new Error(`Mochi.serve({ queues }): two queues are named "${config.name}". Queue names must be unique.`);
-      }
-      queueNames.add(config.name);
-      // Descriptor form is self-sufficient — the target is ensured on its own; only a bare name needs the array.
-      // Self-references and conflicting duplicates are caught by the closure walk below.
-      const deadLetter = config.options?.deadLetter;
-      if (typeof deadLetter === 'string' && !declaredQueues.some((q) => q.name === deadLetter)) {
-        throw new Error(
-          `Mochi.serve({ queues }): "${config.name}" names "${deadLetter}" as its deadLetter queue, but no queue with that name is declared in the same queues array. Declare it there, or pass its descriptor (deadLetter: Mochi.queue("${deadLetter}", …)) so it is ensured on its own.`,
-        );
-      }
-    }
-    // An app has one queue storage: declared on the descriptors (deadLetter targets included), app-wide via
-    // queueStorage, or both when they agree.
-    let declaredStorage: { name: string; storage: MochiQueueStorage } | undefined;
-    for (const { name, storage } of collectQueueClosure(declaredQueues, 'Mochi.serve({ queues })')) {
-      if (storage === undefined) {
-        continue;
-      }
-      if (declaredStorage && !storageEquals(declaredStorage.storage, storage)) {
-        throw new Error(`Mochi.serve({ queues }): "${name}" and "${declaredStorage.name}" declare different storages — an app has one queue storage.`);
-      }
-      declaredStorage ??= { name, storage };
-    }
-    if (options.queueStorage !== undefined && declaredStorage && !storageEquals(declaredStorage.storage, options.queueStorage)) {
-      throw new Error(
-        `Mochi.serve({ queueStorage }): "${declaredStorage.name}" declares a different storage — an app has one queue storage. Align the two declarations, or drop one.`,
-      );
-    }
-    const queueStorage = options.queueStorage ?? declaredStorage?.storage ?? 'memory';
-    if (!isValidQueueStorage(queueStorage)) {
-      throw new Error(`Mochi.serve({ queueStorage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
-    }
-    if (options.queueStorage !== undefined && declaredQueues.length === 0) {
-      logger.warn(`Mochi.serve({ queueStorage }) has no effect without a non-empty queues array — the queue runtime only starts when queues are declared.`);
-    }
-    if (declaredQueues.length > 0) {
-      // Fail before the config singleton pins and the server binds — rejecting this deep in the boot would wedge the process.
-      assertNoConflictingStandaloneRuntime(queueStorage);
-    }
-
-    // Same fail-fast rule for cron: a bad descriptor or duplicate name rejects before the config singleton pins and
-    // the socket binds, so a typo can never leave a half-scheduled server listening.
-    const declaredCron = options.cron ?? [];
-    const cronNames = new Set<string>();
-    for (const job of declaredCron) {
-      if (!isMochiCron(job)) {
-        throw new Error(`Mochi.serve({ cron }): every element must be a descriptor created with Mochi.cron(name, schedule, …).`);
-      }
-      if (typeof job.name !== 'string' || !/^[\w.\-/]+$/.test(job.name)) {
-        throw new Error(`Mochi.serve({ cron }): "${job.name}" is not a valid cron job name. Names may only contain letters, digits, underscores, dots, dashes, and slashes.`);
-      }
-      if (cronNames.has(job.name)) {
-        throw new Error(`Mochi.serve({ cron }): two cron jobs are named "${job.name}". Cron job names must be unique.`);
-      }
-      cronNames.add(job.name);
-    }
-    // Independent of queueStorage: cron always runs on its own bun-boss instance, defaulting to in-process memory.
-    const cronStorage = options.cronStorage ?? 'memory';
-    if (declaredCron.length > 0 && !isValidQueueStorage(cronStorage)) {
-      throw new Error(`Mochi.serve({ cronStorage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
-    }
+    assertValidBunOverrides(options);
+    // Fail-fast validation before initMochiConfig pins the process singleton and the socket binds.
+    const { declaredQueues, queueStorage } = resolveQueueConfig(options);
+    const { declaredCron, cronStorage } = resolveCronConfig(options);
 
     // Same fail-fast rule: an unmountable prefix rejects here rather than 404ing at runtime.
     const staticDirMounts = options.staticDirs ? resolveStaticDirs(options.staticDirs, normalizeAssetPrefix(options.assetPrefix)) : [];
@@ -867,59 +928,57 @@ export class Mochi {
           await registry.compile(componentPath);
         }
 
+        const resolvePageProps = async (req: Request, ctx: MochiRequestContext): Promise<{ redirect: Response } | { props: Record<string, unknown> }> => {
+          const liveServerProps = pageConfigMap ? pageConfigMap.get(pattern)?.serverProps : serverProps;
+          const resolved = isServerPropsResolver(liveServerProps) ? ((await liveServerProps(req, ctx.params)) ?? {}) : (liveServerProps ?? {});
+          if (isRedirect(resolved)) {
+            return { redirect: new Response(null, { status: resolved.status, headers: { Location: resolved.location } }) };
+          }
+          const liveActions = pageConfigMap ? pageConfigMap.get(pattern)?.actions : actions;
+          assertServerPropsShape(resolved, pattern, Boolean(liveActions));
+          const formProp = ctx.form ?? null;
+          return { props: formProp === null ? resolved : { ...resolved, form: formProp } };
+        };
+
+        const augmentDebugBarData = (result: RenderResult, ctx: MochiRequestContext, ssrStart: number): void => {
+          if (!result.debugBarData) {
+            return;
+          }
+          result.debugBarData.ssrDurationMs = Math.round((performance.now() - ssrStart) * 100) / 100;
+          if (ctx.requestCache) {
+            const { hits, misses, map, perKey } = ctx.requestCache;
+            result.debugBarData.requestCache = {
+              hits,
+              misses,
+              entries: map.size,
+              keys: [...perKey].map(([key, t]) => ({ key, hits: t.hits, misses: t.misses })),
+            };
+          }
+          if (result.hasServerIslands) {
+            const serverIslandSize = new TextEncoder().encode(serverIslandClientJs).length;
+            (result.debugBarData.bundles ??= []).push({
+              url: '(inline)',
+              label: 'Server island runtime',
+              sizeBytes: serverIslandSize,
+              kind: 'bootstrap',
+              inputs: [],
+            });
+          }
+        };
+
         const renderComponent = async (req: Request, ctx: MochiRequestContext, resolveOpts: MochiResolveOptions | undefined, statusOverride?: number): Promise<Response> => {
           const compileErrors = registry.getErrors();
           if (compileErrors.length > 0) {
             throw new MochiHttpError(500, formatCompileErrors(compileErrors));
           }
-          const liveServerProps = pageConfigMap ? pageConfigMap.get(pattern)?.serverProps : serverProps;
-          const resolved = isServerPropsResolver(liveServerProps) ? ((await liveServerProps(req, ctx.params)) ?? {}) : (liveServerProps ?? {});
-          if (isRedirect(resolved)) {
-            const redirectResponse = new Response(null, {
-              status: resolved.status,
-              headers: { Location: resolved.location },
-            });
-            return applyResolveOptions(redirectResponse, resolveOpts);
+          const propsResult = await resolvePageProps(req, ctx);
+          if ('redirect' in propsResult) {
+            return applyResolveOptions(propsResult.redirect, resolveOpts);
           }
-          if (isFormFail(resolved) || isFormSuccess(resolved)) {
-            throw new Error(
-              `[mochi] Route "${pattern}" serverProps returned ${isFormFail(resolved) ? 'fail()' : 'success()'} — those are form-action results. ` +
-                `serverProps may return props or redirect(status, location).`,
-            );
-          }
-          const baseProps = resolved;
-          const liveActions = pageConfigMap ? pageConfigMap.get(pattern)?.actions : actions;
-          if (liveActions && 'form' in baseProps) {
-            throw new Error(
-              `[mochi] Route "${pattern}" has form actions and also returns a prop named "form". ` + `"form" is reserved for the form action result — rename your prop.`,
-            );
-          }
-          const formProp = ctx.form ?? null;
-          const resolvedProps = formProp === null ? baseProps : { ...baseProps, form: formProp };
+          const resolvedProps = propsResult.props;
           const ssrStart = performance.now();
           const result = await registry.renderComponent(componentPath, resolvedProps);
-          if (result.debugBarData) {
-            result.debugBarData.ssrDurationMs = Math.round((performance.now() - ssrStart) * 100) / 100;
-            if (ctx.requestCache) {
-              const { hits, misses, map, perKey } = ctx.requestCache;
-              result.debugBarData.requestCache = {
-                hits,
-                misses,
-                entries: map.size,
-                keys: [...perKey].map(([key, t]) => ({ key, hits: t.hits, misses: t.misses })),
-              };
-            }
-            if (result.hasServerIslands) {
-              const serverIslandSize = new TextEncoder().encode(serverIslandClientJs).length;
-              (result.debugBarData.bundles ??= []).push({
-                url: '(inline)',
-                label: 'Server island runtime',
-                sizeBytes: serverIslandSize,
-                kind: 'bootstrap',
-                inputs: [],
-              });
-            }
-          }
+          augmentDebugBarData(result, ctx, ssrStart);
           const html = renderShell(result, {
             debugInfo: result.debugBarData ? { ...result.debugBarData, liveReloadEnabled, ...serverDebugInfo } : undefined,
             pageEntry: liveReloadEnabled ? path.resolve(componentPath) : undefined,
@@ -1015,6 +1074,60 @@ export class Mochi {
                 mochiEvents.emit('action:complete', payload);
               };
 
+              const finalizeActionResult = async (result: MochiFormActionResult, actionName: string): Promise<Response> => {
+                if (result instanceof Response) {
+                  emitActionComplete(actionName, 'success', result.status);
+                  return applyResolveOptions(result, resolveOpts);
+                }
+                if (isRedirect(result)) {
+                  emitActionComplete(actionName, 'redirect', result.status);
+                  if (enhanced) {
+                    return jsonRedirect(result.status, result.location);
+                  }
+                  const redirectResponse = new Response(null, {
+                    status: result.status,
+                    headers: { Location: result.location },
+                  });
+                  return applyResolveOptions(redirectResponse, resolveOpts);
+                }
+                try {
+                  if (isFormFail(result)) {
+                    if (enhanced) {
+                      emitActionComplete(actionName, 'fail', result.status);
+                      return jsonFailure(result.status, result.data);
+                    }
+                    ctx.form = {
+                      ok: false,
+                      action: actionName,
+                      status: result.status,
+                      data: result.data,
+                    };
+                    emitActionComplete(actionName, 'fail', result.status);
+                    return await renderComponent(req, ctx, resolveOpts, result.status);
+                  }
+                  if (enhanced) {
+                    emitActionComplete(actionName, 'success');
+                    if (result === undefined || result === null) {
+                      return jsonSuccess(undefined, { emptyResult: true });
+                    }
+                    return jsonSuccess(isFormSuccess(result) ? result.data : {});
+                  }
+                  const data = isFormSuccess(result) ? result.data : {};
+                  ctx.form = { ok: true, action: actionName, data };
+                  emitActionComplete(actionName, 'success');
+                  return await renderComponent(req, ctx, resolveOpts);
+                } catch (err) {
+                  if (enhanced) {
+                    const response = await handleEnhancedError(err, event);
+                    emitError('action', ctx.requestId, req, ctx.url, response.status, err, actionName);
+                    return response;
+                  }
+                  const response = await routeErrorResponse(req, event, resolveOpts, err);
+                  emitError('action', ctx.requestId, req, ctx.url, response.status, err, actionName);
+                  return response;
+                }
+              };
+
               const livePostActions = pageConfigMap ? pageConfigMap.get(pattern)?.actions : actions;
               if (!livePostActions) {
                 return new Response('Method Not Allowed', { status: 405 });
@@ -1098,57 +1211,7 @@ export class Mochi {
                 return response;
               }
 
-              if (result instanceof Response) {
-                emitActionComplete(actionName, 'success', result.status);
-                return applyResolveOptions(result, resolveOpts);
-              }
-              if (isRedirect(result)) {
-                emitActionComplete(actionName, 'redirect', result.status);
-                if (enhanced) {
-                  return jsonRedirect(result.status, result.location);
-                }
-                const redirectResponse = new Response(null, {
-                  status: result.status,
-                  headers: { Location: result.location },
-                });
-                return applyResolveOptions(redirectResponse, resolveOpts);
-              }
-              try {
-                if (isFormFail(result)) {
-                  if (enhanced) {
-                    emitActionComplete(actionName, 'fail', result.status);
-                    return jsonFailure(result.status, result.data);
-                  }
-                  ctx.form = {
-                    ok: false,
-                    action: actionName,
-                    status: result.status,
-                    data: result.data,
-                  };
-                  emitActionComplete(actionName, 'fail', result.status);
-                  return await renderComponent(req, ctx, resolveOpts, result.status);
-                }
-                if (enhanced) {
-                  emitActionComplete(actionName, 'success');
-                  if (result === undefined || result === null) {
-                    return jsonSuccess(undefined, { emptyResult: true });
-                  }
-                  return jsonSuccess(isFormSuccess(result) ? result.data : {});
-                }
-                const data = isFormSuccess(result) ? result.data : {};
-                ctx.form = { ok: true, action: actionName, data };
-                emitActionComplete(actionName, 'success');
-                return await renderComponent(req, ctx, resolveOpts);
-              } catch (err) {
-                if (enhanced) {
-                  const response = await handleEnhancedError(err, event);
-                  emitError('action', ctx.requestId, req, ctx.url, response.status, err, actionName);
-                  return response;
-                }
-                const response = await routeErrorResponse(req, event, resolveOpts, err);
-                emitError('action', ctx.requestId, req, ctx.url, response.status, err, actionName);
-                return response;
-              }
+              return finalizeActionResult(result, actionName);
             });
 
           return {
@@ -1575,6 +1638,43 @@ export class Mochi {
         ctx.islandInline = { budget: applyFilter('serverIsland:inlineBudget', DEFAULT_INLINE_BUDGET, { componentName, request: req }) };
       }
 
+      const finalizeIslandBody = (result: RenderResult): string => {
+        let body = result.body;
+
+        if (isAlsoHydrateMode(hydrateMode)) {
+          const componentUrl = registry.getComponentEntryUrl(componentName);
+          const serializedProps = devalueStringify(props);
+
+          let hydrateAttrs = `component-name="${componentName}"`;
+          if (Object.keys(props as Record<string, unknown>).length > 0) {
+            hydrateAttrs += ` props="${escapeHtmlAttr(serializedProps)}"`;
+          }
+          if (componentUrl) {
+            hydrateAttrs += ` component-url="${componentUrl}"`;
+          }
+
+          body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
+        }
+
+        // Appended whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain
+        // mochi:hydrate children, or inlined also-hydrate islands — so the fragment self-hydrates even on a page that
+        // shipped no bootstrap of its own; duplicate module scripts are no-ops by src.
+        const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
+        if (bootstrapUrl) {
+          body += `<script type="module" src="${bootstrapUrl}"></script>`;
+        }
+
+        // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`
+        // tags are prepended here along with side-effect CSS imports; browsers honour a `<link>` assigned via `innerHTML`.
+        // The island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
+        const ownCss = registry.getComponentCssUrl(componentPath);
+        const extraCss = result.cssUrls.filter((url) => url !== ownCss);
+        if (extraCss.length > 0) {
+          body = extraCss.map(cssLinkTag).join('') + body;
+        }
+        return body;
+      };
+
       return requestContext.run(ctx, async () => {
         // A miss here means the build's eager discovery (see build.ts) didn't
         // find this island; `compileAll` warns about any manifest miss, so the
@@ -1622,39 +1722,7 @@ export class Mochi {
           });
         }
 
-        let body = result.body;
-
-        if (isAlsoHydrateMode(hydrateMode)) {
-          const componentUrl = registry.getComponentEntryUrl(componentName);
-          const serializedProps = devalueStringify(props);
-
-          let hydrateAttrs = `component-name="${componentName}"`;
-          if (Object.keys(props as Record<string, unknown>).length > 0) {
-            hydrateAttrs += ` props="${escapeHtmlAttr(serializedProps)}"`;
-          }
-          if (componentUrl) {
-            hydrateAttrs += ` component-url="${componentUrl}"`;
-          }
-
-          body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
-        }
-
-        // Appended whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain
-        // mochi:hydrate children, or inlined also-hydrate islands — so the fragment self-hydrates even on a page that
-        // shipped no bootstrap of its own; duplicate module scripts are no-ops by src.
-        const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
-        if (bootstrapUrl) {
-          body += `<script type="module" src="${bootstrapUrl}"></script>`;
-        }
-
-        // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`
-        // tags are prepended here along with side-effect CSS imports; browsers honour a `<link>` assigned via `innerHTML`.
-        // The island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
-        const ownCss = registry.getComponentCssUrl(componentPath);
-        const extraCss = result.cssUrls.filter((url) => url !== ownCss);
-        if (extraCss.length > 0) {
-          body = extraCss.map(cssLinkTag).join('') + body;
-        }
+        const body = finalizeIslandBody(result);
 
         return new Response(body, {
           headers: {

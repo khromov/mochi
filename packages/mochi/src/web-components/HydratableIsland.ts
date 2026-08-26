@@ -116,23 +116,7 @@ class HydratableIsland extends HTMLElement {
     if (!Component) {
       return;
     }
-    let props: Record<string, unknown>;
-    try {
-      props = propsRaw ? devalueParse(propsRaw) : {};
-    } catch (err) {
-      if (propsRaw && err instanceof SyntaxError) {
-        const m = err.message.match(/position (\d+)/);
-        const pos = m ? Number(m[1]) : -1;
-        if (pos >= 0) {
-          const ch = propsRaw.charCodeAt(pos);
-          const around = propsRaw.slice(Math.max(0, pos - 20), pos + 20);
-          logger.error(`Failed to parse props for "${name}" at position ${pos} (char U+${ch.toString(16).padStart(4, '0')}, len=${propsRaw.length}):`, JSON.stringify(around));
-        } else {
-          logger.error(`Failed to parse props for "${name}" (len=${propsRaw.length}):`, err.message);
-        }
-      }
-      throw err;
-    }
+    const props = parseIslandProps(propsRaw, name);
     // `transformError` makes `<svelte:boundary>` work for client-side errors, like a throw inside `$effect` after
     // hydration. It returns an Error in the same shape as the SSR transformError, `message` enumerable to match, so
     // user-written `failed` snippets can rely on `error instanceof Error`.
@@ -166,6 +150,25 @@ class HydratableIsland extends HTMLElement {
       void unmount(instance);
     };
     logger.log(clientOnly ? 'Mounted' : 'Hydrated', name);
+  }
+}
+
+function parseIslandProps(propsRaw: string | null, name: string): Record<string, unknown> {
+  try {
+    return propsRaw ? devalueParse(propsRaw) : {};
+  } catch (err) {
+    if (propsRaw && err instanceof SyntaxError) {
+      const m = err.message.match(/position (\d+)/);
+      const pos = m ? Number(m[1]) : -1;
+      if (pos >= 0) {
+        const ch = propsRaw.charCodeAt(pos);
+        const around = propsRaw.slice(Math.max(0, pos - 20), pos + 20);
+        logger.error(`Failed to parse props for "${name}" at position ${pos} (char U+${ch.toString(16).padStart(4, '0')}, len=${propsRaw.length}):`, JSON.stringify(around));
+      } else {
+        logger.error(`Failed to parse props for "${name}" (len=${propsRaw.length}):`, err.message);
+      }
+    }
+    throw err;
   }
 }
 

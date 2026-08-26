@@ -87,15 +87,21 @@ export function resolveImageOptions(opts: MochiImageOptions | undefined): Resolv
   return {
     enabled: o.enabled ?? true,
     sizes,
-    cacheDir: o.cacheDir ?? './.mochi/image-cache',
     storage: o.storage,
     defaultFormat,
     defaultQuality,
     outputFormats,
-    inputFormats: o.inputFormats ?? DEFAULT_INPUT_FORMATS,
     maxPixels,
     autoOrient,
     allowedHosts: o.allowedHosts,
+    ...resolveImageLimits(o),
+  };
+}
+
+function resolveImageLimits(o: MochiImageOptions) {
+  return {
+    cacheDir: o.cacheDir ?? './.mochi/image-cache',
+    inputFormats: o.inputFormats ?? DEFAULT_INPUT_FORMATS,
     blockPrivateNetworks: o.blockPrivateNetworks ?? true,
     fetchTimeoutMs: o.fetchTimeoutMs ?? 10_000,
     maxResponseBytes: o.maxResponseBytes ?? 20 * 1024 * 1024,

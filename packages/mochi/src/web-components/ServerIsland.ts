@@ -127,64 +127,22 @@ class ServerIsland extends HTMLElement {
   }
 
   async _fetchContent(options: Record<string, unknown> = {}): Promise<boolean> {
-    const g = (k: string) => this.getAttribute(k);
-    const componentName = g('component-name');
+    const componentName = this.getAttribute('component-name');
     if (!componentName) {
       return false;
     }
 
     const tag = `[mochi] Server island "${componentName}"`;
     const ll = window.__mochi_log_level;
-    const signedProps = g('signed-props');
-    const alsoHydrate = g('also-hydrate') || '';
-    const assetPrefix = g('data-asset-prefix');
-    let url = `${assetPrefix}/island/${encodeURIComponent(componentName)}`;
-    const params = new URLSearchParams();
-    if (signedProps) {
-      params.set('props', signedProps);
-    }
-    const qs = params.toString();
-    if (qs) {
-      url += `?${qs}`;
-    }
-
-    if (url.length > 1800) {
-      window.__mochi_warn?.(`${tag} URL is ${url.length} chars. Consider reducing prop size.`);
-    }
-
+    const alsoHydrate = this.getAttribute('also-hydrate') || '';
+    const url = buildIslandFetchUrl(componentName, this.getAttribute('signed-props'), this.getAttribute('data-asset-prefix'), tag);
     const maxRetries = typeof options.retries === 'number' ? options.retries : 9;
 
     let lastErr: unknown;
     for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
       try {
-        const response = await fetch(url);
-        if (!response.ok) {
-          if (response.status >= 400 && response.status < 500) {
-            throw Object.assign(new Error(`HTTP ${response.status}`), { abort: true });
-          }
-          throw new Error(`HTTP ${response.status}`);
-        }
-        const html = await response.text();
-
-        if (ll === 'log' || ll === 'debug') {
-          console.log(`${tag} loaded (attempt ${attempt}, ${(html.length / 1024).toFixed(1)}kB, alsoHydrate=${alsoHydrate || 'none'})`);
-        }
-
-        const cssUrl = g('css-url');
-        if (cssUrl && !_css.has(cssUrl)) {
-          _css.add(cssUrl);
-          const link = document.createElement('link');
-          link.rel = 'stylesheet';
-          link.href = cssUrl;
-          document.head.appendChild(link);
-        }
-
-        this._unmountChildren();
-
-        // SAFETY: HTML comes from our own same-origin server-island endpoint with encrypted props.
-        // If the island endpoint ever returns user-controlled content, this must be sanitized.
-        this.innerHTML = html;
-        this._everLoaded = true;
+        const html = await this._loadIslandHtml(url);
+        this._applyIslandResponse(html, alsoHydrate, tag, ll, attempt);
         return true;
       } catch (err) {
         lastErr = err;
@@ -197,8 +155,7 @@ class ServerIsland extends HTMLElement {
           console.warn(`${tag} failed (attempt ${attempt}/${maxRetries + 1}): ${err}`);
         }
         if (attempt <= maxRetries) {
-          const delay = attempt <= 3 ? 1000 : attempt <= 6 ? 3000 : 5000;
-          await new Promise((r) => setTimeout(r, delay));
+          await new Promise((r) => setTimeout(r, islandRetryDelayMs(attempt)));
         }
       }
     }
@@ -210,6 +167,59 @@ class ServerIsland extends HTMLElement {
     window.__mochi_warn?.(msg);
     return false;
   }
+
+  async _loadIslandHtml(url: string): Promise<string> {
+    const response = await fetch(url);
+    if (!response.ok) {
+      if (response.status >= 400 && response.status < 500) {
+        throw Object.assign(new Error(`HTTP ${response.status}`), { abort: true });
+      }
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return await response.text();
+  }
+
+  _applyIslandResponse(html: string, alsoHydrate: string, tag: string, ll: string | undefined, attempt: number): void {
+    if (ll === 'log' || ll === 'debug') {
+      console.log(`${tag} loaded (attempt ${attempt}, ${(html.length / 1024).toFixed(1)}kB, alsoHydrate=${alsoHydrate || 'none'})`);
+    }
+
+    const cssUrl = this.getAttribute('css-url');
+    if (cssUrl && !_css.has(cssUrl)) {
+      _css.add(cssUrl);
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = cssUrl;
+      document.head.appendChild(link);
+    }
+
+    this._unmountChildren();
+
+    // SAFETY: HTML comes from our own same-origin server-island endpoint with encrypted props.
+    // If the island endpoint ever returns user-controlled content, this must be sanitized.
+    this.innerHTML = html;
+    this._everLoaded = true;
+  }
+}
+
+function buildIslandFetchUrl(componentName: string, signedProps: string | null, assetPrefix: string | null, tag: string): string {
+  let url = `${assetPrefix}/island/${encodeURIComponent(componentName)}`;
+  const params = new URLSearchParams();
+  if (signedProps) {
+    params.set('props', signedProps);
+  }
+  const qs = params.toString();
+  if (qs) {
+    url += `?${qs}`;
+  }
+  if (url.length > 1800) {
+    window.__mochi_warn?.(`${tag} URL is ${url.length} chars. Consider reducing prop size.`);
+  }
+  return url;
+}
+
+function islandRetryDelayMs(attempt: number): number {
+  return attempt <= 3 ? 1000 : attempt <= 6 ? 3000 : 5000;
 }
 
 if (!customElements.get('mochi-server-island')) {

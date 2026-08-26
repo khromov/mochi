@@ -437,23 +437,27 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
   );
   reportWedges(results);
   if (failed.length > 0) {
-    // Re-print each failure at the very end: with files streaming out of order
-    // across workers, the error text that matters is buried thousands of lines up.
-    console.log('Failed:');
-    for (const r of failed) {
-      console.log(`\n  ✗ ${r.file}${r.wedged ? ' (finished, never exited)' : r.killed ? ' (timed out)' : ''}`);
-      const { failures, fallback } = extractFailures(r);
-      const body = failures.flatMap((f) => (f.name ? [`(fail) ${f.name}`, ...f.detail] : f.detail)).concat(fallback ?? []);
-      if (body.length === 0) {
-        console.log('    (no output captured before the process was killed)');
-      }
-      for (const line of body.slice(0, MAX_FILE_LINES)) {
-        console.log(line.trim() ? `    ${line}` : '');
-      }
-      if (body.length > MAX_FILE_LINES) {
-        console.log(`    … (truncated, ${body.length - MAX_FILE_LINES} more lines — see this file's output above)`);
-      }
-    }
+    printRunFailures(failed);
     process.exit(1);
+  }
+}
+
+function printRunFailures(failed: FileResult[]): void {
+  // Re-print each failure at the very end: with files streaming out of order across workers, the error text that
+  // matters is buried thousands of lines up.
+  console.log('Failed:');
+  for (const r of failed) {
+    console.log(`\n  ✗ ${r.file}${r.wedged ? ' (finished, never exited)' : r.killed ? ' (timed out)' : ''}`);
+    const { failures, fallback } = extractFailures(r);
+    const body = failures.flatMap((f) => (f.name ? [`(fail) ${f.name}`, ...f.detail] : f.detail)).concat(fallback ?? []);
+    if (body.length === 0) {
+      console.log('    (no output captured before the process was killed)');
+    }
+    for (const line of body.slice(0, MAX_FILE_LINES)) {
+      console.log(line.trim() ? `    ${line}` : '');
+    }
+    if (body.length > MAX_FILE_LINES) {
+      console.log(`    … (truncated, ${body.length - MAX_FILE_LINES} more lines — see this file's output above)`);
+    }
   }
 }

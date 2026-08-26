@@ -21,6 +21,18 @@ export type LoadStats = {
   endedAt: number;
 };
 
+function recordStatusClass(routeStats: RouteStats, status: number): void {
+  if (status >= 200 && status < 300) {
+    routeStats.status2xx++;
+  } else if (status >= 300 && status < 400) {
+    routeStats.status3xx++;
+  } else if (status >= 400 && status < 500) {
+    routeStats.status4xx++;
+  } else if (status >= 500) {
+    routeStats.status5xx++;
+  }
+}
+
 function emptyStats(name: string): RouteStats {
   return {
     name,
@@ -109,16 +121,7 @@ export async function startLoad(opts: StartLoadOpts): Promise<LoadStats> {
         const dt = performance.now() - t0;
         routeStats.count++;
         routeStats.samples.push({ t: tWall, latencyMs: dt, status: res.status });
-        const s = res.status;
-        if (s >= 200 && s < 300) {
-          routeStats.status2xx++;
-        } else if (s >= 300 && s < 400) {
-          routeStats.status3xx++;
-        } else if (s >= 400 && s < 500) {
-          routeStats.status4xx++;
-        } else if (s >= 500) {
-          routeStats.status5xx++;
-        }
+        recordStatusClass(routeStats, res.status);
         stats.totalRequests++;
       } catch (err) {
         if ((err as { name?: string })?.name === 'AbortError') {
