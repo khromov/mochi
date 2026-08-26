@@ -36,7 +36,7 @@ export function patternNames(node: unknown, out: Set<string> = new Set()): Set<s
 }
 
 /** Names a statement list declares, gathered up front so a reference earlier in the block still resolves to the local. */
-function hoistedNames(body: unknown): Set<string> {
+export function hoistedNames(body: unknown): Set<string> {
   const names = new Set<string>();
   for (const stmt of (body as Node[]) ?? []) {
     if (!isNode(stmt)) {
@@ -160,6 +160,37 @@ export function freeIdentifiers(expression: unknown): Set<string> {
         visit(node.body, scope);
         return;
       }
+      case 'ForStatement': {
+        const scope = withNames(bound, hoistedNames([node.init]));
+        visit(node.init, scope);
+        visit(node.test, scope);
+        visit(node.update, scope);
+        visit(node.body, scope);
+        return;
+      }
+      case 'ForOfStatement':
+      case 'ForInStatement': {
+        const left = node.left as Node | undefined;
+        const declares = left?.type === 'VariableDeclaration';
+        const scope = declares ? withNames(bound, hoistedNames([left])) : bound;
+        // The iterable is evaluated before the head binding exists.
+        visit(node.right, bound);
+        if (!declares) {
+          visit(left, scope);
+        }
+        visit(node.body, scope);
+        return;
+      }
+      case 'SwitchStatement': {
+        // Every case shares one block scope, so a braceless `case 1: const x = …` is visible to the other cases too.
+        const consequents = ((node.cases as Node[]) ?? []).flatMap((c) => (c.consequent as Node[]) ?? []);
+        visit(node.discriminant, bound);
+        visit(node.cases, withNames(bound, hoistedNames(consequents)));
+        return;
+      }
+      // `import.meta` and `new.target` are single tokens — neither child is a reference.
+      case 'MetaProperty':
+        return;
       case 'VariableDeclarator':
         // The declared names are already in scope via the enclosing block's hoist pass.
         visit(node.init, bound);

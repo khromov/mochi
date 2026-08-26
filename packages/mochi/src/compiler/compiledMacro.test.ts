@@ -16,7 +16,7 @@ beforeAll(async () => {
   fixtures = path.join(outDir, 'fixtures');
   await Bun.write(
     path.join(fixtures, 'data.ts'),
-    `export const items = ['a', 'b'];\nexport const load = (v: string[]) => v.map((s) => s.toUpperCase());\nexport const markup = () => '<div>${CLOSE}</div>';\n`,
+    `export const items = ['a', 'b'];\nexport const load = (v: string[]) => v.map((s) => s.toUpperCase());\nexport const markup = () => '<div>${CLOSE}</div>';\nexport const boom = () => { throw new Error('kaboom'); };\n`,
   );
   await Bun.write(path.join(fixtures, 'side.ts'), `globalThis.__mochi_side__ = true;\n`);
 });
@@ -96,12 +96,12 @@ describe('transformCompiled', () => {
 
   test('rejects a reference to a local binding, naming it', async () => {
     const local = `<script>\n  import { compiled } from 'mochi-framework';\n  const localThing = 2;\n  const v = await compiled(() => localThing + 1);\n${CLOSE}`;
-    expect(run(local)).rejects.toThrow(/"localThing"/);
+    await expect(run(local)).rejects.toThrow(/"localThing"/);
   });
 
   test('rejects importing a component into build-time code', async () => {
     const source = `<script>\n  import { compiled } from 'mochi-framework';\n  import Child from './Child.svelte';\n  const v = await compiled(() => Child);\n${CLOSE}`;
-    expect(run(source)).rejects.toThrow(/moduleRef/);
+    await expect(run(source)).rejects.toThrow(/moduleRef/);
   });
 
   test('ignores a compiled() that is not the framework import', async () => {
@@ -147,5 +147,88 @@ describe('transformCompiled', () => {
     expect(seen[0]!.count).toBe(2);
     expect(seen[0]!.file).toContain('usage.ts');
     expect(seen[0]!.file).not.toContain('\\');
+  });
+
+  test('gives each module ref its own identifier across separate calls', async () => {
+    const out = await run(
+      `import { compiled, moduleRef } from 'mochi-framework';\nexport const a = await compiled(() => ({ x: moduleRef('./one.md') }));\nexport const b = await compiled(() => ({ y: moduleRef('./two.md') }));\n`,
+      'module',
+    );
+    expect(out).toContain(`import __mochi_ref_0__ from "./one.md";`);
+    expect(out).toContain(`import __mochi_ref_1__ from "./two.md";`);
+    expect(out).toContain('{x:__mochi_ref_0__}');
+    expect(out).toContain('{y:__mochi_ref_1__}');
+  });
+
+  test('reuses one identifier when two calls reference the same module', async () => {
+    const out = await run(
+      `import { compiled, moduleRef } from 'mochi-framework';\nexport const a = await compiled(() => moduleRef('./same.md'));\nexport const b = await compiled(() => moduleRef('./same.md'));\n`,
+      'module',
+    );
+    expect(out.match(/import __mochi_ref_\d+__/g)).toHaveLength(1);
+    expect(out).toContain('export const a = __mochi_ref_0__;');
+    expect(out).toContain('export const b = __mochi_ref_0__;');
+  });
+
+  test('transforms a module that contains a closing script tag in a string', async () => {
+    const out = await run(`import { compiled } from 'mochi-framework';\nexport const CLOSER = '${CLOSE}';\nexport const v = await compiled(() => 1);\n`, 'module');
+    expect(out).toContain(`export const CLOSER = '${CLOSE}';`);
+    expect(out).toContain('export const v = 1;');
+  });
+
+  test('ignores an identifier that merely ends in the macro name', async () => {
+    const source = `import { compiled } from 'mochi-framework';\nexport const x = precompiled(1);\nexport const y = registry.compiled(2);\n`;
+    expect(await run(source, 'module')).toBe(source);
+  });
+
+  test('places a generated import after a generics attribute, not inside it', async () => {
+    const out = await run(
+      `<script lang="ts" generics="T extends Record<string, unknown>">\n  import { compiled, moduleRef } from 'mochi-framework';\n  const v = await compiled(() => moduleRef('./one.md'));\n${CLOSE}`,
+    );
+    expect(out).toContain(`generics="T extends Record<string, unknown>">`);
+    expect(out).toMatch(/">\n\s*import __mochi_ref_0__/);
+  });
+
+  test('leaves no indentation behind when it prunes an import', async () => {
+    const out = await run(
+      `<script>\n  import { compiled } from 'mochi-framework';\n  import { items } from './data.ts';\n  const v = await compiled(() => items.length);\n${CLOSE}\n<p>{v}</p>`,
+    );
+    expect(out).toBe(`<script>\n  const v = 2;\n${CLOSE}\n<p>{v}</p>`);
+  });
+
+  test('prunes cleanly from a CRLF source', async () => {
+    const source = `<script>\n  import { compiled } from 'mochi-framework';\n  import { items } from './data.ts';\n  const v = await compiled(() => items.length);\n${CLOSE}\n<p>{v}</p>`;
+    const out = await run(source.replace(/\n/g, '\r\n'));
+    expect(out).toBe(`<script>\r\n  const v = 2;\r\n${CLOSE}\r\n<p>{v}</p>`);
+  });
+
+  test('rejects a host local that shares a name with a build-process global', async () => {
+    const source = `<script>\n  import { compiled } from 'mochi-framework';\n  const File = { read: () => 'local' };\n  const v = await compiled(() => typeof File);\n${CLOSE}`;
+    await expect(run(source)).rejects.toThrow(/references "File"/);
+  });
+
+  test('names every missing reference with plural wording', async () => {
+    const source = `<script>\n  import { compiled } from 'mochi-framework';\n  const a = 1;\n  const b = 2;\n  const v = await compiled(() => a + b);\n${CLOSE}`;
+    await expect(run(source)).rejects.toThrow(/"a", "b"\. Move those values into their own modules and import them\./);
+  });
+
+  test('rejects a compiled() written in markup, which the transform never reaches', async () => {
+    const source = `<script>\n  import { compiled } from 'mochi-framework';\n${CLOSE}\n{#await compiled(() => 1) then v}{v}{/await}`;
+    await expect(run(source)).rejects.toThrow(/only works inside a script block/);
+  });
+
+  test('rejects chaining off the promise the call appears to return', async () => {
+    const source = `<script>\n  import { compiled } from 'mochi-framework';\n  const v = compiled(() => 1).then((n) => n + 1);\n${CLOSE}`;
+    await expect(run(source)).rejects.toThrow(/must be awaited directly/);
+  });
+
+  test('names the host file when the build-time function throws', async () => {
+    const source = `<script>\n  import { compiled } from 'mochi-framework';\n  import { boom } from './data.ts';\n  const v = await compiled(() => boom());\n${CLOSE}`;
+    await expect(run(source)).rejects.toThrow(/compiled\(\) in .*Component\.svelte threw while evaluating: kaboom/);
+  });
+
+  test('names the host file when a reference cannot be resolved', async () => {
+    const source = `<script>\n  import { compiled } from 'mochi-framework';\n  const local = 1;\n  const v = await compiled(() => local);\n${CLOSE}`;
+    await expect(run(source)).rejects.toThrow(/compiled\(\) in .*Component\.svelte can only reference/);
   });
 });

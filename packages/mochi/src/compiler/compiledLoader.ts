@@ -5,6 +5,9 @@ import { relForDisplay, toPosixPath } from '../utils/index';
 
 export const COMPILED_MODULE_FILTER = /\.(ts|mts|js|mjs)$/;
 
+/** Runes modules match the filter above but belong to the Svelte module loader, which is registered after this one. */
+const SVELTE_MODULE_FILTER = /\.svelte\.[jt]s$/;
+
 /** The framework's own `src/`, so its implementation of the macro is never itself macro-processed. */
 const FRAMEWORK_SRC = toPosixPath(path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..'));
 
@@ -46,13 +49,13 @@ export function assertNotPrebuilt(ctx: CompiledContext, filePath: string): void 
   }
 }
 
-/** Run the macro over a component or markdown source that the caller has already read. */
-export async function applyCompiled(source: string, filePath: string, ctx: CompiledContext): Promise<string> {
+/** Run the macro over a component, markdown, or runes-module source that the caller has already read. */
+export async function applyCompiled(source: string, filePath: string, ctx: CompiledContext, kind: 'svelte' | 'module' = 'svelte'): Promise<string> {
   if (!mayContainCompiled(source)) {
     return source;
   }
   assertNotPrebuilt(ctx, filePath);
-  return transformCompiled({ source, filePath, outDir: ctx.outDir, kind: 'svelte', serializer: ctx.serializer, onUsage: ctx.onUsage });
+  return transformCompiled({ source, filePath, outDir: ctx.outDir, kind, serializer: ctx.serializer, onUsage: ctx.onUsage });
 }
 
 /**
@@ -63,16 +66,19 @@ export async function applyCompiled(source: string, filePath: string, ctx: Compi
  */
 export function createCompiledModuleLoader(ctx: CompiledContext) {
   return async (args: { path: string }): Promise<{ contents: string; loader: 'ts' | 'js' } | undefined> => {
-    if (!isAppModule(args.path)) {
+    // A `.svelte.ts` needs the Svelte module compiler, and Bun stops at the first handler that returns something —
+    // so this one must decline and let the runes loader (registered after it) apply the macro itself.
+    if (!isAppModule(args.path) || SVELTE_MODULE_FILTER.test(args.path)) {
       return undefined;
     }
     // The filter matches by extension, which also catches modules that exist only in a `Bun.build({ files })` map and
     // have nothing on disk. Hand those back to the bundler untouched rather than failing the build on a missing file.
-    const file = Bun.file(args.path);
-    if (!(await file.exists())) {
+    let source: string;
+    try {
+      source = await Bun.file(args.path).text();
+    } catch {
       return undefined;
     }
-    const source = await file.text();
     if (!mayContainCompiled(source)) {
       return undefined;
     }

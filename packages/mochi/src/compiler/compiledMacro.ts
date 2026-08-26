@@ -1,8 +1,8 @@
 import MagicString from 'magic-string';
 import { parse } from 'svelte/compiler';
-import { freeIdentifiers } from './compiledScope';
+import { freeIdentifiers, hoistedNames } from './compiledScope';
 import { evaluateTwin, CompiledExpressionError, type HostImport } from './compiledTwin';
-import { serializeCompiledValue, type CompiledSerializer } from './compiledSerialize';
+import { serializeCompiledValue, createCompiledRefScope, type CompiledSerializer } from './compiledSerialize';
 import { referencedNames } from './compiledReferences';
 import { relForDisplay } from '../utils/index';
 
@@ -10,12 +10,14 @@ const MACRO_NAME = 'compiled';
 const FRAMEWORK_SPECIFIER = 'mochi-framework';
 
 /** Cheap gate so files without the macro never reach the parser, mirroring the directive fast-path in svelteAstPreprocess. */
+const MACRO_CALL_PATTERN = new RegExp(String.raw`(^|[^\w$.])${MACRO_NAME}\s*\(`);
+
 export function mayContainCompiled(source: string): boolean {
-  return source.includes(`${MACRO_NAME}(`);
+  return MACRO_CALL_PATTERN.test(source);
 }
 
 export interface CompiledUsage {
-  /** Project-relative path of the module the calls were found in. */
+  /** Absolute path of the module the calls were found in; the build report renders it project-relative. */
   file: string;
   count: number;
 }
@@ -41,24 +43,70 @@ interface ScriptRegion {
   insertAt: number | null;
 }
 
-function scriptTagEnd(text: string, element: Node): number {
-  return text.indexOf('>', element.start) + 1;
+const SCRIPT_CLOSE = new RegExp(String.raw`</scr` + `ipt`, 'gi');
+
+/**
+ * Blunt a closing script tag so the Svelte parser can read a plain module wrapped in a synthetic script block.
+ *
+ * The replacement is the same length, so every AST offset still lines up with the real text — which is what the
+ * transform slices expressions from and hands to MagicString. Only bytes inside strings and comments differ.
+ */
+function neutralizeScriptClose(text: string): string {
+  return text.slice(0, text.length - MODULE_SUFFIX.length).replace(SCRIPT_CLOSE, '<%scr' + 'ipt') + MODULE_SUFFIX;
 }
 
-function parseRegions(source: string, kind: 'svelte' | 'module'): { text: string; regions: ScriptRegion[] } {
+function parseRegions(source: string, kind: 'svelte' | 'module'): { text: string; regions: ScriptRegion[]; fragment?: unknown } {
   if (kind === 'module') {
     const text = MODULE_PREFIX + source + MODULE_SUFFIX;
-    const ast = parse(text, { modern: true }) as unknown as { module?: { content: Node } };
+    const ast = parse(neutralizeScriptClose(text), { modern: true }) as unknown as { module?: { content: Node } };
     return { text, regions: ast.module ? [{ program: ast.module.content, insertAt: null }] : [] };
   }
-  const ast = parse(source, { modern: true }) as unknown as { instance?: Node; module?: Node };
+  const ast = parse(source, { modern: true }) as unknown as { instance?: Node; module?: Node; fragment?: unknown };
   const regions: ScriptRegion[] = [];
   for (const element of [ast.module, ast.instance]) {
     if (element) {
-      regions.push({ program: element.content as Node, insertAt: scriptTagEnd(source, element) });
+      const program = element.content as Node;
+      regions.push({ program, insertAt: program.start });
     }
   }
-  return { text: source, regions };
+  return { text: source, regions, fragment: ast.fragment };
+}
+
+/**
+ * Reject a compiled() written in markup (an {#await} block, a {@const}).
+ *
+ * Only script regions are transformed, so a markup call would fall through to the runtime shim and quietly ship the
+ * dependency the macro exists to erase — and a moduleRef() inside one would reach the browser as a bare marker.
+ */
+function assertNoMacroInMarkup(fragment: unknown, filePath: string): void {
+  const visit = (node: unknown): void => {
+    if (!node || typeof node !== 'object') {
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        visit(child);
+      }
+      return;
+    }
+    const n = node as Node;
+    if (n.type === 'CallExpression') {
+      const callee = n.callee as Node | undefined;
+      if (callee?.type === 'Identifier' && callee.name === MACRO_NAME) {
+        throw new CompiledExpressionError(
+          'compiled() only works inside a script block, but ' +
+            relForDisplay(filePath) +
+            ' calls it from markup. Move the call into the component script and reference the result.',
+        );
+      }
+    }
+    for (const [key, value] of Object.entries(n)) {
+      if (key !== 'type' && key !== 'start' && key !== 'end') {
+        visit(value);
+      }
+    }
+  };
+  visit(fragment);
 }
 
 function importsOf(program: Node, text: string): HostImport[] {
@@ -121,6 +169,11 @@ function macroCalls(program: Node, imports: HostImport[]): MacroCall[] {
       const callee = n.callee as Node | undefined;
       if (callee?.type === 'Identifier' && callee.name === MACRO_NAME) {
         const awaited = parent?.type === 'AwaitExpression' && parent.argument === n;
+        if (!awaited && parent?.type === 'MemberExpression' && parent.object === n) {
+          throw new CompiledExpressionError(
+            'compiled() must be awaited directly, as in: await compiled(() => loadData()). The call is replaced by the value it returned, so chaining off the promise it appears to return cannot work.',
+          );
+        }
         calls.push({ call: n, start: awaited ? parent.start : n.start, end: awaited ? parent.end : n.end });
       }
     }
@@ -145,15 +198,18 @@ export async function transformCompiled(opts: CompiledTransformOptions): Promise
     return opts.source;
   }
 
-  const { text, regions } = parseRegions(opts.source, opts.kind);
+  const { text, regions, fragment } = parseRegions(opts.source, opts.kind);
+  assertNoMacroInMarkup(fragment, opts.filePath);
   const magic = new MagicString(text);
   const usedImports = new Set<HostImport>();
   const prepended: string[] = [];
+  const refScope = createCompiledRefScope();
   let count = 0;
 
   for (const region of regions) {
     const imports = importsOf(region.program, text);
     const calls = macroCalls(region.program, imports);
+    const hostLocals = hoistedNames(region.program.body);
     for (const { call, start, end } of calls) {
       const args = (call.arguments as Node[]) ?? [];
       const expression = args[0];
@@ -167,12 +223,13 @@ export async function transformCompiled(opts: CompiledTransformOptions): Promise
         expression: expressionSource,
         free,
         imports,
+        hostLocals,
         outDir: opts.outDir,
       });
       for (const imp of used) {
         usedImports.add(imp);
       }
-      const { expression: serialized, imports: refImports } = serializeCompiledValue(value, opts.serializer);
+      const { expression: serialized, imports: refImports } = serializeCompiledValue(value, opts.serializer, refScope);
       const generated = refImports.map((r) => `import ${r.identifier} from ${JSON.stringify(r.specifier)};`).join('\n');
       magic.overwrite(start, end, serialized);
       if (generated) {
@@ -204,7 +261,7 @@ export async function transformCompiled(opts: CompiledTransformOptions): Promise
     magic.remove(0, MODULE_PREFIX.length);
     magic.remove(text.length - MODULE_SUFFIX.length, text.length);
   }
-  opts.onUsage?.({ file: relForDisplay(opts.filePath), count });
+  opts.onUsage?.({ file: opts.filePath, count });
   const body = magic.toString();
   return prepended.length > 0 ? `${prepended.join('\n')}\n${body}` : body;
 }
@@ -220,7 +277,8 @@ function pruneDeadImports(magic: MagicString, text: string, candidates: Set<Host
   if (candidates.size === 0) {
     return;
   }
-  const referenced = referencedNames(magic.toString(), kind);
+  const output = magic.toString();
+  const referenced = referencedNames(kind === 'module' ? neutralizeScriptClose(output) : output, kind);
   for (const imp of candidates) {
     // A bare `import './side-effects.ts'` binds nothing and is never ours to remove.
     if (imp.names.length === 0) {
@@ -229,8 +287,15 @@ function pruneDeadImports(magic: MagicString, text: string, candidates: Set<Host
     if (imp.names.some((name) => referenced.has(name))) {
       continue;
     }
-    // Swallow the declaration's own trailing newline so pruning leaves no blank line behind.
-    const trailing = text.startsWith('\n', imp.end) ? 1 : 0;
-    magic.remove(imp.start, imp.end + trailing);
+    // Take the declaration's own indentation and line ending too, or pruning leaves an orphaned blank line behind.
+    const lineStart = text.lastIndexOf('\n', imp.start - 1) + 1;
+    const start = text.slice(lineStart, imp.start).trim() === '' ? lineStart : imp.start;
+    let end = imp.end;
+    if (text.startsWith('\r\n', end)) {
+      end += 2;
+    } else if (text.startsWith('\n', end)) {
+      end += 1;
+    }
+    magic.remove(start, end);
   }
 }

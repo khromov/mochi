@@ -75,7 +75,7 @@ export const docs: Record<string, Component> = await compiled(async () => {
 becomes:
 
 ```js
-import __mochi_ref_0__ from '/abs/path/docs/10-intro.md';
+import __mochi_ref_0__ from '../../docs/10-intro.md';
 export const docs = { intro: __mochi_ref_0__ };
 ```
 
@@ -103,7 +103,9 @@ After inlining, an import that only fed the function is deleted. That is what ac
 
 <Callout type="warning">
 
-A compiled function is re-evaluated when the file containing it is recompiled, but files it _reads_ at runtime are not tracked. If the function reads from disk, edits to those files will not refresh the value until the containing module changes. Restart the dev server when in doubt.
+In dev, every build-time value is discarded on each rebuild and recomputed, so an edit to a file the function reads is picked up. Adding or deleting a file that nothing imports is the one case the import graph cannot explain, so it rebuilds every module holding a build-time value at once. In a production build each value is evaluated once, so two calls that return the same thing cost one evaluation.
+
+One thing dev cannot refresh: module-level state inside the helpers your build-time function calls. The function re-runs, but the modules it imports are only instantiated once per process, so a helper that memoizes in a module-level `Map` keeps returning its first answer until you restart. Skip the memo when `process.env.MODE === 'development'` if the value has to track the filesystem.
 
 </Callout>
 

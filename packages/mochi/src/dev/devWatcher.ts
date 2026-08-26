@@ -4,6 +4,7 @@ import path from 'node:path';
 import chokidar from 'chokidar';
 import debounce from '../vendor/debounce/index';
 import type { ComponentRegistry } from '../compiler/ComponentRegistry';
+import { resetCompiledEvaluationCache } from '../compiler/compiledTwin';
 import { mochiEvents } from '../events';
 import type { MochiFileChangeType } from '../events';
 import { logger } from '../utils/log';
@@ -38,6 +39,10 @@ import {
 } from '../types';
 
 const FILE_CHANGE_EVENTS = new Set<string>(['add', 'change', 'unlink', 'addDir', 'unlinkDir']);
+
+// A compiled() value can be derived from a directory listing, which only changes when a file appears or disappears.
+// An edit to an existing file already reaches its dependents through the import graph.
+const STRUCTURAL_CHANGE_EVENTS = new Set<string>(['add', 'unlink', 'addDir', 'unlinkDir']);
 
 // Chokidar reports a rename as unlink-old + add-new, so logging the verb per
 // event surfaces both the old and new filename instead of just "changed".
@@ -174,8 +179,27 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   // Serializing rebuilds through a Promise chain holds the WebSocket reload until client JS chunks are ready; saves
   // arriving mid-rebuild append to the chain, so the browser reloads once, into fresh chunks.
   let reloadChain: Promise<void> = Promise.resolve();
+  /** Rebuild the pages that inline a build-time value, whose real inputs the bundler's dependency graph never sees. */
+  const recompileCompiledSources = async (): Promise<{ pages: Set<string>; clientBundleCount: number }> => {
+    const count = registry.getCompiledSourceFiles().length;
+    if (count === 0) {
+      return { pages: new Set(), clientBundleCount: 0 };
+    }
+    logger.info(`Rebuilding ${count} module${count === 1 ? '' : 's'} with build-time values — their inputs are not in the import graph`);
+    return registry.recompileCompiledSources();
+  };
+
+  // Sticky across the debounce window: chokidar can follow an 'add' with a 'change' within it, and only the last
+  // call's arguments survive — losing the one flag that says the import graph cannot explain this change.
+  let pendingStructural = false;
   const triggerReload = debounce((filename: string) => {
+    const structural = pendingStructural;
+    pendingStructural = false;
     reloadChain = reloadChain.then(async () => {
+      // Cleared here rather than on the watcher event, so it cannot land between this rebuild's server and client
+      // passes and let them inline different values into the same island. Wholesale because a compiled() value is
+      // usually derived from files other than the one it was written in — only the next compile knows its inputs.
+      resetCompiledEvaluationCache();
       // pageCount on the start event is the universe size, not the
       // affected size — the watcher doesn't know which pages depend on
       // the changed file until recompileChanged inspects the graph.
@@ -190,6 +214,10 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
           if (routeComponentPaths.has(resolved)) {
             await registry.compile(resolved, { force: true });
             summary = { pages: new Set([resolved]), clientBundleCount: 0 };
+          } else if (structural) {
+            // Nothing in the graph depends on this file — but a compiled() value may still read the directory it
+            // appeared in, and that is the one input the graph cannot see.
+            summary = await recompileCompiledSources();
           }
         }
       } catch (e) {
@@ -527,6 +555,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
 
   const triggerEntryReload = debounce((filename: string) => {
     reloadChain = reloadChain.then(async () => {
+      resetCompiledEvaluationCache();
       mochiEvents.emit('recompile:start', { trigger: 'entry', path: filename, pageCount: registry.getPageCount() });
       const start = performance.now();
       let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
@@ -708,6 +737,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         // exclusive branch is correct: one serialized task, one reload.
         triggerEntryReload(filePath);
       } else {
+        pendingStructural ||= STRUCTURAL_CHANGE_EVENTS.has(event);
         triggerReload(filePath);
       }
     })

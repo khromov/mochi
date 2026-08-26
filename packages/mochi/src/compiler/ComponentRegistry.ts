@@ -47,7 +47,7 @@ import { formatBuildMessages } from './formatBuildMessages';
 import { registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
 import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
 import { applyCompiled, createCompiledModuleLoader, COMPILED_MODULE_FILTER, type CompiledContext } from './compiledLoader';
-import type { CompiledUsage } from './compiledMacro';
+import { mayContainCompiled, type CompiledUsage } from './compiledMacro';
 import { EMAIL_TEMPLATE_DIR } from '../email/templates';
 import { registerLocalImageAsset } from '../image/localAssetRegistry';
 import type { LocalImageAsset } from '../image/types';
@@ -128,7 +128,9 @@ function createMarkdownLoader(opts: {
     // and the svelte compile. Keying on raw source assumes mdsvex and the user preprocessors are pure in
     // (source, filename), the standard Vite/SvelteKit contract: a plugin reading a sibling `.json` won't re-run until
     // this file's own bytes change.
-    const cached = opts.compileCache.get(opts.target, args.path, raw, fingerprint, opts.compileCacheStats);
+    // A compiled() value is derived from files outside this one, so a hit keyed on this file's bytes would replay a
+    // stale inlined value for as long as the source is untouched.
+    const cached = mayContainCompiled(raw) ? undefined : opts.compileCache.get(opts.target, args.path, raw, fingerprint, opts.compileCacheStats);
     if (cached) {
       if (opts.hydration) {
         opts.hydration.fileHydratables.set(args.path, cached.hydratables);
@@ -459,12 +461,22 @@ export class ComponentRegistry {
   private clientBundleCallCount = 0;
   /** Instance-scoped so two registries with different markdown/preprocessor config can't serve each other stale output for the same path — see {@link CompileCache}. */
   readonly compileCache = new CompileCache();
-  /** Every `compiled()` call inlined during this build, keyed by file, for the build report. */
+  /** Every `compiled()` call inlined during this build, keyed by file, for the build report. Highest count wins rather than a running total: the server and client passes each load the same file, and a dev rebuild loads it again. */
   private compiledUsage: Map<string, number> = new Map();
 
   /** Files that had `compiled()` calls inlined, with how many each had — consumed by the build report. */
   getCompiledUsage(): CompiledUsage[] {
-    return [...this.compiledUsage].map(([file, count]) => ({ file, count })).sort((a, b) => a.file.localeCompare(b.file));
+    return [...this.compiledUsage].map(([file, count]) => ({ file: relForDisplay(file), count })).sort((a, b) => a.file.localeCompare(b.file));
+  }
+
+  /**
+   * Absolute paths of every module that had a `compiled()` value inlined.
+   *
+   * A build-time function usually reads files nobody imports — a docs directory, a source list — so the bundler's
+   * dependency graph cannot say when its value went stale. Dev recompiles these whenever a change affects nothing else.
+   */
+  getCompiledSourceFiles(): string[] {
+    return [...this.compiledUsage.keys()];
   }
 
   constructor(opts: ComponentRegistryOptions = {}) {
@@ -686,7 +698,7 @@ export class ComponentRegistry {
       outDir: this.outDir,
       development: this.development,
       isPrebuilt: () => this.loadedFromManifest,
-      onUsage: (usage: CompiledUsage) => this.compiledUsage.set(usage.file, (this.compiledUsage.get(usage.file) ?? 0) + usage.count),
+      onUsage: (usage: CompiledUsage) => this.compiledUsage.set(usage.file, Math.max(this.compiledUsage.get(usage.file) ?? 0, usage.count)),
     };
     const compiledModuleLoader = createCompiledModuleLoader(compiledContext);
 
@@ -729,7 +741,7 @@ export class ComponentRegistry {
           path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
         }));
         build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
-          let source = await Bun.file(args.path).text();
+          let source = await applyCompiled(await Bun.file(args.path).text(), args.path, compiledContext, 'module');
           if (args.path.endsWith('.ts')) {
             const transpiler = new Bun.Transpiler({ loader: 'ts' });
             source = transpiler.transformSync(source);
@@ -745,7 +757,7 @@ export class ComponentRegistry {
         });
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
           const raw = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
-          const cached = compileCache.get('server', args.path, raw, serverFingerprint, compileCacheStats);
+          const cached = mayContainCompiled(raw) ? undefined : compileCache.get('server', args.path, raw, serverFingerprint, compileCacheStats);
           if (cached) {
             fileHydratables.set(args.path, cached.hydratables);
             fileServerIslands.set(args.path, cached.serverIslands);
@@ -1189,7 +1201,7 @@ export class ComponentRegistry {
       outDir: this.outDir,
       development: this.development,
       isPrebuilt: () => this.loadedFromManifest,
-      onUsage: (usage: CompiledUsage) => this.compiledUsage.set(usage.file, (this.compiledUsage.get(usage.file) ?? 0) + usage.count),
+      onUsage: (usage: CompiledUsage) => this.compiledUsage.set(usage.file, Math.max(this.compiledUsage.get(usage.file) ?? 0, usage.count)),
     };
     const compiledModuleLoader = createCompiledModuleLoader(compiledContext);
 
@@ -1239,10 +1251,10 @@ export class ComponentRegistry {
           path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
         }));
         registerEsmEnvStrip(build);
-        registerSvelteModuleLoader(build, backend, mergeCompilerOptions(userCompilerOptions, { generate: 'client', dev: development }));
+        registerSvelteModuleLoader(build, backend, mergeCompilerOptions(userCompilerOptions, { generate: 'client', dev: development }), compiledContext);
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
           const source = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
-          const cached = compileCache.get('client', args.path, source, clientFingerprint, compileCacheStats);
+          const cached = mayContainCompiled(source) ? undefined : compileCache.get('client', args.path, source, clientFingerprint, compileCacheStats);
           if (cached) {
             return { contents: cached.js, loader: 'js' };
           }
@@ -2240,14 +2252,31 @@ export class ComponentRegistry {
    * `pages` are absolute, matching the `window.__mochi_page_entry` value injected into SSR'd HTML.
    */
   async recompileChanged(changedPath: string): Promise<{ pages: Set<string>; clientBundleCount: number }> {
-    const changed = path.resolve(changedPath);
+    return this.recompileDependents([changedPath], 'Targeted rebuild failed');
+  }
+
+  /**
+   * Rebuild every page that inlines a build-time value.
+   *
+   * One batch for the whole cohort: a `compiled()` value's real inputs are not in the import graph, so the watcher
+   * cannot narrow this to a single module, and rebuilding them one at a time costs a full `Bun.build` plus a client
+   * bundle per module.
+   */
+  async recompileCompiledSources(): Promise<{ pages: Set<string>; clientBundleCount: number }> {
+    return this.recompileDependents(this.compiledUsage.keys(), 'Build-time value rebuild failed');
+  }
+
+  private async recompileDependents(seeds: Iterable<string>, label: string): Promise<{ pages: Set<string>; clientBundleCount: number }> {
     const affected = new Set<string>();
-    if (this.compiledComponents.has(changed)) {
-      affected.add(changed);
-    }
-    for (const [entry, deps] of this.entryDeps) {
-      if (deps.has(changed)) {
-        affected.add(entry);
+    for (const seed of seeds) {
+      const changed = path.resolve(seed);
+      if (this.compiledComponents.has(changed)) {
+        affected.add(changed);
+      }
+      for (const [entry, deps] of this.entryDeps) {
+        if (deps.has(changed)) {
+          affected.add(entry);
+        }
       }
     }
     if (affected.size === 0) {
@@ -2257,7 +2286,7 @@ export class ComponentRegistry {
     this.clientBundleCallCount = 0;
     // Rebuild every affected entry in a single Bun.build so transitive deps
     // dedupe across them.
-    await this.safeBatchCompile([...affected], 'Targeted rebuild failed');
+    await this.safeBatchCompile([...affected], label);
     this.rebuildHydratables();
     // `compileAll` already calls `buildClientBundle` once when the cohort contributes hydratables, so a trailing call is
     // forced only where this recompile removed the cohort's hydratables while other cached pages still have some, leaving

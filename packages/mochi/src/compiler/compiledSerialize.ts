@@ -28,12 +28,22 @@ export type CompiledSerializer = 'devalue' | 'json' | ((value: unknown) => strin
 export interface SerializedValue {
   /** JS expression source for the value. */
   expression: string;
-  /** Module specifiers each generated import needs, in identifier order. */
+  /** Imports this call newly needed, in identifier order — a specifier already minted by an earlier call in the same scope is reused and not repeated here. */
   imports: { identifier: string; specifier: string }[];
 }
 
 function identifierFor(index: number): string {
   return `__mochi_ref_${index}__`;
+}
+
+/** Identifier allocation shared by every `compiled()` call in one module, so two calls can't both mint `__mochi_ref_0__`. */
+export interface CompiledRefScope {
+  imports: { identifier: string; specifier: string }[];
+  seen: Map<string, string>;
+}
+
+export function createCompiledRefScope(): CompiledRefScope {
+  return { imports: [], seen: new Map() };
 }
 
 /**
@@ -42,31 +52,31 @@ function identifierFor(index: number): string {
  * `json` mode cannot represent module refs (they are not JSON), so a value containing one is rejected rather than
  * silently flattened to `{}`.
  */
-export function serializeCompiledValue(value: unknown, serializer: CompiledSerializer = 'devalue'): SerializedValue {
-  const imports: { identifier: string; specifier: string }[] = [];
-  const seen = new Map<string, string>();
+export function serializeCompiledValue(value: unknown, serializer: CompiledSerializer = 'devalue', scope: CompiledRefScope = createCompiledRefScope()): SerializedValue {
+  const before = scope.imports.length;
+  const imports = () => scope.imports.slice(before);
 
   const refIdentifier = (specifier: string): string => {
-    let identifier = seen.get(specifier);
+    let identifier = scope.seen.get(specifier);
     if (identifier === undefined) {
-      identifier = identifierFor(imports.length);
-      seen.set(specifier, identifier);
-      imports.push({ identifier, specifier });
+      identifier = identifierFor(scope.imports.length);
+      scope.seen.set(specifier, identifier);
+      scope.imports.push({ identifier, specifier });
     }
     return identifier;
   };
 
   if (typeof serializer === 'function') {
-    return { expression: serializer(value), imports };
+    return { expression: serializer(value), imports: imports() };
   }
 
   if (serializer === 'json') {
     assertNoModuleRefs(value);
-    return { expression: `JSON.parse(${escapeMarkup(JSON.stringify(JSON.stringify(value)))})`, imports };
+    return { expression: `JSON.parse(${escapeMarkup(JSON.stringify(JSON.stringify(value)))})`, imports: imports() };
   }
 
   const expression = uneval(value, (v) => (isModuleRef(v) ? refIdentifier(moduleRefSpecifier(v)) : undefined));
-  return { expression, imports };
+  return { expression, imports: imports() };
 }
 
 /**

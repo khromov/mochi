@@ -86,4 +86,13 @@ describe('createCompiledModuleLoader', () => {
     await Bun.write(file, `export const v = 1;\n`);
     expect(await createCompiledModuleLoader(context())({ path: file })).toBeUndefined();
   });
+
+  // `.svelte.ts` matches this loader's extension filter but belongs to the runes-module loader registered after it.
+  // Claiming it here meant `$state` reached the bundle uncompiled.
+  test('declines a runes module so the Svelte module loader can claim it', async () => {
+    const file = path.join(outDir, 'app', 'state.svelte.ts');
+    await Bun.write(file, `import { compiled } from 'mochi-framework';\nexport const v = await compiled(() => 1);\nexport const s = $state(null);\n`);
+    expect(await createCompiledModuleLoader(context())({ path: file })).toBeUndefined();
+    expect(await createCompiledModuleLoader(context())({ path: toPosixPath(file) })).toBeUndefined();
+  });
 });

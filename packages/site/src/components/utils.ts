@@ -7,14 +7,19 @@ type Source = { label: string; lang: string; html: string; styleHtml?: string };
 
 const cache = new Map<string, string>();
 
+// Every demo lists the same shared files, so a build reads each once. In dev the memo has to go: loadSources runs
+// inside a compiled() twin, whose module Bun keeps for the life of the process, so a cached read would pin the
+// source panel to whatever the file said at boot.
+const MEMOIZE_READS = process.env.MODE !== 'development';
+
 async function read(path: string): Promise<string> {
-  let hit = cache.get(path);
-  if (hit !== undefined) {
+  const hit = cache.get(path);
+  if (hit !== undefined && MEMOIZE_READS) {
     return hit;
   }
-  hit = await Bun.file(path).text();
-  cache.set(path, hit);
-  return hit;
+  const text = await Bun.file(path).text();
+  cache.set(path, text);
+  return text;
 }
 
 export async function loadSources(specs: SourceSpec[]): Promise<Source[]> {
@@ -79,7 +84,7 @@ function stripDemoWrapper(code: string): string {
   out = out.replace(/^[^\S\n]*import\s+DemoPage\s+from\s+['"][^'"]+['"];?[^\S\n]*\n?/m, '');
   out = out.replace(/^[^\S\n]*import\s*\{\s*loadSources\s*\}\s*from\s+['"][^'"]+['"];?[^\S\n]*\n?/m, '');
   out = out.replace(/^[^\S\n]*import\s*\{\s*files\s*\}\s*from\s+['"]\.\/files(?:\.ts)?['"];?[^\S\n]*\n?/m, '');
-  out = out.replace(/^[^\S\n]*const\s+sources\s*=\s*await\s+compiled\s*\([\s\S]*?\)\s*;?[^\S\n]*\n?/m, '');
+  out = out.replace(/^[^\S\n]*const\s+sources\s*=\s*await\s+compiled\s*\([\s\S]*?\)\s*;[^\S\n]*\n?/m, '');
   // `compiled` is only ever here to build the source list, so drop it — but only that one name, since a demo may
   // legitimately import others from the framework alongside it.
   out = out.replace(/^([^\S\n]*import\s*\{)([^}]*)(\}\s*from\s+['"]mochi-framework['"];?[^\S\n]*\n?)/m, (match, open, names, close) => {
