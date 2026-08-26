@@ -107,7 +107,7 @@ export function extractFailures(result: Pick<FileResult, 'stdout' | 'stderr'>): 
     return { failures };
   }
 
-  const raw = (result.stderr.trim() ? result.stderr : result.stdout).split('\n').filter((l) => l.trim() && !/^bun test v/.test(l));
+  const raw = (result.stderr.trim() ? result.stderr : result.stdout).split('\n').filter((l) => l.trim() && !l.startsWith('bun test v'));
   return { failures: [], fallback: raw.slice(-20) };
 }
 

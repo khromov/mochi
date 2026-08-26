@@ -508,6 +508,8 @@ export class ComponentRegistry {
       let excluded = 0;
       if (exclude.length > 0) {
         const globs = exclude.map((p) => new Bun.Glob(p));
+        // Snapshot the keys: the loop deletes from `shaken` while iterating it.
+        // oxlint-disable-next-line no-useless-spread
         for (const id of [...shaken.keys()]) {
           // Glob patterns are written with forward slashes, so match against
           // POSIX-ified paths or Windows never excludes anything.
@@ -1326,6 +1328,8 @@ export class ComponentRegistry {
     // succeeded. Replace only the client-prefix JS entries; the per-component CSS
     // entries in `clientFiles` are stable and preserved.
     const clientPrefix = `${this.assetPrefix}/client/`;
+    // Snapshot the keys: the loop deletes from `clientFiles` while iterating it.
+    // oxlint-disable-next-line no-useless-spread
     for (const key of [...this.clientFiles.keys()]) {
       if (key.startsWith(clientPrefix)) {
         this.clientFiles.delete(key);
@@ -2158,6 +2162,8 @@ export class ComponentRegistry {
       // Drop existing import-css entries from clientFiles so stale URLs don't
       // linger when content (and therefore hash) changes.
       const importCssPrefix = `${this.assetPrefix}/import-css/`;
+      // Snapshot the keys: the loop deletes from `clientFiles` while iterating it.
+      // oxlint-disable-next-line no-useless-spread
       for (const key of [...this.clientFiles.keys()]) {
         if (key.startsWith(importCssPrefix)) {
           this.clientFiles.delete(key);

@@ -386,6 +386,7 @@ describe('enhance attachment', () => {
     // generate the boundary string.
     expect(headers.has('content-type')).toBe(false);
     expect(captured!.init?.body).toBeInstanceOf(FormData);
+    // oxlint-disable-next-line no-unsafe-optional-chaining -- asserted as FormData on the line above
     expect((captured!.init?.body as FormData).get('note')).toBe('hello');
 
     cleanup();

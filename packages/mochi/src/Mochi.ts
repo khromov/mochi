@@ -763,7 +763,7 @@ export class Mochi {
       ...(debugBarEnabled ? buildPageCacheAdminRoutes() : {}),
       ...(emailViewerEnabled ? buildEmailViewerRoutes(registry) : {}),
     };
-    const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...(options.routes ?? {}) } : options.routes;
+    const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...options.routes } : options.routes;
 
     const rateLimitStores = new Set<MochiRateLimitStore>();
     // Route closures look their limiter up per request so the dev watcher can swap one in place when a route's

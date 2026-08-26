@@ -1,6 +1,17 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "ignorePatterns": ["**/.mochi/**", "**/.mochi-*/**", ".claude/**", "out/**", "**/CHANGELOG.md", "**/virtual-modules/**", "**/*.svelte", "**/*.svelte.ts", "**/*.svelte.js"],
+  "ignorePatterns": [
+    "**/.mochi/**",
+    "**/.mochi-*/**",
+    ".claude/**",
+    "out/**",
+    "**/CHANGELOG.md",
+    "**/virtual-modules/**",
+    "**/vendor/**",
+    "**/*.svelte",
+    "**/*.svelte.ts",
+    "**/*.svelte.js"
+  ],
   "rules": {
     "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
     "curly": ["error", "all"],

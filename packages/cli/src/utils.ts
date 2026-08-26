@@ -172,7 +172,7 @@ export function transformTsconfig(contents: string): string {
     delete cfg.extends;
     cfg.compilerOptions = {
       ...BASE_TSCONFIG_COMPILER_OPTIONS,
-      ...(cfg.compilerOptions ?? {}),
+      ...cfg.compilerOptions,
     };
   }
   return stringifyJson(cfg);
