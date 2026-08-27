@@ -1,23 +1,34 @@
 ---
 title: 'Environment constants'
 slug: environment-constants
-description: 'Build-time constants for branching on render target (isServer, isBrowser), dev mode (isDev), and the build itself (isBuilding).'
+description: 'Constants for branching on render target (isServer, isBrowser), dev mode (isDev), and the build itself (isBuilding).'
 ---
 
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Environment constants
 
-Import build-time constants from `mochi-framework` to branch on render target or dev mode:
+Import these from `mochi-framework` to branch on render target or dev mode:
 
 ```ts
 import { isServer, isBrowser, isDev } from 'mochi-framework';
 ```
 
-At build time these constants become literal booleans. In the server build `isServer` is `true` and `isBrowser` is `false`. In the client bundle the values are reversed. Because they are literals, an `if (isBrowser) { … }` block is dropped from the opposite bundle, so a server-only branch never reaches the browser.
+Inside compiled code — `.svelte`, `.svelte.[jt]s`, and any `.ts` they import — Mochi substitutes a per-bundle module, so each constant is a literal boolean fixed when that bundle is built. In the server build `isServer` is `true` and `isBrowser` is `false`; in the client bundle the values are reversed.
+
+Everywhere else — `src/index.ts`, `routes.ts`, a `.server.ts` reached from them — they are ordinary exports of the package, read at runtime.
+
+<VersionNote since="0.10.0" message="isServer, isBrowser and isDev became real package exports in 0.10.0. Before that they existed only inside compiled code; importing them from index.ts, routes.ts or a .server.ts failed at startup with 'does not provide an export named'." />
+
+<Callout type="warning">
+
+**These do not keep code out of the client bundle.** The constant is a literal, but Bun does not fold it across module boundaries, so the untaken branch is still bundled — it just never runs. To keep a server-only implementation out of the browser entirely, put it in a [`.server.ts` file](/docs/server-only-imports/), which Mochi replaces with a throwing stub in the client build.
+
+</Callout>
 
 ### `isServer`
 
@@ -61,6 +72,34 @@ export function trace(msg: string) {
   if (isDev) console.log('[trace]', msg);
 }
 ```
+
+#### Reads that run before `Mochi.serve()`
+
+In a server entry, `isDev` is a live value rather than a baked literal, and `Mochi.serve()` is what sets it. Your entry imports its routes — and through them any `.server.ts` — before it awaits `serve()`, so every module top-level statement runs first.
+
+Until then `isDev` falls back to the environment: `true` when `MODE=development` (or `NODE_ENV=development`), `false` otherwise. Keep `MODE=development` in your `dev` script and unset in production and the two always agree:
+
+```json
+// file: package.json
+{
+  "scripts": {
+    "dev": "MODE=development bun src/index.ts",
+    "start": "bun src/index.ts"
+  }
+}
+```
+
+Passing `development: true` without setting `MODE` means a top-level `if (isDev)` reads `false` while the server runs in dev. Reads inside a handler, an action, or `serverProps` happen after boot and always see the resolved value:
+
+```ts
+// file: src/db.server.ts
+import { isDev } from 'mochi-framework';
+
+const seeded = isDev; // module top level — the env fallback
+export const usingFixtures = () => isDev; // called per request — the resolved value
+```
+
+Mochi warns at boot if `MODE=development` is set but the server started with `development: false`, since dev-only top-level branches will already have run in a production process.
 
 ### `isBuilding`
 

@@ -5,13 +5,8 @@
 import 'mochi-framework';
 
 declare module 'mochi-framework' {
-  /** True when rendering on the server (SSR build). */
-  export const isServer: boolean;
-  /** True when running in the browser (client build). */
-  export const isBrowser: boolean;
-  export const DEV: boolean;
-  /** True when the server was started with `development: true`. */
-  export const isDev: boolean;
+  // `isServer` / `isBrowser` / `isDev` / `DEV` are real exports of `utils/env.ts`, so augmenting them here too would
+  // be a duplicate identifier — the virtual module still overrides their values inside compiled code.
 
   type CookieSerializeOptions = import('./runtime/cookies').CookieSerializeOptions;
 

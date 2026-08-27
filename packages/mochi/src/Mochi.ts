@@ -112,6 +112,7 @@ import { sendEmail } from './email/mailer';
 import type { MochiEmailMessage, MochiEmailResult } from './email/types';
 import { initMochiConfig } from './mochiConfig';
 import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './utils/log';
+import { setDevelopment } from './utils/env';
 import { mochiEvents } from './events';
 import type { MochiActionResult, MochiErrorEvent, MochiErrorKind, MochiServerStartEvent, MochiServerStopEvent } from './events';
 import type { DebugBarData, DebugBarRuntimeData } from './runtime/requestContext';
@@ -530,6 +531,8 @@ export class Mochi {
     const { enabled: loggerEnabled = true, level: configuredLevel, ...loggerOptions } = options.logger ?? {};
     const resolvedLogLevel: LogLevel = configuredLevel ?? (development ? 'info' : DEFAULT_LOG_LEVEL);
     setLogLevel(resolvedLogLevel);
+    // Publishes the resolved mode to the real `isDev` export that unbundled server code reads.
+    setDevelopment(development, { warnOnEnvMismatch: true });
 
     if (loggerEnabled) {
       consoleLogger(loggerOptions);

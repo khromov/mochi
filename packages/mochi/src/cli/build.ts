@@ -15,6 +15,7 @@ import { scanEmailTemplates } from '../email/templates';
 import { encodeSourcePath } from '../compiler/manifestPaths';
 import { loadSvelteConfig } from '../compiler/svelteConfig';
 import { logger, setLogLevel } from '../utils/log';
+import { setDevelopment } from '../utils/env';
 import { consoleLogger } from '../dev/consoleLogger';
 import { mochiEvents } from '../events';
 import type { MochiCompileCompleteEvent } from '../events';
@@ -95,6 +96,8 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   mochiEvents.on('compile:complete', onCompileComplete);
   try {
     const development = options.development ?? false;
+    // The CLI already set this ahead of extracting the entry; this covers a programmatic build() call.
+    setDevelopment(development);
     const baseOutDir = options.outDir ?? './.mochi';
     // Mirror the dev/prod split in Mochi.serve(): a `--dev` build nests under
     // `dev/` so it can't clobber the production manifest at the root.

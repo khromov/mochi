@@ -784,7 +784,7 @@ await Mochi.serve({
 
 ### `$env/static/*` and `$env/dynamic/*`
 
-None of these virtual modules exist. Bun auto-loads `.env`, so read everything through `process.env.FOO`. The `mochi` virtual module (`isServer`, `isBrowser`, `isDev`) covers the SSR-only / browser-only branching that `$env/static/private` solved with import-time errors.
+None of these virtual modules exist. Bun auto-loads `.env`, so read everything through `process.env.FOO`. Mochi's [environment constants](/docs/environment-constants/) (`isServer`, `isBrowser`, `isDev`, imported from `mochi-framework`) cover the SSR-only / browser-only branching that `$env/static/private` solved with import-time errors.
 
 ```ts
 // SvelteKit
