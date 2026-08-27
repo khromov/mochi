@@ -90,7 +90,7 @@ The bundler strips the import from the JS bundle and serves the CSS at `/_mochi/
 
 ### Dev rebuilds
 
-In development, `setupTailwind` subscribes to `file:change` on `mochiEvents` and rebuilds on `.svelte` / `.ts` / `.js` / `.html` / `.md` / `.svx` / `.css` changes. The resulting write goes through Mochi's CSS fast-path — a stylesheet swap, not a full SSR rebuild. The watcher attaches only when `process.env.NODE_ENV === 'development'`.
+In development, `setupTailwind` subscribes to `file:change` on `mochiEvents` and rebuilds on `.svelte` / `.ts` / `.js` / `.html` / `.md` / `.svx` / `.css` changes. The resulting write goes through Mochi's CSS fast-path — a stylesheet swap, not a full SSR rebuild. The watcher attaches only when `process.env.NODE_ENV === 'development'`. `MODE=development` is accepted too — the pre-0.10 spelling, still honoured so an existing dev script does not silently lose the watcher. New projects should use `NODE_ENV`.
 
 ### Production builds
 

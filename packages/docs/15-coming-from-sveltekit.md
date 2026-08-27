@@ -784,7 +784,9 @@ await Mochi.serve({
 
 ### `$env/static/*` and `$env/dynamic/*`
 
-None of these virtual modules exist. Bun auto-loads `.env`, so read everything through `process.env.FOO`. Mochi's [environment constants](/docs/environment-constants/) (`isServer`, `isBrowser`, `isDev`, imported from `mochi-framework`) cover the SSR-only / browser-only branching that `$env/static/private` solved with import-time errors.
+None of these virtual modules exist. Bun auto-loads `.env`, so read everything through `process.env.FOO`.
+
+What `$env/static/private` really bought you was a build-time error when a private value reached a client-reachable module. In Mochi that job belongs to [`.server.ts` files](/docs/server-only-imports/), which are replaced with a throwing stub in the client build. Mochi's [environment constants](/docs/environment-constants/) (`isServer`, `isBrowser`, `isDev`) branch on render target, but they do **not** keep the untaken branch out of the bundle — reach for them to pick a code path, not to hide a secret.
 
 ```ts
 // SvelteKit

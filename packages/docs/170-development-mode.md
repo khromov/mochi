@@ -57,7 +57,12 @@ await Mochi.serve({
 }
 ```
 
-`NODE_ENV` stays a user-space convention — you read it yourself, and `options.development` is what actually drives behavior. The one exception is [`isDev`](/docs/environment-constants/#isdev): module top-level code runs before `Mochi.serve()` resolves `development`, so until that call lands `isDev` reads `NODE_ENV` on its own.
+`options.development` is what drives the server's own behavior, and you pass it yourself — nothing reads `NODE_ENV` behind your back to decide it. Two things do read `NODE_ENV` directly, both because they run outside `Mochi.serve()`:
+
+- [`isDev`](/docs/environment-constants/#isdev) — module top-level code runs before `Mochi.serve()` resolves `development`, so until that call lands `isDev` falls back to `NODE_ENV`.
+- [`setupTailwind`](/docs/tailwind/#dev-rebuilds) — you call it yourself, usually before `serve()`, so its rebuild watcher attaches on `NODE_ENV` rather than on `options.development`.
+
+Keep `NODE_ENV=development` in your `dev` script and unset elsewhere and all three agree.
 
 ### Live reload
 
