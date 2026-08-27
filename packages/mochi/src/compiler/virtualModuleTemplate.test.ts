@@ -2,8 +2,9 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { renderMochiEnvClient, renderMochiEnvServer } from './virtualModuleTemplate';
-import { registerMochiEnvClient } from './clientBuildLoaders';
-import { CLIENT_BUILD_DEFINE } from './serverOnlyModuleGuard';
+import { clientBuildDefine, registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
+import { serverOnlyModuleGuard } from './serverOnlyModuleGuard';
+import { officialBackend } from './svelteCompilerBackend';
 
 const outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-virtual-env-'));
 
@@ -30,11 +31,24 @@ describe('client bundles resolve the virtual module, not utils/env.ts', () => {
   async function buildProbe(name: string, development: boolean, source: string): Promise<string> {
     const entry = path.join(outDir, `${name}.ts`);
     await Bun.write(entry, source);
+    // Mirrors the island build in ComponentRegistry: the guard plugin first, then the same registrations in the same
+    // order, and the shared define. A fixture that only registered the env loader would keep passing after a new
+    // plugin started claiming `mochi-framework` ahead of it — the exact regression this describe exists to catch.
     const result = await Bun.build({
       entrypoints: [entry],
-      plugins: [{ name: 'env', setup: (build) => registerMochiEnvClient(build, development) }],
+      plugins: [
+        serverOnlyModuleGuard,
+        {
+          name: 'svelte-client',
+          setup(build) {
+            registerMochiEnvClient(build, development);
+            registerEsmEnvStrip(build);
+            registerSvelteModuleLoader(build, officialBackend, { generate: 'client', dev: development });
+          },
+        },
+      ],
       target: 'browser',
-      define: { ...CLIENT_BUILD_DEFINE },
+      define: clientBuildDefine(development),
       throw: false,
     });
     expect(result.success).toBe(true);
