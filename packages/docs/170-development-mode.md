@@ -35,14 +35,14 @@ Never run `development: true` in production. Stack traces leak through the `erro
 
 </Callout>
 
-### `MODE=development` convention
+### `NODE_ENV=development` convention
 
 Drive the flag from an env var so one entry file serves both `bun run dev` and `bun run start`:
 
 ```ts
 // file: src/index.ts
 await Mochi.serve({
-  development: process.env.MODE === 'development',
+  development: process.env.NODE_ENV === 'development',
   routes,
 });
 ```
@@ -51,13 +51,13 @@ await Mochi.serve({
 // file: package.json
 {
   "scripts": {
-    "dev": "MODE=development bun src/index.ts",
+    "dev": "NODE_ENV=development bun src/index.ts",
     "start": "bun src/index.ts"
   }
 }
 ```
 
-`MODE` stays a user-space convention — you read it yourself, and `options.development` is what actually drives behavior. The one exception is [`isDev`](/docs/environment-constants/#isdev): module top-level code runs before `Mochi.serve()` resolves `development`, so until that call lands `isDev` falls back to reading `MODE` (or `NODE_ENV`) on its own.
+`NODE_ENV` stays a user-space convention — you read it yourself, and `options.development` is what actually drives behavior. The one exception is [`isDev`](/docs/environment-constants/#isdev): module top-level code runs before `Mochi.serve()` resolves `development`, so until that call lands `isDev` reads `NODE_ENV` on its own.
 
 ### Live reload
 

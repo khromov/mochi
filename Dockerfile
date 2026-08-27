@@ -2,7 +2,7 @@
 # variant is selected by the WORKSPACE build arg:
 #   docker build --build-arg WORKSPACE=site  -f Dockerfile .   # mochi
 #   docker build --build-arg WORKSPACE=demos -f Dockerfile .   # mochi-demos
-# Running in dev mode (`bun run dev:<workspace>` sets MODE=development) so
+# Running in dev mode (`bun run dev:<workspace>` sets NODE_ENV=development) so
 # the debug bar and dev overlays are visible in the deployed environment.
 # MOCHI_LIVE_RELOAD=false strips the live-reload WS — the socket is flaky
 # behind the deploy proxy and dropped connections trigger a page reload.

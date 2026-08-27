@@ -11,19 +11,14 @@ afterAll(() => {
 });
 
 describe('resolveEnvDev', () => {
-  test.each([{ MODE: 'development' }, { NODE_ENV: 'development' }])('is true for %o', (env) => {
-    expect(resolveEnvDev(env)).toBe(true);
+  test('is true for NODE_ENV=development', () => {
+    expect(resolveEnvDev({ NODE_ENV: 'development' })).toBe(true);
   });
 
-  // Fails closed: `bun run start` sets neither variable, so anything short of an explicit development signal
-  // must not turn dev-only branches on before Mochi.serve() resolves the real value.
-  test.each([{}, { MODE: 'production' }, { NODE_ENV: 'production' }, { MODE: 'test' }, { MODE: undefined, NODE_ENV: undefined }])('is false for %o', (env) => {
+  // Fails closed: `bun run start` leaves NODE_ENV unset and `bun test` sets it to "test", so anything short of an
+  // explicit development signal must not turn dev-only branches on before Mochi.serve() resolves the real value.
+  test.each([{}, { NODE_ENV: undefined }, { NODE_ENV: 'production' }, { NODE_ENV: 'test' }, { NODE_ENV: 'dev' }])('is false for %o', (env) => {
     expect(resolveEnvDev(env)).toBe(false);
-  });
-
-  test('MODE wins over NODE_ENV when both are set', () => {
-    expect(resolveEnvDev({ MODE: 'production', NODE_ENV: 'development' })).toBe(false);
-    expect(resolveEnvDev({ MODE: 'development', NODE_ENV: 'production' })).toBe(true);
   });
 });
 
@@ -67,7 +62,7 @@ describe('seeding in a fresh process', () => {
         `console.log(JSON.stringify({ seeded: SEEDED_IS_DEV }));\n`,
     );
     const proc = Bun.spawn([process.execPath, file], {
-      env: { ...process.env, MODE: undefined, NODE_ENV: undefined, ...env },
+      env: { ...process.env, NODE_ENV: undefined, ...env },
       stdout: 'pipe',
       stderr: 'pipe',
     });
@@ -76,16 +71,16 @@ describe('seeding in a fresh process', () => {
     return { seeded: (JSON.parse(stdout) as { seeded: boolean }).seeded, stderr };
   }
 
-  test('MODE=development seeds true and warns when serve disagrees', async () => {
-    const { seeded, stderr } = await probe('dev', { MODE: 'development' });
+  test('NODE_ENV=development seeds true and warns when serve disagrees', async () => {
+    const { seeded, stderr } = await probe('dev', { NODE_ENV: 'development' });
     expect(seeded).toBe(true);
-    expect(stderr).toContain('MODE (or NODE_ENV) says "development"');
+    expect(stderr).toContain('NODE_ENV is "development"');
   });
 
   // The quiet direction: Mochi.serve() defaults development to true, so warning here would fire on every plain boot.
   test('an unset env seeds false and stays silent', async () => {
     const { seeded, stderr } = await probe('unset', {});
     expect(seeded).toBe(false);
-    expect(stderr).not.toContain('MODE (or NODE_ENV)');
+    expect(stderr).not.toContain('NODE_ENV is "development"');
   });
 });

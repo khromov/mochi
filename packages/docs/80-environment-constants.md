@@ -77,19 +77,19 @@ export function trace(msg: string) {
 
 In a server entry, `isDev` is a live value rather than a baked literal, and `Mochi.serve()` is what sets it. Your entry imports its routes — and through them any `.server.ts` — before it awaits `serve()`, so every module top-level statement runs first.
 
-Until then `isDev` falls back to the environment: `true` when `MODE=development` (or `NODE_ENV=development`), `false` otherwise. Keep `MODE=development` in your `dev` script and unset in production and the two always agree:
+Until then `isDev` falls back to the environment: `true` when `NODE_ENV=development`, `false` otherwise. Keep `NODE_ENV=development` in your `dev` script and unset in production and the two always agree:
 
 ```json
 // file: package.json
 {
   "scripts": {
-    "dev": "MODE=development bun src/index.ts",
+    "dev": "NODE_ENV=development bun src/index.ts",
     "start": "bun src/index.ts"
   }
 }
 ```
 
-Passing `development: true` without setting `MODE` means a top-level `if (isDev)` reads `false` while the server runs in dev. Reads inside a handler, an action, or `serverProps` happen after boot and always see the resolved value:
+Passing `development: true` without setting `NODE_ENV` means a top-level `if (isDev)` reads `false` while the server runs in dev. Reads inside a handler, an action, or `serverProps` happen after boot and always see the resolved value:
 
 ```ts
 // file: src/db.server.ts
@@ -99,7 +99,7 @@ const seeded = isDev; // module top level — the env fallback
 export const usingFixtures = () => isDev; // called per request — the resolved value
 ```
 
-Mochi warns at boot if `MODE=development` is set but the server started with `development: false`, since dev-only top-level branches will already have run in a production process.
+Mochi warns at boot if `NODE_ENV=development` is set but the server started with `development: false`, since dev-only top-level branches will already have run in a production process.
 
 ### `isBuilding`
 

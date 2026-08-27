@@ -375,11 +375,11 @@ describe('newsletter signup', () => {
 
 describe('embed ancestors', () => {
   const original = process.env.NEWSLETTER_EMBED_ANCESTORS;
-  const originalMode = process.env.MODE;
+  const originalNodeEnv = process.env.NODE_ENV;
 
   afterAll(() => {
     process.env.NEWSLETTER_EMBED_ANCESTORS = original;
-    process.env.MODE = originalMode;
+    process.env.NODE_ENV = originalNodeEnv;
   });
 
   test('an explicit allow-list wins', () => {
@@ -389,13 +389,13 @@ describe('embed ancestors', () => {
 
   test('production falls back to the mochi.fast origins alone', () => {
     delete process.env.NEWSLETTER_EMBED_ANCESTORS;
-    process.env.MODE = 'production';
+    process.env.NODE_ENV = 'production';
     expect(embedAncestors()).toEqual(['https://mochi.fast', 'https://www.mochi.fast']);
   });
 
   test('development also allows the local site and smoke-test ports', () => {
     delete process.env.NEWSLETTER_EMBED_ANCESTORS;
-    process.env.MODE = 'development';
+    process.env.NODE_ENV = 'development';
     expect(embedAncestors()).toContain('http://localhost:3333');
     expect(embedAncestors()).toContain('https://mochi.fast');
   });

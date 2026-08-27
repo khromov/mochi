@@ -62,7 +62,7 @@ const procs: Subprocess[] = targets.map((t, i) => {
   const proc = spawn({
     cmd: ['bun', 'run', 'dev'],
     cwd: t.cwd,
-    env: { ...process.env, MODE: 'development', FORCE_COLOR: '1' },
+    env: { ...process.env, NODE_ENV: 'development', FORCE_COLOR: '1' },
     stdout: 'pipe',
     stderr: 'pipe',
     stdin: 'ignore',

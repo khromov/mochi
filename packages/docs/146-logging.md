@@ -57,7 +57,7 @@ A common pattern drives `development` from an env var so one `index.ts` handles 
 
 ```ts
 await Mochi.serve({
-  development: process.env.MODE === 'development',
+  development: process.env.NODE_ENV === 'development',
   routes,
 });
 ```

@@ -10,7 +10,7 @@ const DEVELOPMENT_ANCESTORS = 'http://localhost:3333 http://localhost:4444';
 // whoever may frame the widget is exactly whoever may talk to it.
 export function embedAncestors(): string[] {
   const configured = process.env.NEWSLETTER_EMBED_ANCESTORS?.trim();
-  const ancestors = configured || (process.env.MODE === 'development' ? `${PRODUCTION_ANCESTORS} ${DEVELOPMENT_ANCESTORS}` : PRODUCTION_ANCESTORS);
+  const ancestors = configured || (process.env.NODE_ENV === 'development' ? `${PRODUCTION_ANCESTORS} ${DEVELOPMENT_ANCESTORS}` : PRODUCTION_ANCESTORS);
   return ancestors.split(/\s+/).filter(Boolean);
 }
 

@@ -8,7 +8,7 @@ import { newsletterEmailQueue, purgeExpiredSubscribers } from './newsletter/jobs
 import { NEWSLETTER_EMBED_PATH, embedHeaders } from './embedHeaders';
 
 const PORT = Number(process.env.PORT) || 3336;
-const DEVELOPMENT = process.env.MODE === 'development';
+const DEVELOPMENT = process.env.NODE_ENV === 'development';
 const ORIGIN = process.env.MOCHI_ORIGIN || `http://localhost:${PORT}`;
 
 const SMTP_HOST = process.env.SMTP_HOST;

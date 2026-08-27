@@ -49,7 +49,7 @@ VOLUME /snapshots
 RUN bun packages/site/src/lib/generateDocsBarrel.ts
 
 ENV PORT=${PORT}
-ENV MODE=development
+ENV NODE_ENV=development
 ENV MOCHI_LIVE_RELOAD=false
 ENV MOCHI_DOCKER=true
 ENV MOCHI_MEMORY_PROBE=1

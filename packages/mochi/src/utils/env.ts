@@ -9,10 +9,10 @@ import { logger } from './log';
 export const isServer = !IS_CLIENT_BUNDLE;
 export const isBrowser = IS_CLIENT_BUNDLE;
 
-// Fails closed on an unset env because `bun run start` sets neither variable, so only an explicit signal may turn
-// dev-only branches on in the window before `setDevelopment()`.
+// Fails closed on anything else — `bun run start` leaves NODE_ENV unset and `bun test` sets it to "test" — so only an
+// explicit signal turns dev-only branches on in the window before `setDevelopment()`.
 export function resolveEnvDev(env: Record<string, string | undefined>): boolean {
-  return env.MODE === 'development' || (env.MODE === undefined && env.NODE_ENV === 'development');
+  return env.NODE_ENV === 'development';
 }
 
 // An entry imports its routes — and through them any `.server.ts` — before it awaits `Mochi.serve()`, so top-level
@@ -33,9 +33,9 @@ export function setDevelopment(value: boolean, { warnOnEnvMismatch = false } = {
   if (warnOnEnvMismatch && SEEDED_IS_DEV && !value && !warned) {
     warned = true;
     logger.warn(
-      'MODE (or NODE_ENV) says "development" but Mochi.serve() started with development: false. Top-level code in ' +
-        'index.ts, routes.ts and .server.ts runs before serve() resolves the flag, so isDev read true there. ' +
-        'Unset MODE=development for production runs.',
+      'NODE_ENV is "development" but Mochi.serve() started with development: false. Top-level code in index.ts, ' +
+        'routes.ts and .server.ts runs before serve() resolves the flag, so isDev read true there. ' +
+        'Unset NODE_ENV=development for production runs.',
     );
   }
   state.dev = value;
