@@ -465,6 +465,12 @@ export class Mochi {
 
     const { svelteVersion } = await checkEnvironment();
     const mochiVersion = await readMochiVersion();
+
+    const development = options.development ?? true;
+    // Published before initExtensions so an extension's `mochi:init` hook reads the resolved mode rather than the env
+    // seed, and before setLogLevel so a configured `logger.level` can't swallow the env-mismatch warning.
+    setDevelopment(development, { warnOnEnvMismatch: true });
+
     initExtensions(options);
     await runHook('mochi:init', { options });
     await initMochiConfig(options);
@@ -481,7 +487,6 @@ export class Mochi {
       logger.warn(bootCsrfWarning);
     }
 
-    const development = options.development ?? true;
     const inlineNestedIslands = options.inlineNestedIslands !== false;
     const warmupEnabled = resolveWarmupEnabled(options.warmup, development);
     const debugBarEnabled = development && (options.debugBar ?? true);
@@ -531,8 +536,6 @@ export class Mochi {
     const { enabled: loggerEnabled = true, level: configuredLevel, ...loggerOptions } = options.logger ?? {};
     const resolvedLogLevel: LogLevel = configuredLevel ?? (development ? 'info' : DEFAULT_LOG_LEVEL);
     setLogLevel(resolvedLogLevel);
-    // Publishes the resolved mode to the real `isDev` export that unbundled server code reads.
-    setDevelopment(development, { warnOnEnvMismatch: true });
 
     if (loggerEnabled) {
       consoleLogger(loggerOptions);

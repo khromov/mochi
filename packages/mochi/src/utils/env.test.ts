@@ -51,6 +51,34 @@ describe('setDevelopment', () => {
   });
 });
 
+// The hazard `pinGlobal` exists for: a second resolved copy of the framework (a non-hoisted install, an SSR chunk
+// bundling framework sources by absolute path) must not keep serving the seed after Mochi.serve() resolved the mode.
+describe('a duplicate copy of the module', () => {
+  test('tracks setDevelopment() called on the other copy', async () => {
+    const copyDir = path.join(tmpDir, 'copy');
+    await Bun.$`mkdir -p ${copyDir}`.quiet();
+    for (const file of ['env.ts', 'globalState.ts', 'serverOnly.ts', 'log.ts']) {
+      await Bun.write(path.join(copyDir, file), await Bun.file(path.join(import.meta.dir, file)).text());
+    }
+    const probeFile = path.join(tmpDir, 'duplicate.ts');
+    await Bun.write(
+      probeFile,
+      `import { setDevelopment } from ${JSON.stringify(toPosixPath(path.join(import.meta.dir, 'env.ts')))};\n` +
+        `import * as copy from ${JSON.stringify(toPosixPath(path.join(copyDir, 'env.ts')))};\n` +
+        `const before = copy.isDev;\n` +
+        `setDevelopment(true);\n` +
+        `console.log(JSON.stringify({ before, after: copy.isDev }));\n`,
+    );
+    const proc = Bun.spawn([process.execPath, probeFile], { env: { ...process.env, NODE_ENV: undefined }, stdout: 'pipe', stderr: 'pipe' });
+    const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      throw new Error(`duplicate-copy probe exited with ${exitCode}\n${stderr}`);
+    }
+    expect(JSON.parse(stdout)).toEqual({ before: false, after: true });
+  });
+});
+
 // The seed is captured at module load, so each case needs its own process.
 describe('seeding in a fresh process', () => {
   async function probe(name: string, env: Record<string, string | undefined>): Promise<{ seeded: boolean; stderr: string }> {
@@ -67,7 +95,12 @@ describe('seeding in a fresh process', () => {
       stderr: 'pipe',
     });
     const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-    await proc.exited;
+    const exitCode = await proc.exited;
+    // Checked before parsing: a child that dies on import writes nothing to stdout, and JSON.parse('') would bury the
+    // real cause sitting in stderr behind a syntax error.
+    if (exitCode !== 0) {
+      throw new Error(`probe "${name}" exited with ${exitCode}\n${stderr}`);
+    }
     return { seeded: (JSON.parse(stdout) as { seeded: boolean }).seeded, stderr };
   }
 

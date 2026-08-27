@@ -21,9 +21,16 @@ export const SEEDED_IS_DEV = resolveEnvDev(process.env);
 
 // Pinned like the log level so a duplicate copy loading late (an SSR chunk evaluated on the first render) seeds from
 // the resolved mode rather than re-reading the env.
-const state = pinGlobal('__mochi_env_state__', () => ({ dev: SEEDED_IS_DEV }));
+type EnvState = { dev: boolean; bindings: Array<(value: boolean) => void> };
+const state = pinGlobal<EnvState>('__mochi_env_state__', () => ({ dev: SEEDED_IS_DEV, bindings: [] }));
 
 export let isDev = state.dev;
+
+// `export let` is a live binding only for the copy that reassigns it, so every copy registers its own writer here:
+// without this a second copy loaded before setDevelopment() would keep the seed forever while state.dev moved on.
+state.bindings.push((value) => {
+  isDev = value;
+});
 
 let warned = false;
 
@@ -39,5 +46,7 @@ export function setDevelopment(value: boolean, { warnOnEnvMismatch = false } = {
     );
   }
   state.dev = value;
-  isDev = value;
+  for (const write of state.bindings) {
+    write(value);
+  }
 }
