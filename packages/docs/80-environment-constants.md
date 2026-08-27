@@ -7,7 +7,6 @@ description: 'Constants for branching on render target (isServer, isBrowser), de
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
-  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Environment constants
@@ -21,8 +20,6 @@ import { isServer, isBrowser, isDev } from 'mochi-framework';
 Inside compiled code — `.svelte`, `.svelte.[jt]s`, and any `.ts` they import — Mochi substitutes a per-bundle module, so each constant is a literal boolean fixed when that bundle is built. In the server build `isServer` is `true` and `isBrowser` is `false`; in the client bundle the values are reversed.
 
 Everywhere else — `src/index.ts`, `routes.ts`, a `.server.ts` reached from them — they are ordinary exports of the package, read at runtime.
-
-<VersionNote since="0.10.0" message="isServer, isBrowser and isDev became real package exports in 0.10.0. Before that they existed only inside compiled code; importing them from index.ts, routes.ts or a .server.ts failed at startup with 'does not provide an export named'." />
 
 <Callout type="warning">
 
