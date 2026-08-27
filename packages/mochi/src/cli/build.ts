@@ -94,9 +94,6 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   mochiEvents.on('client-bundle:complete', onClientBundle);
   mochiEvents.on('compile:complete', onCompileComplete);
   try {
-    // Deliberately no setDevelopment() here: the CLI already set it ahead of extracting the entry, and build() is a
-    // public export that may run inside a live server, where flipping the process-wide flag would desync `isDev` in
-    // every unbundled `.server.ts` from the mode that server booted with.
     const development = options.development ?? false;
     const baseOutDir = options.outDir ?? './.mochi';
     // Mirror the dev/prod split in Mochi.serve(): a `--dev` build nests under
