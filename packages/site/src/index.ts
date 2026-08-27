@@ -168,7 +168,6 @@ const speculationRules: SpeculationRules = {
 
 await Mochi.serve({
   port: PORT,
-  development: DEVELOPMENT,
   liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
   speculationRules,

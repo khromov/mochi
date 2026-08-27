@@ -20,7 +20,6 @@ import { Mochi } from 'mochi-framework';
 
 await Mochi.serve({
   port: 3333,
-  development: process.env.NODE_ENV === 'development',
   routes: {
     '/': Mochi.page('./src/Home.svelte'),
     '/about': Mochi.page('./src/About.svelte', { serverProps: { title: 'About' } }),

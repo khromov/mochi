@@ -3,7 +3,6 @@ import { routes } from './routes';
 
 await Mochi.serve({
   port: 3333,
-  development: process.env.NODE_ENV === 'development',
   // Mount a directory tree under a URL prefix — one Bun route, files served straight from disk.
   staticDirs: { '/gallery': './images' },
   // Named image sizes — the URL only carries the src + size name, and the endpoint runs the transform lazily on request.

@@ -4,7 +4,6 @@ const PORT = Number(process.env.PORT) || 3335;
 
 await Mochi.serve({
   port: PORT,
-  development: process.env.NODE_ENV === 'development',
   htmlShell: './src/shell.html',
   trailingSlash: 'always',
   filters: {

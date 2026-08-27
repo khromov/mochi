@@ -59,7 +59,7 @@ Everywhere else — `src/index.ts`, `routes.ts`, a `.server.ts` reached from the
 
 ### `isDev`
 
-`true` when `Mochi.serve()` started with `development: true`. Identical on server and client builds.
+`true` in [development mode](/docs/development-mode/), which is `NODE_ENV=development`. Identical on server and client builds.
 
 ```ts
 // file: src/lib/log.ts
@@ -70,11 +70,7 @@ export function trace(msg: string) {
 }
 ```
 
-#### Reads that run before `Mochi.serve()`
-
-In a server entry, `isDev` is a live value rather than a baked literal, and `Mochi.serve()` is what sets it. Your entry imports its routes — and through them any `.server.ts` — before it awaits `serve()`, so every module top-level statement runs first.
-
-Until then `isDev` falls back to the environment: `true` when `NODE_ENV=development`, `false` otherwise. Keep `NODE_ENV=development` in your `dev` script and unset in production and the two always agree:
+Because it comes from the environment, `isDev` is correct from the first line of your entry — including in module top-level code, which runs before `Mochi.serve()` does.
 
 ```json
 // file: package.json
@@ -86,17 +82,7 @@ Until then `isDev` falls back to the environment: `true` when `NODE_ENV=developm
 }
 ```
 
-Passing `development: true` without setting `NODE_ENV` means a top-level `if (isDev)` reads `false` while the server runs in dev. Reads inside a handler, an action, or `serverProps` happen after boot and always see the resolved value:
-
-```ts
-// file: src/db.server.ts
-import { isDev } from 'mochi-framework';
-
-const seeded = isDev; // module top level — the env fallback
-export const usingFixtures = () => isDev; // called per request — the resolved value
-```
-
-Mochi warns at boot if `NODE_ENV=development` is set but the server started with `development: false`, since dev-only top-level branches will already have run in a production process.
+Overriding the mode with `Mochi.serve({ development })` is the one way to make them disagree: top-level code has already run by then, so it saw the environment's answer, not your override. Mochi warns at boot when an override contradicts `NODE_ENV=development`, since dev-only top-level branches will have run inside a production process.
 
 ### `isBuilding`
 

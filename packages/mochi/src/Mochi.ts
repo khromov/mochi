@@ -112,7 +112,7 @@ import { sendEmail } from './email/mailer';
 import type { MochiEmailMessage, MochiEmailResult } from './email/types';
 import { initMochiConfig } from './mochiConfig';
 import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './utils/log';
-import { setDevelopment } from './utils/env';
+import { SEEDED_IS_DEV, setDevelopment } from './utils/env';
 import { mochiEvents } from './events';
 import type { MochiActionResult, MochiErrorEvent, MochiErrorKind, MochiServerStartEvent, MochiServerStopEvent } from './events';
 import type { DebugBarData, DebugBarRuntimeData } from './runtime/requestContext';
@@ -466,14 +466,17 @@ export class Mochi {
     const { svelteVersion } = await checkEnvironment();
     const mochiVersion = await readMochiVersion();
 
-    const development = options.development ?? true;
+    // Defaulting to the same value `isDev` seeded from makes the two agree by construction: module top-level code runs
+    // before serve(), so anything else would leave those reads disagreeing with the mode the server actually picked.
+    const development = options.development ?? SEEDED_IS_DEV;
     // Published before initExtensions so an extension's `mochi:init` hook reads the resolved mode rather than the env
     // seed, and before setLogLevel so a configured `logger.level` can't swallow the env-mismatch warning.
     setDevelopment(development, { warnOnEnvMismatch: true });
 
     initExtensions(options);
     await runHook('mochi:init', { options });
-    await initMochiConfig(options);
+    // Resolved rather than raw, so the downstream `options.development` readers can't re-default it differently.
+    await initMochiConfig({ ...options, development });
 
     // Resolved once at startup and captured by the per-request closures below. Each default Set is copied before it
     // reaches the user, so an in-place mutation can't poison the framework default for the next call.

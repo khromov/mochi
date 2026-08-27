@@ -10,42 +10,7 @@ description: 'What the development flag enables: live reload, file watcher, rout
 
 ## Development mode
 
-Set the `development` flag on `Mochi.serve()` to switch between the dev and production runtime. It defaults to `true`.
-
-```ts
-// file: src/index.ts
-await Mochi.serve({
-  development: true, // the default
-  routes,
-});
-```
-
-When `development` is true, Mochi enables:
-
-- **Live reload** — a `mochi-live-reload` web component connects to `/__mochi_live_reload` and refreshes the page on file changes.
-- **File watcher** — watches `src/` and `public/`. An edit invalidates the SSR compile cache and emits `file:change` on `mochiEvents`.
-- **Debug bar** — `<div id="mochi-dev-toolbar">` is injected into every page.
-- **Error overlay** — build and runtime errors render on top of the page.
-- **Bundle stats** — a JSON report is served at `${assetPrefix}/client/stats`.
-- **Stack traces on `error` events** — `error` payloads include `stack`. In production `stack` is `undefined`.
-
-<Callout type="warning">
-
-Never run `development: true` in production. Stack traces leak through the `error` event and the error overlay, the file watcher holds open file descriptors, and SSR bundles recompile on every change instead of loading from the prebuilt manifest.
-
-</Callout>
-
-### `NODE_ENV=development` convention
-
-Drive the flag from an env var so one entry file serves both `bun run dev` and `bun run start`:
-
-```ts
-// file: src/index.ts
-await Mochi.serve({
-  development: process.env.NODE_ENV === 'development',
-  routes,
-});
-```
+Mochi runs in development mode when `NODE_ENV=development`, and in production mode otherwise. Set the variable in your `dev` script and leave it unset everywhere else:
 
 ```json
 // file: package.json
@@ -57,12 +22,41 @@ await Mochi.serve({
 }
 ```
 
-`options.development` is what drives the server's own behavior, and you pass it yourself — nothing reads `NODE_ENV` behind your back to decide it. Two things do read `NODE_ENV` directly, both because they run outside `Mochi.serve()`:
+`Mochi.serve()` needs no flag for this — the environment decides:
 
-- [`isDev`](/docs/environment-constants/#isdev) — module top-level code runs before `Mochi.serve()` resolves `development`, so until that call lands `isDev` falls back to `NODE_ENV`.
-- [`setupTailwind`](/docs/tailwind/#dev-rebuilds) — you call it yourself, usually before `serve()`, so its rebuild watcher attaches on `NODE_ENV` rather than on `options.development`.
+```ts
+// file: src/index.ts
+await Mochi.serve({ routes });
+```
 
-Keep `NODE_ENV=development` in your `dev` script and unset elsewhere and all three agree.
+In development mode, Mochi enables:
+
+- **Live reload** — a `mochi-live-reload` web component connects to `/__mochi_live_reload` and refreshes the page on file changes.
+- **File watcher** — watches `src/` and `public/`. An edit invalidates the SSR compile cache and emits `file:change` on `mochiEvents`.
+- **Debug bar** — `<div id="mochi-dev-toolbar">` is injected into every page.
+- **Error overlay** — build and runtime errors render on top of the page.
+- **Bundle stats** — a JSON report is served at `${assetPrefix}/client/stats`.
+- **Stack traces on `error` events** — `error` payloads include `stack`. In production `stack` is `undefined`.
+
+<Callout type="warning">
+
+Never run development mode in production — whether from a stray `NODE_ENV=development` or a forced `development: true`. Stack traces leak through the `error` event and the error overlay, the file watcher holds open file descriptors, and SSR bundles recompile on every change instead of loading from the prebuilt manifest.
+
+</Callout>
+
+### Overriding the mode
+
+Pass `development` to force a mode regardless of the environment:
+
+```ts
+// file: src/index.ts
+await Mochi.serve({
+  development: true, // ignores NODE_ENV
+  routes,
+});
+```
+
+Reach for it sparingly. Everything that runs outside `Mochi.serve()` still reads `NODE_ENV` — [`isDev`](/docs/environment-constants/#isdev) in module top-level code, and [`setupTailwind`](/docs/tailwind/#dev-rebuilds), which you call yourself — so an override makes those disagree with the running server. Mochi warns at boot when it contradicts `NODE_ENV=development`.
 
 ### Live reload
 
