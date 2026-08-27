@@ -155,8 +155,7 @@ async function main() {
   // Flipped before anything imports the app entry: this whole process is a build, so server-setup code must skip
   // real-boot side effects for its entire lifetime, not just while the entry is being read.
   markBuilding();
-  // Ahead of extractServeOptions, whose Bun.plugin hands the entry graph a by-value snapshot of the framework
-  // namespace: a later setDevelopment() would be invisible there, so a --dev build has to bake isDev now.
+  // extractServeOptions hands the entry graph a by-value snapshot, so a later setDevelopment() would be invisible.
   setDevelopment(values.dev === true);
 
   const entryPath = path.resolve(process.cwd(), values.entry ?? './src/index.ts');

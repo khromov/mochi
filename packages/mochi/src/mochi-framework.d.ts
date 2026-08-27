@@ -5,8 +5,7 @@
 import 'mochi-framework';
 
 declare module 'mochi-framework' {
-  // `isServer` / `isBrowser` / `isDev` are real exports of `utils/env.ts`, so augmenting them here too would be a
-  // duplicate identifier — the virtual module still overrides their values inside compiled code.
+  // `isServer` / `isBrowser` / `isDev` are real exports of `utils/env.ts`; augmenting them here would duplicate them.
 
   type CookieSerializeOptions = import('./runtime/cookies').CookieSerializeOptions;
 

@@ -25,15 +25,12 @@ describe('rendered virtual module bodies', () => {
   });
 });
 
-// Guards the reason the virtual module exists at all: a client bundle must not fall through to the real
-// utils/env.ts, whose isServer/isBrowser are the server's and whose isDev would need a runtime it does not have.
+// The reason the virtual module exists: a client bundle must not fall through to the real utils/env.ts.
 describe('client bundles resolve the virtual module, not utils/env.ts', () => {
   async function buildProbe(name: string, development: boolean, source: string): Promise<string> {
     const entry = path.join(outDir, `${name}.ts`);
     await Bun.write(entry, source);
-    // Mirrors the island build in ComponentRegistry: the guard plugin first, then the same registrations in the same
-    // order, and the shared define. A fixture that only registered the env loader would keep passing after a new
-    // plugin started claiming `mochi-framework` ahead of it — the exact regression this describe exists to catch.
+    // Same plugin order and define as the island build, so a new plugin claiming `mochi-framework` first is caught.
     const result = await Bun.build({
       entrypoints: [entry],
       plugins: [

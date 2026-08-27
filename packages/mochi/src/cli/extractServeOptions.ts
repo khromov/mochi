@@ -70,8 +70,7 @@ export async function extractServeOptions(entryPath: string, opts?: { fresh?: bo
             // Overridden rather than read from `realMod`, whose namespace is snapshotted here: only the module graph
             // imported for extraction is "building", so a dev-watcher re-import must not flip the flag process-wide.
             isBuilding: true,
-            // `isDev` comes through the spread as a snapshot rather than a live binding, which is correct either
-            // way: the build CLI extracts before any serve(), and a dev-watcher re-import happens after boot set it.
+            // `isDev` rides the spread as a snapshot; cli.ts sets it before extraction for that reason.
           },
         }));
       },

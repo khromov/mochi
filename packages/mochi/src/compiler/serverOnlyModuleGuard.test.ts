@@ -28,29 +28,30 @@ const buildForBrowser = (entry: string) =>
 
 describe('serverOnlyModuleGuard', () => {
   test.each([
-    ['extensions', `${path.relative(tmpDir, path.join(SRC_DIR, 'extensions'))}`, 'hooks and filters'],
-    ['mochiConfig', `${path.relative(tmpDir, path.join(SRC_DIR, 'mochiConfig'))}`, 'the Mochi.serve() config singleton'],
-    ['requestContext', `${path.relative(tmpDir, path.join(SRC_DIR, 'runtime', 'requestContext'))}`, 'the request context'],
-  ])('fails the client build for %s', async (name, specifier, label) => {
+    ['extensions', `${path.relative(tmpDir, path.join(SRC_DIR, 'extensions'))}`, 'hooks and filters', 'extensions'],
+    ['mochiConfig', `${path.relative(tmpDir, path.join(SRC_DIR, 'mochiConfig'))}`, 'the Mochi.serve() config singleton', 'mochiConfig'],
+    ['requestContext', `${path.relative(tmpDir, path.join(SRC_DIR, 'runtime', 'requestContext'))}`, 'the request context', 'runtime/requestContext'],
+    ['env', `${path.relative(tmpDir, path.join(SRC_DIR, 'utils', 'env'))}`, 'the dev-mode flag', 'utils/env'],
+  ])('fails the client build for %s', async (name, specifier, label, displayPath) => {
     const entry = fixture(`imports-${name}.ts`, `import * as m from '${specifier.replace(/\\/g, '/')}';\nexport default m;\n`);
 
     const result = await buildForBrowser(entry);
 
     expect(result.success).toBe(false);
     const messages = result.logs.map((l) => String(l.message ?? l)).join('\n');
-    expect(messages).toContain(`src/${name === 'requestContext' ? 'runtime/requestContext' : name}.ts is server-only (${label})`);
+    expect(messages).toContain(`src/${displayPath}.ts is server-only (${label})`);
     expect(messages).toContain(`imports-${name}.ts`);
     // Paths in user-facing output are always POSIX, on every platform.
     expect(messages).not.toContain('\\');
   });
 
-  test('a user module that merely shares the basename resolves normally', async () => {
-    fixture('lib/extensions.ts', `export const mine = 'ok';\n`);
-    const entry = fixture('imports-user-extensions.ts', `import { mine } from './lib/extensions';\nexport default mine;\n`);
+  test.each(['extensions', 'env'])('a user module that merely shares the basename %s resolves normally', async (name) => {
+    fixture(`lib/${name}.ts`, `export const mine = 'ok-${name}';\n`);
+    const entry = fixture(`imports-user-${name}.ts`, `import { mine } from './lib/${name}';\nexport default mine;\n`);
 
     const result = await buildForBrowser(entry);
 
     expect(result.success).toBe(true);
-    expect(await result.outputs[0]!.text()).toContain('ok');
+    expect(await result.outputs[0]!.text()).toContain(`ok-${name}`);
   });
 });
