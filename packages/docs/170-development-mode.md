@@ -57,7 +57,7 @@ await Mochi.serve({
 }
 ```
 
-`options.development` is the only thing that drives runtime behaviour. Mochi reads `MODE` (and `NODE_ENV`) in one place: to seed [`isDev`](/docs/environment-constants/#isdev) for module top-level reads, which run before `Mochi.serve()` resolves the flag.
+`MODE` stays a user-space convention — you read it yourself, and `options.development` is what actually drives behavior. The one exception is [`isDev`](/docs/environment-constants/#isdev): module top-level code runs before `Mochi.serve()` resolves `development`, so until that call lands `isDev` falls back to reading `MODE` (or `NODE_ENV`) on its own.
 
 ### Live reload
 
