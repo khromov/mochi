@@ -17,7 +17,7 @@ const PORT = Number(process.env.PORT) || 3334;
 
 await Mochi.serve({
   port: PORT,
-  development: process.env.MODE === 'development',
+  development: process.env.NODE_ENV === 'development',
   liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
   trailingSlash: 'always',

@@ -54,6 +54,7 @@ export { logger, setLogLevel, getLogLevel } from './utils/log';
 export type { LogLevel } from './utils/log';
 export { pinGlobal } from './utils/globalState';
 export { isBuilding } from './utils/buildFlag';
+export { isDev, isServer, isBrowser } from './utils/env';
 export { mochiEvents, hasSubscribers } from './events';
 export type { MochiCompileError } from './compiler/ComponentRegistry';
 export type {

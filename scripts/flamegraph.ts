@@ -132,7 +132,7 @@ const main = async (): Promise<void> => {
   const siteCwd = path.join(repoRoot, 'packages', 'site');
 
   const env = { ...process.env, PORT: String(args.port), MOCHI_PROFILER: '1', FORCE_COLOR: '1' };
-  delete env.MODE;
+  delete env.NODE_ENV;
 
   console.log(styleText('cyan', `[flamegraph] spawning site on port ${args.port} (production mode, MOCHI_PROFILER=1)`));
   const proc = spawn({

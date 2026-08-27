@@ -86,7 +86,7 @@ import { routes as viewTransitionsRoutes } from './demos/view-transitions/routes
 import { routes as customTransitionsRoutes } from './demos/custom-transitions/routes';
 import { routes as yourFirstMochiAppRoutes } from './demos/your-first-mochi-app/routes';
 
-const DEVELOPMENT = process.env.MODE === 'development';
+const DEVELOPMENT = process.env.NODE_ENV === 'development';
 const HEAP_SNAPSHOTS_ENABLED = process.env.HEAP_SNAPSHOTS_ENABLED === 'true';
 
 // Served by packages/support; NEWSLETTER_EMBED_URL overrides it. The trailing

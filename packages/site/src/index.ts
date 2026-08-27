@@ -17,7 +17,7 @@ import { handle as shotHandle } from './shot/routes';
 import { encodeDebugBarGlobals } from './lib/debugBarEncode';
 import { routes, queues, cron } from './routes';
 
-const DEVELOPMENT = process.env.MODE === 'development';
+const DEVELOPMENT = process.env.NODE_ENV === 'development';
 const IS_DOCKER = process.env.MOCHI_DOCKER === 'true';
 const immutableAssets: Handle = async ({ event, resolve }) => {
   const response = await resolve(event);
@@ -27,7 +27,7 @@ const immutableAssets: Handle = async ({ event, resolve }) => {
   return response;
 };
 
-if (process.env.MODE === 'development') {
+if (process.env.NODE_ENV === 'development') {
   await generateDocsBarrel();
   await generateBlogBarrel();
 
@@ -168,7 +168,6 @@ const speculationRules: SpeculationRules = {
 
 await Mochi.serve({
   port: PORT,
-  development: DEVELOPMENT,
   liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
   speculationRules,

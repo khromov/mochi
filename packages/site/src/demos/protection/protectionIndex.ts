@@ -3,7 +3,6 @@ import { routes } from './routes';
 
 await Mochi.serve({
   port: 3333,
-  development: process.env.MODE === 'development',
   protection: {
     enabled: true,
     // Without protect(), EVERY route requires browser verification. Here only

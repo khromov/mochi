@@ -9,7 +9,7 @@
     "build": "bun scripts/build.ts",
     "build:raw": "mochi-framework build",
     "start": "bun src/index.ts",
-    "dev": "MODE=development bun src/index.ts",
+    "dev": "NODE_ENV=development bun src/index.ts",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
     "test": "bun test",
     "clean": "rm -rf .mochi"

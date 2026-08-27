@@ -9,7 +9,7 @@ import { SITE_ROOT } from './siteRoot';
 export const CI_API_BASE = 'https://api.github.com';
 
 const RUNS_PER_WORKFLOW = 10;
-const DEVELOPMENT = process.env.MODE === 'development';
+const DEVELOPMENT = process.env.NODE_ENV === 'development';
 
 export interface CiRun {
   id: number;
@@ -59,7 +59,7 @@ const ciCache = new MochiCache({
   maxTimeToLive: 21_600_000, // 6h — keep serving the last-good board through a GitHub outage
   // Warmup burns 8 of the 60 hourly GitHub calls on every dev restart, so persist to disk
   // to make restarts free; skipped outside dev since prod is long-lived and `bun test`
-  // leaves MODE unset, keeping tests off the filesystem.
+  // sets NODE_ENV to "test", keeping tests off the filesystem.
   ...(DEVELOPMENT
     ? {
         storage: new FileStorage({
