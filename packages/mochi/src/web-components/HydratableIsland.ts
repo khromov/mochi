@@ -8,6 +8,7 @@ import './IslandFailure';
 import { islandFailureStub } from './islandFailureStub';
 import { observeVisible } from './sharedVisibilityObserver';
 import { isLoadedCss, markLoadedCss } from './sharedCssTracker';
+import { resolveIslandProps } from './resolveIslandProps';
 
 const componentRegistry: Record<string, Component> = {};
 
@@ -73,7 +74,7 @@ class HydratableIsland extends HTMLElement {
     const propsRef = this.getAttribute('props-ref');
     let propsRaw: string | null;
     if (propsRef) {
-      propsRaw = document.getElementById(propsRef)?.textContent ?? null;
+      propsRaw = resolveIslandProps(this, propsRef);
     } else {
       propsRaw = this.getAttribute('props');
     }
