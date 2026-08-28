@@ -8,15 +8,26 @@ on:
 jobs:
   cli-test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        bun: [stable, canary]
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
 
-      - name: Set up Bun
+      - name: Set up Bun (stable)
+        if: matrix.bun == 'stable'
         uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: .bun-version
+
+      - name: Set up Bun (canary)
+        if: matrix.bun == 'canary'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: canary
 
       - name: Run CLI regression test
         run: bun run cli-test
@@ -35,7 +46,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: cli-regression-report
+          name: cli-regression-report-${{ matrix.bun }}
           path: cli-tests/*-report.md
           retention-days: 30
           if-no-files-found: warn

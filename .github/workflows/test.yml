@@ -23,19 +23,29 @@ jobs:
     # Fail fast on a hung step instead of burning the 6h account default (a
     # Windows Shiki-engine hang once ran for 6h before being cancelled).
     timeout-minutes: 20
+    # Canary is a moving upstream target; let its legs fail without turning CI red.
+    continue-on-error: ${{ matrix.bun == 'canary' }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        bun: [stable, canary]
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
 
-      - name: Set up Bun
+      - name: Set up Bun (stable)
+        if: matrix.bun == 'stable'
         uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: .bun-version
+
+      - name: Set up Bun (canary)
+        if: matrix.bun == 'canary'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: canary
 
       - name: Cache Bun dependencies
         uses: actions/cache@v6
