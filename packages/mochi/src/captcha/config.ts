@@ -1,5 +1,6 @@
 import { getMochiConfig } from '../mochiConfig';
 import { applyFilter } from '../extensions';
+import { resolveBindOptions } from '../runtime/clientBind';
 import { MemoryNonceStore, SqliteNonceStore } from './nonceStore';
 import { DEFAULT_CAPTCHA_SOLVE_BUDGET_MS } from './pow';
 import type { MochiCaptchaOptions, NonceStore, ResolvedCaptchaOptions } from './types';
@@ -58,6 +59,7 @@ export function resolveCaptchaOptions(opts: MochiCaptchaOptions | undefined): Re
     solveBudgetMs,
     store: o.store ?? 'memory',
     storePath: o.storePath ?? '.mochi/captcha-nonces.sqlite',
+    bind: resolveBindOptions(o.bind, false, 'Captcha'),
   };
 }
 

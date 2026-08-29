@@ -127,8 +127,9 @@ import { startDevWatcher } from './dev/devWatcher';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './dev/pageCacheAdminRoutes';
 import { liveReloadGreeting } from './dev/liveReloadGeneration';
 import { createProtectionRuntime } from './protection/gate';
-import { resolveProtectionOptions, PROTECTION_SHELL_COMPONENT } from './protection/config';
-import { mintClearanceToken } from './protection/clearance';
+import { resolveProtectionOptions, protectionBootWarnings, PROTECTION_SHELL_COMPONENT } from './protection/config';
+import { mintClearanceToken, clearanceCookieOptions } from './protection/clearance';
+import { computeBindHashes } from './runtime/clientBind';
 import { verifyCaptcha } from './captcha/captcha';
 import { getCaptchaRuntime } from './captcha/config';
 
@@ -651,6 +652,11 @@ export class Mochi {
 
     // Resolved before compileAll so the interstitial page (default or custom) rides the same one-shot build.
     const protectionOptions = protectionEnabled && options.protection ? resolveProtectionOptions(options.protection, getCaptchaRuntime().options.bits) : undefined;
+    if (protectionOptions) {
+      for (const warning of protectionBootWarnings(options)) {
+        logger.warn(warning);
+      }
+    }
 
     // Compiling every page entrypoint in one `Bun.build` below lets splitting pull shared transitive deps (devalue,
     // mochi-framework internals) into chunk files instead of inlining them per page.
@@ -1764,14 +1770,15 @@ export class Mochi {
         const result = await verifyCaptcha(formData, { minAgeMs: 0, minBits: protectionOptions.bits });
         let response: Response;
         if (result.ok) {
-          ctx.cookies.set(protectionOptions.cookieName, mintClearanceToken(protectionOptions.bits), {
-            httpOnly: true,
-            sameSite: 'lax',
-            path: '/',
-            maxAge: Math.floor(protectionOptions.maxAgeMs / 1000),
-            secure: url.protocol === 'https:',
-          });
-          response = Response.json({ ok: true });
+          // Bound to the verifying request through the same recipe the gate validates with, so mint and check agree.
+          const bindHashes = computeBindHashes({ address: ctx.getClientAddress(), headers: req.headers }, protectionOptions.bind);
+          ctx.cookies.set(
+            protectionOptions.cookieName,
+            mintClearanceToken({ bits: protectionOptions.bits, bind: bindHashes }),
+            clearanceCookieOptions(Math.floor(protectionOptions.maxAgeMs / 1000), url.protocol === 'https:'),
+          );
+          // Carries the clearance cookie, so it must never be stored — the same rule as the failure branch below.
+          response = Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
         } else {
           response = Response.json({ ok: false, error: result.error }, { status: 403, headers: { 'Cache-Control': 'no-store' } });
         }
