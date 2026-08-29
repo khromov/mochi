@@ -54,6 +54,12 @@
       "svelte": "./src/components/index.ts",
       "default": "./src/components/index.ts"
     },
+    "./sync": {
+      "types": "./src/sync/index.ts",
+      "svelte": "./src/sync/index.ts",
+      "bun": "./src/sync/index.ts",
+      "default": "./src/sync/index.ts"
+    },
     "./highlight": {
       "types": "./src/highlight.ts",
       "bun": "./src/highlight.ts",
@@ -117,6 +123,7 @@
     "mitt": "^3.0.1",
     "negotiator": "^1.0.0",
     "nodemailer": "^9.0.3",
+    "reflectdb": "0.1.3",
     "zimmerframe": "^1.1.4"
   },
   "devDependencies": {

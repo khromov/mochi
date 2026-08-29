@@ -8,6 +8,7 @@ import MessageCircle from '@lucide/svelte/icons/message-circle';
 import Webhook from '@lucide/svelte/icons/webhook';
 import Share2 from '@lucide/svelte/icons/share-2';
 import AudioWaveform from '@lucide/svelte/icons/audio-waveform';
+import RadioTower from '@lucide/svelte/icons/radio-tower';
 import ComponentIcon from '@lucide/svelte/icons/component';
 import Telescope from '@lucide/svelte/icons/telescope';
 import Package2 from '@lucide/svelte/icons/package-2';
@@ -86,6 +87,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Rate Limiting': { icon: Gauge, label: 'Per-route request throttling by IP' },
   'Shared State': { icon: Share2, label: 'Shared $state across islands' },
   'Real-time Streams': { icon: AudioWaveform, label: 'WebSocket + SSE streams' },
+  'Realtime sync': { icon: RadioTower, label: 'Live data sync across islands over WebSocket' },
   'Background jobs with queues': { icon: Inbox, label: 'Embedded job queue + worker' },
   'Scheduled jobs with cron': { icon: CalendarClock, label: 'Recurring job on a cron schedule' },
   'Static Directories': { icon: FolderOpen, label: 'Mount a directory tree with staticDirs' },

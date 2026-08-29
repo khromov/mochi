@@ -68,6 +68,10 @@ export type {
   MochiSseOpenEvent,
   MochiSseMessageEvent,
   MochiSseCloseEvent,
+  MochiSyncOpenEvent,
+  MochiSyncCloseEvent,
+  MochiSyncOpEvent,
+  MochiSyncErrorEvent,
   MochiFileChangeEvent,
   MochiFileChangeType,
   MochiIslandErrorEvent,
@@ -148,6 +152,8 @@ export type { MochiCaptchaOptions, CaptchaResult, CaptchaFailureReason, NonceSto
 export { PROTECTION_CLEARANCE_COOKIE, DEFAULT_PROTECTION_MAX_AGE_MS, DEFAULT_PROTECTION_MAX_ATTEMPTS, PROTECTION_SHELL_COMPONENT } from './protection/config';
 export type { MochiProtectionOptions, MochiProtectionContext, MochiProtectionKind, MochiProtectionPageProps } from './protection/types';
 export { enhance, deserialize } from './runtime/enhance.ssr';
+export { sync, syncConnection } from './sync/sync.ssr';
+export type { MochiSyncOptions, MochiSyncStorage, MochiSyncAuthFn, MochiSyncHandle, MochiSyncConnection } from './sync/types';
 export { isFormContentType, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
 export { DEFAULT_COMPRESS_MIN_BYTES, encryptPayload, decryptPayload } from './islands/payloadCrypto';
 export { DEFAULT_INLINE_BUDGET } from './islands/inlineServerIslands';
