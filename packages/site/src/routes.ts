@@ -19,6 +19,10 @@ import { loadPosts, getPost } from './lib/blog';
 import { buildFeedXml, FEED_CONTENT_TYPE } from './lib/feed';
 import { CHANGELOG_SLUG, CHANGELOG_TITLE, CHANGELOG_DESCRIPTION, getChangelogHtml, getChangelogTxt } from './lib/changelog';
 import { respondMcp } from './lib/mcp';
+import { routes as apiCatalogRoutes } from './lib/wellKnown/apiCatalog';
+import { routes as mcpCardRoutes } from './lib/wellKnown/mcpCard';
+import { routes as agentCardRoutes } from './lib/wellKnown/agentCard';
+import { routes as agentSkillsRoutes } from './lib/wellKnown/agentSkills';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
 import { routes as cacheEventsRoutes } from './demos/cache-events/routes';
@@ -342,6 +346,10 @@ export const routes: Record<string, MochiRouteValue> = {
   '/SKILL.md': Mochi.file('./src/SKILL.md'),
   '/mcp': mcpRoute,
   '/mcp/': mcpRoute,
+  ...apiCatalogRoutes,
+  ...mcpCardRoutes,
+  ...agentCardRoutes,
+  ...agentSkillsRoutes,
   ...demoLlmsRoutes,
   ...apiRoutes,
   ...cacheEventsRoutes,

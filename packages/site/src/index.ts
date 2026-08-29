@@ -15,6 +15,7 @@ import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes'
 import { handle as modeWatcherHandle } from './demos/mode-watcher/routes';
 import { handle as shotHandle } from './shot/routes';
 import { encodeDebugBarGlobals } from './lib/debugBarEncode';
+import { agentDiscoveryLinks } from './lib/wellKnown/agentDiscoveryLinks';
 import { routes, queues, cron } from './routes';
 
 const DEVELOPMENT = process.env.NODE_ENV === 'development';
@@ -177,6 +178,7 @@ await Mochi.serve({
     compress(),
     immutableAssets,
     helloWorld,
+    agentDiscoveryLinks,
     asciiDog,
     analytics({ exclude: ['/ci/dashboard'] }),
     encodeDebugBarPaths,
