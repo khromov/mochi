@@ -109,6 +109,7 @@
       "dependencies": {
         "@css-inline/css-inline-wasm": "^0.21.0",
         "@joint-ops/hitlimit-bun": "1.5.0",
+        "@minify-html/wasm": "0.18.1",
         "@noble/ciphers": "2.2.0",
         "@noble/hashes": "2.2.0",
         "bun-boss": "^0.5.1",
@@ -409,6 +410,8 @@
     "@memlab/heap-analysis": ["@memlab/heap-analysis@2.0.4", "", { "dependencies": { "@memlab/core": "^2.0.4", "@memlab/e2e": "^2.0.4", "ansi": "^0.3.1", "babar": "^0.2.0", "chalk": "^4.0.0", "fs-extra": "^4.0.2", "minimist": "^1.2.8", "puppeteer": "24.31.0", "puppeteer-core": "24.31.0", "string-width": "^4.2.0", "util.promisify": "^1.1.1", "xvfb": "^0.4.0" } }, "sha512-6miDgU8J1Q9+PYLYpP2fspZt64bkv/w3VzAA4/zlo+1tFTtj+Mv0D6kNg76ABn4/N3ZbFGVWFq68+GjZDic1wA=="],
 
     "@memlab/lens": ["@memlab/lens@2.0.4", "", {}, "sha512-X3aKYv2+Vjdf0pGWjwXD9ab1kpvWPVfJxtuOFe8ue2UrpY7uiXyaqULT2wLYD7j+MsmKNsz+WvRZHb0XW9xiTA=="],
+
+    "@minify-html/wasm": ["@minify-html/wasm@0.18.1", "", {}, "sha512-GBkBOJxe7duO+z2b00SP83EewOI+Qm4MsnajXHw4yT7/J+TuG3jLEatBHKnT59Zq4CgXBRpdkv/2hlCGnyqAzg=="],
 
     "@mochi-framework/msgpackr-extract-stub": ["@mochi-framework/msgpackr-extract-stub@workspace:packages/msgpackr-extract-stub"],
 
