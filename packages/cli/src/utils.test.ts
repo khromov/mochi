@@ -2,7 +2,17 @@ import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { bunVersionWarning, resolveMochiVersionRange, setDefaultPort, stringifyJson, transformPackageJson, transformTsconfig, validatePackageName } from './utils.ts';
+import {
+  bunVersionWarning,
+  resolveMochiVersionRange,
+  retargetDockerignore,
+  setDefaultPort,
+  stringifyJson,
+  stripDockerfileEnvPort,
+  transformPackageJson,
+  transformTsconfig,
+  validatePackageName,
+} from './utils.ts';
 
 /** A scaffold dir whose `patches/` folder holds the given `name@version.patch` files (none → no `patches/` dir). */
 function scaffoldDir(patchFiles: string[] = []): string {
@@ -224,5 +234,37 @@ describe('setDefaultPort', () => {
   test('returns input unchanged when the pattern is absent', () => {
     const input = `const port = 4000;\nconsole.log(port);\n`;
     expect(setDefaultPort(input, 3333)).toBe(input);
+  });
+});
+
+describe('stripDockerfileEnvPort', () => {
+  test('removes the ENV PORT line and preserves the rest', () => {
+    const input = `FROM oven/bun:1.4.0-alpine\nRUN bun run build\n\nENV PORT=3333\nEXPOSE 3333\nCMD ["bun", "run", "start"]\n`;
+    const out = stripDockerfileEnvPort(input);
+    expect(out).not.toContain('ENV PORT=3333');
+    expect(out).toContain('EXPOSE 3333');
+    expect(out).toContain('CMD ["bun", "run", "start"]');
+    expect(out).toContain('FROM oven/bun:1.4.0-alpine');
+  });
+
+  test('is idempotent when no ENV PORT line is present', () => {
+    const input = `FROM oven/bun:1.4.0-alpine\nEXPOSE 3333\n`;
+    expect(stripDockerfileEnvPort(input)).toBe(input);
+  });
+});
+
+describe('retargetDockerignore', () => {
+  test('renames a standalone Dockerfile entry', () => {
+    const input = `node_modules\n.git\nDockerfile\n.dockerignore\n*.log\n`;
+    const out = retargetDockerignore(input);
+    expect(out).toContain('Dockerfile.vercel');
+    expect(out).toContain('.dockerignore');
+    // The bare `Dockerfile` line is gone (only `Dockerfile.vercel` remains).
+    expect(out.split('\n')).not.toContain('Dockerfile');
+  });
+
+  test('returns input unchanged when no Dockerfile entry is present', () => {
+    const input = `node_modules\n.git\n*.log\n`;
+    expect(retargetDockerignore(input)).toBe(input);
   });
 });

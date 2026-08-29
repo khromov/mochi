@@ -33,6 +33,7 @@ Deploy code or containers. The platform manages infrastructure, scaling, and net
 - <span title="USA — Zeabur Inc., Delaware">🇺🇸</span> <a href="https://zeabur.com" target="_blank" rel="nofollow noopener">Zeabur</a> — auto-detects Bun
 - <span title="France">🇫🇷</span> <a href="https://www.scaleway.com/en/serverless-containers/" target="_blank" rel="nofollow noopener">Scaleway Serverless Containers</a> — deploy from any registry, billed per millisecond
 - <span title="USA">🇺🇸</span> <a href="https://www.digitalocean.com/products/app-platform" target="_blank" rel="nofollow noopener">DigitalOcean App Platform</a> — Git or Docker deploy
+- <span title="USA">🇺🇸</span> <a href="https://vercel.com" target="_blank" rel="nofollow noopener">Vercel</a> — runs any Dockerfile on Fluid compute; see the <a href="/docs/vercel/">Mochi on Vercel</a> guide for setup and limitations
 
 ## Traditional VPS / IaaS
 
@@ -91,6 +92,7 @@ The flag next to each provider above shows where the **company** is headquartere
 | Zeabur | 🇺🇸 USA | <a href="https://zeabur.com/about" target="_blank" rel="nofollow noopener">About (Zeabur Inc., Delaware)</a> |
 | Scaleway | 🇫🇷 France | <a href="https://www.scaleway.com/en/legal-notice/" target="_blank" rel="nofollow noopener">Legal notice (Paris, France)</a> |
 | DigitalOcean | 🇺🇸 USA | <a href="https://www.digitalocean.com/legal/terms-of-service-agreement" target="_blank" rel="nofollow noopener">Terms (USA)</a> |
+| Vercel | 🇺🇸 USA | <a href="https://vercel.com/legal/privacy-policy" target="_blank" rel="nofollow noopener">Privacy policy (San Francisco, CA)</a> |
 | Hetzner | 🇩🇪 Germany | <a href="https://www.hetzner.com/legal/imprint" target="_blank" rel="nofollow noopener">Imprint (Gunzenhausen, Germany)</a> |
 | OVHcloud | 🇫🇷 France | <a href="https://www.ovhcloud.com/en/terms-and-conditions/" target="_blank" rel="nofollow noopener">Terms (Roubaix, France)</a> |
 | Vultr | 🇺🇸 USA | <a href="https://en.wikipedia.org/wiki/Vultr" target="_blank" rel="nofollow noopener">Wikipedia (West Palm Beach, FL)</a> |
