@@ -141,6 +141,37 @@ Every encoding streams through one `CompressionStream`, so a chunked SSR respons
 
 `compress()` is a no-op in development, because the debug bar must inject itself into the HTML after the response is built. In production it adds `Vary: Accept-Encoding` and compresses compressible content types (`text/*`, `application/json`, `application/javascript`, `application/xml`, and others). A response that already declares `Content-Encoding` passes through untouched. Static framework assets also flow through `handle`, so `compress()` covers them. Other body-touching middleware must branch on `event.kind === 'asset'` when it needs to skip framework bundles.
 
+### `htmlMinify`
+
+Built-in middleware factory that minifies page HTML via `transformPage`: it collapses inter-element whitespace to single spaces and strips author comments. `<pre>`, `<textarea>`, `<script>`, `<style>`, and island subtrees (`mochi:hydrate*`, server islands) are left byte-for-byte intact, so hydration never mismatches.
+
+```ts
+// file: src/index.ts
+import { Mochi, sequence, htmlMinify, compress } from 'mochi-framework';
+
+await Mochi.serve({
+  handle: sequence(htmlMinify(), analytics(), compress()),
+  routes,
+});
+```
+
+Ordering matters. Because merged `transformPage`s stack in **reverse** (see `resolve`), a handle placed _earlier_ in `sequence(...)` transforms the HTML _later_ — so put `htmlMinify()` **before** any handle that injects markup via `transformPage` (analytics snippets, etc.) and keep `compress()` last, so minification runs on the fully-injected HTML and compression runs on the minified result.
+
+Options (all default on except `dev`):
+
+- `collapseWhitespace` — collapse runs of whitespace between elements to a single space. Default `true`.
+- `removeComments` — drop HTML comments that aren't Svelte/island hydration markers. Default `true`.
+- `dev` — also run in development. Default `false`.
+
+```ts
+// Only collapse whitespace, keep comments
+sequence(htmlMinify({ removeComments: false }), compress());
+```
+
+Like `compress()`, `htmlMinify()` is a no-op in development so the debug bar and view-source stay readable. Whitespace collapse is conservative (never fully trims), preserving significant spacing between inline elements, HTML entities, and literal non-breaking spaces. Because the framework already gzip/brotli-compresses responses, minification's on-the-wire savings are modest — its main effect is a smaller uncompressed payload.
+
+Whitespace collapse is tag-based (`<pre>`/`<textarea>` are preserved), so it can't honor CSS `white-space: pre`/`pre-wrap`/`break-spaces` applied to other elements — if you rely on that, wrap the content in a preserved tag or leave `collapseWhitespace` off for those pages.
+
 ### `noCache`
 
 Built-in middleware that defaults `Cache-Control: no-cache` on `page` and `api` responses. A route that sets its own `Cache-Control` is left untouched, so opt-in caching works per route.
