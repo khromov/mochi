@@ -41,6 +41,9 @@ export { pinGlobal } from "__MOCHI_GLOBAL_STATE__";
 // a separate install. Resolved from the framework's own deps.
 export { stringify, parse } from "__MOCHI_DEVALUE__";
 export { trailingSlashIt } from "__MOCHI_TRAILING_SLASH__";
+// Web-component registration. Call sites are rewritten at build time (server →
+// no-op, client → dynamic import); this export is the binding they resolve against.
+export { importWebComponent } from "__MOCHI_IMPORT_WEB_COMPONENT__";
 // Per-request hydratable-island props dedup helper. Used by the
 // preprocessor's injected `__mochi_emit_props__` import.
 export { emitIslandProps } from "__MOCHI_ISLAND_PROPS__";

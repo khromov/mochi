@@ -137,6 +137,7 @@ export { DEFAULT_EXPIRE_IN_SECONDS } from './queue';
 export type { MochiCronJob, MochiCronHandler, MochiCronRun, MochiCronOptions, MochiCronRuntimeOptions } from './cron';
 export { json, error, apiError, MochiHttpError } from './utils';
 export { trailingSlashIt } from './runtime/trailingSlash';
+export { importWebComponent } from './compiler/importWebComponent';
 export { fail, redirect, success } from './runtime/forms';
 export { isHydratable } from './islands/isHydratable';
 

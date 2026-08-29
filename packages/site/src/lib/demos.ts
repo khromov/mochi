@@ -57,6 +57,7 @@ import { files as staticDirs } from '../demos/static-dirs/files.ts';
 import { files as streams } from '../demos/streams/files.ts';
 import { files as tanstackTable } from '../demos/tanstack-table/files.ts';
 import { files as url } from '../demos/url/files.ts';
+import { files as webComponents } from '../demos/web-components/files.ts';
 import { files as varlock } from '../demos/varlock/files.ts';
 import { files as viewTransitions } from '../demos/view-transitions/files.ts';
 
@@ -285,6 +286,14 @@ export const demos: Demo[] = [
     files: sharedState,
     title: 'Shared State',
     hook: 'How shared state across islands works — two separate islands driving the same reactive $state.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/web-components/',
+    slug: 'web-components',
+    files: webComponents,
+    title: 'Web Components',
+    hook: 'Custom elements — both local and from an npm package — registered inside a hydratable island and upgraded on the client.',
     category: 'hydration',
   },
   {

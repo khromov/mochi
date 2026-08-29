@@ -34,6 +34,7 @@ export function renderMochiEnvServer(development: boolean): string {
     __MOCHI_GLOBAL_STATE__: frameworkFile('utils/globalState.ts'),
     __MOCHI_DEVALUE__: toPosixPath(Bun.resolveSync('devalue', FRAMEWORK_DIR)),
     __MOCHI_TRAILING_SLASH__: frameworkFile('runtime/trailingSlash.ts'),
+    __MOCHI_IMPORT_WEB_COMPONENT__: frameworkFile('compiler/importWebComponent.ts'),
     __MOCHI_ISLAND_PROPS__: frameworkFile('islands/islandPropsRegistry.ts'),
     __MOCHI_IS_HYDRATABLE__: frameworkFile('islands/isHydratable.ts'),
     __MOCHI_MITT__: toPosixPath(Bun.resolveSync('mitt', FRAMEWORK_DIR)),

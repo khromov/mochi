@@ -81,6 +81,7 @@ import { routes as staticDirsRoutes } from './demos/static-dirs/routes';
 import { routes as streamsRoutes } from './demos/streams/routes';
 import { routes as tanstackTableRoutes } from './demos/tanstack-table/routes';
 import { routes as urlRoutes } from './demos/url/routes';
+import { routes as webComponentsRoutes } from './demos/web-components/routes';
 import { routes as varlockRoutes } from './demos/varlock/routes';
 import { routes as viewTransitionsRoutes } from './demos/view-transitions/routes';
 import { routes as customTransitionsRoutes } from './demos/custom-transitions/routes';
@@ -404,6 +405,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...streamsRoutes,
   ...tanstackTableRoutes,
   ...urlRoutes,
+  ...webComponentsRoutes,
   ...varlockRoutes,
   ...viewTransitionsRoutes,
   ...customTransitionsRoutes,

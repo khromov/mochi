@@ -42,6 +42,7 @@ import { serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { registerServerOnlyComponentStubs, SSR_ONLY_COMPONENT_NAMESPACE } from './serverOnlyComponents';
 import { cleanInputs, SERVER_ONLY_MODULE_NAMESPACE } from './bundleInputPaths';
 import { renderMochiEnvServer } from './virtualModuleTemplate';
+import { transformImportWebComponent } from './importWebComponent';
 import { buildDebugBarBundle, type DebugBarBundle } from './buildDebugBarBundle';
 import { formatBuildMessages } from './formatBuildMessages';
 import { clientBuildDefine, registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
@@ -754,7 +755,7 @@ export class ComponentRegistry {
           allServerIslands.push(...serverIslands);
 
           const { js, css } = backend.compile(
-            preprocessResult.transformed,
+            transformImportWebComponent(preprocessResult.transformed, 'server'),
             mergeCompilerOptions(userCompilerOptions, {
               generate: 'server',
               filename: args.path,
@@ -1221,7 +1222,7 @@ export class ComponentRegistry {
           }
           const preprocessed = await applyUserPreprocessors(source, args.path, 'client', development);
           const { js } = backend.compile(
-            preprocessed,
+            transformImportWebComponent(preprocessed, 'client'),
             mergeCompilerOptions(userCompilerOptions, {
               generate: 'client',
               filename: args.path,
