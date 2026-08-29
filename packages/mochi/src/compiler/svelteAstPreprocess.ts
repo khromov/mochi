@@ -2,10 +2,15 @@ import { parse } from 'svelte/compiler';
 import type { AST } from 'svelte/compiler';
 import MagicString from 'magic-string';
 import path from 'node:path';
+import fs from 'node:fs';
 import { walk } from 'zimmerframe';
 import { ALSO_HYDRATE_ENVELOPE_KEY, type AlsoHydrateMode } from '../types';
 import { FRAMEWORK_COMPONENTS_SPECIFIER, resolveFrameworkComponent } from './frameworkComponents';
 import { encodeSourcePath } from './manifestPaths';
+import { relForDisplay } from '../utils';
+
+/** The `mochi-framework/components` export name the `<Script>` rewrite keys off; aliases are followed via `scriptNames`. */
+const SCRIPT_COMPONENT_EXPORT = 'Script';
 
 /** Svelte's AST nodes all have start/end, but estree types don't declare them. */
 interface Positioned {
@@ -31,6 +36,16 @@ export interface ServerIslandComponent {
   resolvedPath: string;
   /** Export the component was imported from: `'default'` or a named export of the resolved module. */
   exportName: string;
+}
+
+/**
+ * A client-side script referenced by a `<Script>` component. `resolvedPath` is the absolute source path (added to the
+ * client `Bun.build()` as an entrypoint); `key` is a build-reproducible hash of that path forming the
+ * `__MOCHI_SCRIPT_URL__<key>__` placeholder the renderer swaps for the hashed output URL.
+ */
+export interface ScriptEntry {
+  resolvedPath: string;
+  key: string;
 }
 
 /**
@@ -79,6 +94,7 @@ export interface PreprocessResult {
   transformed: string;
   hydratables: HydratableComponent[];
   serverIslands: ServerIslandComponent[];
+  scriptEntries: ScriptEntry[];
   errors: PreprocessIslandError[];
 }
 
@@ -95,10 +111,13 @@ export interface PreprocessResult {
  * - `mochi:clientOnly` → `<mochi-hydratable-island client-only>`, which skips the
  *   server entirely, turns any children into SSR placeholder markup, and mounts on
  *   the client
+ *
+ * It also resolves `<Script src="./x.ts" />` call sites into client-bundle entrypoints — the fourth thing this pass
+ * handles, and the reason a file importing from `mochi-framework/components` can't take the no-directive fast path.
  */
 export function preprocessHydratable(source: string, filePath: string): PreprocessResult {
-  if (!source.includes('mochi:hydrate') && !source.includes('mochi:defer') && !source.includes('mochi:clientOnly')) {
-    return { transformed: source, hydratables: [], serverIslands: [], errors: [] };
+  if (!source.includes('mochi:hydrate') && !source.includes('mochi:defer') && !source.includes('mochi:clientOnly') && !source.includes(FRAMEWORK_COMPONENTS_SPECIFIER)) {
+    return { transformed: source, hydratables: [], serverIslands: [], scriptEntries: [], errors: [] };
   }
   const ast = parse(source, { modern: true });
   const s = new MagicString(source);
@@ -110,6 +129,9 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
   // Local names bound by imports the island pipeline can't handle (bare package specifiers, namespace imports,
   // non-svelte sources), kept so a directive on one of them can name the offending specifier in its compile error.
   const unsupportedImports = new Map<string, string>();
+  // Local names bound to the framework's `<Script>`, which is rewritten rather than treated as an island; a set because
+  // the import can be aliased (`import { Script as S } from 'mochi-framework/components'`).
+  const scriptNames = new Set<string>();
   let pidVar: string | null = null;
   if (ast.instance) {
     for (const node of ast.instance.content.body) {
@@ -123,6 +145,9 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
             const framework = spec.type === 'ImportSpecifier' && spec.imported.type === 'Identifier' ? resolveFrameworkComponent(spec.imported.name) : null;
             if (framework) {
               importMap.set(spec.local.name, { source: framework.resolvedPath, exportName: framework.exportName });
+              if (spec.type === 'ImportSpecifier' && spec.imported.type === 'Identifier' && spec.imported.name === SCRIPT_COMPONENT_EXPORT) {
+                scriptNames.add(spec.local.name);
+              }
             } else {
               unsupportedImports.set(spec.local.name, importSource);
             }
@@ -163,15 +188,24 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
 
   const hydratables: HydratableComponent[] = [];
   const serverIslands: ServerIslandComponent[] = [];
+  const scriptEntries: ScriptEntry[] = [];
   const errors: PreprocessIslandError[] = [];
   const seen = new Set<string>();
   const seenServer = new Set<string>();
+  const seenScript = new Set<string>();
   // Set by the hydrate/visible branch alone, since only those islands SSR in-page and so need the context boundary imported below.
   let needsBoundary = false;
 
   walk(ast.fragment as AST.SvelteNode, null, {
     Component(comp, { next }) {
       const directives = findMochiDirectives(comp.attributes);
+      // A directive-carrying `<Script>` falls through to the island path instead, where resolving to a
+      // `.server.svelte` yields the standard `server-only` compile error rather than a silent rewrite.
+      if (scriptNames.has(comp.name) && !directives.server && !directives.hydrate && !directives.clientOnly) {
+        processScript(filePath, comp, s, scriptEntries, seenScript);
+        next();
+        return;
+      }
       if (!directives.server && !directives.hydrate && !directives.clientOnly) {
         next();
         return;
@@ -468,7 +502,86 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
     s.appendRight(contentStart, imports);
   }
 
-  return { transformed: s.toString(), hydratables, serverIslands, errors };
+  return { transformed: s.toString(), hydratables, serverIslands, scriptEntries, errors };
+}
+
+/**
+ * Rewrite a `<Script src="…" />` / `<Script scripts={[…]} />` call site: read the static literal path(s), resolve them
+ * against the importing file, verify each exists, and replace the element with one carrying `__mochiScriptUrls` —
+ * placeholder tokens `renderComponent` swaps for the hashed bundle URLs. The sources become client-build entrypoints.
+ */
+function processScript(filePath: string, comp: AST.Component, s: MagicString, scriptEntries: ScriptEntry[], seenScript: Set<string>): void {
+  const rawPaths = readScriptPaths(comp);
+  if (rawPaths.length === 0) {
+    throw new Error(`<${comp.name} /> requires a \`src\` (string) or \`scripts\` (string[]) path.`);
+  }
+
+  const tokens: string[] = [];
+  for (const raw of rawPaths) {
+    const resolved = path.isAbsolute(raw) ? raw : path.resolve(path.dirname(filePath), raw);
+    if (!fs.existsSync(resolved)) {
+      throw new Error(`<${comp.name} /> cannot resolve script ${JSON.stringify(raw)} (looked for ${relForDisplay(resolved)}) referenced in ${relForDisplay(filePath)}.`);
+    }
+    // Hashing the *encoded* path, like `islandIdentity`, keeps the key — and with it the SSR'd placeholder and the
+    // manifest entry — identical across machines building the same commit.
+    const key = Bun.hash(encodeSourcePath(resolved)).toString(36);
+    if (!seenScript.has(resolved)) {
+      seenScript.add(resolved);
+      scriptEntries.push({ resolvedPath: resolved, key });
+    }
+    tokens.push(`__MOCHI_SCRIPT_URL__${key}__`);
+  }
+
+  const urlsArray = `[${tokens.map((t) => `"${t}"`).join(', ')}]`;
+  s.overwrite(comp.start, comp.end, `<${comp.name} __mochiScriptUrls={${urlsArray}} />`);
+}
+
+/**
+ * Extract the static string-literal path(s) from a `<Script>`'s `src` / `scripts` attributes. Throws on any non-literal
+ * value — the paths have to be statically known to become build-time bundle entrypoints.
+ */
+function readScriptPaths(comp: AST.Component): string[] {
+  const paths: string[] = [];
+  for (const attr of comp.attributes) {
+    if (attr.type !== 'Attribute') {
+      continue;
+    }
+    if (attr.name === 'src') {
+      const lit = literalString(attr.value);
+      if (lit == null) {
+        throw new Error(`<${comp.name} /> \`src\` must be a static string literal (e.g. src="./app.ts").`);
+      }
+      paths.push(lit);
+    } else if (attr.name === 'scripts') {
+      const expr = attr.value === true || Array.isArray(attr.value) ? null : attr.value.expression;
+      if (expr?.type !== 'ArrayExpression') {
+        throw new Error(`<${comp.name} /> \`scripts\` must be a static array of string literals (e.g. scripts={['./a.ts', './b.ts']}).`);
+      }
+      for (const el of expr.elements) {
+        if (!el || el.type !== 'Literal' || typeof el.value !== 'string') {
+          throw new Error(`<${comp.name} /> \`scripts\` must contain only static string literals.`);
+        }
+        paths.push(el.value);
+      }
+    }
+  }
+  return paths;
+}
+
+/** Read a Svelte attribute value as a plain string literal, or null when it isn't one. */
+function literalString(value: AST.Attribute['value']): string | null {
+  if (value === true) {
+    return null;
+  }
+  // `src={'./x'}` — a single ExpressionTag wrapping a string literal.
+  if (!Array.isArray(value)) {
+    return value.expression.type === 'Literal' && typeof value.expression.value === 'string' ? value.expression.value : null;
+  }
+  // `src="./x"` — a single Text node.
+  if (value.length === 1 && value[0]!.type === 'Text') {
+    return value[0]!.data;
+  }
+  return null;
 }
 
 /**

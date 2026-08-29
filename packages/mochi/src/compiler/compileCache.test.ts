@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompiledFileOutput } from './compileCache';
 
-const OUTPUT: CompiledFileOutput = { js: 'export default 1;', css: '.a{}', hydratables: [], serverIslands: [], preprocessErrors: [] };
+const OUTPUT: CompiledFileOutput = { js: 'export default 1;', css: '.a{}', hydratables: [], serverIslands: [], scriptEntries: [], preprocessErrors: [] };
 const FP = compileFingerprint({ runes: true }, true);
 
 describe('compileCache', () => {

@@ -1,4 +1,4 @@
-import type { HydratableComponent, PreprocessIslandError, ServerIslandComponent } from './svelteAstPreprocess';
+import type { HydratableComponent, PreprocessIslandError, ScriptEntry, ServerIslandComponent } from './svelteAstPreprocess';
 
 /**
  * The full result of compiling one `.svelte` / `.md` source for a target: the emitted JS the bundler consumes, the
@@ -11,6 +11,7 @@ export interface CompiledFileOutput {
   css: string | null;
   hydratables: HydratableComponent[];
   serverIslands: ServerIslandComponent[];
+  scriptEntries: ScriptEntry[];
   preprocessErrors: PreprocessIslandError[];
 }
 
