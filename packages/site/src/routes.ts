@@ -34,6 +34,7 @@ import { routes as cookiesRoutes } from './demos/cookies/routes';
 import { routes as dataLoadingRoutes } from './demos/data-loading/routes';
 import { routes as emailRoutes } from './demos/email/routes';
 import { routes as entityPropsRoutes } from './demos/entity-props/routes';
+import { routes as fetchDemoRoutes } from './demos/fetch/routes';
 import { routes as errorRoutes } from './demos/error/routes';
 import { routes as errorBoundariesRoutes } from './demos/error-boundaries/routes';
 import { routes as fileRoutes } from './demos/file/routes';
@@ -358,6 +359,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...dataLoadingRoutes,
   ...emailRoutes,
   ...entityPropsRoutes,
+  ...fetchDemoRoutes,
   ...errorRoutes,
   ...errorBoundariesRoutes,
   ...fileRoutes,

@@ -56,6 +56,8 @@ export { pinGlobal } from './utils/globalState';
 export { isBuilding } from './utils/buildFlag';
 export { isDev, isServer, isBrowser } from './utils/env';
 export { mochiEvents, hasSubscribers } from './events';
+export { mochiFetch } from './fetch';
+export type { MochiFetchOptions } from './fetch';
 export type { MochiCompileError } from './compiler/ComponentRegistry';
 export type {
   MochiEmitter,

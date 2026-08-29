@@ -72,6 +72,8 @@ export { deferReloadState, DeferReloadState } from "__MOCHI_DEFER_REACTIVE__";
 // Svelte never invokes actions during SSR, so these stubs only fire
 // if user code calls them on the server — which is a usage error.
 export { enhance, deserialize } from "__MOCHI_ENHANCE_SSR__";
+// Isomorphic resilient fetch — a real re-export on both sides.
+export { mochiFetch } from "__MOCHI_FETCH__";
 // Rate-limit stores — server-only (bun:sqlite / Bun SQL).
 export { memoryStore, sqliteStore, postgresStore } from "__MOCHI_RATE_LIMIT__";
 // The built-in protection interstitial's absolute path — lets a docs/tooling

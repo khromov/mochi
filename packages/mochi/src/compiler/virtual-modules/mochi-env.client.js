@@ -137,3 +137,5 @@ export { enhance, deserialize } from "__MOCHI_ENHANCE_CLIENT__";
 export function isHydratable() { return true; }
 // Server filesystem path — meaningless in the browser.
 export const PROTECTION_SHELL_COMPONENT = undefined;
+// mochiFetch is genuinely isomorphic — a real re-export here too, not a throwing stub.
+export { mochiFetch } from "__MOCHI_FETCH__";

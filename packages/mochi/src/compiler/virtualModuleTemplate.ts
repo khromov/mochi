@@ -48,6 +48,7 @@ export function renderMochiEnvServer(development: boolean): string {
     // A baked literal, not a module re-export: config.ts computes the path off `import.meta.url`,
     // which inside a compiled SSR chunk would point into the build dir instead of the framework src.
     __MOCHI_PROTECTION_SHELL_PATH__: frameworkFile('templates/ProtectionShell/ProtectionShell.svelte'),
+    __MOCHI_FETCH__: frameworkFile('fetch.ts'),
   });
 }
 
@@ -62,5 +63,6 @@ export function renderMochiEnvClient(development: boolean, cookiesClientPath: st
     __MOCHI_DEFER_API__: frameworkFile('islands/deferInvalidation.ts'),
     __MOCHI_DEFER_REACTIVE__: frameworkFile('islands/deferReloadState.svelte.ts'),
     __MOCHI_ENHANCE_CLIENT__: enhanceClientPath,
+    __MOCHI_FETCH__: frameworkFile('fetch.ts'),
   });
 }
