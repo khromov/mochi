@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import deepmerge from 'deepmerge';
 import type { CompileOptions } from 'svelte/compiler';
 import { logger } from '../utils/log';
+import { toPosixPath } from '../utils';
 import { freshImportBundled } from './freshImport';
 
 export interface MochiSvelteConfig {
@@ -25,13 +26,22 @@ export async function loadSvelteConfig(configPath?: string, opts: { reload?: boo
     return {};
   }
   const mod = opts.reload ? await freshImportBundled(resolved, opts.tempDir ?? path.join(path.dirname(resolved), '.mochi')) : await import(pathToFileURL(resolved).href);
-  return (mod.default ?? mod) as MochiSvelteConfig;
+  const config = (mod.default ?? mod) as MochiSvelteConfig;
+  if (config.compilerOptions?.experimental?.async === false) {
+    logger.warn(`${toPosixPath(resolved)} sets compilerOptions.experimental.async to false — ignoring, Mochi always compiles with it enabled.`);
+  }
+  return config;
 }
 
 /** Framework-level defaults applied when the user does not specify them. */
 export const FRAMEWORK_COMPILER_DEFAULTS: CompileOptions = {
-  experimental: { async: true },
   discloseVersion: false,
+};
+
+// Applied last, after both the user's config and the per-call-site overrides. Mochi's own components (`<Image>`) use
+// top-level `await`, so an app that turned this off would fail to compile the framework's own source.
+export const FRAMEWORK_FORCED_COMPILER_OPTIONS: CompileOptions = {
+  experimental: { async: true },
 };
 
 // Replacing the destination array rather than concatenating keeps last-write-wins semantics at every nesting depth,
@@ -39,13 +49,14 @@ export const FRAMEWORK_COMPILER_DEFAULTS: CompileOptions = {
 const overwriteMerge = (_destinationArray: unknown[], sourceArray: unknown[]): unknown[] => sourceArray;
 
 /**
- * Three-layer merge for Svelte `compilerOptions`, later layers winning and nested plain objects deep-merged:
- *   1. framework defaults (e.g. `experimental.async: true`)
+ * Four-layer merge for Svelte `compilerOptions`, later layers winning and nested plain objects deep-merged:
+ *   1. framework defaults (e.g. `discloseVersion: false`)
  *   2. user options from `svelte.config.js`
  *   3. framework-owned overrides for the call site (e.g. `generate`, `filename`)
+ *   4. framework-forced options that nothing may override (`experimental.async`)
  */
 export function mergeCompilerOptions(user: CompileOptions | undefined, forced: CompileOptions): CompileOptions {
-  return deepmerge.all<CompileOptions>([FRAMEWORK_COMPILER_DEFAULTS, user ?? {}, forced], {
+  return deepmerge.all<CompileOptions>([FRAMEWORK_COMPILER_DEFAULTS, user ?? {}, forced, FRAMEWORK_FORCED_COMPILER_OPTIONS], {
     arrayMerge: overwriteMerge,
   });
 }

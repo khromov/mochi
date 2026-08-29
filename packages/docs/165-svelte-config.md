@@ -4,6 +4,10 @@ slug: svelte-config
 description: 'Customize the Svelte compiler through svelte.config.js with compiler options and framework defaults.'
 ---
 
+<script>
+  import VersionNote from './_components/VersionNote.svelte';
+</script>
+
 ## Svelte config
 
 Mochi loads `./svelte.config.js` from the cwd at startup and merges its `compilerOptions` into the framework defaults. Drop the file at the root of your app to customize the Svelte compiler.
@@ -12,27 +16,24 @@ Mochi loads `./svelte.config.js` from the cwd at startup and merges its `compile
 // file: svelte.config.js
 export default {
   compilerOptions: {
-    experimental: {
-      async: true,
-    },
+    runes: true,
   },
 };
 ```
 
-The file is optional. If it is missing, Mochi logs `[mochi] No Svelte config found at … — using framework defaults.` and continues with the framework defaults.
+The file is optional. Mochi compiles correctly without it. If it is missing, Mochi logs `[mochi] No Svelte config found at … — using framework defaults.` and continues with the framework defaults.
 
 Both ESM (`export default`) and CJS (`module.exports`) are supported. In dev, Mochi watches the file — an edit reloads `compilerOptions` without restarting the server.
 
 ### Framework defaults
 
-Two fields are seeded before your config merges in:
+One field is seeded before your config merges in:
 
-| Field                | Default | Why                                                                  |
-| -------------------- | ------- | -------------------------------------------------------------------- |
-| `experimental.async` | `true`  | Enables top-level `await` in `.svelte` components (Svelte 5 opt-in). |
-| `discloseVersion`    | `false` | Suppresses the `<!-- svelte v… -->` comment in SSR output.           |
+| Field             | Default | Why                                                        |
+| ----------------- | ------- | ---------------------------------------------------------- |
+| `discloseVersion` | `false` | Suppresses the `<!-- svelte v… -->` comment in SSR output. |
 
-Override either by setting it in your own `compilerOptions`.
+Override it by setting it in your own `compilerOptions`.
 
 ### svelteConfigPath
 
@@ -48,15 +49,41 @@ await Mochi.serve({
 
 ### Framework-owned fields
 
-Mochi forces three `compilerOptions` at every compile call site:
+Mochi forces four `compilerOptions` at every compile call site:
 
-| Field      | Forced to                                                                                            |
-| ---------- | ---------------------------------------------------------------------------------------------------- |
-| `generate` | `'server'` for SSR builds, `'client'` for hydration bundles.                                         |
-| `filename` | The actual file path being compiled.                                                                 |
-| `dev`      | The `Mochi.serve()` `development` flag — **client target only**. Server compiles do not force `dev`. |
+| Field                | Forced to                                                                                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `generate`           | `'server'` for SSR builds, `'client'` for hydration bundles.                                                                                                                   |
+| `filename`           | The actual file path being compiled.                                                                                                                                           |
+| `dev`                | The `Mochi.serve()` `development` flag — **client target only**. Server compiles do not force `dev`.                                                                           |
+| `experimental.async` | `true`. Mochi's own components use top-level `await`, so turning it off breaks the framework's shipped source. A config that sets it to `false` logs a warning and is ignored. |
 
-Every other field — `runes`, `css`, `accessors`, `cssHash`, `discloseVersion`, `experimental.*` — is yours to set.
+Every other field — `runes`, `css`, `accessors`, `cssHash`, `discloseVersion` — is yours to set.
+
+### Re-exporting Mochi's config
+
+<VersionNote since="0.10.0" message="The mochi-framework/svelte.config.js subpath ships in the next Mochi release (0.10.0)." />
+
+Mochi applies its own compiler options at every call site, so your app does not need a `svelte.config.js` to compile. `svelte-check` and the Svelte VS Code extension read the file themselves and know nothing about Mochi, so they reject `await` in a component unless the file enables it. Re-export the framework's own config to keep them in sync:
+
+```js
+// file: svelte.config.js
+export { default } from 'mochi-framework/svelte.config.js';
+```
+
+Add your own options by spreading it:
+
+```js
+// file: svelte.config.js
+import mochiConfig from 'mochi-framework/svelte.config.js';
+
+export default {
+  compilerOptions: {
+    ...mochiConfig.compilerOptions,
+    runes: true,
+  },
+};
+```
 
 ### Where it applies
 
