@@ -20,8 +20,7 @@ Bun workspaces monorepo (`packages/*`):
 - `packages/docker` — `mochi-docker`: internal docker-compose stack for local dev — Postgres 15 (host `5433`, `postgres`/`postgres`) + Adminer (host `8081`), data bind-mounted at `./.db` (gitignored, no named volume). Host ports are `5433`/`8081` (not `5432`/`8080`) so it coexists with the dev container's native Postgres (5432) and code-server (8080). Auto-started by `bun run dev`; its dev script warns and idles when Docker is unavailable (so it never triggers dev.ts's first-exit teardown). `bun run db:stop` / `db:down` / `db:reset` from the root.
 - `packages/cli` — published as `create-mochi`: the `mochi-framework build` and project-scaffolding CLI (`@clack/prompts` + `commander`). Its `src/lintSetup.ts` writes the optional ESLint/Prettier setup into scaffolds as embedded string constants (the published package ships raw `src/`, no build step): generated configs mirror the root `eslint.config.js`/`.prettierrc`, and the pinned devDep caret ranges must stay identical to the root `package.json`'s lint stack — a `lintSetup.test.ts` test enforces this, so whenever the root's eslint/prettier deps are bumped (e.g. by the update-packages sweep), update `lintSetup.ts` to match; if the root lint/prettier _config_ changes, mirror it in `renderEslintConfig`/`PRETTIERRC` too.
 - `packages/msgpackr-extract-stub` — published as `@mochi-framework/msgpackr-extract-stub`; a pure-JS stub wired in via the root `overrides` so the native `msgpackr-extract` is never built.
-- `packages/video-animations` — Satori-based frame generation for promo videos (`bun run mochi:animate`). Satori (yoga) rounds element `left`/`top` to the integer pixel grid, so animate position via `transform: translate(${x}px, ${y}px)` with the element pinned at `left:0/top:0` — driving per-frame motion through `left`/`top` stair-steps and jitters ~1–2px. See `leaf()` in `src/frame.ts`.
-- `packages/remotion` — rendered video output assets.
+- `packages/remotion` — `mochi-remotion`: the promo/changelog videos, rendered with [Remotion](https://remotion.dev) (React + headless Chrome). Replaced the old Satori → resvg → ffmpeg pipeline (`packages/video-animations`). The only React/TSX workspace in the repo. `src/MochiVideo.tsx` is the 30s brand video; `src/changelog/` is a reusable data-driven changelog composition (see the `changelog-video` skill). Preview with `bun run mochi:studio`, render with `bun run mochi:render` — neither runs from `bun run dev`/`build`, and the package has no `test` script, so the `bun --filter='*'` fan-outs only reach its `typecheck` and `clean`.
 
 Root `package.json` scripts delegate into packages with `bun --cwd=packages/<name> run …` or fan out with `bun --filter='*' run …`. Most framework work happens inside `packages/mochi/src/`; app work lives in `packages/site/src/` and `packages/demos/src/`.
 
@@ -48,7 +47,8 @@ bun run syncpack     # syncpack lint — verify dependency versions agree across
 bun run loc          # Lines-of-code report for all packages (.github/scripts/loc-report.ts)
 bun run deps         # Dependency report (packages/mochi/scripts/dep-report.ts)
 bun run cli-test     # create-mochi CLI regression test (.github/scripts/cli-regression-test.ts)
-bun run mochi:animate # Generate promo-video frames (packages/video-animations)
+bun run mochi:studio # Open Remotion Studio to preview the videos (packages/remotion)
+bun run mochi:render  # Render the brand video to packages/remotion/out/mochi.mp4
 ```
 
 Multi-package scripts (`build`, `test`, `typecheck`, `clean`, `start:all`) use `bun --filter='*' run <script>`, which fans out to every workspace, runs in topological order, and parallelises siblings. `bun run dev` instead uses `scripts/dev.ts`, which dynamically discovers packages exposing a `dev` script.

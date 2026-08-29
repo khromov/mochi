@@ -53,7 +53,8 @@
     "outdated": "bun outdated --filter='*'",
     "deps": "bun packages/mochi/scripts/dep-report.ts",
     "e18e": "bash scripts/e18e.sh",
-    "mochi:animate": "bun --cwd=packages/video-animations run animate",
+    "mochi:studio": "cd packages/remotion && npx remotion studio src/index.ts",
+    "mochi:render": "bun --cwd=packages/remotion run render",
     "mcp": "DANGEROUSLY_OMIT_AUTH=true bunx @modelcontextprotocol/inspector"
   },
   "devDependencies": {

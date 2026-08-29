@@ -25,7 +25,7 @@ type Package = {
 };
 
 const REPO_ROOT = join(import.meta.dir, '..', '..');
-const COUNTED_EXTENSIONS = ['ts', 'js', 'svelte', 'html'];
+const COUNTED_EXTENSIONS = ['ts', 'tsx', 'js', 'svelte', 'html'];
 const SCAN_GLOB = `src/**/*.{${COUNTED_EXTENSIONS.join(',')}}`;
 const MISCELLANEOUS = 'Other';
 const DOCS_CATEGORY = 'Docs';
@@ -118,9 +118,9 @@ const PACKAGES: Package[] = [
     categories: ['src/**/*.test.ts', 'src/cli*', 'src/{create,templates,utils}.ts'],
   },
   {
-    name: 'packages/video-animations',
-    root: join(REPO_ROOT, 'packages', 'video-animations'),
-    categories: ['src/{frame,anim,theme}.ts', 'src/{render,render-worker,generate}.ts'],
+    name: 'packages/remotion',
+    root: join(REPO_ROOT, 'packages', 'remotion'),
+    categories: ['src/changelog/**/*.{ts,tsx}', 'src/*.tsx', 'src/*.ts'],
   },
   {
     name: 'packages/msgpackr-extract-stub',
