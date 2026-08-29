@@ -5,13 +5,19 @@ import type { Server } from 'bun';
  *
  *  - `'page'`     — handled by `Mochi.page` (GET render or POST form action)
  *  - `'api'`      — handled by `Mochi.api`
- *  - `'asset'`    — framework static asset: `/_mochi/client/*.js|.css` bundle
- *                   or the `/_mochi/client/stats` dev endpoint
+ *  - `'ws'`       — handled by `Mochi.ws`
+ *  - `'sse'`      — handled by `Mochi.sse`
+ *  - `'file'`     — handled by `Mochi.file`
+ *  - `'island'`   — framework server-island render endpoint
+ *  - `'image'`    — framework image transform endpoint
+ *  - `'asset'`    — framework or public static asset
+ *  - `'raw'`      — user-supplied Bun route value
+ *  - `'dev'`      — development-only framework endpoint
  *  - `'fallback'` — unmatched URL that will be passed to the user's `fetch`
  *  - `'error'`    — unmatched URL with no `fetch` configured; the framework
  *                   error responder will render a 404
  */
-export type MochiEventKind = 'page' | 'api' | 'asset' | 'fallback' | 'error';
+export type MochiEventKind = 'page' | 'api' | 'ws' | 'sse' | 'file' | 'island' | 'image' | 'asset' | 'raw' | 'dev' | 'fallback' | 'error';
 
 /** The event object passed to every middleware handle function. */
 export interface MochiEvent {

@@ -14,6 +14,7 @@ describe('rateLimit route option', () => {
   let outDir: string;
   let base: string;
   let sharedStore: ReturnType<typeof memoryStore>;
+  let preMiddlewareChecks = 0;
 
   beforeAll(async () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-ratelimit-'));
@@ -24,6 +25,7 @@ describe('rateLimit route option', () => {
       logger: { enabled: false },
       outDir,
       rateLimit: { limit: 2, window: '1m' },
+      handle: ({ event, resolve }) => (event.url.pathname === '/page/pre-middleware' ? new Response('blocked by middleware', { status: 401 }) : resolve(event)),
       routes: {
         '/api/global': Mochi.api(async () => json({ ok: true })),
         '/api/global-shared': Mochi.api(async () => json({ ok: true })),
@@ -45,6 +47,19 @@ describe('rateLimit route option', () => {
         '/api/grouped-a': Mochi.api(async () => json({ ok: true }), { rateLimit: { limit: 1, window: '1m', store: sharedStore, group: 'team' } }),
         '/api/grouped-b': Mochi.api(async () => json({ ok: true }), { rateLimit: { limit: 1, window: '1m', store: sharedStore, group: 'team' } }),
         '/page': Mochi.page(FIXTURE_PAGE, { rateLimit: { limit: 1, window: '1m' } }),
+        '/page/pre-middleware': Mochi.page(FIXTURE_PAGE, {
+          rateLimit: {
+            limit: 1,
+            window: '1m',
+            skip: () => {
+              preMiddlewareChecks++;
+              return true;
+            },
+          },
+        }),
+        '/api/guard-before-limit': Mochi.api(async () => json({ ok: true }), {
+          rateLimit: { limit: 1, window: '1m' },
+        }),
       },
     });
     base = `http://localhost:${server.port}`;
@@ -103,6 +118,27 @@ describe('rateLimit route option', () => {
     expect(body.rateLimit.key.length).toBeGreaterThan(0);
     // A route's own config is auto-namespaced by its pattern.
     expect(body.rateLimit.group).toBe('/api/info');
+  });
+
+  test('rate-limit callbacks retain their pre-middleware ordering', async () => {
+    const response = await fetch(`${base}/page/pre-middleware`);
+    expect(response.status).toBe(401);
+    expect(await response.text()).toBe('blocked by middleware');
+    expect(preMiddlewareChecks).toBe(1);
+  });
+
+  test('rejected request guards do not spend rate-limit quota', async () => {
+    const rejected = await fetch(`${base}/api/guard-before-limit`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: 'https://attacker.example',
+      },
+      body: 'x=1',
+    });
+    expect(rejected.status).toBe(403);
+    expect((await fetch(`${base}/api/guard-before-limit`)).status).toBe(200);
+    expect((await fetch(`${base}/api/guard-before-limit`)).status).toBe(429);
   });
 
   test('per-route configs sharing a store are auto-namespaced by route', async () => {

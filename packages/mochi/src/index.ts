@@ -215,6 +215,7 @@ export type {
   MochiWsConfig,
   MochiWsHandlers,
   MochiWsData,
+  MochiWsOriginOptions,
   MochiSseConfig,
   MochiSseHandler,
   MochiSseStream,

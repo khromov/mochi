@@ -100,17 +100,17 @@ Each event ships a typed payload matching `MochiEventMap` in `events.ts`.
 
 #### `request`
 
-Fires once per HTTP response, including CSRF rejects. Covers `Mochi.page` and `Mochi.api` routes.
+Fires once per framework HTTP response, including middleware and CSRF rejects. Covers pages, APIs, WebSocket handshakes, SSE, files, server islands, images, assets, raw routes, dev endpoints, and fallback/error responses.
 
-| Field       | Type                   | Notes                                                      |
-| ----------- | ---------------------- | ---------------------------------------------------------- |
-| `requestId` | `string`               | correlation id                                             |
-| `kind`      | `'page' \| 'api'`      | which route type handled it                                |
-| `method`    | `string`               | HTTP method                                                |
-| `path`      | `string`               | URL pathname                                               |
-| `status`    | `number`               | response status code                                       |
-| `duration`  | `number`               | wall-clock ms, end to end                                  |
-| `warmup`    | `boolean \| undefined` | `true` when issued by [route warmup](/docs/serve-options/) |
+| Field       | Type                   | Notes                                                           |
+| ----------- | ---------------------- | --------------------------------------------------------------- |
+| `requestId` | `string`               | correlation id                                                  |
+| `kind`      | `MochiRequestKind`     | which route/endpoint kind handled it                            |
+| `method`    | `string`               | HTTP method                                                     |
+| `path`      | `string`               | URL pathname + search                                           |
+| `status`    | `number`               | response status code (`101` for a successful WebSocket upgrade) |
+| `duration`  | `number`               | wall-clock ms, end to end                                       |
+| `warmup`    | `boolean \| undefined` | `true` when issued by [route warmup](/docs/serve-options/)      |
 
 #### `ws:open`
 
@@ -302,18 +302,18 @@ Fires once after the [route warmup](/docs/serve-options/#route-warmup) batch fin
 
 #### `error`
 
-Fires when a page, API, or form action handler throws and the framework returns an error response.
+Fires when a framework route handler throws and the framework returns an error response.
 
-| Field        | Type                          | Notes                                  |
-| ------------ | ----------------------------- | -------------------------------------- |
-| `requestId`  | `string`                      | correlates with the matching `request` |
-| `kind`       | `'page' \| 'api' \| 'action'` | which handler threw                    |
-| `path`       | `string`                      | URL pathname + search                  |
-| `method`     | `string`                      | HTTP method                            |
-| `status`     | `number`                      | final response status                  |
-| `message`    | `string`                      | error message                          |
-| `stack`      | `string \| undefined`         | stack trace, dev only                  |
-| `actionName` | `string \| undefined`         | present only when `kind=action`        |
+| Field        | Type                  | Notes                                  |
+| ------------ | --------------------- | -------------------------------------- |
+| `requestId`  | `string`              | correlates with the matching `request` |
+| `kind`       | `MochiErrorKind`      | which handler threw                    |
+| `path`       | `string`              | URL pathname + search                  |
+| `method`     | `string`              | HTTP method                            |
+| `status`     | `number`              | final response status                  |
+| `message`    | `string`              | error message                          |
+| `stack`      | `string \| undefined` | stack trace, dev only                  |
+| `actionName` | `string \| undefined` | present only when `kind=action`        |
 
 ```ts
 mochiEvents.on('error', ({ kind, path, status, message, stack }) => {

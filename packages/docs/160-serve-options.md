@@ -184,6 +184,8 @@ In production, the check refuses every form mutation until `proxy.origin` (or `p
 
 `proxy` tells the framework how to recover the public origin (for the CSRF check) and the real client IP (for `getClientAddress()`) from forwarded headers.
 
+Origin configuration is validated at startup. Per-request forwarded protocol, host, and port values must each be a single unambiguous value; comma-separated chains, credentials, paths, non-HTTP protocols, and invalid ports fail closed with `400 Bad Request`.
+
 - `origin` — explicit public origin. Wins over the header options.
 - `protocolHeader` — forwarded-protocol header (`'x-forwarded-proto'`).
 - `hostHeader` — forwarded-host header (`'x-forwarded-host'`).

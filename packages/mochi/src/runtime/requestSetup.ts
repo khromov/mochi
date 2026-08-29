@@ -1,6 +1,6 @@
 import type { Server } from 'bun';
 import { csrfCheck, type MochiCsrfOptions } from './csrf';
-import { buildPublicUrl, getClientAddress, type MochiProxyOptions } from './proxy';
+import { buildPublicUrl, getClientAddress, ProxyHeaderError, type MochiProxyOptions } from './proxy';
 import { extractParams } from '../utils';
 import { applyFilter } from '../extensions';
 import { trailingSlashRedirect, type TrailingSlashPolicy } from './trailingSlash';
@@ -9,10 +9,11 @@ import { mochiEvents } from '../events';
 import { isWarmupRequest } from './warmup';
 import type { MochiRequestContext } from './requestContext';
 import type { ProtectionGate } from '../protection/gate';
+import type { MochiProtectionKind } from '../protection/types';
 
 // RouteKind covers user-route shapes; MochiRequestKind in events.ts covers the
 // broader event taxonomy (asset, fallback, error). They overlap on page|api|file.
-export type RouteKind = 'page' | 'api' | 'ws' | 'sse' | 'island' | 'file';
+export type RouteKind = 'page' | 'api' | 'ws' | 'sse' | 'island' | 'file' | 'image' | 'asset' | 'raw' | 'dev' | 'fallback' | 'error';
 
 export interface RequestSetupConfig {
   proxy: MochiProxyOptions | undefined;
@@ -33,6 +34,8 @@ export interface PerCallOptions {
   pattern: string;
   paramsOverride?: Record<string, string>;
   csrfErrorTransform?: (resp: Response) => Response;
+  /** Build context now but defer trailing-slash/CSRF responses until `resolve()`. */
+  deferGuards?: boolean;
   /** The protection verify endpoint sets this — the one route that must answer an uncleared client. */
   skipProtection?: boolean;
 }
@@ -45,6 +48,7 @@ export type SetupResult =
       requestId: string;
       url: URL;
       params: Record<string, string>;
+      guardResponse?: Response;
     };
 
 export type RequestContextBuilder = (req: Request, server: Server<undefined>, opts: PerCallOptions) => Promise<SetupResult>;
@@ -65,16 +69,30 @@ const KIND_POLICY: Record<RouteKind, KindPolicy> = {
   sse: { timeout: true, trailingSlash: false, csrf: false, debugBar: false },
   ws: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
   island: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
+  image: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
+  asset: { timeout: false, trailingSlash: false, csrf: true, debugBar: false },
+  raw: { timeout: false, trailingSlash: false, csrf: true, debugBar: false },
+  dev: { timeout: false, trailingSlash: false, csrf: true, debugBar: false },
+  fallback: { timeout: false, trailingSlash: false, csrf: true, debugBar: false },
+  error: { timeout: false, trailingSlash: false, csrf: true, debugBar: false },
   file: { timeout: false, trailingSlash: false, csrf: false, debugBar: false },
 };
 
 /** The kinds that reach the alt-slash mirroring decision, i.e. everything `registerRoutePattern` can return. */
-export type MirrorableRouteKind = Exclude<RouteKind, 'island'>;
+export type MirrorableRouteKind = Exclude<RouteKind, 'island' | 'image' | 'asset' | 'raw' | 'dev' | 'fallback' | 'error'>;
 
 // The single source of truth for alt-slash registration, shared by the initial
 // registration in `Mochi.ts` and by dev hot-reload in `devWatcher.ts`.
 export function mirrorsSlashForm(kind: MirrorableRouteKind): boolean {
   return KIND_POLICY[kind].trailingSlash;
+}
+
+// Framework-owned bytes (bundles, images, public files, dev endpoints) stay ungated: the interstitial loads its own
+// assets, so gating them would lock a visitor out of the very page that clears them.
+const PROTECTABLE_KINDS: ReadonlySet<RouteKind> = new Set<RouteKind>(['page', 'api', 'ws', 'sse', 'island', 'file', 'fallback']);
+
+function isProtectableKind(kind: RouteKind): kind is MochiProtectionKind {
+  return PROTECTABLE_KINDS.has(kind);
 }
 
 export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestContextBuilder {
@@ -86,11 +104,27 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
       server.timeout(req, 0);
     }
     const params = extractParams(req);
-    const url = buildPublicUrl(req, cfg.proxy);
+    let url: URL;
+    try {
+      url = buildPublicUrl(req, cfg.proxy);
+    } catch (err) {
+      if (err instanceof ProxyHeaderError) {
+        return {
+          earlyResponse: new Response('Bad Request', {
+            status: 400,
+            headers: {
+              'Content-Type': 'text/plain; charset=utf-8',
+              'Cache-Control': 'no-store',
+            },
+          }),
+        };
+      }
+      throw err;
+    }
 
     const reportEarlyExit = (status: number): void => {
-      // A compile-time narrow, not a runtime filter: `MochiRequestKind` in events.ts excludes ws/sse/island, and since
-      // only page and api can early-exit at all (trailingSlash, csrf) nothing reaches this with an unemittable kind.
+      // Handlers passing `deferGuards` emit their own request event after middleware, so this stays for the remaining
+      // early exits, narrowed to the kinds `MochiRequestKind` in events.ts can carry.
       if (opts.kind !== 'page' && opts.kind !== 'api' && opts.kind !== 'file') {
         return;
       }
@@ -104,6 +138,7 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
       });
     };
 
+    let guardResponse: Response | undefined;
     if (policy.trailingSlash && cfg.trailingSlashPolicy) {
       const redirect = applyFilter('trailingSlash:redirect', trailingSlashRedirect(req.method, url, cfg.trailingSlashPolicy), {
         request: req,
@@ -111,23 +146,29 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
         policy: cfg.trailingSlashPolicy,
       });
       if (redirect) {
-        reportEarlyExit(redirect.status);
-        return { earlyResponse: redirect };
+        if (!opts.deferGuards) {
+          reportEarlyExit(redirect.status);
+          return { earlyResponse: redirect };
+        }
+        guardResponse = redirect;
       }
     }
 
-    if (policy.csrf) {
+    if (!guardResponse && policy.csrf) {
       const csrfResponse = csrfCheck(req, url, cfg.csrf, cfg.proxy, cfg.development, cfg.formContentTypes, cfg.protectedMethods, cfg.trustedOrigins);
       if (csrfResponse) {
         const finalResp = opts.csrfErrorTransform ? opts.csrfErrorTransform(csrfResponse) : csrfResponse;
-        reportEarlyExit(finalResp.status);
-        return { earlyResponse: finalResp };
+        if (!opts.deferGuards) {
+          reportEarlyExit(finalResp.status);
+          return { earlyResponse: finalResp };
+        }
+        guardResponse = finalResp;
       }
     }
 
     const cookies = new MochiCookieJar(req.headers.get('Cookie'), cfg.cookieDefaults);
 
-    if (cfg.protection && !opts.skipProtection) {
+    if (cfg.protection && !opts.skipProtection && isProtectableKind(opts.kind)) {
       const blocked = await cfg.protection({ request: req, url, kind: opts.kind, cookies, server });
       if (blocked) {
         reportEarlyExit(blocked.status);
@@ -159,6 +200,6 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
       };
     }
 
-    return { ctx, start, requestId, url, params };
+    return { ctx, start, requestId, url, params, ...(guardResponse ? { guardResponse } : {}) };
   };
 }

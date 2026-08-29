@@ -19,7 +19,7 @@
   let expanded: Record<number, boolean> = $state({});
 
   let ssrDurationMs: number | null = $state(null);
-  let requestCookies: Array<[string, string]> = $state([]);
+  let requestCookies: string[] = $state([]);
   let varyOnCookies: Set<string> = $state(new Set());
 
   onMount(() => {
@@ -84,7 +84,7 @@
   });
 
   let sortedRequestCookies = $derived(
-    [...requestCookies].sort((a, b) => a[0].toLowerCase().localeCompare(b[0].toLowerCase())).map(([name, value]) => ({ name, value, varies: varyOnCookies.has(name) })),
+    [...requestCookies].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())).map((name) => ({ name, varies: varyOnCookies.has(name) })),
   );
   let variesCount = $derived(sortedRequestCookies.filter((c) => c.varies).length);
 
@@ -161,7 +161,7 @@
             {cookie.name}
             {#if cookie.varies}<span class="varies-chip">varies cache</span>{/if}
           </span>
-          <span class="header-val">{cookie.value}</span>
+          <span class="header-val muted">(value redacted)</span>
         </div>
       {/each}
     {/if}

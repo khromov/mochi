@@ -230,10 +230,24 @@ export interface MochiWsData<T = unknown> {
 export interface MochiWsConfig {
   readonly __mochiWs: true;
   readonly handlers: MochiWsHandlers<unknown>;
+  readonly origin: MochiWsOriginOptions;
 }
 
 export function isMochiWs(value: unknown): value is MochiWsConfig {
   return typeof value === 'object' && value !== null && (value as MochiWsConfig).__mochiWs === true;
+}
+
+/**
+ * Browser Origin policy for a WebSocket upgrade. The expected origin comes from the same proxy-aware public URL used by
+ * page/API requests; by default an Origin header is required and must match it.
+ */
+export interface MochiWsOriginOptions {
+  /** Enforce the Origin check. Default: `true`. */
+  checkOrigin?: boolean;
+  /** Additional exact HTTP(S) origins allowed alongside the public origin. */
+  trustedOrigins?: string[];
+  /** Permit non-browser clients that omit Origin. Default: `false`. */
+  allowMissingOrigin?: boolean;
 }
 
 export interface MochiSseStream {

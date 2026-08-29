@@ -83,7 +83,12 @@ export type PublicRouteGuard = (req: Request, server: Server<undefined>, serve: 
  * the startup and dev-watcher-reload paths so the encoding and conflict rules stay in lockstep — registering under a raw
  * key here is what made spaced filenames 404 before this was centralized.
  */
-export function registerPublicRoutes(routes: Record<string, BunRouteValue>, files: Map<string, string>, guard?: PublicRouteGuard): void {
+export function registerPublicRoutes(
+  routes: Record<string, BunRouteValue>,
+  files: Map<string, string>,
+  guard?: PublicRouteGuard,
+  wrap?: (route: string, value: BunRouteValue) => BunRouteValue,
+): void {
   for (const [urlPath, diskPath] of files) {
     const routeKey = publicRouteKey(urlPath);
     if (routeKey in routes) {
@@ -92,7 +97,7 @@ export function registerPublicRoutes(routes: Record<string, BunRouteValue>, file
     }
     // A guarded file becomes a handler route: static BunFile values can't run the check. The file re-checks existence so
     // a deletion 404s instead of surfacing Bun.file's lazy ENOENT as a 500.
-    routes[routeKey] = guard
+    const value: BunRouteValue = guard
       ? (req: Request, server: Server<undefined>): Promise<Response> =>
           guard(req, server, async () => {
             const file = Bun.file(diskPath);
@@ -102,5 +107,6 @@ export function registerPublicRoutes(routes: Record<string, BunRouteValue>, file
             return new Response(file);
           })
       : Bun.file(diskPath);
+    routes[routeKey] = wrap ? wrap(routeKey, value) : value;
   }
 }

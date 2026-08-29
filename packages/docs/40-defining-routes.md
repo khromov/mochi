@@ -138,7 +138,7 @@ Throw `MochiHttpError` with `error(status, message)` for non-2xx responses. An u
 
 ### `Mochi.ws`
 
-Register a WebSocket endpoint with `Mochi.ws(handlers)`. `message` is required. `upgrade`, `open`, `close`, and `drain` are optional. Return data from `upgrade` (or `false` to reject) to attach to `ws.data.user`.
+Register a WebSocket endpoint with `Mochi.ws(handlers, originOptions?)`. `message` is required. `upgrade`, `open`, `close`, and `drain` are optional. Return data from `upgrade` (or `false` to reject) to attach to `ws.data.user`. A handshake must carry an exact same-origin `Origin` header by default; the optional second argument configures extra trusted origins or non-browser clients.
 
 ```ts
 // file: src/index.ts
@@ -214,7 +214,7 @@ await Mochi.serve({
 });
 ```
 
-Mochi reads the file from disk on every request, so files written or deleted at runtime are picked up at once. `Mochi.file` does not support `Range` requests, caching headers, or middleware. Use `Mochi.api` when you need full control over the response.
+Mochi reads the file from disk on every request, so files written or deleted at runtime are picked up at once. `Mochi.file` runs global `handle` middleware, but does not support `Range` requests or caching headers. Use `Mochi.api` when you need full control over the response.
 
 <Callout type="danger">
 

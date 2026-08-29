@@ -44,6 +44,8 @@ type MochiEnhanceResult =
 
 HTTP status is `200` for `success`, `failure`, and `redirect`. The body's `status` field carries the action's status. For `error`, the HTTP status matches the error code. Mochi encodes `data` with [devalue](https://www.npmjs.com/package/devalue) so `Date`, `Map`, `Set`, `BigInt`, and cyclic references survive the wire.
 
+In production, an unexpected `throw new Error(...)` is returned as the generic message `Internal Server Error`; its original message remains in server logs and lifecycle events. Errors created with `error(status, message)` and valid overrides returned by `handleError` remain explicit application responses.
+
 ### Default fallback
 
 Without a callback, `enhance` runs a minimal default per result type:

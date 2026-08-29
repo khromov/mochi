@@ -44,13 +44,14 @@ import type {
   MochiWsConfig,
   MochiWsHandlers,
   MochiWsData,
+  MochiWsOriginOptions,
 } from './types';
 import { isFormFail, isFormSuccess, isRedirect } from './runtime/forms';
 import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } from './runtime/formsJson';
-import { csrfCheck, csrfBootWarning, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
+import { csrfBootWarning, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
 import { applyFilter, initExtensions, runHook } from './extensions';
 import { escapeHtmlAttr } from './utils/htmlEscape';
-import { buildPublicUrl } from './runtime/proxy';
+import { buildPublicUrl, normalizeHttpOrigin, validateProxyOptions } from './runtime/proxy';
 import { realpath } from 'node:fs/promises';
 import {
   apiError,
@@ -67,7 +68,7 @@ import {
   withHead,
 } from './utils';
 import { serveDiskAsset } from './utils/serveDiskAsset';
-import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './runtime/hooks';
+import type { MochiEvent, MochiResolveOptions } from './runtime/hooks';
 import { applyResolveOptions } from './runtime/hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './runtime/trailingSlash';
 import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './runtime/warmup';
@@ -126,6 +127,7 @@ import { createCronJob, cronSignature, type MochiCronHandler, type MochiCronJob,
 import { startDevWatcher } from './dev/devWatcher';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './dev/pageCacheAdminRoutes';
 import { liveReloadGreeting } from './dev/liveReloadGeneration';
+import { resolveWsTrustedOrigins, wsOriginCheck } from './runtime/wsOrigin';
 import { createProtectionRuntime } from './protection/gate';
 import { resolveProtectionOptions, PROTECTION_SHELL_COMPONENT } from './protection/config';
 import { mintClearanceToken } from './protection/clearance';
@@ -171,6 +173,19 @@ function jsonForHtml(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
+// The debug bar reaches client JavaScript, so a `Set-Cookie` value is reduced to its name plus attributes.
+function redactDebugHeader([name, value]: [string, string]): [string, string] {
+  if (name.toLowerCase() !== 'set-cookie') {
+    return [name, value];
+  }
+  const semi = value.indexOf(';');
+  const first = semi === -1 ? value : value.slice(0, semi);
+  const eq = first.indexOf('=');
+  const cookieName = (eq === -1 ? first : first.slice(0, eq)).trim();
+  const attributes = semi === -1 ? '' : value.slice(semi);
+  return [name, `${cookieName}=<redacted>${attributes}`];
+}
+
 /**
  * `createShellRenderer` bakes the static `window.__mochi_debug` fields into the cached body, so per-request headers and cookies have to be appended
  * afterwards for cache hits to stay accurate. The trailing script is synchronous so it lands before the deferred debug-bar module runs `onMount`.
@@ -186,8 +201,8 @@ async function appendDebugTail(response: Response, ctx: MochiRequestContext, dev
     return response;
   }
   const dynamic: Pick<DebugBarRuntimeData, 'headers' | 'requestCookies'> = {
-    headers: collectHeaderPairs(response.headers),
-    requestCookies: ctx.cookies.peekAll().map(({ name, value }) => [name, value]),
+    headers: collectHeaderPairs(response.headers).map(redactDebugHeader),
+    requestCookies: ctx.cookies.peekAll().map(({ name }) => name),
   };
   const body = await response.text();
   const tail = `<script>Object.assign((window.__mochi_debug||={}),${jsonForHtml(dynamic)})</script>`;
@@ -220,10 +235,11 @@ export class Mochi {
     return { __mochiApi: true, handler, rateLimit: config?.rateLimit };
   }
 
-  static ws<T = unknown>(handlers: MochiWsHandlers<T>): MochiWsConfig {
+  static ws<T = unknown>(handlers: MochiWsHandlers<T>, origin: MochiWsOriginOptions = {}): MochiWsConfig {
     return {
       __mochiWs: true,
       handlers: handlers as MochiWsHandlers<unknown>,
+      origin,
     };
   }
 
@@ -374,6 +390,8 @@ export class Mochi {
   }
 
   static async serve(options: MochiServeOptions): Promise<Server<undefined>> {
+    validateProxyOptions(options.proxy);
+
     // Reject before initMochiConfig pins the process singleton, so a bad `bun` passthrough fails fast without wedging it.
     if (options.bun && typeof options.bun === 'object') {
       for (const key of FRAMEWORK_OWNED_BUN_KEYS) {
@@ -481,7 +499,8 @@ export class Mochi {
     // reaches the user, so an in-place mutation can't poison the framework default for the next call.
     const formContentTypes: ReadonlySet<string> = applyFilter('csrf:formContentTypes', new Set(DEFAULT_FORM_CONTENT_TYPES), { options });
     const protectedMethods: ReadonlySet<string> = applyFilter('csrf:protectedMethods', new Set(DEFAULT_PROTECTED_METHODS), { options });
-    const trustedOrigins: ReadonlySet<string> = applyFilter('csrf:trustedOrigins', new Set(options.csrf?.trustedOrigins ?? []), { options });
+    const filteredTrustedOrigins: ReadonlySet<string> = applyFilter('csrf:trustedOrigins', new Set(options.csrf?.trustedOrigins ?? []), { options });
+    const trustedOrigins: ReadonlySet<string> = new Set([...filteredTrustedOrigins].map((origin) => normalizeHttpOrigin(origin, 'Mochi.serve({ csrf.trustedOrigins })')));
     const cookieDefaults = applyFilter('cookie:defaults', {}, { options });
 
     const bootCsrfWarning = csrfBootWarning(options);
@@ -544,6 +563,17 @@ export class Mochi {
     }
 
     logger.info(`Starting in ${development ? 'development' : 'production'} mode`);
+    if (
+      development &&
+      options.hostname !== undefined &&
+      !new Set(['localhost', '127.0.0.1', '::1', '[::1]']).has(options.hostname.toLowerCase()) &&
+      (debugBarEnabled || liveReloadEnabled || getEmailRuntime().options.transport.type === 'dev')
+    ) {
+      logger.warn(
+        `Development tooling is listening on non-loopback hostname ${JSON.stringify(options.hostname)}. ` +
+          `The debug bar, live reload, and dev email viewer are not a production security boundary; expose this server only on a trusted network.`,
+      );
+    }
 
     // In production, load prebuilt assets from manifest if available
     const manifestPath = options.manifest ?? `${outDir}/manifest.json`;
@@ -721,16 +751,20 @@ export class Mochi {
     // Mirrors the handleError logic in renderErrorResponse, skipping the HTML render for the enhanced JSON path.
     const handleEnhancedError = async (err: unknown, event: MochiEvent): Promise<Response> => {
       let status = err instanceof MochiHttpError ? err.status : 500;
-      let message = err instanceof Error ? err.message : 'Internal Error';
+      let message = err instanceof MochiHttpError ? err.message : development && err instanceof Error ? err.message : 'Internal Server Error';
       if (options.handleError) {
         try {
           const override = await options.handleError({ error: err, event, status, message });
           if (override instanceof Response) {
             return override;
           }
-          if (override && typeof override === 'object' && typeof (override as { status?: unknown }).status === 'number') {
-            status = (override as { status: number }).status;
-            message = (override as { message: string }).message;
+          if (override && typeof override === 'object') {
+            if (typeof (override as { status?: unknown }).status === 'number' && typeof (override as { message?: unknown }).message === 'string') {
+              status = (override as { status: number }).status;
+              message = (override as { message: string }).message;
+            } else {
+              logger.error('handleError returned invalid override; expected { status: number, message: string } or a Response, got:', override);
+            }
           }
         } catch (hookErr) {
           logger.error('handleError hook threw:', hookErr);
@@ -763,6 +797,125 @@ export class Mochi {
       newRequestId,
       protection: protectionRuntime?.gate,
     });
+
+    type SimpleMiddlewareKind = 'image' | 'asset' | 'raw' | 'dev' | 'fallback' | 'error';
+    const runSimpleRequest = async (
+      req: Request,
+      server: Server<undefined>,
+      kind: SimpleMiddlewareKind,
+      pattern: string,
+      inner: (event: MochiEvent, resolveOpts?: MochiResolveOptions) => Response | Promise<Response>,
+    ): Promise<Response> => {
+      const setup = await buildRequestContext(req, server, { kind, pattern, deferGuards: true });
+      if ('earlyResponse' in setup) {
+        return setup.earlyResponse;
+      }
+      const { ctx, start, requestId, url, guardResponse } = setup;
+      return requestContext.run(ctx, async () => {
+        const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind, isWarmup: ctx.isWarmup };
+        const resolve = async (resolvedEvent: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => guardResponse ?? inner(resolvedEvent, resolveOpts);
+        const response = middleware ? await middleware({ event, resolve }) : await resolve(event);
+        const final = finalizeCookieHeaders(response, ctx.cookies);
+        mochiEvents.emit('request', {
+          requestId,
+          kind,
+          method: req.method,
+          path: url.pathname + url.search,
+          status: final.status,
+          duration: performance.now() - start,
+        });
+        return final;
+      });
+    };
+
+    const wrapRawRouteValue = (pattern: string, value: BunRouteValue, kind: SimpleMiddlewareKind = 'raw'): BunRouteValue => {
+      const wrapHandler = (
+        handler: (req: Request, server: Server<undefined>) => Response | Promise<Response>,
+      ): ((req: Request, server: Server<undefined>) => Promise<Response>) => {
+        return (req, server) => runSimpleRequest(req, server, kind, pattern, async (event, resolveOpts) => applyResolveOptions(await handler(event.request, server), resolveOpts));
+      };
+
+      if (typeof value === 'function') {
+        return wrapHandler(value);
+      }
+      if (value instanceof Response) {
+        return wrapHandler(() => value.clone());
+      }
+      if (value instanceof Blob) {
+        return wrapHandler((req) => {
+          if (req.method !== 'HEAD') {
+            return new Response(value);
+          }
+          const headers = new Headers({ 'Content-Length': String(value.size) });
+          if (value.type) {
+            headers.set('Content-Type', value.type);
+          }
+          return new Response(null, { headers });
+        });
+      }
+      const methods: Record<string, (req: Request, server: Server<undefined>) => Promise<Response>> = {};
+      for (const [method, handler] of Object.entries(value)) {
+        methods[method] = wrapHandler(handler);
+      }
+      return methods;
+    };
+
+    const runDevWebSocketUpgrade = async (
+      req: Request,
+      server: Server<undefined>,
+      inner: (req: Request, server: Server<undefined>) => Response | undefined,
+    ): Promise<Response | undefined> => {
+      const pattern = '/__mochi_live_reload';
+      const setup = await buildRequestContext(req, server, { kind: 'dev', pattern });
+      if ('earlyResponse' in setup) {
+        return setup.earlyResponse;
+      }
+      const { ctx, start, requestId, url } = setup;
+      return requestContext.run(ctx, async () => {
+        const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'dev', isWarmup: false };
+        const sentinel = new Response(null, { status: 204 });
+        let resolvedEvent = event;
+        const resolve = async (nextEvent: MochiEvent): Promise<Response> => {
+          resolvedEvent = nextEvent;
+          return sentinel;
+        };
+        const response = middleware ? await middleware({ event, resolve }) : await resolve(event);
+        if (response !== sentinel) {
+          const final = finalizeCookieHeaders(response, ctx.cookies);
+          mochiEvents.emit('request', {
+            requestId,
+            kind: 'dev',
+            method: req.method,
+            path: url.pathname + url.search,
+            status: final.status,
+            duration: performance.now() - start,
+          });
+          return final;
+        }
+        const originResponse = wsOriginCheck(resolvedEvent.request, resolvedEvent.url, {}, new Set());
+        if (originResponse) {
+          mochiEvents.emit('request', {
+            requestId,
+            kind: 'dev',
+            method: req.method,
+            path: url.pathname + url.search,
+            status: originResponse.status,
+            duration: performance.now() - start,
+          });
+          return originResponse;
+        }
+        const result = inner(resolvedEvent.request, server);
+        mochiEvents.emit('request', {
+          requestId,
+          kind: 'dev',
+          method: req.method,
+          path: url.pathname + url.search,
+          status: result ? result.status : 101,
+          duration: performance.now() - start,
+        });
+        return result;
+      });
+    };
 
     const internalRoutes: Record<string, MochiPageConfig | MochiApiConfig> = {
       // Gated behind the debug bar, like the page-cache admin routes, since the stats page discloses every bundle's input
@@ -948,18 +1101,17 @@ export class Mochi {
             kind: 'page',
             pattern,
             csrfErrorTransform: (resp) => (isEnhanceRequest(req) ? jsonError(resp.status, 'Cross-site form submission forbidden') : resp),
+            deferGuards: true,
           });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
           }
-          const { ctx, start, requestId, url, params } = setup;
+          const { ctx, start, requestId, url, params, guardResponse } = setup;
           const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'page', isWarmup: ctx.isWarmup };
 
           return requestContext.run(ctx, async () => {
             runHook('route:matched', { pattern, request: req, url, params, kind: 'page' });
-            const innerResolve = async (_event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => inner(ctx, event, resolveOpts);
-
-            const gate = await checkRouteLimit(routeLimiters.get(pattern) ?? null, ctx, req);
+            const gate = guardResponse ? {} : await checkRouteLimit(routeLimiters.get(pattern) ?? null, ctx, req);
             let blockedResponse: Response | undefined;
             if (gate.blockedMessage) {
               // Enhanced form POSTs expect JSON (mirrors csrfErrorTransform above);
@@ -968,6 +1120,13 @@ export class Mochi {
                 ? jsonError(429, gate.blockedMessage)
                 : await routeErrorResponse(req, event, undefined, new MochiHttpError(429, gate.blockedMessage));
             }
+
+            const innerResolve = async (resolvedEvent: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => {
+              if (guardResponse) {
+                return guardResponse;
+              }
+              return inner(ctx, resolvedEvent, resolveOpts);
+            };
 
             const response = blockedResponse ?? (middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event));
 
@@ -1179,23 +1338,26 @@ export class Mochi {
         resolveLimiter(handler.rateLimit, pattern);
 
         const bunRouteValue: BunRouteValue = async (req: Request, server: Server<undefined>): Promise<Response> => {
-          const setup = await buildRequestContext(req, server, { kind: 'api', pattern });
+          const setup = await buildRequestContext(req, server, { kind: 'api', pattern, deferGuards: true });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
           }
-          const { ctx, start, requestId, url, params } = setup;
+          const { ctx, start, requestId, url, params, guardResponse } = setup;
 
           return requestContext.run(ctx, async () => {
             runHook('route:matched', { pattern, request: req, url, params, kind: 'api' });
             const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'api', isWarmup: ctx.isWarmup };
 
-            const gate = await checkRouteLimit(routeLimiters.get(pattern) ?? null, ctx, req);
+            const gate = guardResponse ? {} : await checkRouteLimit(routeLimiters.get(pattern) ?? null, ctx, req);
             let blockedResponse: Response | undefined;
             if (gate.blockedBody) {
               blockedResponse = Response.json(gate.blockedBody, { status: 429 });
             }
 
             const innerResolve = async (event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => {
+              if (guardResponse) {
+                return guardResponse;
+              }
               const apiEvent = {
                 ...event,
                 method: event.request.method as HttpMethod,
@@ -1239,27 +1401,20 @@ export class Mochi {
       } else if (isMochiWs(handler)) {
         const wsHandlers = handler.handlers;
         wsHandlersMap.set(pattern, wsHandlers);
+        const wsOriginOptions = handler.origin ?? {};
+        const wsTrustedOrigins = resolveWsTrustedOrigins(wsOriginOptions, `Mochi.ws route ${JSON.stringify(pattern)}`);
 
         const bunRouteValue = (async (req: Request, server: Server<undefined>) => {
           const setup = await buildRequestContext(req, server, { kind: 'ws', pattern });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
           }
-          const { ctx: wsHookCtx, start, requestId: wsRequestId, url: wsUrl, params: wsParams } = setup;
+          const { ctx, start, requestId, url, params } = setup;
+          const wsUrl = url;
+          const wsParams = params;
           const wsPath = wsUrl.pathname + wsUrl.search;
-          // A non-upgrade request (e.g. a HEAD probe or plain GET) never becomes
-          // a socket, so it never emits `ws:open`.
-          const emitWsReject = (status: number): void => {
-            mochiEvents.emit('request', {
-              requestId: wsRequestId,
-              kind: 'error',
-              method: req.method,
-              path: wsPath,
-              status,
-              duration: performance.now() - start,
-            });
-          };
-          requestContext.run(wsHookCtx, () => {
+
+          return requestContext.run(ctx, async () => {
             runHook('route:matched', {
               pattern,
               request: req,
@@ -1267,43 +1422,92 @@ export class Mochi {
               params: wsParams,
               kind: 'ws',
             });
-          });
-          let userData: unknown = undefined;
+            const event: MochiEvent = { request: req, url: wsUrl, server, locals: ctx.locals, kind: 'ws', isWarmup: ctx.isWarmup };
+            const upgradeSentinel = new Response(null, { status: 204 });
+            let resolvedEvent = event;
+            const innerResolve = async (nextEvent: MochiEvent): Promise<Response> => {
+              resolvedEvent = nextEvent;
+              return upgradeSentinel;
+            };
 
-          const liveWsHandlers = wsHandlersMap.get(pattern) ?? wsHandlers;
-          if (liveWsHandlers.upgrade) {
-            const result = await liveWsHandlers.upgrade(req, wsParams);
-            if (result === false) {
-              emitWsReject(400);
-              return new Response('WebSocket upgrade rejected', {
-                status: 400,
+            const middlewareResponse = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
+            if (middlewareResponse !== upgradeSentinel) {
+              const final = finalizeCookieHeaders(middlewareResponse, ctx.cookies);
+              mochiEvents.emit('request', {
+                requestId,
+                kind: 'ws',
+                method: req.method,
+                path: wsPath,
+                status: final.status,
+                duration: performance.now() - start,
               });
+              return final;
             }
-            userData = result;
-          }
 
-          const success = (
-            server as unknown as {
-              upgrade: (req: Request, opts: Record<string, unknown>) => boolean;
+            const originResponse = wsOriginCheck(resolvedEvent.request, resolvedEvent.url, wsOriginOptions, wsTrustedOrigins);
+            if (originResponse) {
+              const final = finalizeCookieHeaders(originResponse, ctx.cookies);
+              mochiEvents.emit('request', {
+                requestId,
+                kind: 'ws',
+                method: req.method,
+                path: wsPath,
+                status: final.status,
+                duration: performance.now() - start,
+              });
+              return final;
             }
-          ).upgrade(req, {
-            data: {
-              __mochiRoutePattern: pattern,
-              __mochiOpenedAt: performance.now(),
-              __mochiPath: wsPath,
-              user: userData,
-            } satisfies MochiWsData,
-          });
 
-          if (!success) {
-            emitWsReject(500);
-            return new Response('WebSocket upgrade failed', { status: 500 });
-          }
-          mochiEvents.emit('ws:open', {
-            path: wsPath,
-            duration: performance.now() - start,
+            // A non-upgrade request (e.g. a HEAD probe or plain GET) never becomes
+            // a socket, so it never emits `ws:open`.
+            const emitWsResult = (status: number): void => {
+              mochiEvents.emit('request', {
+                requestId,
+                kind: 'ws',
+                method: req.method,
+                path: wsPath,
+                status,
+                duration: performance.now() - start,
+              });
+            };
+            let userData: unknown = undefined;
+
+            const liveWsHandlers = wsHandlersMap.get(pattern) ?? wsHandlers;
+            if (liveWsHandlers.upgrade) {
+              const result = await liveWsHandlers.upgrade(resolvedEvent.request, wsParams);
+              if (result === false) {
+                emitWsResult(400);
+                return new Response('WebSocket upgrade rejected', {
+                  status: 400,
+                });
+              }
+              userData = result;
+            }
+
+            const success = (
+              server as unknown as {
+                upgrade: (req: Request, opts: Record<string, unknown>) => boolean;
+              }
+            ).upgrade(resolvedEvent.request, {
+              data: {
+                __mochiRoutePattern: pattern,
+                __mochiOpenedAt: performance.now(),
+                __mochiPath: wsPath,
+                user: userData,
+              } satisfies MochiWsData,
+            });
+
+            if (!success) {
+              emitWsResult(400);
+              return new Response('WebSocket upgrade failed', { status: 400 });
+            }
+            emitWsResult(101);
+            mochiEvents.emit('ws:open', {
+              path: wsPath,
+              duration: performance.now() - start,
+            });
+            return undefined;
           });
-          return undefined;
         }) as unknown as BunRouteValue;
         return { bunRouteValue, type: 'ws' };
       } else if (isMochiSse(handler)) {
@@ -1313,101 +1517,139 @@ export class Mochi {
         const capturedSseHandler = handler.handler;
 
         const bunRouteValue: BunRouteValue = async (req: Request, server: Server<undefined>): Promise<Response> => {
-          const setup = await buildRequestContext(req, server, { kind: 'sse', pattern });
+          const setup = await buildRequestContext(req, server, { kind: 'sse', pattern, deferGuards: true });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
           }
-          const { ctx: sseHookCtx, start: sseStart, requestId: sseRequestId, url, params: sseParams } = setup;
-          const path = url.pathname + url.search;
-          // SSE streams are GET-only. HEAD is not supported: answering it would
-          // mean either opening a stream (defeats the point of a body-less probe)
-          if (req.method === 'HEAD') {
-            mochiEvents.emit('request', {
-              requestId: sseRequestId,
-              kind: 'error',
-              method: req.method,
-              path,
-              status: 405,
-              duration: performance.now() - sseStart,
-            });
-            return new Response(null, { status: 405, headers: { Allow: 'GET' } });
-          }
-          requestContext.run(sseHookCtx, () => {
+          const { ctx, start, requestId, url, params, guardResponse } = setup;
+          const requestPath = url.pathname + url.search;
+
+          return requestContext.run(ctx, async () => {
             runHook('route:matched', {
               pattern,
               request: req,
               url,
-              params: sseParams,
+              params,
               kind: 'sse',
             });
-          });
-          let closed = false;
-          let openedAt = 0;
-          const emitClose = () => {
-            if (closed) {
-              return;
-            }
-            closed = true;
-            mochiEvents.emit('sse:close', {
-              path,
-              duration: performance.now() - openedAt,
-            });
-          };
 
-          let closeCallbacks: Array<() => void> = [];
-          let controller: ReadableStreamDefaultController<string>;
+            const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'sse', isWarmup: ctx.isWarmup };
+            const innerResolve = async (resolvedEvent: MochiEvent): Promise<Response> => {
+              if (guardResponse) {
+                return guardResponse;
+              }
+              if (resolvedEvent.request.method !== 'GET') {
+                return new Response(null, {
+                  status: 405,
+                  headers: { Allow: 'GET', 'Cache-Control': 'no-store' },
+                });
+              }
 
-          const body = new ReadableStream<string>({
-            start(ctrl) {
-              controller = ctrl;
-              openedAt = performance.now();
-              mochiEvents.emit('sse:open', { path });
-              const stream: MochiSseStream = {
-                send(data, opts) {
-                  let frame = '';
-                  if (opts?.id) {
-                    frame += `id: ${opts.id}\n`;
-                  }
-                  if (opts?.event) {
-                    frame += `event: ${opts.event}\n`;
-                  }
-                  for (const line of data.split('\n')) {
-                    frame += `data: ${line}\n`;
-                  }
-                  frame += '\n';
-                  controller.enqueue(frame);
-                  mochiEvents.emit('sse:message', {
-                    path,
-                    size: Buffer.byteLength(data, 'utf8'),
-                    event: opts?.event,
-                  });
-                },
-                close() {
+              let closed = false;
+              let openedAt = 0;
+              let closeCallbacks: Array<() => void> = [];
+              let controller: ReadableStreamDefaultController<string>;
+
+              const emitClose = () => {
+                if (closed) {
+                  return;
+                }
+                closed = true;
+                mochiEvents.emit('sse:close', {
+                  path: requestPath,
+                  duration: performance.now() - openedAt,
+                });
+              };
+              const failStream = (err: unknown): void => {
+                logger.error(`SSE handler for ${requestPath} failed:`, err);
+                emitError('sse', requestId, resolvedEvent.request, resolvedEvent.url, 500, err);
+                try {
+                  // The HTTP 200 and stream have already been committed. End the
+                  // connection without surfacing an unhandled stream rejection in
+                  // the server process; the error event/log above is the diagnostic.
                   controller.close();
+                } catch {
+                  // The client may have disconnected or the handler may already
+                  // have closed the stream. Either way, cleanup still runs.
+                }
+                emitClose();
+              };
+
+              const body = new ReadableStream<string>({
+                start(ctrl) {
+                  controller = ctrl;
+                  openedAt = performance.now();
+                  mochiEvents.emit('sse:open', { path: requestPath });
+                  const stream: MochiSseStream = {
+                    send(data, opts) {
+                      if (opts?.id && /[\r\n]/.test(opts.id)) {
+                        throw new TypeError('SSE event id must not contain CR or LF.');
+                      }
+                      if (opts?.event && /[\r\n]/.test(opts.event)) {
+                        throw new TypeError('SSE event name must not contain CR or LF.');
+                      }
+                      let frame = '';
+                      if (opts?.id) {
+                        frame += `id: ${opts.id}\n`;
+                      }
+                      if (opts?.event) {
+                        frame += `event: ${opts.event}\n`;
+                      }
+                      for (const line of data.split(/\r\n|\r|\n/)) {
+                        frame += `data: ${line}\n`;
+                      }
+                      frame += '\n';
+                      controller.enqueue(frame);
+                      mochiEvents.emit('sse:message', {
+                        path: requestPath,
+                        size: Buffer.byteLength(data, 'utf8'),
+                        event: opts?.event,
+                      });
+                    },
+                    close() {
+                      controller.close();
+                      emitClose();
+                    },
+                    onClose(cb) {
+                      closeCallbacks.push(cb);
+                    },
+                  };
+                  const liveSseHandler = (sseHandlerMap ? sseHandlerMap.get(pattern) : undefined) ?? capturedSseHandler;
+                  try {
+                    void Promise.resolve(liveSseHandler(stream, resolvedEvent.request)).catch(failStream);
+                  } catch (err) {
+                    failStream(err);
+                  }
+                },
+                cancel() {
+                  for (const cb of closeCallbacks) {
+                    cb();
+                  }
+                  closeCallbacks = [];
                   emitClose();
                 },
-                onClose(cb) {
-                  closeCallbacks.push(cb);
-                },
-              };
-              const liveSseHandler = (sseHandlerMap ? sseHandlerMap.get(pattern) : undefined) ?? capturedSseHandler;
-              liveSseHandler(stream, req);
-            },
-            cancel() {
-              for (const cb of closeCallbacks) {
-                cb();
-              }
-              closeCallbacks = [];
-              emitClose();
-            },
-          });
+              });
 
-          return new Response(body, {
-            headers: {
-              'Content-Type': 'text/event-stream',
-              'Cache-Control': 'no-cache',
-              Connection: 'keep-alive',
-            },
+              return new Response(body, {
+                headers: {
+                  'Content-Type': 'text/event-stream',
+                  'Cache-Control': 'no-cache',
+                  Connection: 'keep-alive',
+                },
+              });
+            };
+
+            const response = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
+            const final = finalizeCookieHeaders(response, ctx.cookies);
+            mochiEvents.emit('request', {
+              requestId,
+              kind: 'sse',
+              method: req.method,
+              path: requestPath,
+              status: final.status,
+              duration: performance.now() - start,
+            });
+            return final;
           });
         };
         return { bunRouteValue, type: 'sse' };
@@ -1423,66 +1665,67 @@ export class Mochi {
 
           return requestContext.run(ctx, async () => {
             runHook('route:matched', { pattern, request: req, url, params, kind: 'file' });
-
-            const finish = (response: Response): Response => {
-              const final = finalizeCookieHeaders(response, ctx.cookies);
-              mochiEvents.emit('request', {
-                requestId,
-                kind: 'file',
-                method: req.method,
-                path: url.pathname + url.search,
-                status: final.status,
-                duration: performance.now() - start,
-              });
-              return final;
+            const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'file', isWarmup: ctx.isWarmup };
+            const innerResolve = async (resolvedEvent: MochiEvent): Promise<Response> => {
+              try {
+                const filePath = typeof source === 'function' ? await source(resolvedEvent.request, ctx.params) : source;
+                // Route params are URL-decoded and may contain `../`, so the resolved path is confined to the app root.
+                // `realpath` resolves symlinks first, closing the in-root-symlink-points-out escape, and proves the file
+                // exists (ENOENT → 404); containment goes through `path.relative`, which handles separators and canonical casing.
+                const resolvedPath = path.resolve(filePath);
+                let realPath: string;
+                try {
+                  realPath = await realpath(resolvedPath);
+                } catch {
+                  emitError('file', requestId, resolvedEvent.request, resolvedEvent.url, 404, new Error(`File not found: ${filePath}`));
+                  return new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+                }
+                const appRoot = process.cwd();
+                const rel = path.relative(appRoot, realPath);
+                if (rel === '' || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+                  emitError('file', requestId, resolvedEvent.request, resolvedEvent.url, 404, new Error(`Path escapes the app root: ${filePath}`));
+                  return new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+                }
+                // The containment check above only stops escapes, so dotfiles and dot-directories inside the root
+                // (`.env`, `.mochi/…`, `.git/…`) are rejected here. `.well-known` stays allowed, matching the public-dir policy.
+                if (isExcludedDotPath(toPosixPath(rel))) {
+                  emitError('file', requestId, resolvedEvent.request, resolvedEvent.url, 404, new Error(`Refusing to serve dotfile path: ${filePath}`));
+                  return new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+                }
+                const file = Bun.file(realPath);
+                // `realpath` resolves directories too, so this turns a directory target into a 404 rather than an EISDIR 500.
+                if (!(await file.exists())) {
+                  emitError('file', requestId, resolvedEvent.request, resolvedEvent.url, 404, new Error(`File not found: ${filePath}`));
+                  return new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+                }
+                if (resolvedEvent.request.method === 'HEAD') {
+                  return new Response(null, { status: 200, headers: { 'Content-Type': file.type || 'application/octet-stream', 'Content-Length': String(file.size) } });
+                }
+                // new Response(Bun.file) sets Content-Type and Content-Length automatically.
+                return new Response(file);
+              } catch (err) {
+                if (err instanceof MochiHttpError) {
+                  logger.error(`${resolvedEvent.request.method} ${resolvedEvent.url.pathname} → ${err.status}: ${err.message}`);
+                  emitError('file', requestId, resolvedEvent.request, resolvedEvent.url, err.status, err);
+                  return new Response(err.message, { status: err.status, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+                }
+                logger.error(`${resolvedEvent.request.method} ${resolvedEvent.url.pathname} → 500:`, err);
+                emitError('file', requestId, resolvedEvent.request, resolvedEvent.url, 500, err);
+                return new Response('Internal Server Error', { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+              }
             };
 
-            try {
-              const filePath = typeof source === 'function' ? await source(req, ctx.params) : source;
-              // Route params are URL-decoded and may contain `../`, so the resolved path is confined to the app root.
-              // `realpath` resolves symlinks first, closing the in-root-symlink-points-out escape, and proves the file
-              // exists (ENOENT → 404); containment goes through `path.relative`, which handles separators and canonical casing.
-              const resolvedPath = path.resolve(filePath);
-              let realPath: string;
-              try {
-                realPath = await realpath(resolvedPath);
-              } catch {
-                emitError('file', requestId, req, url, 404, new Error(`File not found: ${filePath}`));
-                return finish(new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
-              }
-              const appRoot = process.cwd();
-              const rel = path.relative(appRoot, realPath);
-              if (rel === '' || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
-                emitError('file', requestId, req, url, 404, new Error(`Path escapes the app root: ${filePath}`));
-                return finish(new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
-              }
-              // The containment check above only stops escapes, so dotfiles and dot-directories inside the root
-              // (`.env`, `.mochi/…`, `.git/…`) are rejected here. `.well-known` stays allowed, matching the public-dir policy.
-              if (isExcludedDotPath(toPosixPath(rel))) {
-                emitError('file', requestId, req, url, 404, new Error(`Refusing to serve dotfile path: ${filePath}`));
-                return finish(new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
-              }
-              const file = Bun.file(realPath);
-              // `realpath` resolves directories too, so this turns a directory target into a 404 rather than an EISDIR 500.
-              if (!(await file.exists())) {
-                emitError('file', requestId, req, url, 404, new Error(`File not found: ${filePath}`));
-                return finish(new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
-              }
-              if (req.method === 'HEAD') {
-                return finish(new Response(null, { status: 200, headers: { 'Content-Type': file.type || 'application/octet-stream', 'Content-Length': String(file.size) } }));
-              }
-              // new Response(Bun.file) sets Content-Type and Content-Length automatically.
-              return finish(new Response(file));
-            } catch (err) {
-              if (err instanceof MochiHttpError) {
-                logger.error(`${req.method} ${url.pathname} → ${err.status}: ${err.message}`);
-                emitError('file', requestId, req, url, err.status, err);
-                return finish(new Response(err.message, { status: err.status, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
-              }
-              logger.error(`${req.method} ${url.pathname} → 500:`, err);
-              emitError('file', requestId, req, url, 500, err);
-              return finish(new Response('Internal Server Error', { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
-            }
+            const response = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
+            const final = finalizeCookieHeaders(response, ctx.cookies);
+            mochiEvents.emit('request', {
+              requestId,
+              kind: 'file',
+              method: req.method,
+              path: url.pathname + url.search,
+              status: final.status,
+              duration: performance.now() - start,
+            });
+            return final;
           });
         };
         return { bunRouteValue, type: 'file' };
@@ -1513,7 +1756,7 @@ export class Mochi {
           }
         } else {
           // Raw Bun route values (static Responses, HTML imports) answer on both slash forms.
-          bunRoutes[pattern] = handler as BunRouteValue;
+          bunRoutes[pattern] = wrapRawRouteValue(pattern, handler as BunRouteValue);
           slashMirrorPatterns.push(pattern);
         }
       }
@@ -1544,132 +1787,160 @@ export class Mochi {
       if ('earlyResponse' in setup) {
         return setup.earlyResponse;
       }
-      const { ctx, url, params } = setup;
-      const componentName = params.componentName;
-      if (!componentName) {
-        return new Response('Missing component name', { status: 400 });
-      }
-
-      const signedProps = url.searchParams.get('props') ?? '';
-
-      // Decrypt props (empty means no props)
-      let decodedProps: Record<string, unknown>;
-      if (signedProps) {
-        const propsJson = decryptProps(signedProps, componentName);
-        if (propsJson === null) {
-          return new Response('Invalid props', { status: 403 });
-        }
-        decodedProps = devalueParse(propsJson) as Record<string, unknown>;
-      } else {
-        decodedProps = {};
-      }
-
-      // `islandId` and `__mochi_ah` ride inside the signed envelope as transport only, and are split into a fresh object
-      // so neither reaches the component as a prop. The hydrate mode comes from the decrypted payload: trusting a
-      // `?hydrate=` query param would let anyone append it to a sealed token and get the props echoed back in plaintext.
-      const { [ALSO_HYDRATE_ENVELOPE_KEY]: rawHydrateMode, islandId: rawIslandId, ...props } = decodedProps;
-      const islandId = typeof rawIslandId === 'string' ? rawIslandId : undefined;
-      const hydrateMode = isAlsoHydrateMode(rawHydrateMode) ? rawHydrateMode : null;
-
-      // Look up the component path
-      const componentPath = registry.getServerIslandPath(componentName);
-      if (!componentPath) {
-        return new Response('Unknown server island component', { status: 404 });
-      }
-
-      // Arm nested-island inlining for this render. Also-hydrate renders are excluded: their subtree re-renders on the
-      // client, and a nested defer site there is a compile error anyway (`defer-in-hydratable`).
-      if (hydrateMode === null && inlineNestedIslands) {
-        ctx.islandInline = { budget: applyFilter('serverIsland:inlineBudget', DEFAULT_INLINE_BUDGET, { componentName, request: req }) };
-      }
-
+      const { ctx, start, requestId, url, params } = setup;
       return requestContext.run(ctx, async () => {
-        // A miss here means the build's eager discovery (see build.ts) didn't
-        // find this island; `compileAll` warns about any manifest miss, so the
-        // request-path compile this endpoint is supposed to prevent is never
-        // silent.
-        await registry.compile(componentPath);
-        let result: RenderResult;
-        try {
-          // Namespacing via `idPrefix` keeps `$props.id()` values from this
-          // standalone render from colliding with ids the host page already
-          // emitted (both renders otherwise start their uid counter at `s1`).
-          // Svelte rejects prefixes containing `--`, so guard against tokens
-          // signed by an older deploy carrying an incompatible id.
-          result = await registry.renderComponent(componentPath, props as Record<string, unknown>, {
-            stripMarkers: false,
-            ...(islandId && !islandId.includes('--') ? { idPrefix: islandId } : {}),
-            // An also-hydrate island's standalone render seeds the
-            // `isHydratable()` context for its whole subtree — the same signal
-            // the in-page boundary component provides for `mochi:hydrate*`
-            // islands. Pure `mochi:defer` never hydrates, so no context.
-            ...(hydrateMode !== null ? { context: new Map<unknown, unknown>([[HYDRATABLE_CONTEXT_KEY, true]]) } : {}),
-            // Named-export islands render that export, not the module's default.
-            ...(registry.getServerIslandExport(componentName) ? { exportName: registry.getServerIslandExport(componentName) } : {}),
-          });
-        } catch (err) {
-          const e = err instanceof Error ? err : new Error(String(err));
-          logger.error(`Server island "${componentName}" failed: ${e.message}`);
-          mochiEvents.emit('island:error', {
-            componentName,
-            islandId,
-            kind: 'server',
-            message: e.message,
-            stack: registry.development ? e.stack : undefined,
-          });
-          // 200 + a known stub so `ServerIsland.ts` doesn't burn its retry budget
-          // on a deterministic failure. Visibility is CSS-controlled: dev shows
-          // the message, prod hides the element entirely.
-          const stub = islandFailureStub(componentName, registry.development ? e.message : undefined);
-          return new Response(stub, {
-            status: 200,
-            headers: {
-              'Content-Type': 'text/html; charset=utf-8',
-              'Cache-Control': 'private, no-store',
-            },
-          });
-        }
-
-        let body = result.body;
-
-        if (isAlsoHydrateMode(hydrateMode)) {
-          const componentUrl = registry.getComponentEntryUrl(componentName);
-          const serializedProps = devalueStringify(props);
-
-          let hydrateAttrs = `component-name="${componentName}"`;
-          if (Object.keys(props as Record<string, unknown>).length > 0) {
-            hydrateAttrs += ` props="${escapeHtmlAttr(serializedProps)}"`;
-          }
-          if (componentUrl) {
-            hydrateAttrs += ` component-url="${componentUrl}"`;
-          }
-
-          body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
-        }
-
-        // Appended whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain
-        // mochi:hydrate children, or inlined also-hydrate islands — so the fragment self-hydrates even on a page that
-        // shipped no bootstrap of its own; duplicate module scripts are no-ops by src.
-        const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
-        if (bootstrapUrl) {
-          body += `<script type="module" src="${bootstrapUrl}"></script>`;
-        }
-
-        // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`
-        // tags are prepended here along with side-effect CSS imports; browsers honour a `<link>` assigned via `innerHTML`.
-        // The island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
-        const ownCss = registry.getComponentCssUrl(componentPath);
-        const extraCss = result.cssUrls.filter((url) => url !== ownCss);
-        if (extraCss.length > 0) {
-          body = extraCss.map(cssLinkTag).join('') + body;
-        }
-
-        return new Response(body, {
-          headers: {
-            'Content-Type': 'text/html; charset=utf-8',
-            'Cache-Control': 'private, no-store',
-          },
+        runHook('route:matched', {
+          pattern: `${registry.assetPrefix}/island/:componentName`,
+          request: req,
+          url,
+          params,
+          kind: 'island',
         });
+        const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'island', isWarmup: ctx.isWarmup };
+        const innerResolve = async (_resolvedEvent: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => {
+          const componentName = params.componentName;
+          if (!componentName) {
+            return new Response('Missing component name', { status: 400 });
+          }
+
+          const signedProps = url.searchParams.get('props') ?? '';
+
+          // Decrypt props (empty means no props)
+          let decodedProps: Record<string, unknown>;
+          if (signedProps) {
+            const propsJson = decryptProps(signedProps, componentName);
+            if (propsJson === null) {
+              return new Response('Invalid props', { status: 403 });
+            }
+            decodedProps = devalueParse(propsJson) as Record<string, unknown>;
+          } else {
+            decodedProps = {};
+          }
+
+          // `islandId` and `__mochi_ah` ride inside the signed envelope as transport only, and are split into a fresh object
+          // so neither reaches the component as a prop. The hydrate mode comes from the decrypted payload: trusting a
+          // `?hydrate=` query param would let anyone append it to a sealed token and get the props echoed back in plaintext.
+          const { [ALSO_HYDRATE_ENVELOPE_KEY]: rawHydrateMode, islandId: rawIslandId, ...props } = decodedProps;
+          const islandId = typeof rawIslandId === 'string' ? rawIslandId : undefined;
+          const hydrateMode = isAlsoHydrateMode(rawHydrateMode) ? rawHydrateMode : null;
+
+          // Look up the component path
+          const componentPath = registry.getServerIslandPath(componentName);
+          if (!componentPath) {
+            return new Response('Unknown server island component', { status: 404 });
+          }
+
+          // Arm nested-island inlining for this render. Also-hydrate renders are excluded: their subtree re-renders on the
+          // client, and a nested defer site there is a compile error anyway (`defer-in-hydratable`).
+          if (hydrateMode === null && inlineNestedIslands) {
+            ctx.islandInline = { budget: applyFilter('serverIsland:inlineBudget', DEFAULT_INLINE_BUDGET, { componentName, request: req }) };
+          }
+
+          // A miss here means the build's eager discovery (see build.ts) didn't
+          // find this island; `compileAll` warns about any manifest miss, so the
+          // request-path compile this endpoint is supposed to prevent is never
+          // silent.
+          await registry.compile(componentPath);
+          let result: RenderResult;
+          try {
+            // Namespacing via `idPrefix` keeps `$props.id()` values from this
+            // standalone render from colliding with ids the host page already
+            // emitted (both renders otherwise start their uid counter at `s1`).
+            // Svelte rejects prefixes containing `--`, so guard against tokens
+            // signed by an older deploy carrying an incompatible id.
+            result = await registry.renderComponent(componentPath, props as Record<string, unknown>, {
+              stripMarkers: false,
+              ...(islandId && !islandId.includes('--') ? { idPrefix: islandId } : {}),
+              // An also-hydrate island's standalone render seeds the
+              // `isHydratable()` context for its whole subtree — the same signal
+              // the in-page boundary component provides for `mochi:hydrate*`
+              // islands. Pure `mochi:defer` never hydrates, so no context.
+              ...(hydrateMode !== null ? { context: new Map<unknown, unknown>([[HYDRATABLE_CONTEXT_KEY, true]]) } : {}),
+              // Named-export islands render that export, not the module's default.
+              ...(registry.getServerIslandExport(componentName) ? { exportName: registry.getServerIslandExport(componentName) } : {}),
+            });
+          } catch (err) {
+            const e = err instanceof Error ? err : new Error(String(err));
+            logger.error(`Server island "${componentName}" failed: ${e.message}`);
+            mochiEvents.emit('island:error', {
+              componentName,
+              islandId,
+              kind: 'server',
+              message: e.message,
+              stack: registry.development ? e.stack : undefined,
+            });
+            // 200 + a known stub so `ServerIsland.ts` doesn't burn its retry budget
+            // on a deterministic failure. Visibility is CSS-controlled: dev shows
+            // the message, prod hides the element entirely.
+            const stub = islandFailureStub(componentName, registry.development ? e.message : undefined);
+            return applyResolveOptions(
+              new Response(stub, {
+                status: 200,
+                headers: {
+                  'Content-Type': 'text/html; charset=utf-8',
+                  'Cache-Control': 'private, no-store',
+                },
+              }),
+              resolveOpts,
+            );
+          }
+
+          let body = result.body;
+
+          if (isAlsoHydrateMode(hydrateMode)) {
+            const componentUrl = registry.getComponentEntryUrl(componentName);
+            const serializedProps = devalueStringify(props);
+
+            let hydrateAttrs = `component-name="${componentName}"`;
+            if (Object.keys(props as Record<string, unknown>).length > 0) {
+              hydrateAttrs += ` props="${escapeHtmlAttr(serializedProps)}"`;
+            }
+            if (componentUrl) {
+              hydrateAttrs += ` component-url="${componentUrl}"`;
+            }
+
+            body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
+          }
+
+          // Appended whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain
+          // mochi:hydrate children, or inlined also-hydrate islands — so the fragment self-hydrates even on a page that
+          // shipped no bootstrap of its own; duplicate module scripts are no-ops by src.
+          const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
+          if (bootstrapUrl) {
+            body += `<script type="module" src="${bootstrapUrl}"></script>`;
+          }
+
+          // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`
+          // tags are prepended here along with side-effect CSS imports; browsers honour a `<link>` assigned via `innerHTML`.
+          // The island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
+          const ownCss = registry.getComponentCssUrl(componentPath);
+          const extraCss = result.cssUrls.filter((url) => url !== ownCss);
+          if (extraCss.length > 0) {
+            body = extraCss.map(cssLinkTag).join('') + body;
+          }
+
+          return applyResolveOptions(
+            new Response(body, {
+              headers: {
+                'Content-Type': 'text/html; charset=utf-8',
+                'Cache-Control': 'private, no-store',
+              },
+            }),
+            resolveOpts,
+          );
+        };
+
+        const response = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
+        const final = finalizeCookieHeaders(response, ctx.cookies);
+        mochiEvents.emit('request', {
+          requestId,
+          kind: 'island',
+          method: req.method,
+          path: url.pathname + url.search,
+          status: final.status,
+          duration: performance.now() - start,
+        });
+        return final;
       });
     });
 
@@ -1682,27 +1953,18 @@ export class Mochi {
     const imageRuntime = getImageRuntime();
     if (imageRuntime.options.enabled) {
       const imageHandler = createImageHandler();
-      bunRoutes[`${registry.assetPrefix}/image/:filename`] = withHead(async (req: Request): Promise<Response> => {
-        const start = performance.now();
-        const response = await imageHandler(req);
-        const url = new URL(req.url);
-        mochiEvents.emit('request', {
-          requestId: newRequestId(req),
-          kind: 'image',
-          method: req.method,
-          path: url.pathname + url.search,
-          status: response.status,
-          duration: performance.now() - start,
-        });
-        return response;
-      });
+      const imagePattern = `${registry.assetPrefix}/image/:filename`;
+      bunRoutes[imagePattern] = withHead(async (req: Request, server: Server<undefined>): Promise<Response> =>
+        runSimpleRequest(req, server, 'image', imagePattern, async (event, resolveOpts) => applyResolveOptions(await imageHandler(event.request), resolveOpts)),
+      );
       stopImageSweeper = startImageCacheSweeper(imageRuntime.cache, imageRuntime.options.sweepIntervalMs);
     }
 
     // Plain static serving of locally-imported image assets (`import x from './x.png'`), so it registers independently
     // of `image.enabled`. The handler reads the global registry the build populated, letting new dev images appear
     // without a route reload.
-    bunRoutes[`${registry.assetPrefix}/asset/:filename`] = withHead(createLocalAssetHandler(development));
+    const localAssetPattern = `${registry.assetPrefix}/asset/:filename`;
+    bunRoutes[localAssetPattern] = withHead(wrapRawRouteValue(localAssetPattern, createLocalAssetHandler(development), 'asset'));
 
     // The debug bar's Cache tab reads the entry count (GET) and empties the image cache (POST). It registers with the
     // debug bar rather than the image endpoint, since the tab always shows and acting on an empty cache is a no-op.
@@ -1737,10 +1999,12 @@ export class Mochi {
         return Response.json({ key, value });
       };
       // Register both slash variants so they work under any `trailingSlash` policy.
-      bunRoutes[`${registry.assetPrefix}/image-cache`] = imageCacheHandler;
-      bunRoutes[`${registry.assetPrefix}/image-cache/`] = imageCacheHandler;
-      bunRoutes[`${registry.assetPrefix}/image-cache/entry`] = imageCacheEntryHandler;
-      bunRoutes[`${registry.assetPrefix}/image-cache/entry/`] = imageCacheEntryHandler;
+      for (const route of [`${registry.assetPrefix}/image-cache`, `${registry.assetPrefix}/image-cache/`]) {
+        bunRoutes[route] = wrapRawRouteValue(route, imageCacheHandler, 'dev');
+      }
+      for (const route of [`${registry.assetPrefix}/image-cache/entry`, `${registry.assetPrefix}/image-cache/entry/`]) {
+        bunRoutes[route] = wrapRawRouteValue(route, imageCacheEntryHandler, 'dev');
+      }
     }
 
     if (protectionRuntime) {
@@ -1792,13 +2056,14 @@ export class Mochi {
     }
 
     if (process.env.MOCHI_MEMORY_PROBE === '1') {
-      bunRoutes['/__mochi/health/memory'] = (): Response => {
+      const memoryProbe = (): Response => {
         Bun.gc(true);
         return Response.json({
           timestamp: Date.now(),
           memory: process.memoryUsage(),
         });
       };
+      bunRoutes['/__mochi/health/memory'] = wrapRawRouteValue('/__mochi/health/memory', memoryProbe, 'dev');
     }
 
     // Snapshotted so the dev-mode public watcher can rebuild cleanly when files are added, removed, or renamed.
@@ -1834,32 +2099,25 @@ export class Mochi {
             return blocked ?? finalizeCookieHeaders(await serve(), cookies);
           }
         : undefined;
-    registerPublicRoutes(bunRoutes, initialPublicFiles, publicRouteGuard);
+    registerPublicRoutes(bunRoutes, initialPublicFiles, publicRouteGuard, (route, value) => wrapRawRouteValue(route, value, 'asset'));
 
     const userFetch = options.fetch;
 
     const composedFetch = async (req: Request, server: Server<undefined>): Promise<Response> => {
-      const url = buildPublicUrl(req, options.proxy);
-      const csrfResponse = csrfCheck(req, url, options.csrf, options.proxy, development, formContentTypes, protectedMethods, trustedOrigins);
-      if (csrfResponse) {
-        return csrfResponse;
-      }
-
       // Non-route requests run middleware too, so static-asset paths (`/_mochi/client/...` bundles) share the chain and a
       // user `gzip()` compresses them like any other response. Kind is precomputed so middleware can branch on it.
-      const assetContent = registry.getClientFile(url.pathname);
-      const diskAsset = assetContent === undefined ? (registry.getFontAsset(url.pathname) ?? registry.getImportedCssAsset(url.pathname)) : undefined;
-      const kind: MochiEventKind = assetContent !== undefined || diskAsset !== undefined ? 'asset' : userFetch ? 'fallback' : 'error';
+      // Raw pathname, not the proxy-aware URL: a malformed forwarded header has to reach `runSimpleRequest` to become a
+      // controlled 400 rather than throwing out here.
+      const requestPathname = new URL(req.url).pathname;
+      const assetContent = registry.getClientFile(requestPathname);
+      const diskAsset = assetContent === undefined ? (registry.getFontAsset(requestPathname) ?? registry.getImportedCssAsset(requestPathname)) : undefined;
+      const kind: SimpleMiddlewareKind = assetContent !== undefined || diskAsset !== undefined ? 'asset' : userFetch ? 'fallback' : 'error';
 
-      const event: MochiEvent = { request: req, url, server, locals: {}, kind, isWarmup: false };
-
-      // `_event` exists only for parity with `MochiResolveFn`; `url`, `req`, and `assetContent` are already fixed in the
-      // enclosing scope.
-      const innerResolve = async (_event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => {
+      const response = await runSimpleRequest(req, server, kind, '/*', async (event, resolveOpts) => {
         if (assetContent !== undefined) {
           // `getClientFile()` returns only registered `.js` or `.css`, so extension alone decides and this branch stays
           // independent of the asset prefix.
-          const contentType = url.pathname.endsWith('.css') ? 'text/css' : 'application/javascript';
+          const contentType = event.url.pathname.endsWith('.css') ? 'text/css' : 'application/javascript';
           const headers: Record<string, string> = { 'Content-Type': contentType, 'X-Content-Type-Options': 'nosniff' };
           // Content-hashed filenames change URL whenever bytes change, so prod can mark them immutable; dev skips it to
           // keep live-reload edits out of the browser cache.
@@ -1872,39 +2130,18 @@ export class Mochi {
           return applyResolveOptions(await serveDiskAsset(diskAsset, development), resolveOpts);
         }
         if (userFetch) {
-          // Assets never reach here, so only user-fetch fallbacks are gated — the interstitial's own JS/CSS stays loadable.
-          if (protectionRuntime) {
-            const cookies = new MochiCookieJar(req.headers.get('Cookie'), cookieDefaults);
-            const blocked = await protectionRuntime.gate({ request: req, url, kind: 'fallback', cookies, server });
-            if (blocked) {
-              return applyResolveOptions(blocked, resolveOpts);
-            }
-            // The gate read the clearance cookie, so a cleared response varies on it like any page's would.
-            return applyResolveOptions(finalizeCookieHeaders(await userFetch(req, server), cookies), resolveOpts);
-          }
-          const response = await userFetch(req, server);
-          return applyResolveOptions(response, resolveOpts);
+          // The `fallback` kind is gated inside buildRequestContext, so assets stay loadable for the interstitial itself.
+          const fallbackResponse = await userFetch(event.request, server);
+          return applyResolveOptions(fallbackResponse, resolveOpts);
         }
         return renderErrorResponse({
-          req,
+          req: event.request,
           event,
           resolveOpts,
           status: 404,
           message: 'Not Found',
           thrown: null,
         });
-      };
-
-      const start = performance.now();
-      const requestId = newRequestId(req);
-      const response = await (middleware ? middleware({ event, resolve: innerResolve }) : innerResolve(event));
-      mochiEvents.emit('request', {
-        requestId,
-        kind,
-        method: req.method,
-        path: url.pathname + url.search,
-        status: response.status,
-        duration: performance.now() - start,
       });
       if (req.method === 'HEAD') {
         return headResponse(response);
@@ -2153,6 +2390,8 @@ export class Mochi {
         reloadShell,
         reloadSpeculationRules,
         publicRouteGuard,
+        wrapPublicRoute: (route, value) => wrapRawRouteValue(route, value, 'asset'),
+        runDevWebSocketUpgrade,
       });
     }
 

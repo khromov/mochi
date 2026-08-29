@@ -4,6 +4,8 @@ import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
+
+const HeaderWebSocket = WebSocket as unknown as new (url: string, options: { headers: Record<string, string> }) => WebSocket;
 import { mochiEvents } from './events';
 import type { MochiRecompileCompleteEvent } from './events';
 
@@ -49,8 +51,12 @@ describe('live-reload only signals tabs whose entry was affected', () => {
   });
 
   test('editing PageA.svelte sends reload only to the PageA WS client', async () => {
-    const wsA = new WebSocket(`ws://localhost:${port}/__mochi_live_reload?entry=${encodeURIComponent(pageA)}`);
-    const wsB = new WebSocket(`ws://localhost:${port}/__mochi_live_reload?entry=${encodeURIComponent(pageB)}`);
+    const wsA = new HeaderWebSocket(`ws://localhost:${port}/__mochi_live_reload?entry=${encodeURIComponent(pageA)}`, {
+      headers: { Origin: `http://localhost:${port}` },
+    });
+    const wsB = new HeaderWebSocket(`ws://localhost:${port}/__mochi_live_reload?entry=${encodeURIComponent(pageB)}`, {
+      headers: { Origin: `http://localhost:${port}` },
+    });
 
     const aMessages: string[] = [];
     const bMessages: string[] = [];
@@ -100,7 +106,9 @@ describe('live-reload only signals tabs whose entry was affected', () => {
   // restarted. The greeting's generation is what closes that hole.
   test('the boot greeting advances its generation for an entry that was reloaded while offline', async () => {
     const greet = async (entry: string) => {
-      const ws = new WebSocket(`ws://localhost:${port}/__mochi_live_reload?entry=${encodeURIComponent(entry)}`);
+      const ws = new HeaderWebSocket(`ws://localhost:${port}/__mochi_live_reload?entry=${encodeURIComponent(entry)}`, {
+        headers: { Origin: `http://localhost:${port}` },
+      });
       const message = await new Promise<string>((resolve) => {
         ws.addEventListener('message', (e) => resolve(typeof e.data === 'string' ? e.data : ''), { once: true });
       });

@@ -17,7 +17,7 @@
 
 import { applyFilter } from '../extensions';
 import { logger } from '../utils/log';
-import { resolveExpectedOrigin, type MochiProxyOptions } from './proxy';
+import { normalizeHttpOrigin, resolveExpectedOrigin, type MochiProxyOptions } from './proxy';
 
 /** The three types a cross-origin `<form>` can submit without a CORS preflight, per WHATWG. Override with the `csrf:formContentTypes` filter. */
 export const DEFAULT_FORM_CONTENT_TYPES: ReadonlySet<string> = new Set(['application/x-www-form-urlencoded', 'multipart/form-data', 'text/plain']);
@@ -33,15 +33,14 @@ export interface MochiCsrfOptions {
 }
 
 // Browsers omit default ports in `Origin` while a reverse proxy's `x-forwarded-host` may include them, so a configured
-// `https://foo.com:443` would otherwise fail to match a sent `https://foo.com`. Everything else passes through unchanged.
-function normalizeOrigin(value: string): string {
-  if (value.startsWith('https://')) {
-    return value.replace(/:443$/, '');
+// `https://foo.com:443` would otherwise fail to match a sent `https://foo.com`. A value that isn't a valid HTTP(S)
+// origin yields `null`, which never compares equal — a malformed header can't be coerced into a match.
+function normalizeOrigin(value: string): string | null {
+  try {
+    return normalizeHttpOrigin(value, 'Origin header');
+  } catch {
+    return null;
   }
-  if (value.startsWith('http://')) {
-    return value.replace(/:80$/, '');
-  }
-  return value;
 }
 
 // Content-negotiated against `Accept`. `reason` attaches an extra explanation, used where the misconfiguration is the
@@ -150,7 +149,7 @@ function csrfCheckDefault(
   const origin = request.headers.get('origin');
   const expectedNormalized = normalizeOrigin(expectedOrigin);
   const originNormalized = origin ? normalizeOrigin(origin) : null;
-  if (originNormalized && originNormalized === expectedNormalized) {
+  if (originNormalized && expectedNormalized && originNormalized === expectedNormalized) {
     return null;
   }
   if (originNormalized && [...trustedOrigins].some((t) => normalizeOrigin(t) === originNormalized)) {

@@ -26,7 +26,7 @@ In production (`development: false`) the toolbar mount point, its entry script, 
 | Button           | Opens                                                                               |
 | ---------------- | ----------------------------------------------------------------------------------- |
 | Status dot       | Live-reload connection state — green pulse when connected, red when dropped.        |
-| `Request`        | Matched route pattern, pathname, params, response size, `Set-Cookie`s, headers.     |
+| `Request`        | Matched route pattern, pathname, params, response size, cookie names, headers.      |
 | `Info`           | Mochi / Svelte / Bun versions and a snapshot of the active `Mochi.serve()` config.  |
 | `Islands`        | Per-island breakdown with mode tag, props size, and a locate-on-page button.        |
 | `Warnings`       | Anything pushed through `window.__mochi_warn(msg)`. Hidden when the queue is empty. |
@@ -66,6 +66,8 @@ An **Empty image cache** button that clears the on-disk [image cache](/docs/imag
 ### Warnings
 
 Any code can queue a warning into the toolbar by calling `window.__mochi_warn('message')`. Mochi uses this internally for soft hydration issues that are not severe enough to throw. Unread warnings also appear in the page console.
+
+Cookie values are deliberately never serialized into `window.__mochi_debug`: inbound cookies show names only, and `Set-Cookie` rows preserve the cookie name and attributes but replace the value with `<redacted>`. This also applies to `HttpOnly` cookies, whose values must not become readable by client JavaScript through development tooling.
 
 ### Info panel
 

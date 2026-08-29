@@ -39,6 +39,78 @@ export interface MochiProxyOptions {
   requestIdHeader?: string;
 }
 
+export class ProxyHeaderError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProxyHeaderError';
+  }
+}
+
+function assertHeaderName(value: string, option: string): void {
+  try {
+    const headers = new Headers();
+    headers.set(value, '1');
+  } catch {
+    throw new TypeError(`Mochi.serve({ proxy.${option} }): ${JSON.stringify(value)} is not a valid HTTP header name.`);
+  }
+}
+
+/**
+ * Parse an HTTP(S) origin into the canonical serialization browsers use for
+ * the Origin header. Credentials, paths, query strings, and fragments are not
+ * valid origin configuration and are rejected.
+ */
+export function normalizeHttpOrigin(value: string, label = 'origin'): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new TypeError(`${label} must be an absolute HTTP(S) origin; received ${JSON.stringify(value)}.`);
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new TypeError(`${label} must use http or https; received ${JSON.stringify(value)}.`);
+  }
+  if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+    throw new TypeError(`${label} must not contain credentials, a path, query, or fragment; received ${JSON.stringify(value)}.`);
+  }
+  return url.origin;
+}
+
+/** Validate static proxy configuration before the server binds. */
+export function validateProxyOptions(options: MochiProxyOptions | undefined): void {
+  if (!options) {
+    return;
+  }
+  if (options.origin !== undefined) {
+    normalizeHttpOrigin(options.origin, 'Mochi.serve({ proxy.origin })');
+  }
+  for (const [key, value] of [
+    ['protocolHeader', options.protocolHeader],
+    ['hostHeader', options.hostHeader],
+    ['portHeader', options.portHeader],
+    ['addressHeader', options.addressHeader],
+    ['requestIdHeader', options.requestIdHeader],
+  ] as const) {
+    if (value !== undefined) {
+      assertHeaderName(value, key);
+    }
+  }
+  if (options.xffDepth !== undefined && (!Number.isInteger(options.xffDepth) || options.xffDepth < 1)) {
+    throw new TypeError(`Mochi.serve({ proxy.xffDepth }): expected a positive integer, received ${String(options.xffDepth)}.`);
+  }
+}
+
+function singleForwardedValue(value: string | null, header: string): string | null {
+  if (value === null) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.includes(',')) {
+    throw new ProxyHeaderError(`Invalid ${header} proxy header.`);
+  }
+  return trimmed;
+}
+
 /**
  * Builds the public-facing URL for the request, applying any trusted-proxy origin override and otherwise returning
  * `new URL(req.url)`. Every per-request handler in `Mochi.ts` uses it, so `event.url`, internal redirects, and the CSRF
@@ -53,10 +125,9 @@ export function buildPublicUrl(request: Request, options: MochiProxyOptions | un
   return new URL(url.pathname + url.search + url.hash, origin);
 }
 
-// TODO: Let's review this an extra time for security before finalizing the API.
 export function resolveExpectedOrigin(request: Request, url: URL, options: MochiProxyOptions | undefined): string {
   if (options?.origin) {
-    return options.origin;
+    return normalizeHttpOrigin(options.origin, 'Mochi.serve({ proxy.origin })');
   }
 
   const protocolHeader = options?.protocolHeader;
@@ -67,18 +138,36 @@ export function resolveExpectedOrigin(request: Request, url: URL, options: Mochi
     return url.origin;
   }
 
-  const protocolFromHeader = protocolHeader ? request.headers.get(protocolHeader) : null;
-  const hostFromHeader = hostHeader ? request.headers.get(hostHeader) : null;
-  const portFromHeader = portHeader ? request.headers.get(portHeader) : null;
+  const protocol = singleForwardedValue(protocolHeader ? request.headers.get(protocolHeader) : null, protocolHeader ?? 'protocol') ?? url.protocol.replace(/:$/, '');
+  const rawHost = singleForwardedValue(hostHeader ? request.headers.get(hostHeader) : null, hostHeader ?? 'host') ?? url.host;
+  const forwardedPort = singleForwardedValue(portHeader ? request.headers.get(portHeader) : null, portHeader ?? 'port');
 
-  const protocol = (protocolFromHeader ?? url.protocol.replace(/:$/, '')).trim();
-  const rawHost = (hostFromHeader ?? url.host).trim();
+  if (protocol !== 'http' && protocol !== 'https') {
+    throw new ProxyHeaderError(`Invalid ${protocolHeader ?? 'protocol'} proxy header.`);
+  }
 
-  // If a port header is set, replace any port already on the host.
-  const hostNoPort = rawHost.includes(':') ? rawHost.slice(0, rawHost.indexOf(':')) : rawHost;
-  const host = portFromHeader ? `${hostNoPort}:${portFromHeader.trim()}` : rawHost;
+  let publicUrl: URL;
+  try {
+    publicUrl = new URL(`${protocol}://${rawHost}`);
+  } catch {
+    throw new ProxyHeaderError(`Invalid ${hostHeader ?? 'host'} proxy header.`);
+  }
+  if (publicUrl.username || publicUrl.password || publicUrl.pathname !== '/' || publicUrl.search || publicUrl.hash) {
+    throw new ProxyHeaderError(`Invalid ${hostHeader ?? 'host'} proxy header.`);
+  }
 
-  return `${protocol}://${host}`;
+  if (forwardedPort !== null) {
+    if (!/^\d{1,5}$/.test(forwardedPort)) {
+      throw new ProxyHeaderError(`Invalid ${portHeader ?? 'port'} proxy header.`);
+    }
+    const port = Number(forwardedPort);
+    if (port < 1 || port > 65_535) {
+      throw new ProxyHeaderError(`Invalid ${portHeader ?? 'port'} proxy header.`);
+    }
+    publicUrl.port = String(port);
+  }
+
+  return publicUrl.origin;
 }
 
 export function getClientAddress(request: Request, fallback: string | null, options: MochiProxyOptions | undefined): string | null {

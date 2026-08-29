@@ -103,18 +103,18 @@ describe('HEAD requests', () => {
     expect(requests).toContainEqual(expect.objectContaining({ method: 'HEAD', path: '/sse', status: 405 }));
   });
 
-  test('ws: a non-upgrade request fails the upgrade (500) and emits a request event', async () => {
+  test('ws: a same-origin non-upgrade request fails with 400 and emits a request event', async () => {
     const requests: Array<{ method: string; path: string; status: number }> = [];
     const onRequest = (e: { method: string; path: string; status: number }): void => {
       requests.push(e);
     };
     mochiEvents.on('request', onRequest);
     try {
-      const res = await fetch(`${base}/ws`);
-      expect(res.status).toBe(500);
+      const res = await fetch(`${base}/ws`, { headers: { Origin: base } });
+      expect(res.status).toBe(400);
     } finally {
       mochiEvents.off('request', onRequest);
     }
-    expect(requests).toContainEqual(expect.objectContaining({ method: 'GET', path: '/ws', status: 500 }));
+    expect(requests).toContainEqual(expect.objectContaining({ method: 'GET', path: '/ws', status: 400 }));
   });
 });
