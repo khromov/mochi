@@ -32,6 +32,7 @@ The scaffold gives you a working app on `http://localhost:3333`, with ESLint and
 ```ts
 // file: src/index.ts (scaffolded)
 import { Mochi } from 'mochi-framework';
+import HelloWorld from './HelloWorld.svelte';
 
 const PORT = Number(process.env.PORT) || 3333;
 
@@ -39,7 +40,7 @@ await Mochi.serve({
   port: PORT,
   development: process.env.NODE_ENV === 'development',
   routes: {
-    '/': Mochi.page('./src/HelloWorld.svelte'),
+    '/': Mochi.page(HelloWorld),
   },
 });
 ```
@@ -53,12 +54,13 @@ Now let's point `/hello` at a Svelte page and give it some data to render. Open 
 ```ts
 // file: src/index.ts
 import { Mochi } from 'mochi-framework';
+import Hello from './Hello.svelte';
 
 await Mochi.serve({
   port: Number(process.env.PORT) || 3333,
   development: process.env.NODE_ENV === 'development',
   routes: {
-    '/hello': Mochi.page('./src/Hello.svelte', {
+    '/hello': Mochi.page(Hello, {
       serverProps: () => ({
         siteName: 'Mochi',
         renderedAt: new Date().toISOString(),

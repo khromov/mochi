@@ -19,6 +19,10 @@ import { loadPosts, getPost } from './lib/blog';
 import { buildFeedXml, FEED_CONTENT_TYPE } from './lib/feed';
 import { CHANGELOG_SLUG, CHANGELOG_TITLE, CHANGELOG_DESCRIPTION, getChangelogHtml, getChangelogTxt } from './lib/changelog';
 import { respondMcp } from './lib/mcp';
+import Site from './Site.svelte';
+import Docs from './Docs.svelte';
+import Blog from './Blog.svelte';
+import BlogPost from './BlogPost.svelte';
 import { profilerEnabled, startProfiler, stopProfiler } from './lib/profiler';
 import { routes as apiRoutes } from './demos/api/routes';
 import { routes as cacheEventsRoutes } from './demos/cache-events/routes';
@@ -174,7 +178,7 @@ export const routes: Record<string, MochiRouteValue> = {
     : {}),
   '/discord': discordRoute,
   '/discord/': discordRoute,
-  '/': Mochi.page('./src/Site.svelte', {
+  '/': Mochi.page(Site, {
     serverProps: async () => {
       const docs = await loadDocs();
       return {
@@ -186,7 +190,7 @@ export const routes: Record<string, MochiRouteValue> = {
   // Static, so it outranks /docs/:slug below. The changelog is a synthetic doc rendered
   // from markdown fetched at runtime — it can't ride the build-time docComponents barrel,
   // so it hands Docs.svelte pre-rendered HTML instead of a component.
-  '/docs/changelog': Mochi.page('./src/Docs.svelte', {
+  '/docs/changelog': Mochi.page(Docs, {
     serverProps: async () => {
       const html = await getChangelogHtml();
       if (html === null) {
@@ -206,7 +210,7 @@ export const routes: Record<string, MochiRouteValue> = {
       };
     },
   }),
-  '/docs/:slug': Mochi.page('./src/Docs.svelte', {
+  '/docs/:slug': Mochi.page(Docs, {
     serverProps: async () => {
       const { params } = getRequestContext();
       const slug = params.slug ?? '';
@@ -226,7 +230,7 @@ export const routes: Record<string, MochiRouteValue> = {
       };
     },
   }),
-  '/blog': Mochi.page('./src/Blog.svelte', {
+  '/blog': Mochi.page(Blog, {
     serverProps: async () => {
       const posts = await loadPosts({ includeDrafts: DEVELOPMENT });
       return {
@@ -236,7 +240,7 @@ export const routes: Record<string, MochiRouteValue> = {
       };
     },
   }),
-  '/blog/:slug': Mochi.page('./src/BlogPost.svelte', {
+  '/blog/:slug': Mochi.page(BlogPost, {
     serverProps: async () => {
       const { params } = getRequestContext();
       const slug = params.slug ?? '';

@@ -17,12 +17,14 @@ Routes are a `Record<string, MochiRouteValue>` passed to `Mochi.serve({ routes }
 ```ts
 // file: src/index.ts
 import { Mochi } from 'mochi-framework';
+import Home from './Home.svelte';
+import About from './About.svelte';
 
 await Mochi.serve({
   port: 3333,
   routes: {
-    '/': Mochi.page('./src/Home.svelte'),
-    '/about': Mochi.page('./src/About.svelte', { serverProps: { title: 'About' } }),
+    '/': Mochi.page(Home),
+    '/about': Mochi.page(About, { serverProps: { title: 'About' } }),
     '/health': Mochi.api(() => Response.json({ status: 'ok' })),
     '/ws/chat': Mochi.ws({
       message(ws, msg) {
@@ -65,17 +67,18 @@ serverProps: (_req, params) => {
 
 ### `Mochi.page`
 
-Register an SSR Svelte page with `Mochi.page(componentPath, { serverProps?, actions? })`. `componentPath` resolves relative to the project root.
+Register an SSR Svelte page with `Mochi.page(component, { serverProps?, actions? })`. Pass an imported Svelte component, or a string path that resolves relative to the project root.
 
 `serverProps` is a plain object or a `(req, params) => props` resolver (sync or async). The resolved object reaches the component as `$props`.
 
 ```ts
 // file: src/index.ts
 import { Mochi } from 'mochi-framework';
+import Post from './Post.svelte';
 
 await Mochi.serve({
   routes: {
-    '/posts/:slug': Mochi.page('./src/Post.svelte', {
+    '/posts/:slug': Mochi.page(Post, {
       serverProps: async (_req, params) => ({
         post: await loadPost(params.slug),
       }),
@@ -94,6 +97,19 @@ For a resolver that hits a slow upstream, wrap the load in a shared cache — se
 
 </Callout>
 
+#### Component imports
+
+<VersionNote since="0.10.0" message="Passing an imported Svelte component to Mochi.page() requires mochi-framework 0.10.0." />
+
+An imported component gives you Cmd+click navigation, import autocompletion, and a compile error when the file moves. It relies on a Bun preload plugin that tags every `.svelte` import with its source path, so add the plugin to `bunfig.toml` in your project root:
+
+```toml
+# file: bunfig.toml
+preload = ["mochi-framework/plugin"]
+```
+
+Mochi writes that entry on first start when it is missing; restart once so Bun picks it up. String paths keep working with or without the plugin.
+
 #### Redirecting from serverProps
 
 <VersionNote since="0.10.0" message="Returning redirect() from serverProps requires mochi-framework 0.10.0." />
@@ -103,10 +119,11 @@ A `serverProps` resolver may return `redirect(status, location)` instead of prop
 ```ts
 // file: src/index.ts
 import { Mochi, redirect } from 'mochi-framework';
+import Settings from './Settings.svelte';
 
 await Mochi.serve({
   routes: {
-    '/settings': Mochi.page('./src/Settings.svelte', {
+    '/settings': Mochi.page(Settings, {
       serverProps: (req) => {
         const user = currentUser(req);
         if (!user) return redirect(303, '/login');

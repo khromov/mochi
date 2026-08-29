@@ -1,5 +1,6 @@
 import type { Server, ServerWebSocket } from 'bun';
-import { checkEnvironment } from './cli/checkEnvironment';
+import { checkEnvironment, ensureBunfigPreload } from './cli/checkEnvironment';
+import { resolveComponentPath, type MochiComponentRef } from './compiler/componentSource';
 import { existsSync, rmSync, mkdirSync } from 'fs';
 import path from 'node:path';
 import { ComponentRegistry, formatCompileErrors } from './compiler/ComponentRegistry';
@@ -200,7 +201,7 @@ async function appendDebugTail(response: Response, ctx: MochiRequestContext, dev
 
 export class Mochi {
   static page(
-    componentPath: string,
+    component: MochiComponentRef,
     config?: {
       serverProps?: Record<string, unknown> | MochiServerPropsResolver;
       actions?: MochiFormActions;
@@ -209,7 +210,7 @@ export class Mochi {
   ): MochiPageConfig {
     return {
       __mochiPage: true,
-      componentPath,
+      componentPath: resolveComponentPath(component, 'Mochi.page()'),
       serverProps: config?.serverProps,
       actions: config?.actions,
       rateLimit: config?.rateLimit,
@@ -464,6 +465,7 @@ export class Mochi {
     const staticDirMounts = options.staticDirs ? resolveStaticDirs(options.staticDirs, normalizeAssetPrefix(options.assetPrefix)) : [];
 
     const { svelteVersion } = await checkEnvironment();
+    await ensureBunfigPreload();
     const mochiVersion = await readMochiVersion();
 
     // Same value `isDev` seeded from, so top-level reads — which already ran — agree by construction.
@@ -647,7 +649,7 @@ export class Mochi {
         }
       : undefined;
 
-    const errorPagePath = options.errorPage ?? DEFAULT_ERROR_PAGE_PATH;
+    const errorPagePath = options.errorPage != null ? resolveComponentPath(options.errorPage, 'errorPage') : DEFAULT_ERROR_PAGE_PATH;
 
     // Resolved before compileAll so the interstitial page (default or custom) rides the same one-shot build.
     const protectionOptions = protectionEnabled && options.protection ? resolveProtectionOptions(options.protection, getCaptchaRuntime().options.bits) : undefined;

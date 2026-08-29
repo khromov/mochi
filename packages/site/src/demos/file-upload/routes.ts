@@ -1,8 +1,9 @@
 import { Mochi, fail, success } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
+import FileUploadDemo from './FileUploadDemo.svelte';
 
 export const routes: Record<string, MochiRouteValue> = {
-  '/demos/file-upload': Mochi.page('./src/demos/file-upload/FileUploadDemo.svelte', {
+  '/demos/file-upload': Mochi.page(FileUploadDemo, {
     actions: {
       uploadFile: async ({ formData }) => {
         const file = formData.get('file');

@@ -44,6 +44,7 @@ bun add tailwindcss @tailwindcss/node @tailwindcss/oxide
 // file: src/index.ts
 import { Mochi } from 'mochi-framework';
 import { setupTailwind } from 'mochi-framework/tailwind';
+import Home from './Home.svelte';
 
 await setupTailwind({
   input: './src/styles/app.css',
@@ -53,7 +54,7 @@ await setupTailwind({
 
 await Mochi.serve({
   routes: {
-    '/': Mochi.page('./src/Home.svelte'),
+    '/': Mochi.page(Home),
   },
 });
 ```

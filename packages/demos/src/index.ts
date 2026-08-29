@@ -1,5 +1,6 @@
 import { Mochi, silenceInternalRoutes } from 'mochi-framework';
 import type { Handle } from 'mochi-framework';
+import Landing from './Landing.svelte';
 import { routes as adminRoutes } from './admin/routes';
 import { routes as hnRoutes } from './hn/routes';
 import { routes as todoRoutes } from './todo/routes';
@@ -30,7 +31,7 @@ await Mochi.serve({
     'consoleLogger:line': (line, ctx) => (ctx.path.startsWith('/health') ? null : silenceInternalRoutes(line, ctx)),
   },
   routes: {
-    '/': Mochi.page('./src/Landing.svelte'),
+    '/': Mochi.page(Landing),
     '/health': Mochi.api(({ method }) => Response.json({ status: 'ok', method })),
     ...adminRoutes,
     ...hnRoutes,

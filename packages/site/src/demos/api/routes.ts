@@ -1,8 +1,9 @@
 import { Mochi, error } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
+import Api from './Api.svelte';
 
 export const routes: Record<string, MochiRouteValue> = {
-  '/demos/api': Mochi.page('./src/demos/api/Api.svelte'),
+  '/demos/api': Mochi.page(Api),
   '/health': Mochi.api(({ method }) => Response.json({ status: 'ok', method })),
   // curl -X POST http://localhost:3333/add -H 'Content-Type: application/json' -d '{"a": 2, "b": 3}'
   '/add': Mochi.api(async ({ method, request }) => {

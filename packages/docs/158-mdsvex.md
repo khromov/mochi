@@ -33,6 +33,7 @@ With `markdown` configured, `.md` and `.svx` files compile through the pipeline 
 import { Mochi } from 'mochi-framework';
 import { compile as mdsvexCompile } from 'mdsvex';
 import rehypeSlug from 'rehype-slug';
+import About from './about.md';
 
 await Mochi.serve({
   markdown: {
@@ -40,7 +41,7 @@ await Mochi.serve({
     rehypePlugins: [rehypeSlug],
   },
   routes: {
-    '/about': Mochi.page('./src/about.md'),
+    '/about': Mochi.page(About),
   },
 });
 ```

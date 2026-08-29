@@ -1,3 +1,6 @@
+import path from 'node:path';
+import { logger } from '../utils/log';
+
 const MIN_BUN_VERSION = '1.4.0';
 const MIN_SVELTE_VERSION = '5.55.1';
 
@@ -58,4 +61,47 @@ async function runCheck(): Promise<{ svelteVersion: string }> {
   }
 
   return { svelteVersion };
+}
+
+const PRELOAD_MARKER = 'mochi-framework/plugin';
+const PRELOAD_BLOCK = `preload = ["${PRELOAD_MARKER}"]\n`;
+
+let bunfigChecked = false;
+
+/**
+ * Write the `mochi-framework/plugin` preload into the app's `bunfig.toml` when it is missing, so the next start can
+ * resolve `Mochi.page(Component)` imports to their source file. Purely a convenience — never fatal, and a failed write
+ * (read-only container, for instance) only warns.
+ */
+export async function ensureBunfigPreload(): Promise<boolean> {
+  if (bunfigChecked) {
+    return false;
+  }
+  bunfigChecked = true;
+
+  const bunfigPath = path.resolve(process.cwd(), 'bunfig.toml');
+  const file = Bun.file(bunfigPath);
+
+  try {
+    if (await file.exists()) {
+      const content = await file.text();
+      if (content.includes(PRELOAD_MARKER)) {
+        return false;
+      }
+      if (/^\s*preload\s*=/m.test(content)) {
+        logger.warn(`[mochi] bunfig.toml has a preload entry but is missing "${PRELOAD_MARKER}". Add it manually to enable Svelte component imports in routes.`);
+        return false;
+      }
+      // `preload` is a top-level key, so it has to go above the first [section] header or TOML reads it as part of it.
+      await Bun.write(bunfigPath, PRELOAD_BLOCK + '\n' + content.trimStart());
+    } else {
+      await Bun.write(bunfigPath, PRELOAD_BLOCK);
+    }
+  } catch (err) {
+    logger.warn(`[mochi] Could not update bunfig.toml with the "${PRELOAD_MARKER}" preload: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+
+  logger.info(`[mochi] Added the "${PRELOAD_MARKER}" preload to bunfig.toml. Restart the server to enable Svelte component imports in routes.`);
+  return true;
 }

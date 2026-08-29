@@ -32,11 +32,13 @@ src/routes/health/+server.ts         → /health
 ```ts
 // file (Mochi): src/index.ts
 import { Mochi } from 'mochi-framework';
+import Home from './Home.svelte';
+import Post from './Post.svelte';
 
 await Mochi.serve({
   routes: {
-    '/': Mochi.page('./src/Home.svelte'),
-    '/posts/:slug': Mochi.page('./src/Post.svelte'),
+    '/': Mochi.page(Home),
+    '/posts/:slug': Mochi.page(Post),
     '/health': Mochi.api(() => Response.json({ status: 'ok' })),
   },
 });
@@ -57,16 +59,18 @@ export function match(param: string): param is 'apple' | 'orange' {
 ```ts
 // file (Mochi): src/index.ts
 import { Mochi, error } from 'mochi-framework';
+import Fruit from './Fruit.svelte';
+import Files from './Files.svelte';
 
 await Mochi.serve({
   routes: {
-    '/fruits/:name': Mochi.page('./src/Fruit.svelte', {
+    '/fruits/:name': Mochi.page(Fruit, {
       serverProps: (_req, params) => {
         if (params.name !== 'apple' && params.name !== 'orange') error(404, 'Unknown fruit');
         return { name: params.name };
       },
     }),
-    '/files/*': Mochi.page('./src/Files.svelte'),
+    '/files/*': Mochi.page(Files),
   },
 });
 ```
@@ -75,7 +79,9 @@ A `:param` always captures the whole segment — you can't put literal text besi
 
 ```ts
 // file (Mochi): the SvelteKit route profile/@[user]
-'/profile/:user': Mochi.page('./src/Profile.svelte', {
+import Profile from './Profile.svelte';
+
+'/profile/:user': Mochi.page(Profile, {
   serverProps: (_req, params) => {
     if (!params.user.startsWith('@')) error(404); // /profile/bob must not alias /profile/@bob
     return { username: params.user.slice(1) };
@@ -158,10 +164,11 @@ export async function baseProps() {
 // file (Mochi): src/index.ts
 import { Mochi } from 'mochi-framework';
 import { baseProps } from './lib/baseProps';
+import Home from './Home.svelte';
 
 await Mochi.serve({
   routes: {
-    '/': Mochi.page('./src/Home.svelte', {
+    '/': Mochi.page(Home, {
       serverProps: async () => ({ ...(await baseProps()), posts: await loadPosts() }),
     }),
   },
@@ -188,10 +195,11 @@ export async function load({ params }) {
 ```ts
 // file (Mochi): src/index.ts
 import { Mochi } from 'mochi-framework';
+import Post from './Post.svelte';
 
 await Mochi.serve({
   routes: {
-    '/posts/:slug': Mochi.page('./src/Post.svelte', {
+    '/posts/:slug': Mochi.page(Post, {
       serverProps: async (_req, params) => ({ post: await loadPost(params.slug) }),
     }),
   },
@@ -242,10 +250,11 @@ export const actions = {
 ```ts
 // file (Mochi): src/index.ts
 import { Mochi, fail, success, redirect } from 'mochi-framework';
+import Login from './Login.svelte';
 
 await Mochi.serve({
   routes: {
-    '/login': Mochi.page('./src/Login.svelte', {
+    '/login': Mochi.page(Login, {
       actions: {
         default: ({ formData, cookies }) => {
           const username = String(formData.get('username') ?? '');

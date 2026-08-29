@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { build } from './build';
 import { closeAllQueueResources } from '../queue';
 import { extractServeOptions } from './extractServeOptions';
+import { resolveComponentPath } from '../compiler/componentSource';
 import { updateSkill, SKILL_TARGETS, SKILL_DESTS, DEFAULT_SKILL_TARGET, type SkillTarget } from './updateSkill';
 import { generateKey } from './generateKey';
 import { relForDisplay } from '../utils';
@@ -182,7 +183,7 @@ async function main() {
     optimize: serveOptions && 'optimize' in serveOptions ? serveOptions.optimize : undefined,
     barrelWarnings: serveOptions?.barrelWarnings,
     fonts: serveOptions?.fonts,
-    errorPage: serveOptions?.errorPage,
+    errorPage: serveOptions?.errorPage != null ? resolveComponentPath(serveOptions.errorPage, 'errorPage') : undefined,
     resources: serveOptions?.build?.resources,
     protection: serveOptions?.protection,
     development: values.dev,

@@ -1,8 +1,9 @@
 import { Mochi } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
+import Streams from './Streams.svelte';
 
 export const routes: Record<string, MochiRouteValue> = {
-  '/demos/streams': Mochi.page('./src/demos/streams/Streams.svelte'),
+  '/demos/streams': Mochi.page(Streams),
   '/ws/time': (() => {
     const intervals = new WeakMap();
     return Mochi.ws({

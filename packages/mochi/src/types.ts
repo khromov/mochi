@@ -522,8 +522,9 @@ export interface MochiServeOptions {
    * ```
    */
   handle?: Handle;
-  /** Path to a Svelte component rendered for uncaught page/form errors and unmatched routes. Default: built-in minimal error page. */
-  errorPage?: string;
+  /** Svelte component (or path to one) rendered for uncaught page/form errors and unmatched routes. Default: built-in minimal error page. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  errorPage?: string | import('svelte').Component<any>;
   /** Hook invoked before rendering the error page; may override status/message or return a `Response` to take over. See `HandleError`. */
   handleError?: HandleError;
   /** Deflate-compress server island props when it reduces size. Default: true. */
