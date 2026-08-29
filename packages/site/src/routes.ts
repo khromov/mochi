@@ -82,6 +82,7 @@ import { routes as streamsRoutes } from './demos/streams/routes';
 import { routes as tanstackTableRoutes } from './demos/tanstack-table/routes';
 import { routes as urlRoutes } from './demos/url/routes';
 import { routes as varlockRoutes } from './demos/varlock/routes';
+import { routes as webComponentsRoutes } from './demos/web-components/routes';
 import { routes as viewTransitionsRoutes } from './demos/view-transitions/routes';
 import { routes as customTransitionsRoutes } from './demos/custom-transitions/routes';
 import { routes as yourFirstMochiAppRoutes } from './demos/your-first-mochi-app/routes';
@@ -405,6 +406,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...tanstackTableRoutes,
   ...urlRoutes,
   ...varlockRoutes,
+  ...webComponentsRoutes,
   ...viewTransitionsRoutes,
   ...customTransitionsRoutes,
   ...yourFirstMochiAppRoutes,

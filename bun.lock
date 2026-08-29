@@ -215,6 +215,7 @@
         "@fontsource/jetbrains-mono": "^5.3.0",
         "@fontsource/lobster-two": "^5.3.0",
         "@fontsource/public-sans": "^5.3.0",
+        "@github/relative-time-element": "5.2.0",
         "@lucide/svelte": "^1.28.0",
         "@napi-rs/canvas": "^1.0.3",
         "@nprapps/sidechain": "^1.1.5",
@@ -363,6 +364,8 @@
     "@fontsource/lobster-two": ["@fontsource/lobster-two@5.3.0", "", {}, "sha512-fvdLsLjYRvrd5A82qXx+w7ksEiCHo0T9FcENQ4OpZOaqyPNOAIU3ORnVr177KxrHsfCup06J3BkKBpcdXTuLQg=="],
 
     "@fontsource/public-sans": ["@fontsource/public-sans@5.3.0", "", {}, "sha512-kjODI0S3zdv0mBYCIQ8TbBayaiqszpc2UbhJiO3bjIqVVXzcWfHSt2o3WBCLOY3juaGaQoy4MoWCcgmfI5hCuA=="],
+
+    "@github/relative-time-element": ["@github/relative-time-element@5.2.0", "", {}, "sha512-yPXdxA44fJAHp0NaJ0cykLqDq7i1PYOZ1wsh+m3SKvmZDoXk5jQdt4xIaHQEfRWBvK/xOQYpMPgjh2OGSqTqWg=="],
 
     "@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.11.1", "", { "dependencies": { "@types/node": ">=20.0.0", "happy-dom": "^20.11.1" } }, "sha512-1C0wwHiyMlEdsbrJqff5ORE2PwaXBOam5rMqkZVOReAezd5nt6Tl/WGg28UAo75Ziuwchs0KaF8lvnn2oAtvJA=="],
 
