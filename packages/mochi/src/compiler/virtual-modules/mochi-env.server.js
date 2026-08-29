@@ -64,7 +64,7 @@ export { requestCache, requestMemo, getRequestCache } from "__MOCHI_REQUEST_CACH
 export { MemoryStorage, FileStorage, isBlobRef, readBlobRef } from "__MOCHI_CACHE_STORAGE__";
 // Image helpers. Server-only (signing needs the secret key); re-exported
 // so .svelte files can `import { getImageUrl } from 'mochi-framework'`.
-export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from "__MOCHI_IMAGE_API__";
+export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage, localImage } from "__MOCHI_IMAGE_API__";
 // Server-safe: the island registry is empty during SSR, so these resolve to a no-op here.
 export { reloadDeferredIsland, reloadDeferredIslandAll } from "__MOCHI_DEFER_API__";
 export { deferReloadState, DeferReloadState } from "__MOCHI_DEFER_REACTIVE__";

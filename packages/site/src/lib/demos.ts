@@ -30,6 +30,7 @@ import { files as image } from '../demos/image/files.ts';
 import { files as imageInvalidation } from '../demos/image-invalidation/files.ts';
 import { files as imagePipeline } from '../demos/image-pipeline/files.ts';
 import { files as imageEvents } from '../demos/image-events/files.ts';
+import { files as imageFilesystem } from '../demos/image-filesystem/files.ts';
 import { files as islandDepth } from '../demos/island-depth/files.ts';
 import { files as islandProps } from '../demos/island-props/files.ts';
 import { files as lazy } from '../demos/lazy/files.ts';
@@ -229,6 +230,14 @@ export const demos: Demo[] = [
     files: imageEvents,
     title: 'Image: Events',
     hook: 'How image events work — subscribe to image:store / image:delete on mochiEvents to mirror the <Image> cache to durable storage like S3.',
+    category: 'data',
+  },
+  {
+    href: '/demos/image-filesystem/',
+    slug: 'image-filesystem',
+    files: imageFilesystem,
+    title: 'Image: Filesystem',
+    hook: 'Serve a runtime read/write folder with staticDirs — write raw bytes with Bun.write, read with localImage(), and render via <Image> and getImageUrl().',
     category: 'data',
   },
   {

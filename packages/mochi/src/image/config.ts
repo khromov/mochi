@@ -142,8 +142,3 @@ export function getSize(name: string | undefined, options: ResolvedImageOptions)
   // user-constructed options) against prototype-chain hits like "constructor".
   return name !== undefined && Object.hasOwn(options.sizes, name) ? options.sizes[name] : undefined;
 }
-
-export function getImageAssetPrefix(): string {
-  const { options } = getMochiConfig();
-  return (options.assetPrefix as string | undefined) ?? '/_mochi';
-}

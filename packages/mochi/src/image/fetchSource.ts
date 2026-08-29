@@ -1,6 +1,7 @@
 import { assertPublicUrl, SsrfGuardError } from '../utils/assertPublicUrl';
 import { applyFilter } from '../extensions';
 import { getLocalImageAsset } from './localAssetRegistry';
+import { resolveStaticDirImage } from './localImage';
 import { ImageError } from './types';
 import type { ResolvedImageOptions } from './types';
 
@@ -18,6 +19,18 @@ export async function fetchImageSource(src: string, opts: ResolvedImageOptions):
   const local = getLocalImageAsset(src);
   if (local) {
     return { bytes: await Bun.file(local.diskPath).bytes(), contentType: local.contentType };
+  }
+
+  // An image served by a `staticDirs` mount: same-origin src, same trust argument as above — the resolver confines
+  // reads to the mounted roots, and the raster gate keeps transforms off non-image files (a `.zip` src falls through
+  // and is rejected as a URL).
+  const mounted = resolveStaticDirImage(src);
+  if (mounted) {
+    const file = Bun.file(mounted.diskPath);
+    if (!(await file.exists())) {
+      throw new ImageError(404, `Local image not found: ${src}`);
+    }
+    return { bytes: await file.bytes(), contentType: mounted.contentType };
   }
 
   // One timeout bounds the whole chain (all redirect hops), not each hop.

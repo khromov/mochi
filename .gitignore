@@ -10,6 +10,9 @@ svelte-latest-tests
 packages/site/src/lib/docComponents.generated.ts
 packages/site/src/lib/blogComponents.generated.ts
 packages/demos/src/todo/app.generated.css
+# written at runtime by the image-filesystem demo; the folder itself is a staticDirs mount, so it must exist at boot
+packages/site/uploads/*
+!packages/site/uploads/.gitkeep
 
 # code coverage
 coverage

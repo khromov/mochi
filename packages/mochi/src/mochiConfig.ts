@@ -64,3 +64,7 @@ export function getMochiConfig(): MochiContext {
   }
   return ctx;
 }
+
+export function getAssetPrefix(): string {
+  return getMochiConfig().options.assetPrefix ?? '/_mochi';
+}

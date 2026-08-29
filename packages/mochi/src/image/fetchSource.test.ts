@@ -179,3 +179,55 @@ describe('fetchImageSource local-asset branch', () => {
     await expect(fetchImageSource('/_mochi/asset/nope-0.png', opts())).rejects.toBeInstanceOf(ImageError);
   });
 });
+
+describe('fetchImageSource staticDirs branch', () => {
+  const dirs: string[] = [];
+
+  afterEach(() => {
+    for (const key of ['__mochi_config__', '__mochi_static_image_mounts__']) {
+      delete (globalThis as unknown as Record<string, unknown>)[key];
+    }
+    for (const d of dirs.splice(0)) {
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  // The staticDirs branch reads the top-level `staticDirs` from the global config, not from the image options.
+  function writeMountedFile(bytes: Buffer): { root: string; src: string } {
+    const root = mkdtempSync(join(tmpdir(), 'mochi-staticdir-'));
+    dirs.push(root);
+    (globalThis as unknown as Record<string, unknown>)['__mochi_config__'] = {
+      options: { staticDirs: { '/media': root } },
+      secretKey: Buffer.from('test-key-for-unit-tests-32bytes!'),
+    };
+    delete (globalThis as unknown as Record<string, unknown>)['__mochi_static_image_mounts__'];
+    writeFileSync(join(root, 'photo.png'), bytes);
+    return { root, src: '/media/photo.png' };
+  }
+
+  test('reads a mounted image from disk without fetching', async () => {
+    const { src } = writeMountedFile(PNG);
+    const { bytes, contentType } = await fetchImageSource(src, opts({ allowedHosts: undefined, blockPrivateNetworks: true }));
+    expect(contentType).toBe('image/png');
+    expect(Buffer.from(bytes)).toEqual(PNG);
+  });
+
+  test('a missing file under a mount is a 404 ImageError, not an SSRF rejection', async () => {
+    writeMountedFile(PNG);
+    await expect(fetchImageSource('/media/nope.png', opts())).rejects.toMatchObject({ status: 404 });
+  });
+
+  test('a non-raster mounted file is not a valid transform source even though the mount serves it', async () => {
+    const { root } = writeMountedFile(PNG);
+    writeFileSync(join(root, 'archive.zip'), 'PK');
+    await expect(fetchImageSource('/media/archive.zip', opts())).rejects.toBeDefined();
+  });
+
+  test('with no staticDirs configured, a same-origin src never resolves and is rejected as a URL', async () => {
+    (globalThis as unknown as Record<string, unknown>)['__mochi_config__'] = {
+      options: {},
+      secretKey: Buffer.from('test-key-for-unit-tests-32bytes!'),
+    };
+    await expect(fetchImageSource('/media/photo.png', opts())).rejects.toBeDefined();
+  });
+});

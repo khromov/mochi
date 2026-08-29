@@ -4,7 +4,8 @@ import { routes } from './routes';
 await Mochi.serve({
   port: 3333,
   // Mount a directory tree under a URL prefix — one Bun route, files served straight from disk.
-  staticDirs: { '/gallery': './images' },
+  // The route resolves per request, so a file written after boot is servable immediately.
+  staticDirs: { '/gallery': './images', '/uploads': './uploads' },
   // Named image sizes — the URL only carries the src + size name, and the endpoint runs the transform lazily on request.
   image: {
     sizes: {

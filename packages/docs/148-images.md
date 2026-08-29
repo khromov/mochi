@@ -10,6 +10,7 @@ description: 'On-the-fly image transforms on Bun.Image via named sizes, with enc
   import Callout from './_components/Callout.svelte';
   import PersistenceTable from './_components/PersistenceTable.svelte';
   import placeholderShot from './images/image-placeholder.jpg';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Images
@@ -119,6 +120,50 @@ A bare `<Image src={hero}>` with no `size` renders the original at its intrinsic
 <Callout type="warning">
 
 Two edge cases. With `image.enabled: false` the `/_mochi/asset/…` route still serves the file, because that route is plain static serving and registers independently of the flag. The transform does not run: `<Image>` falls back to the raw static URL, while the `<img>` keeps the size's declared `width`/`height`, so the browser scales the full-size original into that box. And the [`image:url`](/docs/extensions/#imageurl) CDN-rewrite filter runs on minted transform URLs only, so the no-size static URL (`hero.src`) bypasses it. Use a `size` if you need local assets routed through the filter.
+
+</Callout>
+
+### Local files at runtime
+
+<VersionNote since="0.10.0" message="localImage ships in the next Mochi release (0.10.0). This section describes the upcoming API." />
+
+Imports are **build-time**: the file is baked into the build at compile. For a folder whose contents change **while the server runs** — uploads, generated images — mount it with [`staticDirs`](/docs/serve-options/#static-directories). Bun resolves a directory route per request, so a file is servable the moment it exists on disk. `localImage` probes such a file and hands it to the image pipeline:
+
+```ts
+Mochi.serve({
+  staticDirs: { '/uploads': './uploads' },
+  image: {
+    sizes: { thumb: { width: 240, height: 240 } },
+  },
+  // …
+});
+```
+
+```ts
+import { localImage, getImageUrl } from 'mochi-framework';
+
+// Write any time at runtime…
+await Bun.write('./uploads/cat.jpg', bytes);
+
+// …and read/serve it immediately — no restart, no registration.
+const img = await localImage('/uploads/cat.jpg');
+// img → { src: '/uploads/cat.jpg', width, height, format }
+```
+
+```svelte
+<Image src={img} size="thumb" alt="A runtime-served photo" />
+<img src={img.src} width={img.width} height={img.height} alt="" />
+```
+
+`localImage(urlPath)` takes the URL path the mount already serves the file at. It returns the same `ImportedImage` shape as a build-time import, so `<Image>`, `getImageUrl(img.src, 'thumb')`, and `placeholder` all work identically, and transforms read the bytes from disk instead of fetching. Probes are memoized per file and revalidated by mtime and size, so calling it per request is cheap. It is server-only and reads the running server's config — call it from `serverProps`, handlers, or component scripts, not at the module scope of a routes file.
+
+Because URLs are **path-addressed**, they survive restarts — store them in a database and render them years later. The flip side is that the bytes behind a URL are mutable, unlike the immutable content-hashed `/_mochi/asset/…` URLs of a build-time import.
+
+A mount serves any file type, but `localImage` and the transform pipeline require a raster-image extension (**png, jpg, jpeg, webp, avif, gif**); a `.zip` src is never a valid transform source. Reads are confined to the mounted root, so a `../` traversal resolves to nothing and throws.
+
+<Callout type="warning">
+
+The transform cache is keyed by `src` and serves stale-while-revalidate. After you **replace** a file in place, the mount serves the new bytes at once, but an already-minted transform URL keeps its cached output until `timeToStale`. Call `invalidateImage(img.src)` after overwriting a file, or write under a new name.
 
 </Callout>
 

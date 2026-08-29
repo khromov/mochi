@@ -41,6 +41,7 @@ import ImageIcon from '@lucide/svelte/icons/image';
 import ImageOff from '@lucide/svelte/icons/image-off';
 import CloudUpload from '@lucide/svelte/icons/cloud-upload';
 import WandSparkles from '@lucide/svelte/icons/wand-sparkles';
+import HardDrive from '@lucide/svelte/icons/hard-drive';
 import MonitorSmartphone from '@lucide/svelte/icons/monitor-smartphone';
 import Blend from '@lucide/svelte/icons/blend';
 import FileDown from '@lucide/svelte/icons/file-down';
@@ -126,6 +127,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Image: Invalidation': { icon: ImageOff, label: 'Clear a cached image on demand with invalidateImage()' },
   'Image: Events': { icon: CloudUpload, label: 'Mirror the <Image> cache via image:store / image:delete' },
   'Image: Named sizes': { icon: WandSparkles, label: 'Declarative named Bun.Image transform sizes' },
+  'Image: Filesystem': { icon: HardDrive, label: 'Runtime read/write image folders via staticDirs + localImage()' },
   'View Transitions': { icon: Blend, label: 'Animated cross-document navigations' },
   'Custom Transitions': { icon: Tornado, label: 'Custom @keyframes spin via custom={{ in, out }}' },
   'File Routes': { icon: FileDown, label: 'Serve a file from disk with Mochi.file()' },

@@ -2,12 +2,43 @@ import type { Storage } from '../cache/cache';
 
 export type ImageFormat = 'webp' | 'jpeg' | 'png' | 'avif';
 
+/** Raster image extensions that resolve to an `ImportedImage` object. SVG is excluded (Bun.Image can't decode it). */
+export const IMAGE_FILE_FILTER = /\.(png|jpe?g|webp|avif|gif)$/i;
+
 /**
  * Decoded formats a local image import can carry — the `Bun.Image` formats the build-time loader accepts. Broader than
  * {@link ImageFormat}, the transform output formats: gif imports and serves, while transforms target the narrower set.
  */
 export const IMPORTED_IMAGE_FORMATS = ['png', 'jpeg', 'webp', 'avif', 'gif'] as const;
 export type ImportedImageFormat = (typeof IMPORTED_IMAGE_FORMATS)[number];
+
+/** Canonical MIME type per decodable format ({@link ImageFormat} is a subset, so this covers transform outputs too). */
+export const IMAGE_MIME: Record<ImportedImageFormat, string> = {
+  png: 'image/png',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  avif: 'image/avif',
+  gif: 'image/gif',
+};
+
+/** Canonical file extension per format (jpeg → jpg). */
+export const IMAGE_EXT: Record<ImportedImageFormat, string> = {
+  png: 'png',
+  jpeg: 'jpg',
+  webp: 'webp',
+  avif: 'avif',
+  gif: 'gif',
+};
+
+/** Decoded format for each servable file extension — the inverse of {@link IMAGE_EXT}, plus the `jpeg` spelling. */
+export const IMAGE_FORMAT_BY_EXT: Record<string, ImportedImageFormat> = {
+  png: 'png',
+  jpg: 'jpeg',
+  jpeg: 'jpeg',
+  webp: 'webp',
+  avif: 'avif',
+  gif: 'gif',
+};
 
 /**
  * What a local image import resolves to (`import hero from './hero.png'`): `src` is a content-hashed, same-origin URL

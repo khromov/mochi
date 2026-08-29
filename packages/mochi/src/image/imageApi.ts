@@ -1,7 +1,9 @@
 import path from 'node:path';
-import { getImageAssetPrefix, getImageRuntime, getSize } from './config';
+import { getImageRuntime, getSize } from './config';
+import { getAssetPrefix } from '../mochiConfig';
 import { fetchImageSource } from './fetchSource';
 import { getLocalImageAsset } from './localAssetRegistry';
+import { resolveStaticDirImage } from './localImage';
 import { toPosixPath } from '../utils';
 import { encryptImageRequest } from './imageCrypto';
 import { variantId } from './imageCache';
@@ -78,7 +80,7 @@ function mintImageUrl(req: ImageRequest, filename: string, size: ResolvedImageSi
     return req.src;
   }
   const token = encryptImageRequest(req, filename, options.compressPayload);
-  const raw = `${getImageAssetPrefix()}/image/${filename}?p=${token}`;
+  const raw = `${getAssetPrefix()}/image/${filename}?p=${token}`;
   const url = applyFilter('image:url', raw, { src: req.src, filename, original: req.original === true });
   recordForDebugBar(url, filename, req, size);
   return url;
@@ -176,20 +178,23 @@ export function pushDebugImage(entry: ImageDebugEntry): void {
 }
 
 /**
- * For a locally-imported asset, recover the original file's display name + a
- * project-relative path from the registry (`sourcePath` is recorded only by the
- * in-process dev build loader). Lets the debug bar show `hero.jpg` and its source
- * path instead of the content-hashed served filename. Returns `undefined` when the
- * src isn't a local import (or its source path wasn't recorded, e.g. from a manifest).
+ * For a locally-imported asset or a `staticDirs`-served file, recover the original file's display name + a
+ * project-relative path (`sourcePath` is recorded only by the in-process dev build loader; mounted srcs resolve to their
+ * disk path). Lets the debug bar show `hero.jpg` and its source path instead of the content-hashed served filename.
+ * Returns `undefined` when the src isn't local (or its source path wasn't recorded, e.g. from a manifest).
  */
 function localSourceDisplay(src: string): { filename: string; sourcePath: string } | undefined {
-  const abs = getLocalImageAsset(src)?.sourcePath;
+  const abs = getLocalImageAsset(src)?.sourcePath ?? resolveStaticDirImage(src)?.diskPath;
   if (!abs) {
     return undefined;
   }
   const rel = path.relative(process.cwd(), abs);
   const display = rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel : abs;
   return { filename: path.basename(abs), sourcePath: toPosixPath(display) };
+}
+
+function isLocalSrc(src: string): boolean {
+  return getLocalImageAsset(src) !== undefined || resolveStaticDirImage(src) !== undefined;
 }
 
 function recordForDebugBar(url: string, filename: string, req: ImageRequest, size: ResolvedImageSize | undefined): void {
@@ -202,7 +207,7 @@ function recordForDebugBar(url: string, filename: string, req: ImageRequest, siz
     filename: local?.filename ?? filename,
     kind: 'url',
     size: req.size,
-    local: getLocalImageAsset(req.src) !== undefined,
+    local: isLocalSrc(req.src),
     sourcePath: local?.sourcePath,
     params: { src: req.src, ...(size ? { width: size.width, height: size.height, format: size.format, quality: size.quality } : { original: true }) },
   });
@@ -221,7 +226,7 @@ function recordInlineForDebugBar(src: string, size: ResolvedImageSize | undefine
       filename: local?.filename ?? (size ? buildImageFilename(src, size) : buildOriginalFilename(src)),
       kind: 'inline',
       size: size?.name,
-      local: getLocalImageAsset(src) !== undefined,
+      local: isLocalSrc(src),
       sourcePath: local?.sourcePath,
       params: { src, width: result.width, height: result.height, format: result.format },
     });
@@ -320,3 +325,7 @@ export async function invalidateImage(src: string, opts: InvalidateImageOptions 
   const { cache } = getImageRuntime();
   await cache.invalidateOriginal(src, opts.hard ?? false);
 }
+
+// Runtime staticDirs lookup — re-exported here so the `__MOCHI_IMAGE_API__`
+// virtual-module token covers it for .svelte files alongside the other image APIs.
+export { localImage } from './localImage';

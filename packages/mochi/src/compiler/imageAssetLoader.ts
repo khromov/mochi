@@ -3,12 +3,11 @@ import path from 'node:path';
 import { toPosixPath } from '../utils';
 import { slugForImport } from '../image/slug';
 import { registerLocalImageAsset } from '../image/localAssetRegistry';
-import { IMPORTED_IMAGE_FORMATS } from '../image/types';
+import { IMAGE_MIME, IMPORTED_IMAGE_FORMATS } from '../image/types';
 import type { ImportedImageFormat, LocalImageAsset } from '../image/types';
 import { applyFilter, runHook } from '../extensions';
 
-/** Raster image extensions that resolve to an `ImportedImage` object. SVG is excluded (Bun.Image can't decode it). */
-export const IMAGE_FILE_FILTER = /\.(png|jpe?g|webp|avif|gif)$/i;
+export { IMAGE_FILE_FILTER } from '../image/types';
 
 // `Bun.Image#metadata().format` values we accept. Guards against a file whose
 // extension lies about its contents (e.g. an SVG renamed to `.png`).
@@ -86,7 +85,7 @@ export function createImageAssetLoader(opts: { outDir: string; assetPrefix: stri
       );
     }
 
-    const contentType = `image/${format}`;
+    const contentType = IMAGE_MIME[format];
     const asset: LocalImageAsset = { src: url, width: meta.width, height: meta.height, format, diskPath: toPosixPath(diskPath), contentType };
     opts.assets.set(url, asset);
     registerLocalImageAsset(url, { diskPath, contentType, sourcePath: args.path });
