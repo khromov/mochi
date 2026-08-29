@@ -4,7 +4,7 @@ import { applyResolveOptions } from './hooks';
 import { logger } from '../utils/log';
 import { MochiHttpError } from '../utils';
 import { getClientAddress, type MochiProxyOptions } from './proxy';
-import { requestContext, type MochiRequestContext } from './requestContext';
+import { requestContext, cspNonceStore, type MochiRequestContext } from './requestContext';
 import { finalizeCookieHeaders, MochiCookieJar, type CookieSerializeOptions } from './cookies';
 
 export const DEFAULT_ERROR_PAGE_PATH = Bun.fileURLToPath(new URL('../templates/DefaultError.svelte', import.meta.url));
@@ -53,6 +53,9 @@ export function createErrorResponder(deps: ErrorResponderDeps): {
       isWarmup: false,
       cookies: new MochiCookieJar(input.req.headers.get('Cookie'), cookieDefaults),
       islandProps: new Map(),
+      // Minted by the fetch fallback before middleware ran, so the error page's scripts carry the same nonce the
+      // app's `Content-Security-Policy` will name.
+      cspNonce: cspNonceStore.getStore(),
       // Wired like buildRequestContext's, so an error page sees the same client address on a 404 as on a 500.
       getClientAddress: () => getClientAddress(input.req, input.event.server.requestIP(input.req)?.address ?? null, proxy),
     };

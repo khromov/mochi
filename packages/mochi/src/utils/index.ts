@@ -281,19 +281,49 @@ type RouteFn = (req: Request, server: Server<undefined>) => Response | Promise<R
  * 405s an unlisted HEAD. `Response` and `BunFile` pass through untouched, as Bun serves their HEAD itself.
  */
 export function withHead(value: BunRouteValue): BunRouteValue {
-  if (typeof value === 'function') {
-    const fn = value as RouteFn;
-    return async (req, server) => {
+  return mapRouteHandlers(value, {
+    fn: (fn) => async (req, server) => {
       const res = await fn(req, server);
       return req.method === 'HEAD' ? headResponse(res) : res;
-    };
+    },
+    record: (rec) => {
+      const get = rec.GET;
+      return get && !rec.HEAD ? { ...rec, HEAD: async (req, server) => headResponse(await get(req, server)) } : rec;
+    },
+  });
+}
+
+/**
+ * Apply `fn`/`record` to whichever shape a `BunRouteValue` takes, leaving the rest alone. The discrimination is subtle
+ * enough to be worth having in one place: a `Response`, a `BunFile` and Bun's `{ dir }` directory route are all
+ * `object`, none of them are handlers, and calling one as a handler throws on the first request.
+ */
+function mapRouteHandlers(value: BunRouteValue, map: { fn: (fn: RouteFn) => RouteFn; record: (rec: Record<string, RouteFn>) => Record<string, RouteFn> }): BunRouteValue {
+  if (typeof value === 'function') {
+    return map.fn(value as RouteFn);
   }
   if (value && typeof value === 'object' && !(value instanceof Response) && !(value instanceof Blob)) {
-    const rec = value as Record<string, RouteFn>;
-    const get = rec.GET;
-    if (get && !rec.HEAD) {
-      return { ...rec, HEAD: async (req, server) => headResponse(await get(req, server)) };
+    const rec = value as Record<string, unknown>;
+    // Every value has to be a handler before this is a method map: Bun also accepts `{ dir }` and static per-method
+    // Responses, which must pass through untouched rather than get wrapped and later invoked.
+    if (Object.values(rec).every((entry) => typeof entry === 'function')) {
+      return map.record(rec as Record<string, RouteFn>) as unknown as BunRouteValue;
     }
   }
   return value;
+}
+
+/** Wrap every handler in a route value so `decorate` sees each response it produces. Static values pass through untouched. */
+export function mapRouteResponse(value: BunRouteValue, decorate: (res: Response) => Response): BunRouteValue {
+  return mapRouteHandlers(value, {
+    fn: (fn) => async (req, server) => decorate(await fn(req, server)),
+    record: (rec) => {
+      const wrapped: Record<string, RouteFn> = {};
+      for (const method in rec) {
+        const handler = rec[method]!;
+        wrapped[method] = async (req, server) => decorate(await handler(req, server));
+      }
+      return wrapped;
+    },
+  });
 }

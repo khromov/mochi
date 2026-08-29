@@ -5,6 +5,9 @@ export const isBuilding = false;
 // declaration (tree-shaken when unused); this helper is pulled in only if one is.
 const __serverOnly = (n) => { throw new Error(n + " is only available on the server"); };
 export function getRequestContext() { __serverOnly("getRequestContext()"); }
+// Undefined rather than a throwing stub: a top-level island read runs again during
+// hydration, where there is no nonce to hand out and a throw would break the pass.
+export function getCspNonce() { return undefined; }
 // Lazy cookie jar + /*@__PURE__*/ initializers keep this module tree-shakeable:
 // if an island imports only e.g. `logger`, the bundler drops `cookies` and the
 // whole cookies.client.ts tree instead of eagerly evaluating __cc() at load.

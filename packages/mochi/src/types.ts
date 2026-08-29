@@ -1,4 +1,4 @@
-import type { BunFile, Server, ServerWebSocket } from 'bun';
+import type { BunFile, Server, ServerWebSocket, WebSocketHandler } from 'bun';
 import type { Handle, HandleError, MochiEvent } from './runtime/hooks';
 import type { MochiCookieJar } from './runtime/cookies';
 import type { MochiCsrfOptions } from './runtime/csrf';
@@ -13,6 +13,12 @@ import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions, Moc
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
 import type { SpeculationRules } from './runtime/speculationRules';
+import type { MochiSecurityHeadersOptions } from './runtime/security';
+
+export interface MochiRedirectOptions {
+  /** Absolute origins `redirect()` may target, beyond this server's own. */
+  trustedOrigins?: string[];
+}
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | MochiRedirect | Promise<Record<string, unknown> | MochiRedirect>;
 
@@ -122,6 +128,18 @@ export interface MochiRedirect {
   readonly __mochiRedirect: true;
   readonly status: 301 | 302 | 303 | 307 | 308;
   readonly location: string;
+  /** Set by `redirect(status, location, { external: true })`; waives the same-origin guard for this one call. */
+  readonly external?: boolean;
+}
+
+export interface MochiRedirectInit {
+  /**
+   * Send the visitor off-origin without listing the destination in
+   * `redirect.trustedOrigins`. Use it only for a location your own code builds —
+   * never one derived from request data, which is the open-redirect the guard
+   * exists to stop. Header-injection checks still apply.
+   */
+  external?: boolean;
 }
 
 /** Returned by `success()`; re-renders the entry component with a `form` prop marking the action succeeded, with status 200. */
@@ -475,6 +493,54 @@ export interface MochiServeOptions {
   shutdownTimeout?: number;
   /** Path to a prebuilt manifest JSON. Defaults to `.mochi/manifest.json`. */
   manifest?: string;
+  /**
+   * Baseline security response headers. On by default, sending
+   * `X-Content-Type-Options: nosniff` and `Referrer-Policy:
+   * strict-origin-when-cross-origin`. `X-Frame-Options` is opt-in
+   * (`{ frameOptions: 'SAMEORIGIN' }`) because it can't express an allow-list and
+   * would break legitimate cross-origin embeds; prefer CSP `frame-ancestors`.
+   * Pass `false` to drop the defaults, and add HSTS/CSP via the
+   * `security:headers` filter or middleware.
+   */
+  securityHeaders?: boolean | MochiSecurityHeadersOptions;
+  /**
+   * Harden every cookie set through the request jar: `HttpOnly`, `SameSite=Lax`,
+   * and — outside development — `Secure`. **On by default.**
+   *
+   * `HttpOnly` hides the cookie from client JS, which also stops the browser
+   * overwriting or deleting it: a cookie you read or write from an island needs
+   * `cookies.set(name, value, { httpOnly: false })`. `Secure` means a production
+   * server reached over plain HTTP sets no jar cookies at all.
+   *
+   * Opt out per cookie as above, globally with the `cookie:defaults` filter, or
+   * entirely with `false`.
+   */
+  secureCookies?: boolean;
+  /**
+   * Generate a per-request CSP nonce and stamp it on every framework-emitted
+   * executable `<script>` tag. Off by default; when off, rendered HTML is
+   * unchanged. Turn it on, read the value with `getCspNonce()`, and emit your
+   * own `Content-Security-Policy` header (e.g. in middleware) — the framework
+   * does not set the CSP header itself, since directives are app-specific.
+   */
+  csp?: boolean;
+  /**
+   * Bun WebSocket tuning shared by every `Mochi.ws` route. The lifecycle
+   * callbacks (`open`/`message`/`close`/`drain`) are owned by the framework and
+   * cannot be set here — use these to cap resource use:
+   * `maxPayloadLength` (reject oversized frames), `backpressureLimit` +
+   * `closeOnBackpressureLimit` (drop slow clients), and `idleTimeout`.
+   * `ping`/`pong` are yours: the framework never sets them, and they reach Bun
+   * unchanged.
+   */
+  websocket?: Omit<WebSocketHandler<unknown>, 'open' | 'message' | 'close' | 'drain'>;
+  /**
+   * Where `redirect()` may send a visitor. Same-origin and relative locations
+   * always pass; list an absolute origin here to allow it too (an identity
+   * provider, say). Kept separate from `csrf.trustedOrigins` on purpose —
+   * that list says who may send *us* requests, which is a different question.
+   */
+  redirect?: MochiRedirectOptions;
   routes?: Record<string, MochiRouteValue>;
   /**
    * Background job queues to start with the server: an array of `Mochi.queue(name, { process, … })` descriptors.

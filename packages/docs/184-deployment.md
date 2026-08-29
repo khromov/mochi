@@ -14,6 +14,12 @@ Mochi is a **serverful** application, so it does not run on every serverless hos
 
 You can host Bun and Mochi at hundreds of hosts. Some popular options are below. For how a build behaves once it is deployed — relocatable output, a persistent image cache — see [Production builds](/docs/production-builds/).
 
+<Callout type="warning">
+
+Before deploying, set `proxy.origin` (or `proxy.hostHeader`) so the CSRF, WebSocket and redirect origin checks know which origin to trust — otherwise they block every cross-origin state-changing request, and every absolute `redirect()` target, in production. See [Security](/docs/security/) for the full production checklist.
+
+</Callout>
+
 <Callout type="info">
 
 None of the links below are affiliate links or endorsements.

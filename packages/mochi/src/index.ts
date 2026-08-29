@@ -15,10 +15,11 @@ export type { RunTestsOptions } from './cli/testing';
 export type { MochiSvelteConfig } from './compiler/svelteConfig';
 export type { MochiSvelteCompiler, SvelteCompilerBackend, SvelteCompileOutput } from './compiler/svelteCompilerBackend';
 export type { ShakeAppResult, SvelteShakerBackend } from './compiler/svelteShaker';
-export { getRequestContext } from './runtime/requestContext';
+export { getRequestContext, getCspNonce } from './runtime/requestContext';
 export type { MochiRequestContext } from './runtime/requestContext';
 export { getMochiConfig } from './mochiConfig';
 export type { CookieSerializeOptions, Cookie } from './runtime/cookies';
+export type { MochiSecurityHeadersOptions } from './runtime/security';
 export { MochiCache } from './cache/cache';
 export type { MochiCacheOptions, CacheResult, CacheStatus, Storage, SweepOptions, SweepResult } from './cache/cache';
 export { requestCache, requestMemo, getRequestCache } from './runtime/requestCache';
@@ -202,6 +203,7 @@ export type {
   MochiFormActionHandler,
   MochiFormEvent,
   MochiRedirect,
+  MochiRedirectInit,
   MochiEnhanceOptions,
   MochiEnhanceResult,
   MochiFormShape,
@@ -209,6 +211,7 @@ export type {
   MochiSubmitCallback,
   HttpMethod,
   MochiServeOptions,
+  MochiRedirectOptions,
   MochiWorkerOptions,
   MochiWarmupOptions,
   MochiRouteValue,

@@ -68,6 +68,129 @@ export function isFormContentType(contentType: string | null, formContentTypes: 
 }
 
 /**
+ * Why a block was decided, so callers can build their own response and log line.
+ * `unconfigured` — no expected origin is configured, so nothing can be trusted.
+ * `mismatch` — the request's `Origin` is neither the expected origin nor trusted.
+ */
+export type OriginBlock = { kind: 'unconfigured'; origin: string | null } | { kind: 'mismatch'; origin: string | null; expectedOrigin: string };
+
+/**
+ * Single comparison rule for every origin allowlist in the framework (CSRF,
+ * WebSocket upgrades, the redirect guard): an origin is allowed when it matches
+ * the expected origin or any entry in the caller's allow-list, all compared with
+ * default ports stripped. The lists differ per subsystem — `csrf.trustedOrigins`
+ * says who may send us requests, `redirect.trustedOrigins` where we may send our
+ * visitors — but the comparison must not.
+ */
+export function matchesAllowedOrigin(origin: string, expectedOrigin: string, trustedOrigins: ReadonlySet<string>): boolean {
+  const normalized = normalizeOrigin(origin);
+  if (normalized === normalizeOrigin(expectedOrigin)) {
+    return true;
+  }
+  return [...trustedOrigins].some((t) => normalizeOrigin(t) === normalized);
+}
+
+/**
+ * This server's own origin, or `null` when nothing configured makes it trustworthy: without `proxy.origin` or
+ * `proxy.hostHeader` the only evidence is the client's own `Host` header, which an attacker sets freely. Every
+ * origin decision in the framework — CSRF, WebSocket upgrades, the redirect guard — starts here, so none of them
+ * can end up trusting a spoofed host while the others refuse to.
+ */
+export function trustedSelfOrigin(request: Request, url: URL, proxy: MochiProxyOptions | undefined): string | null {
+  return proxy?.origin || proxy?.hostHeader ? resolveExpectedOrigin(request, url, proxy) : null;
+}
+
+/**
+ * Shared Origin-comparison core for both the CSRF check (form POSTs) and the
+ * WebSocket upgrade check. Returns `null` when the request's `Origin` is trusted
+ * (allow), or an `OriginBlock` describing why it should be rejected. The two
+ * callers diverge on how a block becomes a response and what they log — form
+ * submissions and socket upgrades differ in both — so that stays out here.
+ */
+export function evaluateOrigin(request: Request, url: URL, proxy: MochiProxyOptions | undefined, trustedOrigins: ReadonlySet<string>): OriginBlock | null {
+  const expectedOrigin = trustedSelfOrigin(request, url, proxy);
+  if (expectedOrigin === null) {
+    return { kind: 'unconfigured', origin: request.headers.get('origin') };
+  }
+
+  const origin = request.headers.get('origin');
+  if (origin && matchesAllowedOrigin(origin, expectedOrigin, trustedOrigins)) {
+    return null;
+  }
+  return { kind: 'mismatch', origin, expectedOrigin };
+}
+
+/** `Upgrade` is a comma-separated token list, so `websocket, keep-alive` is a WebSocket upgrade too — and Bun's `server.upgrade()` accepts it. */
+export function isWebSocketUpgrade(header: string | null): boolean {
+  return header !== null && header.split(',').some((token) => token.trim().toLowerCase() === 'websocket');
+}
+
+/**
+ * Origin check for WebSocket upgrades. Browsers send `Origin` on the upgrade
+ * request, but — unlike `fetch` — the same-origin policy does not stop a page on
+ * another site from opening a socket to this server. Without this check any
+ * origin can connect and ride the visitor's cookies (Cross-Site WebSocket
+ * Hijacking). Mirrors the CSRF model: safe by default in production (rejects
+ * until `proxy.origin`/`proxy.hostHeader` is configured), warns and allows in
+ * development. Bypass with `csrf.checkOrigin === false` or `csrf.trustedOrigins`.
+ *
+ * An upgrade with no `Origin` header is always allowed: only browsers attach
+ * ambient credentials, and browsers always send `Origin` on upgrade requests,
+ * so a missing header means a non-browser client (server-to-server, native
+ * apps, CLIs) that CSWSH can't exploit — blocking it would only break them.
+ *
+ * Returns a 403 `Response` to reject the upgrade, or `null` to allow it.
+ */
+export function checkWsOrigin(
+  request: Request,
+  url: URL,
+  csrf: MochiCsrfOptions | undefined,
+  proxy: MochiProxyOptions | undefined,
+  development: boolean,
+  trustedOrigins: ReadonlySet<string> = new Set(csrf?.trustedOrigins ?? []),
+): Response | null {
+  if (csrf?.checkOrigin === false) {
+    return null;
+  }
+
+  if (!request.headers.get('origin')) {
+    return null;
+  }
+
+  const block = evaluateOrigin(request, url, proxy, trustedOrigins);
+  if (!block) {
+    return null;
+  }
+
+  const forbidden = (): Response => new Response('WebSocket upgrade forbidden', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+
+  if (block.kind === 'unconfigured') {
+    if (development) {
+      logger.warn(
+        `CSRF: WebSocket upgrade ${url.pathname} would be blocked in production: no proxy.origin or proxy.hostHeader configured, so the expected origin can't be trusted. Set Mochi.serve({ proxy: { origin: '...' } }) before deploying.`,
+      );
+      return null;
+    }
+    logger.warn(
+      `CSRF: blocking WebSocket upgrade ${url.pathname} from origin ${block.origin ?? '<missing>'}: no proxy.origin or proxy.hostHeader configured, so the expected origin can't be trusted. Set Mochi.serve({ proxy: { origin: '...' } }).`,
+    );
+    return forbidden();
+  }
+
+  if (development) {
+    logger.warn(
+      `CSRF: cross-site WebSocket upgrade ${url.pathname} from origin ${block.origin ?? '<missing>'} would be blocked in production (allowed: ${block.expectedOrigin}). Add it to csrf.trustedOrigins or set csrf.checkOrigin: false to allow.`,
+    );
+    return null;
+  }
+
+  logger.warn(
+    `CSRF: blocking WebSocket upgrade ${url.pathname} — origin ${block.origin ?? '<missing>'} does not match expected ${block.expectedOrigin} (and is not in csrf.trustedOrigins=[${[...trustedOrigins].join(', ') || '<empty>'}]).`,
+  );
+  return forbidden();
+}
+
+/**
  * Boot-time visibility for a production-only failure: without a trusted origin every form-action POST 403s in
  * production while development only warns per-request — invisible until deploy. Returns the warning line, or null.
  * The page marker is checked structurally ("__mochiPage") because importing types.ts here would be a module cycle.
@@ -130,8 +253,12 @@ function csrfCheckDefault(
     return null;
   }
 
-  const expectedOriginConfigured = Boolean(proxy?.origin || proxy?.hostHeader);
-  if (!expectedOriginConfigured) {
+  const block = evaluateOrigin(request, url, proxy, trustedOrigins);
+  if (!block) {
+    return null;
+  }
+
+  if (block.kind === 'unconfigured') {
     if (development) {
       logger.warn(
         `CSRF: ${request.method} ${url.pathname} would be blocked in production: no proxy.origin or proxy.hostHeader configured, so the expected origin can't be trusted. Set Mochi.serve({ proxy: { origin: '...' } }) before deploying.`,
@@ -141,31 +268,20 @@ function csrfCheckDefault(
     const message = `Cross-site ${request.method} form submissions are forbidden`;
     const reason = 'Mochi is running in production mode without proxy.origin or proxy.hostHeader configured.';
     logger.warn(
-      `CSRF: blocking ${request.method} ${url.pathname} from origin ${request.headers.get('origin') ?? '<missing>'}: no proxy.origin or proxy.hostHeader configured, so the expected origin can't be trusted. Set Mochi.serve({ proxy: { origin: '...' } }).`,
+      `CSRF: blocking ${request.method} ${url.pathname} from origin ${block.origin ?? '<missing>'}: no proxy.origin or proxy.hostHeader configured, so the expected origin can't be trusted. Set Mochi.serve({ proxy: { origin: '...' } }).`,
     );
     return csrfForbidden(request, message, reason);
   }
 
-  const expectedOrigin = resolveExpectedOrigin(request, url, proxy);
-  const origin = request.headers.get('origin');
-  const expectedNormalized = normalizeOrigin(expectedOrigin);
-  const originNormalized = origin ? normalizeOrigin(origin) : null;
-  if (originNormalized && originNormalized === expectedNormalized) {
-    return null;
-  }
-  if (originNormalized && [...trustedOrigins].some((t) => normalizeOrigin(t) === originNormalized)) {
-    return null;
-  }
-
   if (development) {
     logger.warn(
-      `CSRF: cross-site ${request.method} ${url.pathname} from origin ${origin ?? '<missing>'} would be blocked in production (allowed: ${expectedOrigin}). Add it to csrf.trustedOrigins or set csrf.checkOrigin: false to allow.`,
+      `CSRF: cross-site ${request.method} ${url.pathname} from origin ${block.origin ?? '<missing>'} would be blocked in production (allowed: ${block.expectedOrigin}). Add it to csrf.trustedOrigins or set csrf.checkOrigin: false to allow.`,
     );
     return null;
   }
 
   logger.warn(
-    `CSRF: blocking ${request.method} ${url.pathname} — origin ${origin ?? '<missing>'} does not match expected ${expectedOrigin} (and is not in csrf.trustedOrigins=[${[...trustedOrigins].join(', ') || '<empty>'}]).`,
+    `CSRF: blocking ${request.method} ${url.pathname} — origin ${block.origin ?? '<missing>'} does not match expected ${block.expectedOrigin} (and is not in csrf.trustedOrigins=[${[...trustedOrigins].join(', ') || '<empty>'}]).`,
   );
   const message = `Cross-site ${request.method} form submissions are forbidden`;
   return csrfForbidden(request, message);

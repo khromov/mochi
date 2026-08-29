@@ -5,6 +5,7 @@ import { extractParams } from '../utils';
 import { applyFilter } from '../extensions';
 import { trailingSlashRedirect, type TrailingSlashPolicy } from './trailingSlash';
 import { MochiCookieJar, type CookieSerializeOptions } from './cookies';
+import { generateCspNonce } from './security';
 import { mochiEvents } from '../events';
 import { isWarmupRequest } from './warmup';
 import type { MochiRequestContext } from './requestContext';
@@ -19,6 +20,7 @@ export interface RequestSetupConfig {
   csrf: MochiCsrfOptions | undefined;
   trailingSlashPolicy: TrailingSlashPolicy | undefined;
   cookieDefaults: CookieSerializeOptions;
+  csp: boolean;
   development: boolean;
   debugBarEnabled: boolean;
   formContentTypes: ReadonlySet<string>;
@@ -146,6 +148,10 @@ export function makeRequestContextBuilder(cfg: RequestSetupConfig): RequestConte
       islandProps: new Map(),
       getClientAddress: () => getClientAddress(req, server.requestIP(req)?.address ?? null, cfg.proxy),
     };
+
+    if (cfg.csp) {
+      ctx.cspNonce = generateCspNonce();
+    }
 
     if (policy.debugBar && cfg.debugBarEnabled) {
       ctx.debugBarData = {

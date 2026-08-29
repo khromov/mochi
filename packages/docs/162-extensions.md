@@ -151,6 +151,8 @@ await Mochi.serve({
 
 Default `CookieSerializeOptions` merged into every `cookies.set()` call. Per-call options win per field. Resolved once at startup. Sync.
 
+The value it receives is the `secureCookies` baseline — `{ httpOnly: true, sameSite: 'lax', secure: <production> }` by default — so spread it to adjust one field rather than replacing the lot.
+
 ```ts
 await Mochi.serve({
   filters: {

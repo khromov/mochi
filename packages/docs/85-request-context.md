@@ -73,6 +73,8 @@ Read and write cookies on the server and the client through one API. See the [Co
 </script>
 ```
 
+Cookies written on the **server** are `HttpOnly` by default, which hides them from the browser and blocks client-side writes to the same name. A cookie both sides touch needs `cookies.set(name, value, { httpOnly: false })` where the server sets it — see [Secure cookies](/docs/security/#secure-cookies).
+
 ### `locals`
 
 Per-request data set by middleware. Server-only.

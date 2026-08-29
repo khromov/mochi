@@ -30,6 +30,7 @@ import type {
   MochiFileConfig,
   MochiFileResolver,
   MochiPageConfig,
+  MochiRedirect,
   MochiPageHandlerConfig,
   MochiFormActionResult,
   MochiFormActions,
@@ -47,7 +48,17 @@ import type {
 } from './types';
 import { isFormFail, isFormSuccess, isRedirect } from './runtime/forms';
 import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } from './runtime/formsJson';
-import { csrfCheck, csrfBootWarning, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
+import {
+  csrfCheck,
+  csrfBootWarning,
+  checkWsOrigin,
+  isWebSocketUpgrade,
+  matchesAllowedOrigin,
+  trustedSelfOrigin,
+  DEFAULT_FORM_CONTENT_TYPES,
+  DEFAULT_PROTECTED_METHODS,
+} from './runtime/csrf';
+import { applyDefaultSecurityHeaders, generateCspNonce, inlineScript, nonceAttr, resolveSecurityHeaders } from './runtime/security';
 import { applyFilter, initExtensions, runHook } from './extensions';
 import { escapeHtmlAttr } from './utils/htmlEscape';
 import { buildPublicUrl } from './runtime/proxy';
@@ -65,6 +76,7 @@ import {
   relForDisplay,
   toPosixPath,
   withHead,
+  mapRouteResponse,
 } from './utils';
 import { serveDiskAsset } from './utils/serveDiskAsset';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './runtime/hooks';
@@ -72,7 +84,7 @@ import { applyResolveOptions } from './runtime/hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './runtime/trailingSlash';
 import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './runtime/warmup';
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
-import { requestContext } from './runtime/requestContext';
+import { requestContext, getCspNonce, cspNonceStore } from './runtime/requestContext';
 import type { MochiRequestContext } from './runtime/requestContext';
 import type { SpeculationRules } from './runtime/speculationRules';
 import {
@@ -96,7 +108,7 @@ import { pinGlobal } from './utils/globalState';
 import { resetStartupMilestones } from './lifecycle';
 import type { MochiQueue, MochiQueueOptions, MochiQueueDescriptor, MochiQueueStorage, MochiWorker } from './queue';
 import type { BunBoss } from 'bun-boss';
-import { finalizeCookieHeaders, MochiCookieJar } from './runtime/cookies';
+import { finalizeCookieHeaders, MochiCookieJar, type CookieSerializeOptions } from './runtime/cookies';
 import { makeRequestContextBuilder, mirrorsSlashForm } from './runtime/requestSetup';
 import { createRouteLimiter, applyRateLimitHeaders } from './runtime/rateLimit';
 import type { MochiRateLimitOptions, MochiRateLimitStore, RouteLimiter } from './runtime/rateLimit';
@@ -171,6 +183,68 @@ function jsonForHtml(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
+// Reserved TLD, so no real destination can collide with it: a location that resolves back to this base carried no
+// origin of its own and is therefore relative — same-origin by construction, whatever host the browser used.
+const RELATIVE_BASE = 'https://relative.invalid';
+
+/** Schemes that can run script or read local content instead of navigating somewhere — never a legitimate `redirect()` target. */
+const SCRIPTABLE_PROTOCOLS: ReadonlySet<string> = new Set(['javascript:', 'data:', 'vbscript:', 'blob:', 'filesystem:', 'file:', 'view-source:']);
+
+/**
+ * Guard against open redirects: `redirect()` writes its `location` straight into a `Location` header (and the enhanced
+ * client passes it to `window.location.assign`), so a value influenced by request data — an echoed `?next=` param, say
+ * — could bounce visitors to a phishing site. Relative locations always pass; an absolute one has to match the
+ * expected origin or an entry in `redirect.trustedOrigins`.
+ *
+ * `expectedOrigin` is `null` when nothing configured makes this server's own origin trustworthy (no `proxy.origin` or
+ * `proxy.hostHeader`, leaving only the client's `Host` header to go on) — the same rule the CSRF check applies, since
+ * a spoofed `Host` would otherwise make any origin "same-origin".
+ */
+function isSafeRedirectLocation(location: string, expectedOrigin: string | null, trustedOrigins: ReadonlySet<string>, external = false): boolean {
+  // Control chars and newlines can split headers or trick URL parsers. Checked even for an `external` redirect: that
+  // opt-out is about which origin a caller vouches for, never about letting a header injection through.
+  for (let i = 0; i < location.length; i++) {
+    const code = location.charCodeAt(i);
+    if (code <= 0x1f || code === 0x7f) {
+      return false;
+    }
+  }
+  // Whether `https:/evil.example` is a path or a host depends on the scheme of the URL it is resolved against, so the
+  // scheme is detected here rather than inferred from a parse: a fixed base would read it as relative while the
+  // browser, resolving against a page on a different scheme, reads it as another origin.
+  const trimmed = location.replace(/^ +/, '');
+  const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed);
+  let resolved: URL;
+  try {
+    resolved = hasScheme ? new URL(trimmed) : new URL(trimmed, RELATIVE_BASE);
+  } catch {
+    return false;
+  }
+  // Checked on the parsed protocol, so ` JavaScript:…` can't slip past on whitespace or case, and checked before the
+  // `external` waiver: these are never a destination, and the enhanced client hands `location` to
+  // `window.location.assign()`, where `javascript:` executes in the current document.
+  if (SCRIPTABLE_PROTOCOLS.has(resolved.protocol)) {
+    return false;
+  }
+  if (external) {
+    return true;
+  }
+  // A path with no scheme of its own resolves against whatever origin the browser actually used. Anything that landed
+  // off the sentinel — `//host`, `/\host` — carried an authority and is judged on its origin below.
+  if (!hasScheme && resolved.origin === RELATIVE_BASE) {
+    return true;
+  }
+  // A scheme that cannot render a web page — mailto:, tel:, sms:, an app's own deep link — can't host the lookalike
+  // login form this guard exists to prevent, so it needs no allow-listing.
+  if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
+    return true;
+  }
+  if (expectedOrigin === null) {
+    return false;
+  }
+  return matchesAllowedOrigin(resolved.origin, expectedOrigin, trustedOrigins);
+}
+
 /**
  * `createShellRenderer` bakes the static `window.__mochi_debug` fields into the cached body, so per-request headers and cookies have to be appended
  * afterwards for cache hits to stay accurate. The trailing script is synchronous so it lands before the deferred debug-bar module runs `onMount`.
@@ -190,7 +264,7 @@ async function appendDebugTail(response: Response, ctx: MochiRequestContext, dev
     requestCookies: ctx.cookies.peekAll().map(({ name, value }) => [name, value]),
   };
   const body = await response.text();
-  const tail = `<script>Object.assign((window.__mochi_debug||={}),${jsonForHtml(dynamic)})</script>`;
+  const tail = `<script${nonceAttr(ctx.cspNonce)}>Object.assign((window.__mochi_debug||={}),${jsonForHtml(dynamic)})</script>`;
   return new Response(body + tail, {
     status: response.status,
     statusText: response.statusText,
@@ -308,17 +382,24 @@ export class Mochi {
   ): (result: RenderResult, opts?: { debugInfo?: DebugBarData; pageEntry?: string }) => string {
     const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate, getSpeculationRules, fontPreload } = config;
 
-    const logLevelScript = logLevel === DEFAULT_LOG_LEVEL ? '' : `<script>window.__mochi_log_level=${JSON.stringify(logLevel)}</script>`;
-    // Feeds the debug bar's Warnings panel. When the debug bar is off the
-    // single `window.__mochi_warn?.(...)` call site no-ops via optional chaining.
-    const warnShim = registry.debugBarEnabled
-      ? `<script>window.__mochi_warnings=[];window.__mochi_warn=function(m){console.warn("[mochi] "+m);window.__mochi_warnings.push(m)}</script>`
-      : '';
     const cssStylePrefix = `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty, mochi-hydratable-island[hydrate-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
       registry.development ? ISLAND_FAILURE_DEV_CSS : ''
     }</style>\n`;
-    const serverIslandScript = `<script>(()=>{${serverIslandClientJs}})()</script>`;
-    const liveReloadTail = liveReloadClientJs ? `<script>${liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : '';
+    // Every fragment interpolates the nonce at its own tag boundary — nothing rewrites a finished string, so a
+    // `"<script"` substring inside an inlined bundle can never take an injected attribute. Rebuilt only when the
+    // nonce changes, so with `csp` off (the default) this runs once and the output stays byte-identical.
+    const buildScripts = (attr: string): { logLevel: string; warnShim: string; serverIsland: string; liveReloadTail: string } => ({
+      logLevel: logLevel === DEFAULT_LOG_LEVEL ? '' : inlineScript(`window.__mochi_log_level=${JSON.stringify(logLevel)}`, attr),
+      // Feeds the debug bar's Warnings panel. When the debug bar is off the
+      // single `window.__mochi_warn?.(...)` call site no-ops via optional chaining.
+      warnShim: registry.debugBarEnabled
+        ? inlineScript('window.__mochi_warnings=[];window.__mochi_warn=function(m){console.warn("[mochi] "+m);window.__mochi_warnings.push(m)}', attr)
+        : '',
+      serverIsland: inlineScript(`(()=>{${serverIslandClientJs}})()`, attr),
+      liveReloadTail: liveReloadClientJs ? `${inlineScript(liveReloadClientJs, attr)}<mochi-live-reload></mochi-live-reload>` : '',
+    });
+    let scriptsAttr = '';
+    let scripts = buildScripts('');
     const toolbarDiv = registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : '';
     const assetPrefixJson = JSON.stringify(registry.assetPrefix);
 
@@ -328,7 +409,7 @@ export class Mochi {
 
     // Same deal for the speculation-rules payload: serialize once, re-serialize only when a dev entry edit swaps the object.
     let specRulesFrom: SpeculationRules | undefined | null = null;
-    let speculationRulesScript = '';
+    let specRulesJson = '';
 
     return (result, opts) => {
       const template = getTemplate();
@@ -341,7 +422,7 @@ export class Mochi {
       if (specRules !== specRulesFrom) {
         specRulesFrom = specRules;
         const count = (specRules?.prefetch?.length ?? 0) + (specRules?.prerender?.length ?? 0);
-        speculationRulesScript = count > 0 ? `<script type="speculationrules">${jsonForHtml(specRules)}</script>` : '';
+        specRulesJson = count > 0 ? jsonForHtml(specRules) : '';
       }
 
       const bootstrapUrl = result.bootstrapUrl;
@@ -349,17 +430,27 @@ export class Mochi {
       const fontPreloads = fontPreload ? result.fontPreloadUrls.slice(0, FONT_PRELOAD_MAX).map(fontPreloadTag).join('\n') : '';
       const cssLinks = (fontPreloads ? `${fontPreloads}\n` : '') + result.cssUrls.map(cssLinkTag).join('\n');
       const debugBarUrl = registry.getDebugBarUrl();
-      const debugInfoScript = registry.debugBarEnabled && opts?.debugInfo ? `<script>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
-      const pageEntryScript = liveReloadClientJs && opts?.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
 
-      const head = logLevelScript + warnShim + speculationRulesScript + result.head;
+      // Carried only by framework-built fragments — never by `result.head`/`result.body`, which would hand the nonce to
+      // whatever a page component emitted. Empty (and the output byte-identical) whenever `csp` is off.
+      const attr = nonceAttr(getCspNonce());
+      if (attr !== scriptsAttr) {
+        scriptsAttr = attr;
+        scripts = buildScripts(attr);
+      }
+
+      const debugInfoScript = registry.debugBarEnabled && opts?.debugInfo ? inlineScript(`window.__mochi_debug=${jsonForHtml(opts.debugInfo)}`, attr) : '';
+      const pageEntryScript = liveReloadClientJs && opts?.pageEntry ? inlineScript(`window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}`, attr) : '';
+      const speculationRulesScript = specRulesJson ? `<script type="speculationrules"${attr}>${specRulesJson}</script>` : '';
+
+      const head = scripts.logLevel + scripts.warnShim + speculationRulesScript + result.head;
       const css = cssStylePrefix + cssLinks;
       const body = result.body + debugInfoScript + pageEntryScript + toolbarDiv;
       const script =
-        (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
-        (result.hasServerIslands ? serverIslandScript : '') +
-        (debugBarUrl ? `<script type="module" src="${debugBarUrl}"></script><script>window.__mochi_asset_prefix=${assetPrefixJson}</script>` : '') +
-        liveReloadTail;
+        (bootstrapUrl ? `<script type="module"${attr} src="${bootstrapUrl}"></script>` : '') +
+        (result.hasServerIslands ? scripts.serverIsland : '') +
+        (debugBarUrl ? `<script type="module"${attr} src="${debugBarUrl}"></script>${inlineScript(`window.__mochi_asset_prefix=${assetPrefixJson}`, attr)}` : '') +
+        scripts.liveReloadTail;
 
       let out = '';
       for (const part of parts) {
@@ -482,7 +573,20 @@ export class Mochi {
     const formContentTypes: ReadonlySet<string> = applyFilter('csrf:formContentTypes', new Set(DEFAULT_FORM_CONTENT_TYPES), { options });
     const protectedMethods: ReadonlySet<string> = applyFilter('csrf:protectedMethods', new Set(DEFAULT_PROTECTED_METHODS), { options });
     const trustedOrigins: ReadonlySet<string> = applyFilter('csrf:trustedOrigins', new Set(options.csrf?.trustedOrigins ?? []), { options });
-    const cookieDefaults = applyFilter('cookie:defaults', {}, { options });
+    // Deliberately not `csrf.trustedOrigins`: that list says which origins may send this server a form POST, which is
+    // a different question from where this server may send its visitors. Sharing one list would mean permitting an
+    // OAuth redirect target also weakened CSRF for it.
+    const redirectOrigins: ReadonlySet<string> = new Set(options.redirect?.trustedOrigins ?? []);
+    // Opt-in hardening baseline: HttpOnly keeps session cookies away from XSS, SameSite=Lax blocks the common CSRF
+    // vectors, and Secure is gated to production so http://localhost still works. Off by default because it hides
+    // server-set cookies from client JS, which existing apps may rely on.
+    // `Secure` stays gated on production rather than the request's own protocol: behind a TLS-terminating proxy Bun
+    // sees plain HTTP, and dropping the flag there would downgrade real HTTPS sites to protect the rarer plain-HTTP
+    // deployment, which can opt out explicitly.
+    const secureCookieDefaults: CookieSerializeOptions = (options.secureCookies ?? true) ? { httpOnly: true, sameSite: 'lax', secure: options.development === false } : {};
+    const cookieDefaults = applyFilter('cookie:defaults', secureCookieDefaults, { options });
+    const securityHeaderDefaults = resolveSecurityHeaders(options);
+    const cspEnabled = options.csp ?? false;
 
     const bootCsrfWarning = csrfBootWarning(options);
     if (bootCsrfWarning) {
@@ -755,6 +859,7 @@ export class Mochi {
       csrf: options.csrf,
       trailingSlashPolicy,
       cookieDefaults,
+      csp: cspEnabled,
       development,
       debugBarEnabled,
       formContentTypes,
@@ -763,6 +868,47 @@ export class Mochi {
       newRequestId,
       protection: protectionRuntime?.gate,
     });
+
+    // Both places a `redirect()` becomes a `Location` — a form action and a `serverProps` resolver — go through here,
+    // so neither can grow a bypass of the other's guard. Returns `null` to allow, or the message to fail the render
+    // with; development only warns, matching how the CSRF check reports a production-only block.
+    const blockedRedirect = (result: MochiRedirect, req: Request, url: URL): string | null => {
+      const { location, external } = result;
+      const expectedOrigin = trustedSelfOrigin(req, url, options.proxy);
+      if (isSafeRedirectLocation(location, expectedOrigin, redirectOrigins, external)) {
+        return null;
+      }
+      if (external) {
+        logger.warn(`Blocking redirect(): location "${location}" carries a control character or a script-capable scheme, neither of which { external: true } waives.`);
+        return 'Unsafe redirect location';
+      }
+      const allowed = expectedOrigin ?? '<none: set proxy.origin or proxy.hostHeader>';
+      const detail = `redirect(): off-origin location "${location}" (allowed origin: ${allowed}). Add the origin to redirect.trustedOrigins, or pass { external: true } to this call, if intentional.`;
+      if (development) {
+        logger.warn(`${detail} This would be blocked in production.`);
+        return null;
+      }
+      logger.warn(`Blocking ${detail}`);
+      return 'Unsafe redirect location';
+    };
+
+    const hasSecurityHeaders = Object.keys(securityHeaderDefaults).length > 0;
+
+    // Applied as the outermost wrapper so a middleware `filterResponseHeaders` (which runs inside the handler) can't
+    // strip the baseline, while a header the route itself set still wins.
+    const addSecurityHeaders = (res: Response): Response => {
+      if (!hasSecurityHeaders) {
+        return res;
+      }
+      try {
+        applyDefaultSecurityHeaders(res.headers, securityHeaderDefaults);
+      } catch {
+        // An immutable response (one returned verbatim by user code) rejects header mutation — skip rather than 500.
+      }
+      return res;
+    };
+
+    const withSecurityHeaders = (value: BunRouteValue): BunRouteValue => (hasSecurityHeaders ? mapRouteResponse(value, addSecurityHeaders) : value);
 
     const internalRoutes: Record<string, MochiPageConfig | MochiApiConfig> = {
       // Gated behind the debug bar, like the page-cache admin routes, since the stats page discloses every bundle's input
@@ -883,6 +1029,10 @@ export class Mochi {
           const liveServerProps = pageConfigMap ? pageConfigMap.get(pattern)?.serverProps : serverProps;
           const resolved = isServerPropsResolver(liveServerProps) ? ((await liveServerProps(req, ctx.params)) ?? {}) : (liveServerProps ?? {});
           if (isRedirect(resolved)) {
+            const blocked = blockedRedirect(resolved, req, ctx.url);
+            if (blocked) {
+              throw new MochiHttpError(500, blocked);
+            }
             const redirectResponse = new Response(null, {
               status: resolved.status,
               headers: { Location: resolved.location },
@@ -1111,6 +1261,14 @@ export class Mochi {
                 return applyResolveOptions(result, resolveOpts);
               }
               if (isRedirect(result)) {
+                const blocked = blockedRedirect(result, req, ctx.url);
+                if (blocked) {
+                  const unsafeErr = new Error(`${blocked}: ${result.location}`);
+                  const response = enhanced ? jsonError(500, blocked) : await renderErrorResponse({ req, event, resolveOpts, status: 500, message: blocked, thrown: null });
+                  emitError('action', ctx.requestId, req, ctx.url, response.status, unsafeErr, actionName);
+                  emitActionComplete(actionName, 'error', response.status);
+                  return response;
+                }
                 emitActionComplete(actionName, 'redirect', result.status);
                 if (enhanced) {
                   return jsonRedirect(result.status, result.location);
@@ -1160,17 +1318,19 @@ export class Mochi {
             });
 
           return {
-            bunRouteValue: withHead({
-              GET: getHandler,
-              POST: postHandler,
-            } as unknown as BunRouteValue),
+            bunRouteValue: withHead(
+              withSecurityHeaders({
+                GET: getHandler,
+                POST: postHandler,
+              } as unknown as BunRouteValue),
+            ),
             type: 'page',
           };
         }
         // A method-keyed object keeps a POST/PUT to an action-less page from matching (it falls through to the fetch
         // handler and 404s); a bare function runs for every method and would render 200 on POST in production,
         // diverging from dev, where `pageConfigMap` forces this path anyway.
-        return { bunRouteValue: withHead({ GET: getHandler } as unknown as BunRouteValue), type: 'page' };
+        return { bunRouteValue: withHead(withSecurityHeaders({ GET: getHandler } as unknown as BunRouteValue)), type: 'page' };
       } else if (isMochiApi(handler)) {
         if (apiHandlerMap) {
           apiHandlerMap.set(pattern, handler.handler);
@@ -1235,7 +1395,7 @@ export class Mochi {
             return final;
           });
         };
-        return { bunRouteValue: withHead(bunRouteValue), type: 'api' };
+        return { bunRouteValue: withHead(withSecurityHeaders(bunRouteValue)), type: 'api' };
       } else if (isMochiWs(handler)) {
         const wsHandlers = handler.handlers;
         wsHandlersMap.set(pattern, wsHandlers);
@@ -1268,6 +1428,18 @@ export class Mochi {
               kind: 'ws',
             });
           });
+          // Only a real upgrade can hijack a socket; a non-upgrade probe just fails `server.upgrade()` below, so gating
+          // here keeps the origin check scoped to the actual CSWSH vector. `Upgrade` is a comma-separated token list
+          // (RFC 7230) and `server.upgrade()` accepts one, so an exact-match gate would let `websocket, keep-alive`
+          // through unchecked.
+          if (isWebSocketUpgrade(req.headers.get('upgrade'))) {
+            const wsOriginBlock = checkWsOrigin(req, wsUrl, options.csrf, options.proxy, development, trustedOrigins);
+            if (wsOriginBlock) {
+              emitWsReject(wsOriginBlock.status);
+              return wsOriginBlock;
+            }
+          }
+
           let userData: unknown = undefined;
 
           const liveWsHandlers = wsHandlersMap.get(pattern) ?? wsHandlers;
@@ -1410,7 +1582,7 @@ export class Mochi {
             },
           });
         };
-        return { bunRouteValue, type: 'sse' };
+        return { bunRouteValue: withSecurityHeaders(bunRouteValue), type: 'sse' };
       } else if (isMochiFile(handler)) {
         const source = handler.source;
 
@@ -1485,7 +1657,7 @@ export class Mochi {
             }
           });
         };
-        return { bunRouteValue, type: 'file' };
+        return { bunRouteValue: withSecurityHeaders(bunRouteValue), type: 'file' };
       }
       return null;
     }
@@ -1535,143 +1707,145 @@ export class Mochi {
     registerStaticDirRoutes(bunRoutes, staticDirMounts);
 
     // Register server island endpoint
-    bunRoutes[`${registry.assetPrefix}/island/:componentName`] = withHead(async (req: Request, server: Server<undefined>): Promise<Response> => {
-      const setup = await buildRequestContext(req, server, {
-        kind: 'island',
-        pattern: `${registry.assetPrefix}/island/:componentName`,
-        paramsOverride: {},
-      });
-      if ('earlyResponse' in setup) {
-        return setup.earlyResponse;
-      }
-      const { ctx, url, params } = setup;
-      const componentName = params.componentName;
-      if (!componentName) {
-        return new Response('Missing component name', { status: 400 });
-      }
-
-      const signedProps = url.searchParams.get('props') ?? '';
-
-      // Decrypt props (empty means no props)
-      let decodedProps: Record<string, unknown>;
-      if (signedProps) {
-        const propsJson = decryptProps(signedProps, componentName);
-        if (propsJson === null) {
-          return new Response('Invalid props', { status: 403 });
+    bunRoutes[`${registry.assetPrefix}/island/:componentName`] = withHead(
+      withSecurityHeaders(async (req: Request, server: Server<undefined>): Promise<Response> => {
+        const setup = await buildRequestContext(req, server, {
+          kind: 'island',
+          pattern: `${registry.assetPrefix}/island/:componentName`,
+          paramsOverride: {},
+        });
+        if ('earlyResponse' in setup) {
+          return setup.earlyResponse;
         }
-        decodedProps = devalueParse(propsJson) as Record<string, unknown>;
-      } else {
-        decodedProps = {};
-      }
+        const { ctx, url, params } = setup;
+        const componentName = params.componentName;
+        if (!componentName) {
+          return new Response('Missing component name', { status: 400 });
+        }
 
-      // `islandId` and `__mochi_ah` ride inside the signed envelope as transport only, and are split into a fresh object
-      // so neither reaches the component as a prop. The hydrate mode comes from the decrypted payload: trusting a
-      // `?hydrate=` query param would let anyone append it to a sealed token and get the props echoed back in plaintext.
-      const { [ALSO_HYDRATE_ENVELOPE_KEY]: rawHydrateMode, islandId: rawIslandId, ...props } = decodedProps;
-      const islandId = typeof rawIslandId === 'string' ? rawIslandId : undefined;
-      const hydrateMode = isAlsoHydrateMode(rawHydrateMode) ? rawHydrateMode : null;
+        const signedProps = url.searchParams.get('props') ?? '';
 
-      // Look up the component path
-      const componentPath = registry.getServerIslandPath(componentName);
-      if (!componentPath) {
-        return new Response('Unknown server island component', { status: 404 });
-      }
+        // Decrypt props (empty means no props)
+        let decodedProps: Record<string, unknown>;
+        if (signedProps) {
+          const propsJson = decryptProps(signedProps, componentName);
+          if (propsJson === null) {
+            return new Response('Invalid props', { status: 403 });
+          }
+          decodedProps = devalueParse(propsJson) as Record<string, unknown>;
+        } else {
+          decodedProps = {};
+        }
 
-      // Arm nested-island inlining for this render. Also-hydrate renders are excluded: their subtree re-renders on the
-      // client, and a nested defer site there is a compile error anyway (`defer-in-hydratable`).
-      if (hydrateMode === null && inlineNestedIslands) {
-        ctx.islandInline = { budget: applyFilter('serverIsland:inlineBudget', DEFAULT_INLINE_BUDGET, { componentName, request: req }) };
-      }
+        // `islandId` and `__mochi_ah` ride inside the signed envelope as transport only, and are split into a fresh object
+        // so neither reaches the component as a prop. The hydrate mode comes from the decrypted payload: trusting a
+        // `?hydrate=` query param would let anyone append it to a sealed token and get the props echoed back in plaintext.
+        const { [ALSO_HYDRATE_ENVELOPE_KEY]: rawHydrateMode, islandId: rawIslandId, ...props } = decodedProps;
+        const islandId = typeof rawIslandId === 'string' ? rawIslandId : undefined;
+        const hydrateMode = isAlsoHydrateMode(rawHydrateMode) ? rawHydrateMode : null;
 
-      return requestContext.run(ctx, async () => {
-        // A miss here means the build's eager discovery (see build.ts) didn't
-        // find this island; `compileAll` warns about any manifest miss, so the
-        // request-path compile this endpoint is supposed to prevent is never
-        // silent.
-        await registry.compile(componentPath);
-        let result: RenderResult;
-        try {
-          // Namespacing via `idPrefix` keeps `$props.id()` values from this
-          // standalone render from colliding with ids the host page already
-          // emitted (both renders otherwise start their uid counter at `s1`).
-          // Svelte rejects prefixes containing `--`, so guard against tokens
-          // signed by an older deploy carrying an incompatible id.
-          result = await registry.renderComponent(componentPath, props as Record<string, unknown>, {
-            stripMarkers: false,
-            ...(islandId && !islandId.includes('--') ? { idPrefix: islandId } : {}),
-            // An also-hydrate island's standalone render seeds the
-            // `isHydratable()` context for its whole subtree — the same signal
-            // the in-page boundary component provides for `mochi:hydrate*`
-            // islands. Pure `mochi:defer` never hydrates, so no context.
-            ...(hydrateMode !== null ? { context: new Map<unknown, unknown>([[HYDRATABLE_CONTEXT_KEY, true]]) } : {}),
-            // Named-export islands render that export, not the module's default.
-            ...(registry.getServerIslandExport(componentName) ? { exportName: registry.getServerIslandExport(componentName) } : {}),
-          });
-        } catch (err) {
-          const e = err instanceof Error ? err : new Error(String(err));
-          logger.error(`Server island "${componentName}" failed: ${e.message}`);
-          mochiEvents.emit('island:error', {
-            componentName,
-            islandId,
-            kind: 'server',
-            message: e.message,
-            stack: registry.development ? e.stack : undefined,
-          });
-          // 200 + a known stub so `ServerIsland.ts` doesn't burn its retry budget
-          // on a deterministic failure. Visibility is CSS-controlled: dev shows
-          // the message, prod hides the element entirely.
-          const stub = islandFailureStub(componentName, registry.development ? e.message : undefined);
-          return new Response(stub, {
-            status: 200,
+        // Look up the component path
+        const componentPath = registry.getServerIslandPath(componentName);
+        if (!componentPath) {
+          return new Response('Unknown server island component', { status: 404 });
+        }
+
+        // Arm nested-island inlining for this render. Also-hydrate renders are excluded: their subtree re-renders on the
+        // client, and a nested defer site there is a compile error anyway (`defer-in-hydratable`).
+        if (hydrateMode === null && inlineNestedIslands) {
+          ctx.islandInline = { budget: applyFilter('serverIsland:inlineBudget', DEFAULT_INLINE_BUDGET, { componentName, request: req }) };
+        }
+
+        return requestContext.run(ctx, async () => {
+          // A miss here means the build's eager discovery (see build.ts) didn't
+          // find this island; `compileAll` warns about any manifest miss, so the
+          // request-path compile this endpoint is supposed to prevent is never
+          // silent.
+          await registry.compile(componentPath);
+          let result: RenderResult;
+          try {
+            // Namespacing via `idPrefix` keeps `$props.id()` values from this
+            // standalone render from colliding with ids the host page already
+            // emitted (both renders otherwise start their uid counter at `s1`).
+            // Svelte rejects prefixes containing `--`, so guard against tokens
+            // signed by an older deploy carrying an incompatible id.
+            result = await registry.renderComponent(componentPath, props as Record<string, unknown>, {
+              stripMarkers: false,
+              ...(islandId && !islandId.includes('--') ? { idPrefix: islandId } : {}),
+              // An also-hydrate island's standalone render seeds the
+              // `isHydratable()` context for its whole subtree — the same signal
+              // the in-page boundary component provides for `mochi:hydrate*`
+              // islands. Pure `mochi:defer` never hydrates, so no context.
+              ...(hydrateMode !== null ? { context: new Map<unknown, unknown>([[HYDRATABLE_CONTEXT_KEY, true]]) } : {}),
+              // Named-export islands render that export, not the module's default.
+              ...(registry.getServerIslandExport(componentName) ? { exportName: registry.getServerIslandExport(componentName) } : {}),
+            });
+          } catch (err) {
+            const e = err instanceof Error ? err : new Error(String(err));
+            logger.error(`Server island "${componentName}" failed: ${e.message}`);
+            mochiEvents.emit('island:error', {
+              componentName,
+              islandId,
+              kind: 'server',
+              message: e.message,
+              stack: registry.development ? e.stack : undefined,
+            });
+            // 200 + a known stub so `ServerIsland.ts` doesn't burn its retry budget
+            // on a deterministic failure. Visibility is CSS-controlled: dev shows
+            // the message, prod hides the element entirely.
+            const stub = islandFailureStub(componentName, registry.development ? e.message : undefined);
+            return new Response(stub, {
+              status: 200,
+              headers: {
+                'Content-Type': 'text/html; charset=utf-8',
+                'Cache-Control': 'private, no-store',
+              },
+            });
+          }
+
+          let body = result.body;
+
+          if (isAlsoHydrateMode(hydrateMode)) {
+            const componentUrl = registry.getComponentEntryUrl(componentName);
+            const serializedProps = devalueStringify(props);
+
+            let hydrateAttrs = `component-name="${componentName}"`;
+            if (Object.keys(props as Record<string, unknown>).length > 0) {
+              hydrateAttrs += ` props="${escapeHtmlAttr(serializedProps)}"`;
+            }
+            if (componentUrl) {
+              hydrateAttrs += ` component-url="${componentUrl}"`;
+            }
+
+            body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
+          }
+
+          // Appended whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain
+          // mochi:hydrate children, or inlined also-hydrate islands — so the fragment self-hydrates even on a page that
+          // shipped no bootstrap of its own; duplicate module scripts are no-ops by src.
+          const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
+          if (bootstrapUrl) {
+            body += `<script type="module"${nonceAttr(ctx.cspNonce)} src="${bootstrapUrl}"></script>`;
+          }
+
+          // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`
+          // tags are prepended here along with side-effect CSS imports; browsers honour a `<link>` assigned via `innerHTML`.
+          // The island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
+          const ownCss = registry.getComponentCssUrl(componentPath);
+          const extraCss = result.cssUrls.filter((url) => url !== ownCss);
+          if (extraCss.length > 0) {
+            body = extraCss.map(cssLinkTag).join('') + body;
+          }
+
+          return new Response(body, {
             headers: {
               'Content-Type': 'text/html; charset=utf-8',
               'Cache-Control': 'private, no-store',
             },
           });
-        }
-
-        let body = result.body;
-
-        if (isAlsoHydrateMode(hydrateMode)) {
-          const componentUrl = registry.getComponentEntryUrl(componentName);
-          const serializedProps = devalueStringify(props);
-
-          let hydrateAttrs = `component-name="${componentName}"`;
-          if (Object.keys(props as Record<string, unknown>).length > 0) {
-            hydrateAttrs += ` props="${escapeHtmlAttr(serializedProps)}"`;
-          }
-          if (componentUrl) {
-            hydrateAttrs += ` component-url="${componentUrl}"`;
-          }
-
-          body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
-        }
-
-        // Appended whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain
-        // mochi:hydrate children, or inlined also-hydrate islands — so the fragment self-hydrates even on a page that
-        // shipped no bootstrap of its own; duplicate module scripts are no-ops by src.
-        const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
-        if (bootstrapUrl) {
-          body += `<script type="module" src="${bootstrapUrl}"></script>`;
-        }
-
-        // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`
-        // tags are prepended here along with side-effect CSS imports; browsers honour a `<link>` assigned via `innerHTML`.
-        // The island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
-        const ownCss = registry.getComponentCssUrl(componentPath);
-        const extraCss = result.cssUrls.filter((url) => url !== ownCss);
-        if (extraCss.length > 0) {
-          body = extraCss.map(cssLinkTag).join('') + body;
-        }
-
-        return new Response(body, {
-          headers: {
-            'Content-Type': 'text/html; charset=utf-8',
-            'Cache-Control': 'private, no-store',
-          },
         });
-      });
-    });
+      }),
+    );
 
     // Gives `Mochi.email()` the live compile cache, so Svelte email templates render through the same registry as page routes.
     getEmailRuntime().registry = registry;
@@ -1834,15 +2008,15 @@ export class Mochi {
             return blocked ?? finalizeCookieHeaders(await serve(), cookies);
           }
         : undefined;
-    registerPublicRoutes(bunRoutes, initialPublicFiles, publicRouteGuard);
+    registerPublicRoutes(bunRoutes, initialPublicFiles, publicRouteGuard, securityHeaderDefaults);
 
     const userFetch = options.fetch;
 
-    const composedFetch = async (req: Request, server: Server<undefined>): Promise<Response> => {
+    const composedFetchInner = async (req: Request, server: Server<undefined>): Promise<Response> => {
       const url = buildPublicUrl(req, options.proxy);
       const csrfResponse = csrfCheck(req, url, options.csrf, options.proxy, development, formContentTypes, protectedMethods, trustedOrigins);
       if (csrfResponse) {
-        return csrfResponse;
+        return addSecurityHeaders(csrfResponse);
       }
 
       // Non-route requests run middleware too, so static-asset paths (`/_mochi/client/...` bundles) share the chain and a
@@ -1907,10 +2081,17 @@ export class Mochi {
         duration: performance.now() - start,
       });
       if (req.method === 'HEAD') {
-        return headResponse(response);
+        return addSecurityHeaders(await headResponse(response));
       }
-      return response;
+      return addSecurityHeaders(response);
     };
+
+    // Requests answered here never build a request context, so the nonce lives in its own ambient store: `getCspNonce()`
+    // has to work in middleware on the fall-through 404 too, or that page's scripts ship without the policy every
+    // routed page gets.
+    const composedFetch = cspEnabled
+      ? (req: Request, server: Server<undefined>): Promise<Response> => cspNonceStore.run(generateCspNonce(), () => composedFetchInner(req, server))
+      : composedFetchInner;
 
     const {
       routes: _routes,
@@ -2153,6 +2334,7 @@ export class Mochi {
         reloadShell,
         reloadSpeculationRules,
         publicRouteGuard,
+        securityHeaderDefaults,
       });
     }
 

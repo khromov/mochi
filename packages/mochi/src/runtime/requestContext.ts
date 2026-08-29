@@ -40,6 +40,11 @@ export interface MochiRequestContext {
   /** Result of the form action that just ran, available during POST re-renders of an entry route with `actions`. */
   form?: MochiFormResult;
   /**
+   * Per-request CSP nonce, present only under `Mochi.serve({ csp: true })`. The framework stamps it on the
+   * `<script>` tags it emits; read it with `getCspNonce()` to build a matching `Content-Security-Policy`.
+   */
+  cspNonce?: string;
+  /**
    * The client's IP address, defaulting to Bun's connecting `remoteAddress`. Behind a reverse proxy, configure
    * `Mochi.serve({ proxy: { addressHeader: '...' } })`; for `'x-forwarded-for'`, `proxy.xffDepth` sets how many trusted
    * proxies sit in front and the address is read from the right to block spoofing.
@@ -186,6 +191,22 @@ export function getRequestContext(): MochiRequestContext {
   }
   return ctx;
 }
+
+/**
+ * The current request's CSP nonce, or `undefined` when `csp` is off (or outside a request). Use it to build a
+ * `Content-Security-Policy` header matching the nonce Mochi stamped on its own `<script>` tags, e.g. in middleware.
+ */
+export function getCspNonce(): string | undefined {
+  return requestContext.getStore()?.cspNonce ?? cspNonceStore.getStore();
+}
+
+/**
+ * The nonce for requests answered outside a full request context — the unmatched-route 404 and
+ * everything else the fetch fallback handles, where middleware still runs and still has to build a
+ * matching `Content-Security-Policy`. Pinned on `globalThis` for the same reason `requestContext`
+ * is: duplicate bundled copies of the framework have to read one store.
+ */
+export const cspNonceStore = pinGlobal('__mochi_csp_nonce__', () => new AsyncLocalStorage<string>());
 
 /**
  * Runs `fn` with the request context cleared, so `getRequestContext()` and anything built on it throws throughout —
