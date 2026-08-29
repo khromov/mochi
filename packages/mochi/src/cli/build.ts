@@ -20,7 +20,15 @@ import { mochiEvents } from '../events';
 import type { MochiCompileCompleteEvent } from '../events';
 import { styleText } from 'node:util';
 import prettyBytes from '../vendor/pretty-bytes';
-import { collectFontResources, collectImageResources, mergeResourceRows, printResourceTree } from './resourceReport';
+import {
+  collectFontResources,
+  collectImageResources,
+  collectScriptResources,
+  collectStyleResources,
+  mergeResourceRows,
+  printResourceSection,
+  printStaticSummary,
+} from './resourceReport';
 
 export interface MochiBuildOptions {
   routes: Record<string, MochiRouteValue>;
@@ -45,8 +53,11 @@ export interface MochiBuildOptions {
   fonts?: MochiFontOptions;
   /** Mirror the value passed to `Mochi.serve({ errorPage })` so it lands in the manifest and the runtime skips compiling it at startup. Default: Mochi's built-in error page. */
   errorPage?: string;
-  /** Mirror the value passed to `Mochi.serve({ build: { resources } })`. Default: enabled. See `MochiBuildReportOptions['resources']`. */
-  resources?: boolean;
+  /** Mirror the values passed to `Mochi.serve({ build })`; each hides one section of the report, never the summary line's counts. Default: all enabled. See `MochiBuildReportOptions`. */
+  showImages?: boolean;
+  showStyles?: boolean;
+  showScripts?: boolean;
+  showStaticFiles?: boolean;
   /** Mirror the value passed to `Mochi.serve({ protection })` so the interstitial page prebuilds into the manifest. Default: disabled. See `MochiServeOptions['protection']`. */
   protection?: MochiProtectionOptions;
 }
@@ -116,7 +127,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     // public file shadows a declared route and a deploy silently drops an asset. The runtime's own
     // `registerPublicRoutes` check stays warn-and-skip, covering the case this one can't — a file dropped into publicDir
     // after the build. Awaited inline, since a glob with no copy fails a collision in milliseconds.
-    const publicFileCount = await timed('public', async () => {
+    const { publicFileCount, publicBytes } = await timed('public', async () => {
       const publicSrc = await scanPublicDir(publicDir);
       const conflicts: string[] = [];
       for (const urlPath of publicSrc.keys()) {
@@ -133,7 +144,15 @@ export async function build(options: MochiBuildOptions): Promise<void> {
             `\nRemove the file from ${publicDir} or rename the route.`,
         );
       }
-      return publicSrc.size;
+      // Sized only when the report will show them: nothing else in the build reads these bytes, and public/ can hold
+      // tens of thousands of files.
+      let publicBytes = 0;
+      if (options.showStaticFiles !== false) {
+        for (const srcPath of publicSrc.values()) {
+          publicBytes += Bun.file(srcPath).size;
+        }
+      }
+      return { publicFileCount: publicSrc.size, publicBytes };
     });
 
     const svelteConfig = await loadSvelteConfig(options.svelteConfigPath);
@@ -260,14 +279,6 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       stats: compileStats,
     });
 
-    // After finalizeClientBundle() above, so assets the client pass emitted are
-    // in the map too (both passes share it, keyed by served URL).
-    const imageAssets = registry.getLocalImageAssets();
-    const fontAssets = registry.getFontAssets();
-    if (options.resources !== false) {
-      printResourceTree(mergeResourceRows(collectImageResources(imageAssets.values()), collectFontResources(fontAssets.values())));
-    }
-
     // Clean up intermediate .raw.css files
     const cssDir = path.join(outDir, 'svelte-css');
     const glob = new Bun.Glob('*.raw.css');
@@ -288,6 +299,27 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     // count, and the only evidence at boot that static files existed when it ran.
     manifest.publicFileCount = publicFileCount;
     await Bun.write(manifestPath, JSON.stringify(manifest, null, 2));
+
+    // Reported last, once every artifact is on disk and the manifest has resolved each client URL to its file (the
+    // image map is shared by both compile passes, keyed by served URL). Manifest artifact paths are stored out-dir
+    // relative so a build output relocates, so they need resolving before anything can be stat'ed.
+    const clientFilePaths = Object.fromEntries(Object.entries(manifest.clientFiles).map(([urlPath, rel]) => [urlPath, path.resolve(outDir, rel)]));
+    const imageAssets = registry.getLocalImageAssets();
+    const fontAssets = registry.getFontAssets();
+    if (options.showImages !== false) {
+      const assets = mergeResourceRows(collectImageResources(imageAssets.values()), collectFontResources(fontAssets.values()));
+      printResourceSection('Resource', assets, { glyph: '▣', color: 'yellow', detailHeader: 'dimensions' });
+    }
+    if (options.showStyles !== false) {
+      printResourceSection('Stylesheet', collectStyleResources(clientFilePaths, manifest.assetPrefix), { glyph: '◆', color: 'magenta' });
+    }
+    if (options.showScripts !== false) {
+      const scripts = collectScriptResources(clientFilePaths, manifest.assetPrefix, manifest.componentEntryUrls, manifest.bootstrapUrl);
+      printResourceSection('Script', scripts, { glyph: '▲', color: 'cyan' });
+    }
+    if (options.showStaticFiles !== false) {
+      printStaticSummary(publicDir, publicFileCount, publicBytes);
+    }
 
     const clientFileCount = Object.keys(manifest.clientFiles).length;
     const phaseSummary = phases.map((p) => `${p.name} ${formatDuration(p.ms)}`).join(' · ');

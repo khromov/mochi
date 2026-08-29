@@ -70,7 +70,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `assetPrefix` — URL prefix for framework client assets and the server-island endpoint. Must start with `/`, must not be `/` or end with `/`. Default: `/_mochi`.
 - `additionalWatchPaths` — extra dev-mode watcher paths added to `src` and `public`. Default: `[]`.
 - `barrelWarnings` — warn when a dependency drags a large, tree-shaken module into the build graph. Default: enabled. See [Development mode](/docs/development-mode/).
-- `build` — output controls for `mochi-framework build`. The runtime ignores it. See [CLI](/docs/cli/).
+- `build` — output controls for `mochi-framework build`. The runtime ignores it. `showImages`, `showStyles`, `showScripts` and `showStaticFiles` (all default `true`) each hide one section of the build's resource report; the summary line keeps its counts regardless. See [CLI](/docs/cli/).
 - `svelteConfigPath` — path to a Svelte config file. Default: `./svelte.config.js`. See [Svelte config](/docs/svelte-config/).
 - `svelteCompiler` — which compiler emits component JS. Default: `'svelte'`. `'rsvelte'` needs `@mochi-framework/rsvelte`. See [rsvelte](/docs/rsvelte/).
 - `optimize` — run the whole-program svelte-shaker pass over `.svelte` source before compiling, so the compiler emits less code. **Production only**, and needs `@mochi-framework/svelte-shaker`. `true` shakes everything; `{ enabled, exclude }` gives finer control. Default: `false`. See [Svelte Shaker](/docs/svelte-shaker/).
