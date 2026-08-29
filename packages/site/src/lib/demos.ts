@@ -13,6 +13,7 @@ import { files as customTransitions } from '../demos/custom-transitions/files.ts
 import { files as dataLoading } from '../demos/data-loading/files.ts';
 import { files as email } from '../demos/email/files.ts';
 import { files as entityProps } from '../demos/entity-props/files.ts';
+import { files as featureFlags } from '../demos/feature-flags/files.ts';
 import { files as error } from '../demos/error/files.ts';
 import { files as errorBoundaries } from '../demos/error-boundaries/files.ts';
 import { files as file } from '../demos/file/files.ts';
@@ -149,6 +150,14 @@ export const demos: Demo[] = [
     files: cookies,
     title: 'Cookies',
     hook: 'How cookies work — read and write on the server and the client through one MochiCookieJar API (cookies.get/set/delete).',
+    category: 'data',
+  },
+  {
+    href: '/demos/feature-flags/',
+    slug: 'feature-flags',
+    files: featureFlags,
+    title: 'Feature Flags',
+    hook: 'Roll a feature out to a subset of users with Mochi.feature() — sticky, deterministic, and carried by an encrypted cookie.',
     category: 'data',
   },
   {

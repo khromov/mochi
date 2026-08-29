@@ -246,6 +246,10 @@ await Mochi.serve({
   filters: {
     'consoleLogger:line': (line, ctx) => (ctx.path.startsWith('/health') ? null : silenceInternalRoutes(line, ctx)),
   },
+  features: {
+    'demo-new-hero': { rollout: 0.5 },
+    'demo-beta-badge': { rollout: 0.5 },
+  },
   routes,
   queues,
   cron,

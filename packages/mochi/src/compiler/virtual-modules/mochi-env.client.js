@@ -125,6 +125,11 @@ export function getImage() { __serverOnly("getImage()"); }
 export function getImagePlaceholder() { return Promise.resolve(null); }
 export function imagePlaceholder() { return Promise.resolve(null); }
 export function invalidateImage() { __serverOnly("invalidateImage()"); }
+// Feature flags are per-user and evaluated server-side. In a hydrated island,
+// evaluate in a server island or pass the boolean down as a prop rather than
+// calling feature() during client hydration.
+export function feature() { throw new Error("feature() is only available on the server. In a hydrated island, evaluate it server-side and pass the result down as a prop."); }
+export function setFeatureOverride() { __serverOnly("setFeatureOverride()"); }
 export { reloadDeferredIsland, reloadDeferredIslandAll } from "__MOCHI_DEFER_API__";
 export { deferReloadState, DeferReloadState } from "__MOCHI_DEFER_REACTIVE__";
 export function memoryStore() { __serverOnly("memoryStore()"); }

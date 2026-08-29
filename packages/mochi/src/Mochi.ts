@@ -94,6 +94,7 @@ import {
 } from './queue';
 import { pinGlobal } from './utils/globalState';
 import { resetStartupMilestones } from './lifecycle';
+import { evaluateFeature } from './runtime/features';
 import type { MochiQueue, MochiQueueOptions, MochiQueueDescriptor, MochiQueueStorage, MochiWorker } from './queue';
 import type { BunBoss } from 'bun-boss';
 import { finalizeCookieHeaders, MochiCookieJar } from './runtime/cookies';
@@ -259,6 +260,15 @@ export class Mochi {
    */
   static getQueue<T = unknown>(name: string): MochiQueue<T> {
     return getQueue<T>(name);
+  }
+
+  /**
+   * Resolve a per-user feature flag declared in `Mochi.serve({ features })`. Deterministic and sticky per user (backed by
+   * the encrypted `mochi_ff` cookie), so the same user always sees the same state. Returns `false` for an undeclared flag
+   * or when called outside a request. Inside a `.svelte` component import the standalone `feature()` from `mochi-framework`.
+   */
+  static feature(name: string): boolean {
+    return evaluateFeature(name);
   }
 
   /**

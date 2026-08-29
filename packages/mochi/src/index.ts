@@ -18,6 +18,7 @@ export type { ShakeAppResult, SvelteShakerBackend } from './compiler/svelteShake
 export { getRequestContext } from './runtime/requestContext';
 export type { MochiRequestContext } from './runtime/requestContext';
 export { getMochiConfig } from './mochiConfig';
+export { feature, setFeatureOverride } from './runtime/features';
 export type { CookieSerializeOptions, Cookie } from './runtime/cookies';
 export { MochiCache } from './cache/cache';
 export type { MochiCacheOptions, CacheResult, CacheStatus, Storage, SweepOptions, SweepResult } from './cache/cache';
@@ -221,6 +222,9 @@ export type {
   MochiFileConfig,
   MochiFileResolver,
   MochiQueueConfig,
+  MochiFeatureFlag,
+  MochiFeatures,
+  MochiFeatureContext,
   MochiCronConfig,
   BunRouteValue,
   MochiSvelteShakerOptions,

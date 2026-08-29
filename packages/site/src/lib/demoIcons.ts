@@ -51,6 +51,7 @@ import Inbox from '@lucide/svelte/icons/inbox';
 import SquareStack from '@lucide/svelte/icons/square-stack';
 import Layers2 from '@lucide/svelte/icons/layers-2';
 import Ampersand from '@lucide/svelte/icons/ampersand';
+import Flag from '@lucide/svelte/icons/flag';
 import Mail from '@lucide/svelte/icons/mail';
 import Gauge from '@lucide/svelte/icons/gauge';
 import Recycle from '@lucide/svelte/icons/recycle';
@@ -78,6 +79,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   Hydratable: { icon: Snowflake, label: 'Server-computed value reused on hydration' },
   'isHydratable()': { icon: Droplets, label: 'Will this subtree hydrate on this page load?' },
   Cookies: { icon: Cookie, label: 'Server + client cookies' },
+  'Feature Flags': { icon: Flag, label: 'Per-user feature flags' },
   'Cache Events': { icon: DatabaseZap, label: 'Custom cache event subscriber' },
   'Request Cache': { icon: Recycle, label: 'Memoize repeated work within one request' },
   'Request ID': { icon: Barcode, label: 'Per-request correlation id' },

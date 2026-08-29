@@ -31,6 +31,7 @@ import { routes as ciRoutes } from './ci/routes';
 import { routes as clientOnlyRoutes } from './demos/client-only/routes';
 import { routes as cookieVaryTestRoutes } from './demos/cookie-vary-test/routes';
 import { routes as cookiesRoutes } from './demos/cookies/routes';
+import { routes as featureFlagsRoutes } from './demos/feature-flags/routes';
 import { routes as dataLoadingRoutes } from './demos/data-loading/routes';
 import { routes as emailRoutes } from './demos/email/routes';
 import { routes as entityPropsRoutes } from './demos/entity-props/routes';
@@ -355,6 +356,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...clientOnlyRoutes,
   ...cookieVaryTestRoutes,
   ...cookiesRoutes,
+  ...featureFlagsRoutes,
   ...dataLoadingRoutes,
   ...emailRoutes,
   ...entityPropsRoutes,
