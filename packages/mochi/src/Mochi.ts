@@ -56,6 +56,7 @@ import {
   apiError,
   collectHeaderPairs,
   cssLinkTag,
+  extractParams,
   FONT_PRELOAD_MAX,
   fontPreloadTag,
   headResponse,
@@ -67,8 +68,10 @@ import {
   withHead,
 } from './utils';
 import { serveDiskAsset } from './utils/serveDiskAsset';
+import { buildDictionaryBytes, DictionaryStore, formatUseAsDictionary, resolveCompressionDictionary } from './runtime/compressionDictionary';
+import { createDictionaryHandle } from './middleware/dictionaryCompress';
 import type { MochiEvent, MochiEventKind, MochiResolveOptions } from './runtime/hooks';
-import { applyResolveOptions } from './runtime/hooks';
+import { applyResolveOptions, sequence } from './runtime/hooks';
 import { alternateSlashPattern, trailingSlashRedirect } from './runtime/trailingSlash';
 import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './runtime/warmup';
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
@@ -491,9 +494,12 @@ export class Mochi {
 
     const inlineNestedIslands = options.inlineNestedIslands !== false;
     const warmupEnabled = resolveWarmupEnabled(options.warmup, development);
+    const dictionaryConfig = resolveCompressionDictionary(options.compressionDictionary, development, normalizeAssetPrefix(options.assetPrefix));
+    const dictionaryStore = new DictionaryStore();
     const debugBarEnabled = development && (options.debugBar ?? true);
     const liveReloadEnabled = options.liveReload ?? development;
-    const middleware = options.handle;
+    // The dictionary handle runs innermost so a user `compress()` sees its `Content-Encoding: dcz` and passes it through.
+    const middleware = dictionaryConfig ? sequence(...(options.handle ? [options.handle] : []), createDictionaryHandle(dictionaryConfig, dictionaryStore)) : options.handle;
     const protectionEnabled = options.protection?.enabled === true;
     const baseOutDir = options.outDir ?? './.mochi';
     // Nesting dev artifacts keeps a stale prod manifest and dev chunks apart across a later `start`, while prod stays at
@@ -742,6 +748,7 @@ export class Mochi {
     // Pre-compile Mochi.page() handlers so SSR is ready at startup
     const mochiPageMap = new Map<string, MochiPageConfig>();
     const warmupHandlers: { pattern: string; handler: (req: Request, server: Server<undefined>) => Promise<Response> }[] = [];
+    const harvestHandlers: { pattern: string; handler: (req: Request, server: Server<undefined>) => Promise<Response> }[] = [];
     const wsHandlersMap = new Map<string, MochiWsHandlers<unknown>>();
     const apiHandlerMap = development ? new Map<string, MochiApiHandler>() : undefined;
     const sseHandlerMap = development ? new Map<string, MochiSseHandler>() : undefined;
@@ -1002,6 +1009,13 @@ export class Mochi {
 
         if (warmupEnabled && isWarmablePattern(pattern)) {
           warmupHandlers.push({ pattern, handler: getHandler });
+        }
+        if (dictionaryConfig && (!dictionaryConfig.routes || dictionaryConfig.routes.includes(pattern))) {
+          if (isWarmablePattern(pattern)) {
+            harvestHandlers.push({ pattern, handler: getHandler });
+          } else if (dictionaryConfig.routes) {
+            logger.warn(`compressionDictionary: route "${pattern}" has :param or * segments and cannot be rendered at boot — skipped`);
+          }
         }
 
         if (actions || pageConfigMap) {
@@ -1533,6 +1547,23 @@ export class Mochi {
 
     // After the mirroring pass on purpose: a `/*` pattern must not be mirrored to `/*\/`.
     registerStaticDirRoutes(bunRoutes, staticDirMounts);
+
+    if (dictionaryConfig) {
+      bunRoutes[`${registry.assetPrefix}/dictionary/:hash`] = withHead(async (req: Request): Promise<Response> => {
+        const entry = dictionaryStore.getByHex(extractParams(req).hash ?? '');
+        if (!entry) {
+          return new Response('Not found', { status: 404 });
+        }
+        return new Response(entry.bytes, {
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            // match-dest limits dictionary use to navigations; subresources keep their hashed-URL immutable caching.
+            'Use-As-Dictionary': formatUseAsDictionary({ match: '/*', matchDest: ['document', 'frame', 'iframe'] }),
+            'Cache-Control': 'public, max-age=31536000, immutable',
+          },
+        });
+      });
+    }
 
     // Register server island endpoint
     bunRoutes[`${registry.assetPrefix}/island/:componentName`] = withHead(async (req: Request, server: Server<undefined>): Promise<Response> => {
@@ -2095,14 +2126,38 @@ export class Mochi {
       }
     }
 
-    if (warmupHandlers.length > 0) {
-      mochiEvents.emit('warmup:start', { routeCount: warmupHandlers.length });
+    if (dictionaryConfig?.routes) {
+      const unmatched = dictionaryConfig.routes.filter((route) => !harvestHandlers.some((h) => h.pattern === route));
+      if (unmatched.length > 0) {
+        logger.warn(`compressionDictionary: configured route(s) ${unmatched.map((r) => `"${r}"`).join(', ')} match no page route — skipped`);
+      }
+    }
+
+    // Warmup and dictionary harvest share one synthetic-request pass so a route serving both purposes renders once.
+    const bootRenders = new Map<string, { handler: (req: Request, server: Server<undefined>) => Promise<Response>; warm: boolean; harvest: boolean }>();
+    for (const { pattern, handler } of warmupHandlers) {
+      bootRenders.set(pattern, { handler, warm: true, harvest: false });
+    }
+    for (const { pattern, handler } of harvestHandlers) {
+      const existing = bootRenders.get(pattern);
+      if (existing) {
+        existing.harvest = true;
+      } else {
+        bootRenders.set(pattern, { handler, warm: false, harvest: true });
+      }
+    }
+
+    if (bootRenders.size > 0) {
+      if (warmupHandlers.length > 0) {
+        mochiEvents.emit('warmup:start', { routeCount: warmupHandlers.length });
+      }
       const t0 = performance.now();
       // SSR is CPU-bound and serializes on the single thread, so parallel warming would render no faster while smearing
       // every route's `request` duration into the batch total; one at a time keeps per-route timings honest.
       void (async () => {
         let errorCount = 0;
-        for (const { pattern, handler } of warmupHandlers) {
+        const harvested: { pattern: string; html: string }[] = [];
+        for (const [pattern, { handler, warm, harvest }] of bootRenders) {
           // The canonical path keeps the trailing-slash policy from redirecting early instead of running the render being warmed.
           const url = new URL(`http://localhost${pattern}`);
           const redirect = trailingSlashPolicy ? trailingSlashRedirect('GET', url, trailingSlashPolicy) : null;
@@ -2111,18 +2166,57 @@ export class Mochi {
             // The handler swallows render errors and returns a 5xx error page, so 5xx counts as "didn't warm cleanly"
             // alongside a throw. 4xx is expected — an auth-gated route seeing the anonymous warmup visitor.
             const response = await handler(markWarmupRequest(new Request(href)), server);
-            if (response.status >= 500) {
+            if (warm && response.status >= 500) {
               errorCount += 1;
             }
+            if (harvest) {
+              if (response.status === 200 && isHtmlResponse(response)) {
+                harvested.push({ pattern, html: await response.text() });
+              } else {
+                logger.warn(`compressionDictionary: route "${pattern}" returned ${response.status} ${response.headers.get('Content-Type') ?? ''} — not harvested`);
+              }
+            }
           } catch {
-            errorCount += 1;
+            if (warm) {
+              errorCount += 1;
+            }
           }
         }
-        mochiEvents.emit('warmup:complete', {
-          routeCount: warmupHandlers.length,
-          errorCount,
-          durationMs: performance.now() - t0,
-        });
+        if (warmupHandlers.length > 0) {
+          mochiEvents.emit('warmup:complete', {
+            routeCount: warmupHandlers.length,
+            errorCount,
+            durationMs: performance.now() - t0,
+          });
+        }
+        if (dictionaryConfig) {
+          if (harvested.length === 0) {
+            logger.warn('compressionDictionary: no routes rendered into a dictionary — dictionary transport is off for this boot');
+          } else {
+            const { bytes, skipped } = buildDictionaryBytes(
+              harvested.map((h) => h.html),
+              dictionaryConfig.maxDictionaryBytes,
+            );
+            // Naming each route only helps when the user picked them; on the harvest-everything default a big site
+            // overflows the cap by design, so one summary line stands in for dozens of warnings.
+            if (skipped.length > 0) {
+              if (dictionaryConfig.routes) {
+                for (const index of skipped) {
+                  logger.warn(`compressionDictionary: route "${harvested[index]!.pattern}" would exceed maxDictionaryBytes (${dictionaryConfig.maxDictionaryBytes}) — skipped`);
+                }
+              } else {
+                logger.info(`compressionDictionary: dictionary filled at ${dictionaryConfig.maxDictionaryBytes} bytes — ${skipped.length} further route(s) not included`);
+              }
+            }
+            const entry = dictionaryStore.add(bytes);
+            mochiEvents.emit('dictionary:ready', {
+              hash: entry.hashHex,
+              sizeBytes: bytes.length,
+              routeCount: harvested.length - skipped.length,
+              durationMs: performance.now() - t0,
+            });
+          }
+        }
       })();
     }
 

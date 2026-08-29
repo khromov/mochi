@@ -47,6 +47,8 @@ export { sequence } from './runtime/hooks';
 export { compress } from './middleware/compress';
 export type { CompressOptions } from './middleware/compress';
 export type { CompressionMethod } from './utils';
+export { DictionaryStore, parseAvailableDictionary, parseDictionaryId, formatUseAsDictionary, frameDcz, DCZ_MAGIC } from './runtime/compressionDictionary';
+export type { DictionaryEntry } from './runtime/compressionDictionary';
 export { noCache } from './middleware/noCache';
 export { consoleLogger, silenceInternalRoutes } from './dev/consoleLogger';
 export type { ConsoleLoggerOptions } from './dev/consoleLogger';
@@ -100,6 +102,7 @@ export type {
   MochiServerStopEvent,
   MochiWarmupStartEvent,
   MochiWarmupCompleteEvent,
+  MochiDictionaryReadyEvent,
   MochiErrorEvent,
   MochiErrorKind,
   MochiActionInvokeEvent,
@@ -211,6 +214,7 @@ export type {
   MochiServeOptions,
   MochiWorkerOptions,
   MochiWarmupOptions,
+  MochiCompressionDictionaryOptions,
   MochiRouteValue,
   MochiWsConfig,
   MochiWsHandlers,

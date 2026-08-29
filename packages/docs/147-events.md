@@ -27,6 +27,7 @@ Event names use a `namespace:action` convention. Every key is in the typed `Moch
 - [`email:sent`](#emailsent), [`email:error`](#emailerror) — [transactional email](/docs/email/) delivery
 - [`server:start`](#serverstart), [`server:stop`](#serverstop) — server lifecycle
 - [`warmup:start`](#warmupstart), [`warmup:complete`](#warmupcomplete) — route warmup batch (only with `warmup: true`)
+- [`dictionary:ready`](#dictionaryready) — navigation dictionary published (only with `compressionDictionary` enabled)
 - [`error`](#error) — a page/api/action handler threw
 - [`action:invoke`](#actioninvoke), [`action:complete`](#actioncomplete) — form action lifecycle
 - [`compile:start`](#compilestart), [`compile:complete`](#compilecomplete), [`compile:error`](#compileerror) — Svelte SSR build
@@ -299,6 +300,17 @@ Fires once after the [route warmup](/docs/serve-options/#route-warmup) batch fin
 | `routeCount` | `number` | static page routes warmed                |
 | `errorCount` | `number` | warmup invocations that threw or 5xx'd   |
 | `durationMs` | `number` | wall-clock ms for the whole warmup batch |
+
+#### `dictionary:ready`
+
+Fires once when the boot harvest publishes the navigation dictionary. Only emitted with [`compressionDictionary`](/docs/compression-dictionaries/) enabled.
+
+| Field        | Type     | Notes                                                    |
+| ------------ | -------- | -------------------------------------------------------- |
+| `hash`       | `string` | hex SHA-256 — also the `/_mochi/dictionary/:hash` URL id |
+| `sizeBytes`  | `number` | dictionary size, after any over-cap route was skipped    |
+| `routeCount` | `number` | page routes whose HTML made it into the dictionary       |
+| `durationMs` | `number` | wall-clock ms from boot-render start to publish          |
 
 #### `error`
 
