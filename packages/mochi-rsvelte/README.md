@@ -49,6 +49,11 @@ The output rsvelte emits is verified byte-identical to upstream by this package'
   header comment and different printer whitespace. Semantically identical.
 - **Platforms.** Prebuilt binaries cover macOS arm64/x64, Linux x64/arm64 (glibc) and Windows
   x64 (MSVC). There is no musl build, so Alpine-based images fall back to `svelte/compiler`.
+- **Windows needs the Visual C++ Redistributable.** The prebuilt `.node` links against
+  `VCRUNTIME140.dll`, which Windows does not ship in the box. Without it the binding fails with
+  `LoadLibrary failed: The specified module could not be found` — the file is present, its C
+  runtime is not. Install it with `winget install --id Microsoft.VCRedist.2015+.x64 -e`. GitHub's
+  `windows-latest` runners already have it.
 - **Switching backends invalidates compiled output.** Mochi's in-memory compile cache is keyed
   on the backend, but a prebuilt `manifest.json` is not — run `bun run clean` and rebuild after
   changing `svelteCompiler`.

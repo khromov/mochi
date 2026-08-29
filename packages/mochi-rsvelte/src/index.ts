@@ -1,5 +1,15 @@
-import { compile as rsCompile, compileModule as rsCompileModule, VERSION as TARGET_SVELTE_VERSION } from '@rsvelte/vite-plugin-svelte-native';
 import type { SvelteCompileOutput, SvelteCompilerBackend } from 'mochi-framework';
+import { nativeLoadError } from './nativeLoadError';
+
+// Imported dynamically only so the failure is catchable — a static import would surface the
+// binding loader's own (misleading) message with no chance to add the actionable cause.
+const {
+  compile: rsCompile,
+  compileModule: rsCompileModule,
+  VERSION: TARGET_SVELTE_VERSION,
+} = await import('@rsvelte/vite-plugin-svelte-native').catch((err: unknown) => {
+  throw nativeLoadError(err);
+});
 
 /**
  * The binding's own `VERSION` is the *Svelte* version it targets, not rsvelte's
