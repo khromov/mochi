@@ -19,6 +19,25 @@
         "typescript-eslint": "^8.65.0",
       },
     },
+    "packages/admin": {
+      "name": "mochi-admin",
+      "dependencies": {
+        "@faintshadow/flarecharts": "^26.3.1",
+        "@fontsource-variable/fraunces": "^5.3.0",
+        "@fontsource-variable/public-sans": "^5.3.0",
+        "@lucide/svelte": "^1.28.0",
+        "@tailwindcss/node": "^4.3.3",
+        "@tailwindcss/oxide": "^4.3.3",
+        "mochi-framework": "workspace:*",
+        "svelte": "^5.56.8",
+        "tailwindcss": "^4.3.3",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.0",
+        "svelte-check": "4.7.4",
+        "typescript": "^6.0.3",
+      },
+    },
     "packages/cli": {
       "name": "create-mochi",
       "version": "0.3.1",
@@ -347,6 +366,8 @@
     "@eslint/object-schema": ["@eslint/object-schema@3.0.5", "", {}, "sha512-vqTaUEgxzm+YDSdElad6PiRoX4t8VGDjCtt05zn4nU810UIx/uNEV7/lZJ6KwFThKZOzOxzXy48da+No7HZaMw=="],
 
     "@eslint/plugin-kit": ["@eslint/plugin-kit@0.7.2", "", { "dependencies": { "@eslint/core": "^1.2.1", "levn": "^0.4.1" } }, "sha512-+CNAzxglkrpNf/kKywqQfk74QjtceuOE7Qm+AF8miRvPF/wmmK5+OJOgVh3AVTT3RP2mH3+FOaxlE5v72owk0A=="],
+
+    "@faintshadow/flarecharts": ["@faintshadow/flarecharts@26.3.1", "", { "dependencies": { "d3-array": "^3.2.4", "d3-interpolate-path": "^2.3.0", "d3-scale": "^4.0.2", "d3-shape": "^3.2.0", "d3-time": "^3.1.0" }, "peerDependencies": { "svelte": "^5.0.0" } }, "sha512-8L49Mm/9J5q5aGg9z4DwPlGT8v3N2XUQAZ8YsCN53V9UT728b9IAxRZRw/OMG4cWFlj5NyLL8lqi47/dH9dl2A=="],
 
     "@floating-ui/core": ["@floating-ui/core@1.8.0", "", { "dependencies": { "@floating-ui/utils": "^0.2.12" } }, "sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ=="],
 
@@ -1213,6 +1234,8 @@
     "minimist": ["minimist@1.2.8", "", {}, "sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA=="],
 
     "mitt": ["mitt@3.0.1", "", {}, "sha512-vKivATfr97l2/QBCYAkXYDbrIWPM2IIKEl7YPhjCvKlG3kE2gm+uBo6nEXK3M5/Ffh/FLpKExzOQ3JJoJGFKBw=="],
+
+    "mochi-admin": ["mochi-admin@workspace:packages/admin"],
 
     "mochi-demos": ["mochi-demos@workspace:packages/demos"],
 

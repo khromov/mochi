@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mochi admin</title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <script>
+      // No-flash theme: set data-theme before first paint from a saved choice,
+      // else the OS preference. The ThemeToggle island reads/updates this later.
+      (function () {
+        try {
+          var saved = localStorage.getItem('mochi-admin-theme');
+          var theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+          document.documentElement.dataset.theme = theme;
+        } catch (e) {
+          document.documentElement.dataset.theme = 'light';
+        }
+      })();
+    </script>
+    {{mochi.head}} {{mochi.css}}
+  </head>
+  <body>
+    {{mochi.body}} {{mochi.script}}
+  </body>
+</html>
