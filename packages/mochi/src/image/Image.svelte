@@ -11,6 +11,7 @@
   import { hydratable } from 'svelte';
   import { getImageAttrs, imagePlaceholder, isHydratable } from 'mochi-framework';
   import type { ImportedImage } from 'mochi-framework';
+  import type { MochiDirectives } from '../islands/directives';
 
   let {
     src,
@@ -36,7 +37,7 @@
     /** `<img height>` override (px). Defaults to the size's declared height. */
     height?: number;
     class?: string;
-  } = $props();
+  } & MochiDirectives = $props();
 
   const hydratableSubtree = isHydratable();
   // A local image import passes an object, a remote source a string, and every image API needs the normalized string:

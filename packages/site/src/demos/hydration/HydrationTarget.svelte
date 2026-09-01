@@ -2,8 +2,9 @@
   import type { Snippet } from 'svelte';
   import { isBrowser } from 'mochi-framework';
   import Badge from '../../components/Badge.svelte';
+  import type { MochiDirectives } from 'mochi-framework';
 
-  let { label = 'Target', children }: { label?: string; children?: Snippet } = $props();
+  let { label = 'Target', children }: { label?: string; children?: Snippet } & MochiDirectives = $props();
 
   let count = $state(0);
   const renderedAt = new Date().toLocaleTimeString();

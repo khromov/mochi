@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { DeliveryLogEntry, EmailStatus } from '../db.server';
+  import type { MochiDirectives } from 'mochi-framework';
 
-  let { status, entries }: { status: EmailStatus; entries: DeliveryLogEntry[] } = $props();
+  let { status, entries }: { status: EmailStatus; entries: DeliveryLogEntry[] } & MochiDirectives = $props();
 
   let dialog = $state<HTMLDialogElement | null>(null);
 

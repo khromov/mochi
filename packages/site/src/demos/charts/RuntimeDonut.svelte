@@ -1,10 +1,10 @@
 <script lang="ts">
-  import type { ClientOnlyProps } from 'mochi-framework';
+  import type { ClientOnlyProps, MochiDirectives } from 'mochi-framework';
   import { PieChart } from 'layerchart/svg';
   import ChartFrame from './ChartFrame.svelte';
   import { runtimes, seriesColors } from './data.ts';
 
-  let { height = 300 }: ClientOnlyProps<{ height?: number }> = $props();
+  let { height = 300 }: ClientOnlyProps<{ height?: number }> & MochiDirectives = $props();
 </script>
 
 <ChartFrame {height}>

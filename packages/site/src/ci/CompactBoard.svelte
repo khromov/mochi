@@ -5,6 +5,7 @@
   import RunStrip from './RunStrip.svelte';
   import { CI_STARGAZERS_URL } from './repo';
   import { formatRelative, runLabel, runTone, successRate } from './status';
+  import type { MochiDirectives } from 'mochi-framework';
 
   let {
     dashboard,
@@ -14,7 +15,7 @@
     dashboard: CiDashboardData | null;
     rateLimit: CiRateLimit | null;
     serverNow: number;
-  } = $props();
+  } & MochiDirectives = $props();
 
   // The seed is deliberately a one-time snapshot: the board owns these values from
   // here on and refreshes them itself.

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { enhance, isServer, getRequestContext, isHydratable } from 'mochi-framework';
-  import type { MochiEnhanceOptions, MochiSubmitFunction } from 'mochi-framework';
+  import type { MochiEnhanceOptions, MochiSubmitFunction, MochiDirectives } from 'mochi-framework';
 
-  let { initialUser }: { initialUser: string | null } = $props();
+  let { initialUser }: { initialUser: string | null } & MochiDirectives = $props();
 
   const hydratable = isHydratable();
   // For SSR-only (plain HTML) renders, read the form action result so errors

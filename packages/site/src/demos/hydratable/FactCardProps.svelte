@@ -1,7 +1,8 @@
 <script lang="ts">
+  import type { MochiDirectives } from 'mochi-framework';
   // Alternative to `hydratable()`: the page computes `fact` server-side and passes it as a prop,
   // which Mochi devalue-serialises into the HTML and re-hydrates client-side without re-running the SSR work.
-  let { fact }: { fact: { sqliteVersion: string; computedAt: string } } = $props();
+  let { fact }: { fact: { sqliteVersion: string; computedAt: string } } & MochiDirectives = $props();
 
   let clicks = $state(0);
 </script>

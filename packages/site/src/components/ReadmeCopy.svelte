@@ -2,9 +2,10 @@
   import toast from 'svelte-french-toast';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import Copy from '@lucide/svelte/icons/copy';
+  import type { MochiDirectives } from 'mochi-framework';
 
   // For demos, the source sits next to `href` at `${href}llms.txt`; for docs it's derived from `slug`.
-  let { slug, href, kind = 'docs' }: { slug?: string; href?: string; kind?: 'docs' | 'demos' } = $props();
+  let { slug, href, kind = 'docs' }: { slug?: string; href?: string; kind?: 'docs' | 'demos' } & MochiDirectives = $props();
 
   const url = $derived(kind === 'demos' ? `${href}llms.txt` : slug ? `/docs/${slug}/llms.txt` : '/llms.txt');
   let busy = $state(false);

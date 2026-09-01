@@ -66,12 +66,10 @@ function adaptOptions(options: Record<string, unknown>): Record<string, unknown>
       adapted = { ...options };
     }
     delete adapted[key];
-    warnOnce(
-      key,
-      key === 'cssHash'
-        ? "Falling back to Svelte's default `svelte-<hash>` scheme; pass the rsvelte-specific `cssHashOverride: '<hash>'` to force a fixed value."
-        : 'All warnings are produced unfiltered.',
-    );
+    // Mochi never surfaces compiler warnings, so a dropped `warningFilter` changes nothing worth a notice.
+    if (key === 'cssHash') {
+      warnOnce(key, "Falling back to Svelte's default `svelte-<hash>` scheme; pass the rsvelte-specific `cssHashOverride: '<hash>'` to force a fixed value.");
+    }
   }
   return adapted;
 }

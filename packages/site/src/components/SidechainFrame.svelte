@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { ClientOnlyProps } from 'mochi-framework';
+  import type { ClientOnlyProps, MochiDirectives } from 'mochi-framework';
   import type { Sidechain } from '@nprapps/sidechain';
 
-  let { src, title }: ClientOnlyProps<{ src: string; title: string }> = $props();
+  let { src, title }: ClientOnlyProps<{ src: string; title: string }> & MochiDirectives = $props();
 
   let host = $state<Sidechain | null>(null);
 

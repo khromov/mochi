@@ -3,11 +3,11 @@
   import CodeSnippet from '../../components/CodeSnippet.svelte';
   import { themes } from './themes.ts';
   import type { ThemeName } from './themes.ts';
-  import type { MintedCaptcha } from 'mochi-framework';
+  import type { MintedCaptcha, MochiDirectives } from 'mochi-framework';
 
   type Snippets = Record<ThemeName | 'defaults', string>;
 
-  let { captchas, css, svelte }: { captchas: MintedCaptcha[]; css: Snippets; svelte: Snippets } = $props();
+  let { captchas, css, svelte }: { captchas: MintedCaptcha[]; css: Snippets; svelte: Snippets } & MochiDirectives = $props();
 </script>
 
 <div class="variants">

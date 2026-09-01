@@ -1,10 +1,10 @@
 <script lang="ts">
   import { enhance } from 'mochi-framework';
-  import type { MochiEnhanceOptions, MochiSubmitFunction } from 'mochi-framework';
+  import type { MochiEnhanceOptions, MochiSubmitFunction, MochiDirectives } from 'mochi-framework';
 
   type GuestbookEntry = { id: string; name: string; at: number };
 
-  let { entries: initialEntries }: { entries: GuestbookEntry[] } = $props();
+  let { entries: initialEntries }: { entries: GuestbookEntry[] } & MochiDirectives = $props();
 
   // svelte-ignore state_referenced_locally
   let entries = $state<GuestbookEntry[]>(initialEntries);

@@ -1,5 +1,8 @@
 <script lang="ts">
   import { hydratable } from 'svelte';
+  import type { MochiDirectives } from 'mochi-framework';
+
+  let {}: MochiDirectives = $props();
 
   // Same key as the page's `hydratable()` call, so this closure never actually runs — the throw
   // is an assertion that fires loudly if that invariant ever breaks.

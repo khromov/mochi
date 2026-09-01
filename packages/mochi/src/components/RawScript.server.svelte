@@ -1,6 +1,7 @@
 <script lang="ts">
   import { readFileSync } from 'node:fs';
   import { isHydratable } from 'mochi-framework';
+  import type { MochiDirectives } from '../islands/directives';
 
   let {
     src,
@@ -8,7 +9,7 @@
   }: {
     src?: string;
     string?: string;
-  } = $props();
+  } & MochiDirectives = $props();
 
   // Captured at init (getContext constraint); also fires when nested inside a
   // hydrating island, not just when the directive sits on <RawScript> itself.

@@ -1,8 +1,9 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import ThrowOnClient from './ThrowOnClient.svelte';
+  import type { MochiDirectives } from 'mochi-framework';
 
-  let { children: _children }: { children?: Snippet } = $props();
+  let { children: _children }: { children?: Snippet } & MochiDirectives = $props();
 </script>
 
 <div class="card">

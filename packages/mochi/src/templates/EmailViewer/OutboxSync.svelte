@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import type { MochiDirectives } from '../../islands/directives';
 
   // Renders nothing — its only job is to tell the debug bar, once this page loads,
   // which message is being read (viewedId) and which ids still exist (allIds), so the
   // toolbar can drop the read one from its unread set and prune ids that were cleared.
-  let { viewedId, allIds }: { viewedId: string | null; allIds: string[] } = $props();
+  let { viewedId, allIds }: { viewedId: string | null; allIds: string[] } & MochiDirectives = $props();
 
   onMount(() => {
     // A stale ?id= (e.g. the dev server restarted and cleared the outbox while

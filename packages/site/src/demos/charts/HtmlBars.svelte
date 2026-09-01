@@ -2,6 +2,9 @@
   import { BarChart } from 'layerchart/html';
   import ChartFrame from './ChartFrame.svelte';
   import { traffic, seriesColors } from './data.ts';
+  import type { MochiDirectives } from 'mochi-framework';
+
+  let {}: MochiDirectives = $props();
 
   const HEIGHT = 260;
 

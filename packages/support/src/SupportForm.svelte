@@ -1,9 +1,9 @@
 <script lang="ts">
   import { enhance, isServer, getRequestContext, isHydratable } from 'mochi-framework';
-  import type { MochiEnhanceOptions, MochiSubmitFunction, MintedCaptcha } from 'mochi-framework';
+  import type { MochiEnhanceOptions, MochiSubmitFunction, MintedCaptcha, MochiDirectives } from 'mochi-framework';
   import { MochiCaptcha } from 'mochi-framework/components';
 
-  let { captcha }: { captcha: MintedCaptcha } = $props();
+  let { captcha }: { captcha: MintedCaptcha } & MochiDirectives = $props();
 
   const hydratable = isHydratable();
   // For SSR-only (plain HTML) renders, read the form action result so confirmation/error survives the page re-render after a POST.

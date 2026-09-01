@@ -1,5 +1,6 @@
 <script lang="ts">
-  let { initialLikes }: { initialLikes: number } = $props();
+  import type { MochiDirectives } from 'mochi-framework';
+  let { initialLikes }: { initialLikes: number } & MochiDirectives = $props();
   let likes = $state(initialLikes);
 </script>
 

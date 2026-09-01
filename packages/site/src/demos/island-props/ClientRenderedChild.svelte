@@ -2,6 +2,7 @@
   import { isBrowser } from 'mochi-framework';
   import Badge from '../../components/Badge.svelte';
   import { typeOf } from './devalueTypeOf.ts';
+  import type { MochiDirectives } from 'mochi-framework';
 
   let {
     dateVal,
@@ -35,7 +36,7 @@
     repeatedRef: { x: number }[];
     cyclicRef: { name: string; self?: unknown };
     serverTypes: Record<string, string>;
-  } = $props();
+  } & MochiDirectives = $props();
 
   function display(v: unknown): string {
     if (v === undefined) {

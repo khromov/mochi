@@ -1,8 +1,8 @@
 <script lang="ts">
   import { enhance } from 'mochi-framework';
-  import type { MochiEnhanceOptions, MochiSubmitFunction } from 'mochi-framework';
+  import type { MochiEnhanceOptions, MochiSubmitFunction, MochiDirectives } from 'mochi-framework';
 
-  let { label }: { label: string } = $props();
+  let { label }: { label: string } & MochiDirectives = $props();
 
   let pending = $state(false);
   let result = $state<string | null>(null);

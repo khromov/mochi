@@ -1,5 +1,8 @@
 <script lang="ts">
   import Field from './Field.svelte';
+  import type { MochiDirectives } from 'mochi-framework';
+
+  let {}: MochiDirectives = $props();
 
   let clicks = $state(0);
 </script>

@@ -1,10 +1,10 @@
 <script lang="ts">
-  import type { ClientOnlyProps } from 'mochi-framework';
+  import type { ClientOnlyProps, MochiDirectives } from 'mochi-framework';
 
   // The same origins the CSP lets frame us — `matchMessage` filters on payload
   // shape only, so without this any window holding a handle to this frame could
   // drive its theme.
-  let { origins }: ClientOnlyProps<{ origins: string[] }> = $props();
+  let { origins }: ClientOnlyProps<{ origins: string[] }> & MochiDirectives = $props();
 
   // Dynamic import: `mochi:clientOnly` skips the render, but the page's import of
   // this module still runs during SSR, where sidechain's module-scope

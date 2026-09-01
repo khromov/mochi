@@ -1,8 +1,8 @@
 <script lang="ts">
   import { enhance, isServer, getRequestContext, isHydratable } from 'mochi-framework';
-  import type { MochiSubmitFunction } from 'mochi-framework';
+  import type { MochiSubmitFunction, MochiDirectives } from 'mochi-framework';
 
-  let { label }: { label: string } = $props();
+  let { label }: { label: string } & MochiDirectives = $props();
 
   const _form = !isHydratable() && isServer ? getRequestContext().form : null;
   const initialValue = _form?.ok && _form.action === 'random' && typeof _form.data.value === 'number' ? _form.data.value : null;

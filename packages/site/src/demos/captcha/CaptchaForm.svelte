@@ -1,9 +1,9 @@
 <script lang="ts">
   import { enhance } from 'mochi-framework';
-  import type { MochiSubmitFunction, MintedCaptcha } from 'mochi-framework';
+  import type { MochiSubmitFunction, MintedCaptcha, MochiDirectives } from 'mochi-framework';
   import { MochiCaptcha } from 'mochi-framework/components';
 
-  let { captcha }: { captcha: MintedCaptcha } = $props();
+  let { captcha }: { captcha: MintedCaptcha } & MochiDirectives = $props();
 
   let errorMessage = $state<string | null>(null);
   let errorReason = $state<string | null>(null);

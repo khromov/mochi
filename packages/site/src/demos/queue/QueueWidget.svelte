@@ -1,10 +1,10 @@
 <script lang="ts">
   import { enhance } from 'mochi-framework';
-  import type { MochiSubmitFunction } from 'mochi-framework';
+  import type { MochiSubmitFunction, MochiDirectives } from 'mochi-framework';
   import type { ProcessedEntry, QueueStatus } from './types.ts';
   import { randomUsername } from './usernames.ts';
 
-  let { initial, suggestedUser }: { initial: QueueStatus; suggestedUser: string } = $props();
+  let { initial, suggestedUser }: { initial: QueueStatus; suggestedUser: string } & MochiDirectives = $props();
 
   // Seed from the serverProps snapshot; the SSE stream then owns these server-global counters.
   // svelte-ignore state_referenced_locally

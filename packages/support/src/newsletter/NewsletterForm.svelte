@@ -1,9 +1,9 @@
 <script lang="ts">
   import { enhance, isServer, getRequestContext, isHydratable } from 'mochi-framework';
-  import type { MochiEnhanceOptions, MochiSubmitFunction, MintedCaptcha } from 'mochi-framework';
+  import type { MochiEnhanceOptions, MochiSubmitFunction, MintedCaptcha, MochiDirectives } from 'mochi-framework';
   import { MochiCaptcha } from 'mochi-framework/components';
 
-  let { captcha, source }: { captcha: MintedCaptcha; source: string } = $props();
+  let { captcha, source }: { captcha: MintedCaptcha; source: string } & MochiDirectives = $props();
 
   const hydratable = isHydratable();
   // SSR-only renders read the action result so the outcome survives the POST.

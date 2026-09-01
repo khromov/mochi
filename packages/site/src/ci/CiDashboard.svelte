@@ -7,6 +7,7 @@
   import { CI_ACTIONS_URL, CI_STARGAZERS_URL } from './repo';
   import WorkflowCard from './WorkflowCard.svelte';
   import { formatRelative, formatUntil } from './status';
+  import type { MochiDirectives } from 'mochi-framework';
 
   let {
     dashboard,
@@ -16,7 +17,7 @@
     dashboard: CiDashboardData | null;
     rateLimit: CiRateLimit | null;
     serverNow: number;
-  } = $props();
+  } & MochiDirectives = $props();
 
   // The seed is deliberately a one-time snapshot: the board owns these values from
   // here on and refreshes them itself.

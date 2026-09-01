@@ -1,5 +1,6 @@
 <script lang="ts">
   import { isBrowser } from 'mochi-framework';
+  import type { MochiDirectives } from 'mochi-framework';
 
   let {
     label,
@@ -13,7 +14,7 @@
     comparison: string;
     copyright: string;
     greeting: string;
-  } = $props();
+  } & MochiDirectives = $props();
 
   // The `authored` column shows the raw attribute text as written in the parent
   // (`&amp;`, `&quot;`, …); the `value` column shows what the island actually
