@@ -75,7 +75,7 @@ Connect to your existing infrastructure at different cloud providers.
 
 ## Sub-path and static hosting
 
-Mochi writes absolute URLs for everything it owns: `/_mochi/client/…`, `/_mochi/css/…`, the island `component-url`, and the `import` specifiers inside the client chunks. To host under a sub-path such as `https://user.github.io/my-app/`, bake the prefix in at build time:
+Mochi writes absolute URLs for everything it owns: `/_mochi/client/…`, `/_mochi/css/…`, the island `component-url`, and the `import` specifiers inside the client chunks. To host under a sub-path such as `https://example.com/my-app/`, bake the prefix in at build time:
 
 ```sh
 mochi-framework build --asset-prefix /my-app/_mochi
