@@ -1,5 +1,4 @@
 <script lang="ts">
-  import type { MochiDirectives } from 'mochi-framework';
   type Item = { id: number; text: string };
   type Theme = { bg: string; fg: string; accent: string };
 
@@ -11,7 +10,7 @@
     label: string;
     theme: Theme;
     items: Item[];
-  } & MochiDirectives = $props();
+  } = $props();
 </script>
 
 <article class="card" style="--bg: {theme.bg}; --fg: {theme.fg}; --accent: {theme.accent};">

@@ -279,9 +279,6 @@
       },
     },
   },
-  "patchedDependencies": {
-    "svelte-check@4.7.4": "packages/mochi/patches/svelte-check@4.7.4.patch",
-  },
   "overrides": {
     "msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*",
   },

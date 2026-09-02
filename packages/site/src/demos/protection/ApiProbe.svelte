@@ -1,8 +1,4 @@
 <script lang="ts">
-  import type { MochiDirectives } from 'mochi-framework';
-
-  let {}: MochiDirectives = $props();
-
   let status = $state<number | null>(null);
   let body = $state('');
   let busy = $state(false);

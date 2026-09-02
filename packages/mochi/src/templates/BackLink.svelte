@@ -1,8 +1,5 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { MochiDirectives } from '../islands/directives';
-
-  let {}: MochiDirectives = $props();
 
   // SSR renders "Go home →" (safe fallback). After hydration, if the user
   // navigated here from somewhere on this site, swap to "Go back" and wire

@@ -1,9 +1,7 @@
 <script lang="ts">
   import { enhance } from 'mochi-framework';
-  import type { MochiEnhanceOptions, MochiSubmitFunction, MochiDirectives } from 'mochi-framework';
+  import type { MochiEnhanceOptions, MochiSubmitFunction } from 'mochi-framework';
   import { ATTACHMENT, DEMO_TO } from './presets.ts';
-
-  let {}: MochiDirectives = $props();
 
   // Hydrated-only demo: this island always ships JS, so the form submits through
   // {@attach enhance(...)} — there's no plain-HTML fallback branch to handle.

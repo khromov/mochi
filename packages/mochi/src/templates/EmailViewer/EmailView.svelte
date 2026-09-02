@@ -1,10 +1,9 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import type { MochiDirectives } from '../../islands/directives';
 
   type Tab = 'html' | 'text' | 'source';
 
-  let { html, text }: { html?: string; text?: string } & MochiDirectives = $props();
+  let { html, text }: { html?: string; text?: string } = $props();
 
   const tabs = $derived(
     (

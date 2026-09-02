@@ -6,11 +6,10 @@
   import ThemeToggle from './ThemeToggle.svelte';
   import GitHubButton from './GitHubButton.svelte';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
-  import type { MochiDirectives } from 'mochi-framework';
 
   const MAX_VISIBLE_CHILDREN = 4;
 
-  let { docsNav, demos, currentSlug }: { docsNav: TocEntry[]; demos: Demo[]; currentSlug?: string } & MochiDirectives = $props();
+  let { docsNav, demos, currentSlug }: { docsNav: TocEntry[]; demos: Demo[]; currentSlug?: string } = $props();
 
   let open = $state(false);
   let query = $state('');

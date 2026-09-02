@@ -1,11 +1,11 @@
 <script lang="ts">
   import { enhance, isServer, getRequestContext, isHydratable } from 'mochi-framework';
-  import type { MochiSubmitFunction, MochiDirectives } from 'mochi-framework';
+  import type { MochiSubmitFunction } from 'mochi-framework';
   import Paperclip from '@lucide/svelte/icons/paperclip';
 
   type UploadResult = { filename: string; content: string; size: number };
 
-  let { label }: { label: string } & MochiDirectives = $props();
+  let { label }: { label: string } = $props();
 
   const hydratable = isHydratable();
   const _form = !hydratable && isServer ? getRequestContext().form : null;

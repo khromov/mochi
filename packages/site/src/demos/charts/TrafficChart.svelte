@@ -2,9 +2,6 @@
   import { AreaChart } from 'layerchart/svg';
   import ChartFrame from './ChartFrame.svelte';
   import { traffic, seriesColors } from './data.ts';
-  import type { MochiDirectives } from 'mochi-framework';
-
-  let {}: MochiDirectives = $props();
 
   // Height only — `width` is a hard override of the measured container width, so leaving it
   // off is what lets the hydrated chart track the column.

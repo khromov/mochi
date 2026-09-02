@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
   import TimeAgo from './TimeAgo.svelte';
   import { UNREAD_EMAILS_KEY, loadUnreadEmailIds } from '../../debug-bar/unread';
-  import type { MochiDirectives } from '../../islands/directives';
 
   let {
     id,
@@ -24,7 +23,7 @@
     attachmentCount: number;
     active: boolean;
     basePath: string;
-  } & MochiDirectives = $props();
+  } = $props();
 
   // Read/unread comes from the debug bar's localStorage set. The active message is
   // the one being viewed, so it always counts as read. Computed after hydration (in

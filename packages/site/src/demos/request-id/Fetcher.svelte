@@ -1,8 +1,5 @@
 <script lang="ts">
   import { isBrowser } from 'mochi-framework';
-  import type { MochiDirectives } from 'mochi-framework';
-
-  let {}: MochiDirectives = $props();
 
   let fetched = $state('');
   let loading = $state(false);

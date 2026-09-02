@@ -3,7 +3,6 @@
   import { enhance } from 'mochi-framework';
   import type { MochiSubmitFunction } from 'mochi-framework';
   import { formatSize } from '../../debug-bar/utils';
-  import type { MochiDirectives } from '../../islands/directives';
 
   type PageCacheStats = { size: number; totalBytes: number };
   type PageCacheEntryMeta = {
@@ -23,7 +22,7 @@
   }: {
     stats: PageCacheStats;
     entries: PageCacheEntryMeta[];
-  } & MochiDirectives = $props();
+  } = $props();
 
   // svelte-ignore state_referenced_locally
   let stats = $state<PageCacheStats>(initialStats);

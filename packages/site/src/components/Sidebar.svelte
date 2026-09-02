@@ -8,13 +8,12 @@
   import GitHubButton from './GitHubButton.svelte';
   import Slash from '@lucide/svelte/icons/slash';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
-  import type { MochiDirectives } from 'mochi-framework';
 
   const MAX_VISIBLE_CHILDREN = 4;
 
   const SCROLL_KEY = 'mochi-sidebar-scroll';
 
-  let { docsNav, demos, currentSlug }: { docsNav: TocEntry[]; demos: Demo[]; currentSlug?: string } & MochiDirectives = $props();
+  let { docsNav, demos, currentSlug }: { docsNav: TocEntry[]; demos: Demo[]; currentSlug?: string } = $props();
 
   let query = $state('');
   let sidebarInner: HTMLDivElement;

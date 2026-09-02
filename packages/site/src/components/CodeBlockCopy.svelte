@@ -3,9 +3,6 @@
   import { onMount } from 'svelte';
   import { isBrowser } from 'mochi-framework';
   import toast, { Toaster } from 'svelte-french-toast';
-  import type { MochiDirectives } from 'mochi-framework';
-
-  let {}: MochiDirectives = $props();
 
   onMount(() => {
     async function handleClick(e: MouseEvent) {

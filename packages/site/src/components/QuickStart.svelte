@@ -3,9 +3,6 @@
   import Copy from '@lucide/svelte/icons/copy';
   import Check from '@lucide/svelte/icons/check';
   import toast from 'svelte-french-toast';
-  import type { MochiDirectives } from 'mochi-framework';
-
-  let {}: MochiDirectives = $props();
 
   // Inlined from @mdi/js as static path strings — the named exports pull in its ~2.7 MB
   // barrel (`mdi.js`, no per-icon sub-paths) and re-parse it on every rebuild.

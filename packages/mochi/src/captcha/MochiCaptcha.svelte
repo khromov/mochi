@@ -3,7 +3,6 @@
   import type { Attachment } from 'svelte/attachments';
   import { logger, isDev } from 'mochi-framework';
   import { CAPTCHA_STEPS, DEFAULT_CAPTCHA_SOLVE_BUDGET_MS, CAPTCHA_SOLVE_SLICE_MS, chainInput, sha256Hex, solvePowSlice } from './pow';
-  import type { MochiDirectives } from '../islands/directives';
 
   const PROGRESS_AFTER_MS = 2000;
   const PROGRESS_INTERVAL_MS = 1000;
@@ -30,7 +29,7 @@
     errorLabel?: string;
     noscriptLabel?: string;
     verified?: boolean;
-  } & MochiDirectives = $props();
+  } = $props();
 
   let solved = $state(false);
   let powNonce = $state<string | null>(null);

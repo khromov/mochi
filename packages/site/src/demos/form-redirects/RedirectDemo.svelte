@@ -1,8 +1,8 @@
 <script lang="ts">
   import { enhance } from 'mochi-framework';
-  import type { MochiSubmitFunction, MochiEnhanceResult, MochiDirectives } from 'mochi-framework';
+  import type { MochiSubmitFunction, MochiEnhanceResult } from 'mochi-framework';
 
-  let { label }: { label: string } & MochiDirectives = $props();
+  let { label }: { label: string } = $props();
 
   let redirectResult = $state<{ status: number; location: string } | null>(null);
   let pending = $state(false);

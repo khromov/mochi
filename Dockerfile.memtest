@@ -15,8 +15,8 @@ ARG BUN_IMAGE=oven/bun:1.4.0-alpine
 FROM ${BUN_IMAGE} AS base
 WORKDIR /usr/src/app
 
-# Copy the whole packages/ tree so bun install can reconcile lockfile topology,
-# resolve workspace:* bin shims, and reach packages/mochi/patches/.
+# Copy the whole packages/ tree so bun install can reconcile lockfile topology
+# and resolve workspace:* bin shims.
 FROM base AS install
 COPY package.json bun.lock /temp/dev/
 COPY packages /temp/dev/packages

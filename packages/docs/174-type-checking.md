@@ -1,7 +1,7 @@
 ---
 title: 'Type checking'
 slug: type-checking
-description: 'Make svelte-check and your editor understand the mochi:* directives with MochiDirectives and a warningFilter in svelte.config.js.'
+description: 'Make svelte-check and your editor understand the mochi:* directives with the ambient types and a warningFilter in svelte.config.js.'
 ---
 
 <script>
@@ -28,44 +28,26 @@ Reference `mochi-framework/ambient` from a `.d.ts` file in your project. Scaffol
 /// <reference types="mochi-framework/ambient" />
 ```
 
-It whitelists the directives on every HTML element and declares Mochi's asset imports (`*.css`, `*.md`, images).
+It declares Mochi's asset imports (`*.css`, `*.md`, images) and whitelists the directives on every HTML element and on every component, so `<UserAvatar mochi:defer userId={1} />` type-checks without the component declaring anything.
 
-### `MochiDirectives` for island components
+#### Directives on components
 
-<VersionNote since="0.10.0" message="MochiDirectives was added in 0.10.0." />
+<VersionNote since="0.10.0" message="Directives on components are covered by the ambient types since 0.10.0. Earlier versions only covered HTML elements and patched svelte-check instead." />
 
-TypeScript checks `<Island mochi:defer />` against the island's own `$props()` type, so the directive is reported as an unknown property:
-
-```
-Object literal may only specify known properties, and '"mochi:defer"' does not exist in type '$$ComponentProps'. ts(2353)
-```
-
-Intersect `MochiDirectives` into the props type of any component you mark with a directive:
+svelte2tsx checks a call site against the component's own `$props()` type. Mochi widens that type where svelte2tsx builds it, so the `mochi:*` keys and their option objects are known on every component. Generic components (`<script generics="…">`) are the one exception: svelte2tsx types them separately, so intersect `MochiDirectives` into their props yourself:
 
 ```svelte
-<!-- file: src/UserAvatar.svelte -->
-<script lang="ts">
+<!-- file: src/List.svelte -->
+<script lang="ts" generics="T">
   import type { MochiDirectives } from 'mochi-framework';
 
-  let { userId }: { userId: number } & MochiDirectives = $props();
+  let { items }: { items: T[] } & MochiDirectives = $props();
 </script>
 ```
-
-A component without props of its own still needs the declaration:
-
-```svelte
-<script lang="ts">
-  import type { MochiDirectives } from 'mochi-framework';
-
-  let {}: MochiDirectives = $props();
-</script>
-```
-
-The component never receives the directives — Mochi consumes them at compile time — but the type tells TypeScript they are allowed at the call site. It covers `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, `mochi:defer:visible`, `mochi:clientOnly` and `mochi:clientOnly:visible`, including their option objects, and it is the same type the ambient augmentation uses for HTML elements.
 
 <Callout type="info">
 
-Projects scaffolded before 0.10.0 instead patch `svelte-check` (`patches/svelte-check@….patch` via `patchedDependencies`). The patch only reaches the CLI: editors bundle their own copy of svelte2tsx and keep reporting the error, which `MochiDirectives` fixes everywhere.
+Projects scaffolded before 0.10.0 patch `svelte-check` instead (`patches/svelte-check@….patch` via `patchedDependencies`). The patch only reaches the CLI — editors bundle their own copy of svelte2tsx and keep reporting the error. After upgrading, delete the `patches/` directory and the `patchedDependencies` entry in `package.json`; the ambient types cover both.
 
 </Callout>
 

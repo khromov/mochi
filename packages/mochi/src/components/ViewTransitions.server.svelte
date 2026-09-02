@@ -2,7 +2,6 @@
   import { getRequestContext, devWarn, isHydratable } from 'mochi-framework';
   import RawScript from './RawScript.server.svelte';
   import slugify from '../vendor/slugify/index.ts';
-  import type { MochiDirectives } from '../islands/directives';
 
   let {
     type = 'fade',
@@ -19,7 +18,7 @@
     easing?: string;
     regions?: string | string[];
     keepElementSelectors?: string | string[];
-  } & MochiDirectives = $props();
+  } = $props();
 
   // Captured at init (getContext constraint); also fires when nested inside a
   // hydrating island, not just when the directive sits on the component itself.

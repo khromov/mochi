@@ -5,9 +5,8 @@
   import Badge from '../../components/Badge.svelte';
   import CalloutBlock from './CalloutBlock.svelte';
   import Highlight from './Highlight.svelte';
-  import type { MochiDirectives } from 'mochi-framework';
 
-  let { source }: { source: string } & MochiDirectives = $props();
+  let { source }: { source: string } = $props();
 
   const live = isHydratable();
   const uid = $props.id();
