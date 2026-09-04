@@ -45,7 +45,7 @@ jobs:
             image: ghcr.io/khromov/mochi
             caprover_app: mochi
             caprover_token_secret: APP_TOKEN_S1
-            bun_image: oven/bun:1.4.0-alpine
+            bun_image: oven/bun:1.4.1-alpine
           # Standalone demos site, also deployed in dev mode. Requires repo
           # secret APP_TOKEN_DEMOS — the per-app deploy token from the
           # mochi-demos CapRover app's "Deployment" tab.
@@ -56,7 +56,7 @@ jobs:
             image: ghcr.io/khromov/mochi-demos
             caprover_app: mochi-demos
             caprover_token_secret: APP_TOKEN_DEMOS_S1
-            bun_image: oven/bun:1.4.0-alpine
+            bun_image: oven/bun:1.4.1-alpine
           # Support form (support.mochi.fast). The only leg on the prebuilt
           # Dockerfile.production rather than the dev-mode Dockerfile — a contact
           # form wants no debug toolbar, and it needs no live docs rendering.
@@ -71,7 +71,7 @@ jobs:
             image: ghcr.io/khromov/mochi-support
             caprover_app: mochi-support
             caprover_token_secret: APP_TOKEN_SUPPORT_S1
-            bun_image: oven/bun:1.4.0-alpine
+            bun_image: oven/bun:1.4.1-alpine
             # Dockerfile.production refuses to boot without ADMIN_PASSWORD +
             # SMTP_HOST + MOCHI_ORIGIN; the transport only connects on send and
             # /admin/ is never hit here, so dummy values suffice for a boot

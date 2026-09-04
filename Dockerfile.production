@@ -4,7 +4,7 @@
 # so SSR + client bundles are baked at build time and no Svelte preprocessor
 # / devDeps are present at runtime.
 #
-# Base image is oven/bun:1.4.0-alpine for all stages (pure musl alpine,
+# Base image is oven/bun:1.4.1-alpine for all stages (pure musl alpine,
 # bun preinstalled, plays nicely with native bindings end-to-end). The
 # earlier frolvlad/alpine-glibc + copied-bun pattern caused the
 # @tailwindcss/oxide loader to hit a glibc compat shim on arm64.
@@ -18,7 +18,7 @@ ARG PORT=3333
 # Global scope (before the first FROM) so every stage's FROM can read it. Kept in
 # sync with the root Dockerfile's arg of the same name; build.yml passes it to
 # every matrix leg.
-ARG BUN_IMAGE=oven/bun:1.4.0-alpine
+ARG BUN_IMAGE=oven/bun:1.4.1-alpine
 
 FROM ${BUN_IMAGE} AS base
 WORKDIR /usr/src/app
