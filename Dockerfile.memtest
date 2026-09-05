@@ -11,7 +11,7 @@
 #   docker build -f Dockerfile.memtest -t mochi-memtest .
 #   docker run -d --restart unless-stopped -v mochi-heapsnapshots:/snapshots mochi-memtest
 
-ARG BUN_IMAGE=oven/bun:1.4.1-alpine
+ARG BUN_IMAGE=oven/bun:1.4.2-alpine
 FROM ${BUN_IMAGE} AS base
 WORKDIR /usr/src/app
 

@@ -128,7 +128,7 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
 # Install Bun (pinned to the repo's .bun-version), baked into the image at build time.
-ARG BUN_VERSION=1.4.1
+ARG BUN_VERSION=1.4.2
 RUN curl -fsSL https://bun.com/install | bash -s "bun-v${BUN_VERSION}"
 ENV BUN_INSTALL=/home/node/.bun
 ENV PATH=$PATH:/home/node/.bun/bin
