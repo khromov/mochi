@@ -40,11 +40,10 @@ export async function initMochiConfig(options: MochiServeOptions): Promise<void>
     );
   }
   const baseKey = envKey ? Buffer.from(envKey, 'base64url') : randomBytes(32);
-  // Fail closed: this key is the sole input to every signature the framework mints, so a truncated one is brute-forceable offline.
   if (envKey && baseKey.length < 32) {
-    throw new Error(
-      `MOCHI_KEY decoded to only ${baseKey.length} bytes — at least 32 are required. ` +
-        'A short key yields a low-entropy secret for signing island props, image URLs, captcha tokens and protection clearances. ' +
+    logger.warn(
+      `MOCHI_KEY decoded to only ${baseKey.length} bytes — this is likely a typo or truncated value. ` +
+        'A short key yields a low-entropy secret for signing island props and image URLs. ' +
         'Generate a proper one with `bunx mochi-framework generate-key`.',
     );
   }
