@@ -1,11 +1,11 @@
-import { Mochi, fail, redirect, success, logger, mintCaptcha, verifyCaptcha, consumeCaptcha, getRequestContext } from 'mochi-framework';
+import { Mochi, fail, success, logger, mintCaptcha, verifyCaptcha, consumeCaptcha, getRequestContext } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
 import { appendNewsletterLog, confirmSubscriber, requestSubscription, subscriberByConfirmToken, subscriberByUnsubscribeToken, unsubscribeSubscriber } from '../db.server';
 import { embedAncestors } from '../embedHeaders';
 import { CONFIRM_TTL_MS, RESEND_COOLDOWN_MS } from './config';
 import { newsletterEmailQueue } from './jobs.server';
 
-export type TokenPageState = 'ready' | 'confirmed' | 'already' | 'expired' | 'unknown' | 'unsubscribed';
+export type TokenPageState = 'confirmed' | 'already' | 'expired' | 'unknown' | 'unsubscribed';
 
 export const newsletterRoutes: Record<string, MochiRouteValue> = {
   '/newsletter/embed': Mochi.page('./src/newsletter/NewsletterEmbed.svelte', {
@@ -78,17 +78,19 @@ export const newsletterRoutes: Record<string, MochiRouteValue> = {
     },
   }),
 
+  // GET on purpose: the token is the authorisation, and one-click
+  // List-Unsubscribe requires unsubscribe to be safe to hit unauthenticated. The
+  // cost is that a link-prefetching mail scanner confirms on the recipient's behalf.
   '/newsletter/confirm': Mochi.page('./src/newsletter/NewsletterConfirm.svelte', {
     rateLimit: { limit: 30, window: '10m' },
     serverProps: () => {
       const { url } = getRequestContext();
-      const token = url.searchParams.get('token') ?? '';
-      const subscriber = subscriberByConfirmToken(token);
+      const subscriber = subscriberByConfirmToken(url.searchParams.get('token') ?? '');
       if (!subscriber) {
         return { state: 'unknown' satisfies TokenPageState };
       }
       if (subscriber.status === 'confirmed') {
-        return { state: (url.searchParams.get('confirmed') === '1' ? 'confirmed' : 'already') satisfies TokenPageState };
+        return { state: 'already' satisfies TokenPageState };
       }
       if (subscriber.status === 'unsubscribed') {
         return { state: 'unsubscribed' satisfies TokenPageState };
@@ -96,20 +98,8 @@ export const newsletterRoutes: Record<string, MochiRouteValue> = {
       if (subscriber.confirm_expires_at <= Date.now()) {
         return { state: 'expired' satisfies TokenPageState };
       }
-      return { state: 'ready' satisfies TokenPageState, token };
-    },
-    actions: {
-      confirm: ({ formData }) => {
-        const token = String(formData.get('token') ?? '').slice(0, 256);
-        const subscriber = subscriberByConfirmToken(token);
-        if (!subscriber || subscriber.status === 'unsubscribed' || subscriber.confirm_expires_at <= Date.now()) {
-          return redirect(303, `/newsletter/confirm/?token=${encodeURIComponent(token)}`);
-        }
-        if (subscriber.status !== 'confirmed') {
-          confirmSubscriber(subscriber.id);
-        }
-        return redirect(303, `/newsletter/confirm/?token=${encodeURIComponent(token)}&confirmed=1`);
-      },
+      confirmSubscriber(subscriber.id);
+      return { state: 'confirmed' satisfies TokenPageState };
     },
   }),
 
