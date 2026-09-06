@@ -13,7 +13,9 @@ export const routes: Record<string, MochiRouteValue> = {
     return Response.json({ entries: [...guestbook].reverse() });
   }),
   '/demos/reload-form-data': Mochi.page('./src/demos/reload-form-data/ReloadFormData.svelte', {
-    rateLimit: { limit: 20, window: '1m' },
+    // Scoped to the sign POST: a page-wide limit also counts GETs (including speculation-rules
+    // prefetches), so a visitor reading the demo could be served a 429 instead of the page.
+    rateLimit: { limit: 60, window: '1m', skip: (req) => req.method !== 'POST' },
     serverProps: () => ({ guestbook: [...guestbook].reverse() }),
     actions: {
       guestbookSign: ({ formData }) => {

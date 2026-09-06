@@ -7,7 +7,7 @@
  *   envelope = base64url( siv(16) ‖ ciphertext )   // aessiv(key, aad).encrypt(inner)
  *
  * The 64-byte key — noble splits it into K1 for S2V/CMAC and K2 for CTR — derives as `HMAC-SHA512(secretKey, label)`
- * from `getMochiConfig().secretKey`, so any `MOCHI_KEY` length works and the existing secret and its
+ * from `getMochiConfig().secretKey`, so any secret-key length works and the existing secret and its
  * `serverIsland:secretKey` filter carry over. Determinism keeps image URLs stable and cacheable, at the cost of equal
  * plaintexts being observably equal.
  *

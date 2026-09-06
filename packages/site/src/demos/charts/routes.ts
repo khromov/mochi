@@ -6,7 +6,8 @@ const MAX_SIZE = 2000;
 
 // The canvas is allocated in one shot from these, so an unclamped `?width=40000` is a memory-exhaustion lever.
 function clampSize(raw: string | null, fallback: number): number {
-  const n = Number(raw ?? fallback);
+  // `?width=` yields '' and `Number('')` is 0, which would clamp to MIN_SIZE instead of the default.
+  const n = raw?.trim() ? Number(raw) : fallback;
   if (!Number.isFinite(n)) {
     return fallback;
   }
