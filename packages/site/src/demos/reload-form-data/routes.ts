@@ -3,6 +3,7 @@ import type { MochiRouteValue } from 'mochi-framework';
 
 type GuestbookEntry = { id: string; name: string; at: number };
 const guestbook: GuestbookEntry[] = [];
+const MAX_ENTRIES = 100;
 
 export const routes: Record<string, MochiRouteValue> = {
   '/api/guestbook': Mochi.api(({ method }) => {
@@ -12,6 +13,7 @@ export const routes: Record<string, MochiRouteValue> = {
     return Response.json({ entries: [...guestbook].reverse() });
   }),
   '/demos/reload-form-data': Mochi.page('./src/demos/reload-form-data/ReloadFormData.svelte', {
+    rateLimit: { limit: 20, window: '1m' },
     serverProps: () => ({ guestbook: [...guestbook].reverse() }),
     actions: {
       guestbookSign: ({ formData }) => {
@@ -23,6 +25,9 @@ export const routes: Record<string, MochiRouteValue> = {
           return fail(400, { error: 'Name too long (max 50 chars)' });
         }
         guestbook.push({ id: crypto.randomUUID(), name, at: Date.now() });
+        if (guestbook.length > MAX_ENTRIES) {
+          guestbook.shift();
+        }
         return success({});
       },
     },

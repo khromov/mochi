@@ -8,6 +8,7 @@ export const queues: MochiQueueConfig[] = [notificationQueue];
 
 export const routes: Record<string, MochiRouteValue> = {
   '/demos/queue': Mochi.page('./src/demos/queue/Queue.svelte', {
+    rateLimit: { limit: 20, window: '1m' },
     // `suggestedUser` is generated server-side so SSR and hydration agree.
     serverProps: () => ({ initial: queueStatus(), suggestedUser: randomUsername() }),
     actions: {
