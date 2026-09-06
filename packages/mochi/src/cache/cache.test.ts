@@ -296,8 +296,8 @@ describe('MochiCache.set', () => {
       await wait(30);
       return 'from-fn';
     });
-    // Let the run claim its in-flight slot — `fetch` awaits a storage read first, and
-    // `set` can only supersede a run that has already registered.
+    // Let the run claim its in-flight slot, so this covers the registered-run path; the
+    // initial-read gap before registration has its own tests below.
     await wait(5);
     await cache.set('k', 'from-set');
 
@@ -783,5 +783,174 @@ describe('MochiCache invalidation vs in-flight revalidation', () => {
 
     const internals = cache as unknown as { inflight: Map<string, unknown> };
     expect(internals.inflight.size).toBe(0);
+  });
+});
+
+describe('MochiCache invalidation during the initial-read gap', () => {
+  // A backend whose next read answers from the store immediately but parks before returning, like an async backend
+  // whose read was already served when a later write landed; `releaseRead` lets the parked fetch proceed.
+  function makeGatedStorage() {
+    const store = new Map<string, unknown>();
+    let armed = false;
+    let release: (() => void) | undefined;
+    const storage: Storage = {
+      async getItem(key) {
+        const raw = store.get(key) ?? null;
+        if (armed) {
+          armed = false;
+          await new Promise<void>((r) => {
+            release = r;
+          });
+        }
+        return raw;
+      },
+      setItem: (key, value) => void store.set(key, value),
+      removeItem: (key) => void store.delete(key),
+      clear: () => store.clear(),
+    };
+    return {
+      storage,
+      store,
+      armRead: () => {
+        armed = true;
+      },
+      releaseRead: () => release!(),
+    };
+  }
+
+  const expiredEntry = (value: unknown) => ({ value, createdAt: Date.now() - 100_000 });
+
+  test("set() during a fetch's initial read wins over the fetch's later recompute", async () => {
+    const cache = new MochiCache({ minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+    // The read is already in progress (and answered as a miss) when set runs — no in-flight slot exists yet.
+    const pending = cache.fetch('k', () => 'from-fn');
+    await cache.set('k', 'from-set');
+
+    await expect(pending).resolves.toBe('from-fn');
+    expect(await cache.peek('k')).toEqual({ value: 'from-set', status: 'fresh' });
+  });
+
+  test("delete() during a fetch's initial read is not resurrected by the recompute", async () => {
+    const { storage, store, armRead, releaseRead } = makeGatedStorage();
+    const cache = new MochiCache({ storage, minTimeToStale: 10, maxTimeToLive: 20 });
+    store.set('k', expiredEntry('v0'));
+
+    armRead();
+    const pending = cache.fetch('k', () => 'from-fn');
+    await wait(1);
+    await cache.delete('k');
+    releaseRead();
+
+    await expect(pending).resolves.toBe('from-fn');
+    expect(store.size).toBe(0);
+    expect(await cache.peek('k')).toBeNull();
+  });
+
+  test("markStale() during a fetch's initial read keeps its backdated entry", async () => {
+    const { storage, store, armRead, releaseRead } = makeGatedStorage();
+    const cache = new MochiCache({ storage, minTimeToStale: 10_000, maxTimeToLive: 100_000 });
+    store.set('k', expiredEntry('v0'));
+
+    armRead();
+    const pending = cache.fetch('k', () => 'from-fn');
+    await wait(1);
+    // A peer replaces the entry while our read is parked, then this process backdates it.
+    store.set('k', { value: 'from-peer', createdAt: Date.now() });
+    await cache.markStale('k');
+    expect(await cache.peek('k')).toEqual({ value: 'from-peer', status: 'stale' });
+    releaseRead();
+
+    await expect(pending).resolves.toBe('from-fn');
+    expect(await cache.peek('k')).toEqual({ value: 'from-peer', status: 'stale' });
+  });
+
+  test("clearItems() during a fetch's initial read is not repopulated by the recompute", async () => {
+    const { storage, store, armRead, releaseRead } = makeGatedStorage();
+    const cache = new MochiCache({ storage, minTimeToStale: 10, maxTimeToLive: 20 });
+
+    armRead();
+    const pending = cache.fetch('k', () => 'from-fn');
+    await wait(1);
+    await cache.clearItems();
+    releaseRead();
+
+    await expect(pending).resolves.toBe('from-fn');
+    expect(store.size).toBe(0);
+  });
+
+  test("a set() whose write lands after a later fetch's read still wins", async () => {
+    const store = new Map<string, unknown>();
+    const storage: Storage = {
+      getItem: (key) => store.get(key) ?? null,
+      async setItem(key, value) {
+        await wait(10);
+        store.set(key, value);
+      },
+      removeItem: (key) => void store.delete(key),
+      clear: () => store.clear(),
+    };
+    const cache = new MochiCache({ storage, minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+
+    // set is called first, but its slow write lands only after the fetch has read a miss and while fn is still running.
+    const setting = cache.set('k', 'from-set');
+    const pending = cache.fetch('k', async () => {
+      await wait(20);
+      return 'from-fn';
+    });
+    await Promise.all([setting, pending]);
+
+    expect(await cache.peek('k')).toEqual({ value: 'from-set', status: 'fresh' });
+  });
+
+  test('an uncontended fetch still writes its recompute on miss, stale and expired reads', async () => {
+    const cache = new MochiCache({ minTimeToStale: 10, maxTimeToLive: 30 });
+    let calls = 0;
+    const fn = async () => {
+      calls++;
+      await wait(1);
+      return `v${calls}`;
+    };
+
+    expect(await cache.fetchWithStatus('k', fn)).toEqual({ value: 'v1', status: 'miss' });
+    expect(await cache.peek('k')).toEqual({ value: 'v1', status: 'fresh' });
+
+    await wait(15);
+    expect((await cache.fetchWithStatus('k', fn)).status).toBe('stale');
+    await cache.whenIdle();
+    expect(await cache.peek('k')).toEqual({ value: 'v2', status: 'fresh' });
+
+    await wait(40);
+    expect(await cache.fetchWithStatus('k', fn)).toEqual({ value: 'v3', status: 'expired' });
+    expect(await cache.peek('k')).toEqual({ value: 'v3', status: 'fresh' });
+  });
+
+  test('the generation map is reclaimed once no fetch or run holds the key', async () => {
+    const cache = new MochiCache({ minTimeToStale: 10, maxTimeToLive: 60_000, inflightTimeout: 20 });
+    const internals = cache as unknown as { generations: Map<string, unknown> };
+
+    // Plain fetch, coalesced fetches, and a set/delete that supersede an unregistered fetch.
+    await cache.fetch('a', () => 'v1');
+    await Promise.all([cache.fetch('b', () => wait(5).then(() => 'v1')), cache.fetch('b', () => 'v1')]);
+    const pending = cache.fetch('c', () => 'v1');
+    await cache.set('c', 'v2');
+    await cache.delete('c');
+    await pending;
+    expect(internals.generations.size).toBe(0);
+
+    // A background revalidation outlives its fetch; the entry lives with the run and goes with it.
+    await wait(15);
+    await cache.fetch('a', () => 'v2');
+    expect(internals.generations.has('a')).toBe(true);
+    await cache.whenIdle();
+    expect(internals.generations.size).toBe(0);
+
+    // A run abandoned by the timeout keeps the entry until the work itself settles, then releases it.
+    let release!: (value: string) => void;
+    await expect(cache.fetch('d', () => new Promise<string>((r) => (release = r)))).rejects.toThrow(/timed out/);
+    expect(internals.generations.has('d')).toBe(true);
+    release('late');
+    await wait(5);
+    expect(internals.generations.size).toBe(0);
+    expect(await cache.peek('d')).toBeNull();
   });
 });
