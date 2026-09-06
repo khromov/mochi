@@ -215,6 +215,7 @@ export type {
   MochiWarmupOptions,
   MochiRouteValue,
   MochiWsConfig,
+  MochiWebSocketOptions,
   MochiWsHandlers,
   MochiWsData,
   MochiSseConfig,

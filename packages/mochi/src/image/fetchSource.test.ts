@@ -2,7 +2,7 @@ import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fetchImageSource } from './fetchSource';
+import { createPinnedFetchRequest, fetchImageSource, fetchPinned } from './fetchSource';
 import { registerLocalImageAsset } from './localAssetRegistry';
 import { ImageError } from './types';
 import type { ResolvedImageOptions } from './types';
@@ -13,9 +13,13 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR
 
 // Test server: a relative redirect to an allowed path, a redirect to a host
 // outside the allowlist, and an infinite redirector to exhaust the hop cap.
+let receivedHost: string | null = null;
+// Read through a call so the `receivedHost = null` reset in a test does not narrow the type to `null`.
+const lastReceivedHost = () => receivedHost;
 const server = Bun.serve({
   port: 0,
   fetch(req) {
+    receivedHost = req.headers.get('host');
     const { pathname } = new URL(req.url);
     if (pathname === '/image') {
       return new Response(PNG, { headers: { 'Content-Type': 'image/png' } });
@@ -76,6 +80,45 @@ afterAll(() => {
 });
 
 describe('fetchImageSource redirect re-validation', () => {
+  test('pins a validated address while preserving the HTTP host and TLS server name', () => {
+    const signal = new AbortController().signal;
+    const request = createPinnedFetchRequest(new URL('https://cdn.example.com:8443/image.png'), '93.184.216.34', signal);
+
+    expect(request.url.href).toBe('https://93.184.216.34:8443/image.png');
+    expect(new Headers(request.init.headers).get('host')).toBe('cdn.example.com:8443');
+    expect(request.init.tls?.serverName).toBe('cdn.example.com');
+  });
+
+  test('formats a pinned IPv6 address without changing the original Host header', () => {
+    const request = createPinnedFetchRequest(new URL('http://images.example/image.png'), '2606:4700:4700::1111', new AbortController().signal);
+
+    expect(request.url.href).toBe('http://[2606:4700:4700::1111]/image.png');
+    expect(new Headers(request.init.headers).get('host')).toBe('images.example');
+  });
+
+  test('connects to the pinned address while the origin receives the original Host header', async () => {
+    receivedHost = null;
+    const original = new URL(`http://images.example:${server.port}/image`);
+    const request = createPinnedFetchRequest(original, '127.0.0.1', new AbortController().signal);
+    const response = await fetch(request.url, request.init);
+
+    expect(response.status).toBe(200);
+    expect(lastReceivedHost()).toBe(`images.example:${server.port}`);
+  });
+
+  test('fails over to the next validated address when the first refuses the connection', async () => {
+    // 100::1 is the discard prefix — it fails the connect outright, so the loopback candidate behind it must still serve.
+    const response = await fetchPinned(new URL(`http://images.example:${server.port}/image`), ['100::1', '127.0.0.1'], AbortSignal.timeout(5000));
+
+    expect(response?.status).toBe(200);
+  });
+
+  test('gives up once the shared timeout aborts rather than walking the remaining addresses', async () => {
+    const response = await fetchPinned(new URL(`http://images.example:${server.port}/image`), ['100::1', '127.0.0.1'], AbortSignal.abort());
+
+    expect(response).toBeUndefined();
+  });
+
   test('follows a same-host redirect to an allowed path', async () => {
     const { bytes, contentType } = await fetchImageSource(base('/redirect-ok'), opts());
     expect(contentType).toBe('image/png');
@@ -174,7 +217,7 @@ describe('fetchImageSource local-asset branch', () => {
   });
 
   test('an unregistered relative src still hits the SSRF guard', async () => {
-    // Not in the registry → falls through to assertPublicUrl, which rejects a
+    // Not in the registry → falls through to resolvePublicUrl, which rejects a
     // relative (non-http/https) src with a 400 SsrfGuard-mapped ImageError.
     await expect(fetchImageSource('/_mochi/asset/nope-0.png', opts())).rejects.toBeInstanceOf(ImageError);
   });

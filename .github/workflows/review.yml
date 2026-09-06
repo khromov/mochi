@@ -18,16 +18,16 @@ jobs:
   loc:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
 
       - name: Cache Bun dependencies
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
@@ -65,7 +65,7 @@ jobs:
           mv mochi-framework-*.tgz ../../mochi-framework-pr.tgz
 
       - name: Upload tarball
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mochi-framework-pr
           path: mochi-framework-pr.tgz
@@ -79,7 +79,7 @@ jobs:
         run: bun .github/scripts/loc-comment.ts main.json pr.json --repo ${{ github.repository }} --run-id ${{ github.run_id }} --dep-report dep-report.txt --changed-paths changed.txt --audit audit.txt --licenses licenses.txt > comment.md
 
       - name: Post or update sticky comment
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const fs = require('fs');

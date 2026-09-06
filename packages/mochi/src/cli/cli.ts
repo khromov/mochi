@@ -28,6 +28,8 @@ Commands:
   build                  Produce a production bundle in the output directory.
   update-skill [agent]   Fetch the latest SKILL.md and write it into the current
                          project for the given agent. Default: ${DEFAULT_SKILL_TARGET}.
+                         Shows a diff and asks before overwriting. Use --force to
+                         accept the displayed update non-interactively.
                          Agents:
 ${SKILL_TARGETS.map((t) => {
   const aliasNote = ALIASES_BY_TARGET[t]?.length ? ` (alias: ${ALIASES_BY_TARGET[t]!.join(', ')})` : '';
@@ -63,7 +65,7 @@ function resolveTarget(name: string): SkillTarget | null {
   return TARGET_ALIASES[name] ?? null;
 }
 
-async function runUpdateSkill(args: string[]) {
+async function runUpdateSkill(args: string[], force: boolean) {
   const requested = args[0] ?? DEFAULT_SKILL_TARGET;
   const target = resolveTarget(requested);
   if (!target) {
@@ -73,8 +75,30 @@ async function runUpdateSkill(args: string[]) {
   }
 
   try {
-    const { path: dest, created } = await updateSkill({ target });
+    const result = await updateSkill({
+      target,
+      confirmUpdate: ({ diff, url }) => {
+        process.stdout.write(`\n[mochi] Skill update fetched from ${url}:\n\n${diff}\n`);
+        if (force) {
+          return true;
+        }
+        // confirm() reads false at EOF, so without a terminal an unattended run would silently look like a decline.
+        if (!process.stdin.isTTY) {
+          throw new Error('Refusing to apply a SKILL.md update without a terminal to confirm at. Re-run with --force to accept the update shown above.');
+        }
+        return confirm('[mochi] Apply this update?');
+      },
+    });
+    const { path: dest, created, action } = result;
     const rel = relForDisplay(dest) || dest;
+    if (action === 'aborted') {
+      process.stdout.write(`[mochi] Aborted. ${rel} left unchanged.\n`);
+      return;
+    }
+    if (action === 'unchanged') {
+      process.stdout.write(`[mochi] ${rel} is already up to date.\n`);
+      return;
+    }
     process.stdout.write(`[mochi] ${created ? 'Created' : 'Updated'} ${rel}\n`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -138,7 +162,7 @@ async function main() {
   }
 
   if (cmd === 'update-skill') {
-    await runUpdateSkill(positionals.slice(1));
+    await runUpdateSkill(positionals.slice(1), Boolean(values.force));
     return;
   }
 

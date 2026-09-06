@@ -721,7 +721,7 @@ export class Mochi {
     // Mirrors the handleError logic in renderErrorResponse, skipping the HTML render for the enhanced JSON path.
     const handleEnhancedError = async (err: unknown, event: MochiEvent): Promise<Response> => {
       let status = err instanceof MochiHttpError ? err.status : 500;
-      let message = err instanceof Error ? err.message : 'Internal Error';
+      let message = err instanceof MochiHttpError ? err.message : development && err instanceof Error ? err.message : 'Internal Server Error';
       if (options.handleError) {
         try {
           const override = await options.handleError({ error: err, event, status, message });

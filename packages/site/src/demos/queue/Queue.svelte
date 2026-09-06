@@ -17,8 +17,9 @@
   {sources}
 >
   <p>
-    The page action calls <code>notificationQueue.add({'{ user }'})</code> on the descriptor returned by
-    <code>Mochi.queue('demo-notifications', …)</code>. Its <code>process</code> function — with
+    The page action calls the bounded <code>enqueueNotification({'{ user }'})</code> admission helper, which adds to the descriptor returned by
+    <code>Mochi.queue('demo-notifications', …)</code>
+    only while fewer than 100 jobs are pending. Its <code>process</code> function — with
     <code>concurrency: 2</code>, mounted via <code>queues: [notificationQueue]</code> in
     <code>Mochi.serve()</code> — picks the job up and records it. Initial state comes from
     <code>serverProps</code>; a <code>Mochi.sse()</code> route then pushes each completion in realtime — no polling.

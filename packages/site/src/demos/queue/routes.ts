@@ -1,6 +1,6 @@
-import { Mochi, success, mochiEvents } from 'mochi-framework';
+import { Mochi, fail, success, mochiEvents } from 'mochi-framework';
 import type { MochiRouteValue, MochiQueueConfig } from 'mochi-framework';
-import { notificationQueue, queueStatus, QUEUE_NAME } from './queue.server';
+import { enqueueNotification, notificationQueue, queueStatus, QUEUE_NAME } from './queue.server';
 import { randomUsername } from './usernames';
 
 // Mounted in the site's Mochi.serve({ queues }) call — see src/routes.ts.
@@ -20,7 +20,9 @@ export const routes: Record<string, MochiRouteValue> = {
         const user = String(formData.get('username') ?? '')
           .trim()
           .slice(0, 64);
-        await notificationQueue.add({ user: user || 'anonymous' });
+        if (!(await enqueueNotification({ user: user || 'anonymous' }))) {
+          return fail(503, { error: 'The demo queue is full. Try again after some jobs finish.' });
+        }
         return success({ queued: user || 'anonymous' });
       },
     },
