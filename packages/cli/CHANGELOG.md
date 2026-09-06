@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/khromov/mochi/compare/create-mochi-v0.3.1...create-mochi-v0.4.0) (2026-09-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* Mochi now requires Bun >=1.4.0.
+
+### Features
+
+* adopt Bun 1.4 APIs (cron, staticDirs, memory pressure, streaming compression, WebView, RSS) ([#330](https://github.com/khromov/mochi/issues/330)) ([4faac0f](https://github.com/khromov/mochi/commit/4faac0f723cf5bed1514fb8bf077c427fd811193))
+* **cli:** optionally add ESLint and Prettier to scaffolded projects ([#318](https://github.com/khromov/mochi/issues/318)) ([83f1afd](https://github.com/khromov/mochi/commit/83f1afdd27e92f3c54c8a86b42b75b1622d562e1))
+* require Bun &gt;=1.4 ([#326](https://github.com/khromov/mochi/issues/326)) ([bfe317c](https://github.com/khromov/mochi/commit/bfe317c348b804d9f9f855c9db2f3c62a985f0b5))
+
 ## [0.3.1](https://github.com/khromov/mochi/compare/create-mochi-v0.3.0...create-mochi-v0.3.1) (2026-07-30)
 
 

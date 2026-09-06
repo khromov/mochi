@@ -1,5 +1,78 @@
 # Changelog
 
+## [0.10.0](https://github.com/khromov/mochi/compare/mochi-framework-v0.9.1...mochi-framework-v0.10.0) (2026-09-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* derive dev mode from NODE_ENV, and export isDev/isServer/isBrowser for real ([#338](https://github.com/khromov/mochi/issues/338))
+* Mochi now requires Bun >=1.4.0.
+* make declared queue config authoritative over storage ([#317](https://github.com/khromov/mochi/issues/317))
+* stop redirecting unmatched paths under trailingSlash ([#314](https://github.com/khromov/mochi/issues/314))
+* `trailingSlash` no longer applies to `Mochi.api()`, `Mochi.sse()`, `Mochi.ws()` or `Mochi.file()` routes — only the exact pattern you declared matches, and the other slash form 404s instead of redirecting or being mirrored. Two failure modes to check on upgrade: an SSE client is the one case whose *declared* form previously redirected, so a client hardcoded to the redirect target now 404s; and a WebSocket client on the wrong slash form fails as an opaque connection error rather than a visible status. Either fix the caller to use the declared pattern, or register both patterns against one route:
+* **fonts:** emit fonts from imported CSS as separate assets ([#292](https://github.com/khromov/mochi/issues/292))
+* children on a plain `mochi:hydrate` / `mochi:hydrate:visible` island — body content or a snippet-valued `children` attribute — are now a hard compile error. They previously compiled and rendered server-side but silently vanished on hydration. Move the markup inside the island component, pass serializable props, or use `mochi:defer*`, where children are the loading fallback.
+* replace bunqueue with bun-boss as the queue backend ([#269](https://github.com/khromov/mochi/issues/269))
+* inline nested mochi:defer islands into the parent island fetch ([#257](https://github.com/khromov/mochi/issues/257))
+* move svelte-shaker into @mochi-framework/svelte-shaker ([#255](https://github.com/khromov/mochi/issues/255))
+
+### Features
+
+* add isBuilding constant, true during mochi-framework build ([#279](https://github.com/khromov/mochi/issues/279)) ([3c33d6c](https://github.com/khromov/mochi/commit/3c33d6c522b9175ac531e5e029c990be41fe2e0b))
+* adopt Bun 1.4 APIs (cron, staticDirs, memory pressure, streaming compression, WebView, RSS) ([#330](https://github.com/khromov/mochi/issues/330)) ([4faac0f](https://github.com/khromov/mochi/commit/4faac0f723cf5bed1514fb8bf077c427fd811193))
+* **cache:** add MochiCache.whenIdle() ([#311](https://github.com/khromov/mochi/issues/311)) ([25a9269](https://github.com/khromov/mochi/commit/25a9269b9160ba6dcd505b9e5e6fbe5db8189368))
+* derive dev mode from NODE_ENV, and export isDev/isServer/isBrowser for real ([#338](https://github.com/khromov/mochi/issues/338)) ([4fbb17c](https://github.com/khromov/mochi/commit/4fbb17c60d09be41881ceabee350cd16d3ddd1bf))
+* first-class Speculation Rules support ([#298](https://github.com/khromov/mochi/issues/298)) ([b23fe7e](https://github.com/khromov/mochi/commit/b23fe7e1dfc1b4f64cc64c1cad3184cac680cc7e))
+* fix silent edges from SvelteKit-porting feedback ([#290](https://github.com/khromov/mochi/issues/290)) ([80968a6](https://github.com/khromov/mochi/commit/80968a65d5f7ca9b0c4566faca334cd15f421c56))
+* **fonts:** emit fonts from imported CSS as separate assets ([#292](https://github.com/khromov/mochi/issues/292)) ([db727b3](https://github.com/khromov/mochi/commit/db727b3a073b08010420f4c3490891a2f9ffa457))
+* include queued job count in large-backlog queue warning ([#323](https://github.com/khromov/mochi/issues/323)) ([57ed177](https://github.com/khromov/mochi/commit/57ed1778fc2d098a1e9f740cf7fcd4005c05fc9f))
+* inline nested mochi:defer islands into the parent island fetch ([#257](https://github.com/khromov/mochi/issues/257)) ([97c0700](https://github.com/khromov/mochi/commit/97c0700c36fadd35f33a8c93f2cfb55e0e19641a))
+* make declared queue config authoritative over storage ([#317](https://github.com/khromov/mochi/issues/317)) ([480236b](https://github.com/khromov/mochi/commit/480236b1c82b4b12747ae6612417964093fbe4cd))
+* **mochi:** export MochiHttpError; fix docs code samples surfaced by validation ([#280](https://github.com/khromov/mochi/issues/280)) ([e361441](https://github.com/khromov/mochi/commit/e361441771b8ba0eb513299a94c31eefe409acec))
+* **mochi:** export pinGlobal; dedupe the site's Shiki highlighter per process ([#247](https://github.com/khromov/mochi/issues/247)) ([8979aad](https://github.com/khromov/mochi/commit/8979aad307b0e9df8e07b227dca12a402e9e9805))
+* **mochi:** reload server islands with reloadDeferredIsland ([#312](https://github.com/khromov/mochi/issues/312)) ([67bc315](https://github.com/khromov/mochi/commit/67bc3152339cf230fa498d0579ed69f754a146c1))
+* **mochi:** strip SSR-only .server.svelte components from client bundles ([#272](https://github.com/khromov/mochi/issues/272)) ([2a7e2d9](https://github.com/khromov/mochi/commit/2a7e2d93a471d1692f386dfd5930954b4333fce1))
+* move svelte-shaker into @mochi-framework/svelte-shaker ([#255](https://github.com/khromov/mochi/issues/255)) ([b675ce6](https://github.com/khromov/mochi/commit/b675ce6fbbda3749107fcc00d108f42f9cf55933))
+* protection mode — browser-verification interstitial with auto-solving captcha ([#309](https://github.com/khromov/mochi/issues/309)) ([b12ae54](https://github.com/khromov/mochi/commit/b12ae54be137f48be681c22c232f70d7c8a090c4))
+* **queues:** add embedded pglite queue storage ([#277](https://github.com/khromov/mochi/issues/277)) ([2457c7f](https://github.com/khromov/mochi/commit/2457c7f0724dc1e38bb76c0e60ce16cffc0e0981))
+* replace bunqueue with bun-boss as the queue backend ([#269](https://github.com/khromov/mochi/issues/269)) ([c551965](https://github.com/khromov/mochi/commit/c551965dc4f9a24b200dc8ae9bf1c08a045fa732))
+* require Bun &gt;=1.4 ([#326](https://github.com/khromov/mochi/issues/326)) ([bfe317c](https://github.com/khromov/mochi/commit/bfe317c348b804d9f9f855c9db2f3c62a985f0b5))
+* **types:** type-check mochi:* directives on components without patching svelte-check ([#342](https://github.com/khromov/mochi/issues/342)) ([d9a07cc](https://github.com/khromov/mochi/commit/d9a07cc7316041be116aeb2ca1d3182c0454aecb))
+* warn when route-handler HMR repeatedly re-creates module state ([#324](https://github.com/khromov/mochi/issues/324)) ([a037bcb](https://github.com/khromov/mochi/commit/a037bcba40e908b91bc36eb4b78caa2c99edb041))
+
+
+### Bug Fixes
+
+* apply trailingSlash to page routes only ([#150](https://github.com/khromov/mochi/issues/150)) ([2353ac8](https://github.com/khromov/mochi/commit/2353ac8303f604301fd34cc5916577a001f063e3))
+* close the MochiCache lost-update race between set() and an unregistered fetch ([#348](https://github.com/khromov/mochi/issues/348)) ([9b7c65c](https://github.com/khromov/mochi/commit/9b7c65c2645b7f2aa50c0063e0118be8d2f424f9))
+* **debug-bar:** isolate panel render faults behind a boundary, with a diagnostic build flag ([#274](https://github.com/khromov/mochi/issues/274)) ([d3fc546](https://github.com/khromov/mochi/commit/d3fc546ed39a3a34744c553b593c7fd32c27929d))
+* **debug-bar:** keep the install-store version segment in bundle input paths ([#275](https://github.com/khromov/mochi/issues/275)) ([3c9f9af](https://github.com/khromov/mochi/commit/3c9f9afd89493e6bb1f52d171b92510caf91566a))
+* **debug-bar:** match svelte inputs under the isolated linker in "Hide Svelte" ([#296](https://github.com/khromov/mochi/issues/296)) ([d715f28](https://github.com/khromov/mochi/commit/d715f28ae46dd5c3e9ba874af036ccb4d8955e36))
+* **debug-bar:** only list chunks the page actually loads ([#223](https://github.com/khromov/mochi/issues/223)) ([c2b7446](https://github.com/khromov/mochi/commit/c2b7446294ed46a80c228953d965f3969122e624))
+* **deps:** update dependencies across the monorepo ([#246](https://github.com/khromov/mochi/issues/246)) ([caf435c](https://github.com/khromov/mochi/commit/caf435cbd1fed5321d259e84909909bf50819478))
+* **dev:** recompile pages for modules shared by the server entry ([#319](https://github.com/khromov/mochi/issues/319)) ([2ed7b14](https://github.com/khromov/mochi/commit/2ed7b1425b49914a2dd6ebea3cfe3aa6b16e6fa9))
+* **fonts:** don't hash a half-written font copy into the served asset name ([#302](https://github.com/khromov/mochi/issues/302)) ([a516ab7](https://github.com/khromov/mochi/commit/a516ab710eed3fad6f051ccaf25bd5e91ee42bcc))
+* **islands:** scope props-ref lookup to enclosing server island ([#340](https://github.com/khromov/mochi/issues/340)) ([ea1c97b](https://github.com/khromov/mochi/commit/ea1c97bdbacdad2339828adeeacc43661ffc75c9))
+* minify imported CSS bundles ([#301](https://github.com/khromov/mochi/issues/301)) ([99b6bf2](https://github.com/khromov/mochi/commit/99b6bf2543f3d584241977cbe5ed0ac302205e0d))
+* **mochi:** stop a Windows rename livelock in the image cache ([#315](https://github.com/khromov/mochi/issues/315)) ([0800d83](https://github.com/khromov/mochi/commit/0800d83f52c714197ef6653d36e44b2ed680c405))
+* **queue:** configurable graceful queue-drain timeout on shutdown ([#328](https://github.com/khromov/mochi/issues/328)) ([e76579b](https://github.com/khromov/mochi/commit/e76579b8a6a389e087599d233aca362565b21e43))
+* **queues:** apply deadLetter on the standalone worker path ([#316](https://github.com/khromov/mochi/issues/316)) ([77ed163](https://github.com/khromov/mochi/commit/77ed1639a2e43046fccaba30f05d8e37319b7f1e))
+* **queues:** floor the batch-deadline reserve at 250ms ([#286](https://github.com/khromov/mochi/issues/286)) ([5476969](https://github.com/khromov/mochi/commit/54769699ceebf0f27052ed6eb8dbcf1ab75b6001))
+* resolve component-url against the page and keep SSR markup when hydration fails ([#343](https://github.com/khromov/mochi/issues/343)) ([77b76bc](https://github.com/khromov/mochi/commit/77b76bc8514f71aaf7777ee7262a2bcda807529a))
+* **rsvelte:** diagnose a missing Windows C runtime instead of a missing package ([#341](https://github.com/khromov/mochi/issues/341)) ([21cd85f](https://github.com/khromov/mochi/commit/21cd85fea5fcd60a7586e67598efa328319b286e))
+* stop redirecting unmatched paths under trailingSlash ([#314](https://github.com/khromov/mochi/issues/314)) ([33a93a9](https://github.com/khromov/mochi/commit/33a93a980b4fcc57989fcf4fb9a350cbc4d62416))
+
+
+### Performance
+
+* **debug-bar:** compile the debug bar standalone with production-mode Svelte ([#266](https://github.com/khromov/mochi/issues/266)) ([c3dadc7](https://github.com/khromov/mochi/commit/c3dadc7d9d0c6607abc3b6e506056b0d63f56d90))
+* skip request-invariant post-render scans on island-free pages ([#313](https://github.com/khromov/mochi/issues/313)) ([07f7da1](https://github.com/khromov/mochi/commit/07f7da11dc45d9be7794c0db3542034caa2d8e50))
+
+
+### Code Refactoring
+
+* **queues:** drop batchSize/burst and the batch-deadline machinery ([#287](https://github.com/khromov/mochi/issues/287)) ([94c8dfc](https://github.com/khromov/mochi/commit/94c8dfc292504e1be2f3c0394b0ae19ec4da47d7))
+
 ## [0.9.1](https://github.com/khromov/mochi/compare/mochi-framework-v0.9.0...mochi-framework-v0.9.1) (2026-07-30)
 
 
