@@ -41,8 +41,9 @@ The output rsvelte emits is verified byte-identical to upstream by this package'
 
 - **Pre-1.0.** rsvelte's own README warns that APIs and behaviour may change without notice.
 - **Function-valued compiler options are ignored.** `cssHash` and `warningFilter` cannot cross
-  the native boundary. This package strips them and warns once. For `cssHash`, use rsvelte's
-  `cssHashOverride: '<hash>'` to force a fixed value.
+  the native boundary. `cssHash` is stripped with a one-time warning; use rsvelte's
+  `cssHashOverride: '<hash>'` to force a fixed value. `warningFilter` is dropped silently, since
+  Mochi never surfaces compiler warnings, so it keeps working for `svelte-check` and editors.
 - **`$derived(await …)` in dev client builds** loses Svelte's dev-only reactivity-loss
   instrumentation. Server output and non-dev client output match upstream byte-for-byte.
 - **`compileModule()` output differs cosmetically** — a `vVERSION` placeholder in the generated
