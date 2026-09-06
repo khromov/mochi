@@ -155,7 +155,7 @@ await Mochi.serve({
 
 <Callout type="warning">
 
-`maxPayloadLength` is the only inbound size bound that runs **before** Bun buffers the frame, and it defaults to 16 MB. A length check inside `message` caps what you store, not what the server allocates — set both.
+`maxPayloadLength` is the only inbound size bound that runs **before** Bun buffers the frame, and it defaults to 16 MB. It caps what the server allocates while a length check inside `message` caps what you store — set both.
 
 </Callout>
 

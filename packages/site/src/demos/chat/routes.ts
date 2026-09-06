@@ -20,8 +20,8 @@ interface HistoryEntry {
 export function createChatRoutes(): Record<string, MochiRouteValue> {
   const history: HistoryEntry[] = [];
   let historyBytes = 0;
-  // Keyed by remote address, not by socket: a per-socket counter resets on every reconnect, and each reconnect also
-  // replays the history buffer — so dropping and redialling would cost the server more than staying under the limit.
+  // Keyed by remote address so the allowance survives a reconnect: a per-socket counter would reset on every reconnect,
+  // and each reconnect also replays the history buffer — so dropping and redialling would cost the server more than staying under the limit.
   const windows = new Map<string, RateWindow>();
 
   function allowMessage(address: string, now: number): boolean {

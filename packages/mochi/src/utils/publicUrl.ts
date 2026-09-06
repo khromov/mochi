@@ -5,7 +5,7 @@ import ipaddr from 'ipaddr.js';
 /**
  * Defense-in-depth guard for outbound fetches against user-supplied URLs: validate the host against an optional
  * allowlist and reject hosts resolving to private, loopback, link-local, or reserved addresses. Callers close the
- * DNS-rebinding window by connecting to one of the returned `addresses` instead of re-resolving the hostname.
+ * DNS-rebinding window by connecting to one of the returned `addresses` and reusing that single resolution.
  */
 export interface UrlGuardOptions {
   allowedHosts?: string[] | undefined;

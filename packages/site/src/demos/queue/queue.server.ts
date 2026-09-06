@@ -3,7 +3,7 @@ import type { NotificationJob, ProcessedEntry, QueueStatus } from './types';
 
 export const QUEUE_NAME = 'demo-notifications';
 
-// Pending jobs are tracked off the event bus, not per request, so every connected browser sees the same numbers.
+// Pending jobs are tracked on the event bus as shared server state, so every connected browser sees the same numbers.
 const processed: ProcessedEntry[] = [];
 let processedTotal = 0;
 let reservations = 0;

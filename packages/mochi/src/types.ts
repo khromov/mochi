@@ -448,8 +448,8 @@ export type BunServeOverrides = Omit<NonNullable<Parameters<typeof Bun.serve>[0]
 
 /**
  * Raw Bun WebSocket options, merged underneath the handlers Mochi installs for `Mochi.ws()` routes. `maxPayloadLength`
- * is the only inbound size bound that runs before a frame is buffered — Bun defaults it to 16 MB, so a check inside a
- * `message` handler caps what you store, not what the server allocates.
+ * is the only inbound size bound that runs before a frame is buffered — Bun defaults it to 16 MB, so `maxPayloadLength`
+ * caps what the server allocates while a check inside a `message` handler caps what you store.
  */
 export type MochiWebSocketOptions = Omit<WebSocketHandler<MochiWsData>, 'open' | 'message' | 'close' | 'drain'>;
 

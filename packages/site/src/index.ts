@@ -171,7 +171,7 @@ await Mochi.serve({
   port: PORT,
   liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
-  // The only inbound bound that runs before Bun buffers a frame; without it the default is 16 MB per message.
+  // The only inbound bound that runs before Bun buffers a frame; it tightens Bun's 16 MB-per-message default.
   websocket: { maxPayloadLength: CHAT_MAX_MESSAGE_BYTES },
   speculationRules,
   trailingSlash: 'always',
