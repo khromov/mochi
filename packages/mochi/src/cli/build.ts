@@ -21,6 +21,7 @@ import type { MochiCompileCompleteEvent } from '../events';
 import { styleText } from 'node:util';
 import prettyBytes from '../vendor/pretty-bytes';
 import { collectFontResources, collectImageResources, mergeResourceRows, printResourceTree } from './resourceReport';
+import { printCompiledTree } from './compiledReport';
 
 export interface MochiBuildOptions {
   routes: Record<string, MochiRouteValue>;
@@ -259,6 +260,8 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       assetPrefix: registry.assetPrefix,
       stats: compileStats,
     });
+
+    printCompiledTree(registry.getCompiledUsage());
 
     // After finalizeClientBundle() above, so assets the client pass emitted are
     // in the map too (both passes share it, keyed by served URL).

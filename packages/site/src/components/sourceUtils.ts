@@ -40,3 +40,9 @@ export function stripImageConfig(code: string): string {
 export function stripStaticDirs(code: string): string {
   return stripServeBlock(code, 'staticDirs');
 }
+
+/** Artificial latency for demos that need a visible loading state. Lives here rather than in `utils.ts` so a component can import it without pulling the Shiki-backed highlighter — and the whole of Shiki — into its graph. */
+export function delay(minMs: number, maxMs: number = minMs): Promise<void> {
+  const ms = minMs + Math.random() * (maxMs - minMs);
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

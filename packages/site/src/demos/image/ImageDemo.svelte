@@ -7,7 +7,7 @@
   import { files } from './files.ts';
   import ImageIslandCard from './ImageIslandCard.svelte';
   import { Image } from 'mochi-framework/image';
-  import { getImageUrl, getImagePlaceholder } from 'mochi-framework';
+  import { compiled, getImageUrl, getImagePlaceholder } from 'mochi-framework';
   import { highlightCode } from '../../lib/highlight.server';
   import ArrowDown from '@lucide/svelte/icons/arrow-down';
   import hero from './hero.jpg';
@@ -39,7 +39,7 @@
   const codeLocalBare = await svelte('<Image src={hero} alt="At natural size" />');
   const codeLocalImg = await svelte('<img src={hero.src} width={hero.width} height={hero.height} alt="" />');
 
-  const sources = await loadSources(files);
+  const sources = await compiled(() => loadSources(files));
 </script>
 
 <DemoPage

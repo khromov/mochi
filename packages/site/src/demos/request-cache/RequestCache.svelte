@@ -1,11 +1,12 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
+  import { compiled } from 'mochi-framework';
   import { loadSources } from '../../components/utils';
   import { highlightCode } from '../../lib/highlight.server';
   import { files } from './files.ts';
   import { overview, topWords, themes, extremes, richness } from './analyzeBook.ts';
 
-  const sources = await loadSources(files);
+  const sources = await compiled(() => loadSources(files));
 
   // Each helper wraps the same memoized analysis, so these five calls parse the book exactly once.
   const facetOverview = overview();

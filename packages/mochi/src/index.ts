@@ -54,6 +54,7 @@ export type { ConsoleLoggerOptions } from './dev/consoleLogger';
 export { logger, setLogLevel, getLogLevel } from './utils/log';
 export type { LogLevel } from './utils/log';
 export { pinGlobal } from './utils/globalState';
+export { compiled, moduleRef } from './compiled';
 export { isBuilding } from './utils/buildFlag';
 export { isDev, isServer, isBrowser } from './utils/env';
 export { mochiEvents, hasSubscribers } from './events';

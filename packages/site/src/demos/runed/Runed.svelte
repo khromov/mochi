@@ -6,11 +6,12 @@
   import Elements from './Elements.svelte';
   import Sensors from './Sensors.svelte';
   import AsyncFsm from './AsyncFsm.svelte';
+  import { compiled } from 'mochi-framework';
   import { loadSources } from '../../components/utils.ts';
   import { highlightCode } from '../../lib/highlight.server';
   import { files } from './files.ts';
 
-  const sources = await loadSources(files);
+  const sources = await compiled(() => loadSources(files));
 
   const codeInstall = await highlightCode('bun add runed', 'bash');
   const codeUsage = await highlightCode(

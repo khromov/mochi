@@ -2,6 +2,7 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import CodeSnippet from '../../components/CodeSnippet.svelte';
   import Callout from '../../../../docs/_components/Callout.svelte';
+  import { compiled } from 'mochi-framework';
   import { loadSources } from '../../components/utils.ts';
   import { highlightCode } from '../../lib/highlight.server';
   import { files } from './files.ts';
@@ -16,7 +17,7 @@
   const codeBasic = await sv('<PortableText value={blocks} />');
   const codePair = await sv('<Playground source={playgroundJson} />\n<Playground mochi:hydrate source={playgroundJson} />');
 
-  const sources = await loadSources(files);
+  const sources = await compiled(() => loadSources(files));
 </script>
 
 <DemoPage

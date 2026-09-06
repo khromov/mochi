@@ -8,6 +8,7 @@ import type { CompileOptions } from 'svelte/compiler';
 import { renderMochiEnvClient } from './virtualModuleTemplate';
 import type { SvelteCompilerBackend } from './svelteCompilerBackend';
 import { CLIENT_BUILD_DEFINE } from './serverOnlyModuleGuard';
+import { applyCompiled, type CompiledContext } from './compiledLoader';
 import { toPosixPath } from '../utils';
 
 const SRC_DIR = path.resolve(import.meta.dir, '..');
@@ -45,9 +46,10 @@ export function registerMochiEnvClient(build: PluginBuilder, development: boolea
   }));
 }
 
-export function registerSvelteModuleLoader(build: PluginBuilder, backend: SvelteCompilerBackend, options: CompileOptions): void {
+export function registerSvelteModuleLoader(build: PluginBuilder, backend: SvelteCompilerBackend, options: CompileOptions, compiled?: CompiledContext): void {
   build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
-    let source = await Bun.file(args.path).text();
+    const raw = await Bun.file(args.path).text();
+    let source = compiled ? await applyCompiled(raw, args.path, compiled, 'module') : raw;
     if (args.path.endsWith('.ts')) {
       const transpiler = new Bun.Transpiler({ loader: 'ts' });
       source = transpiler.transformSync(source);

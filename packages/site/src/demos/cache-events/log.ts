@@ -1,5 +1,5 @@
 import { MochiCache, mochiEvents, logger } from 'mochi-framework';
-import { delay } from '../../components/utils';
+import { delay } from '../../components/sourceUtils';
 
 export const slowClock = new MochiCache({
   minTimeToStale: 3_000,

@@ -1,5 +1,6 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
+  import { compiled } from 'mochi-framework';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
   import Field from './Field.svelte';
@@ -8,7 +9,7 @@
   import ServerHydratedStamp from './ServerHydratedStamp.svelte';
   import ClientStamp from './ClientStamp.svelte';
 
-  const sources = await loadSources(files);
+  const sources = await compiled(() => loadSources(files));
 </script>
 
 <DemoPage

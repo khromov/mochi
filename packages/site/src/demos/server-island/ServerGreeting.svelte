@@ -1,6 +1,6 @@
 <script>
   import { cookies, isServer } from 'mochi-framework';
-  import { delay } from '../../components/utils.ts';
+  import { delay } from '../../components/sourceUtils';
 
   let { name = 'World', bigProp = '' } = $props();
   const islandId = $props.id();

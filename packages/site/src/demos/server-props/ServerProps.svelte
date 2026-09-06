@@ -1,9 +1,10 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
+  import { compiled } from 'mochi-framework';
   import { loadSources } from '../../components/utils.ts';
   import { files } from './files.ts';
 
-  const sources = await loadSources(files);
+  const sources = await compiled(() => loadSources(files));
 
   let { renderedAt, userAgent, random }: { renderedAt: string; userAgent: string; random: number } = $props();
 </script>

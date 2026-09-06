@@ -54,15 +54,9 @@ RUN apk add --no-cache ncdu
 
 # .mochi for runtime build cache; src/ must be writable too because demos'
 # tailwind step writes app.generated.css into src/ at startup (no-op for site).
+# The docs/blog barrels used to be baked in here; they are compiled() values now,
+# resolved during the SSR compile, so nothing needs writing ahead of boot.
 RUN mkdir -p packages/${WORKSPACE}/.mochi && chown -R bun:bun packages/${WORKSPACE}/.mochi packages/${WORKSPACE}/src
-
-# Bake every generated barrel into the image. Dev mode regenerates these at
-# boot (index.ts), but the deployed rootfs is read-only for the `bun` user, so
-# the runtime write is a no-op that recovers onto whatever file is already
-# present — the barrel MUST exist in the image or the SSR compile fails with
-# "Could not resolve". Any new src/lib/*.generated.ts barrel needs a line here.
-RUN bun packages/site/src/lib/generateDocsBarrel.ts
-RUN bun packages/site/src/lib/generateBlogBarrel.ts
 
 ENV WORKSPACE=${WORKSPACE}
 ENV PORT=${PORT}

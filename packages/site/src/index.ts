@@ -5,12 +5,9 @@ import rehypeExternalLinks from './lib/rehypeExternalLinks';
 import { Mochi, mochiEvents, sequence, logger, noCache, compress, silenceInternalRoutes } from 'mochi-framework';
 import type { Handle, HandleError, MarkdownConfig, SpeculationRules } from 'mochi-framework';
 import { analytics } from 'mochi-shared';
-import { generateDocsBarrel } from './lib/generateDocsBarrel';
-import { generateBlogBarrel } from './lib/generateBlogBarrel';
 import { clearDocsCaches, DOCS_DIR } from './lib/docs';
 import { clearBlogCaches, BLOG_DIR } from './lib/blog';
 import { clearFeedCache } from './lib/feed';
-import { highlightCode } from './lib/highlight.server';
 import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes';
 import { handle as modeWatcherHandle } from './demos/mode-watcher/routes';
 import { handle as shotHandle } from './shot/routes';
@@ -29,25 +26,20 @@ const immutableAssets: Handle = async ({ event, resolve }) => {
 };
 
 if (process.env.NODE_ENV === 'development') {
-  await generateDocsBarrel();
-  await generateBlogBarrel();
-
   const docsDirPrefix = DOCS_DIR + path.sep;
-  mochiEvents.setHandler('docs-cache-clear', 'file:change', async ({ path: changed }) => {
+  mochiEvents.setHandler('docs-cache-clear', 'file:change', ({ path: changed }) => {
     if (changed.startsWith(docsDirPrefix) && changed.endsWith('.md')) {
       clearDocsCaches();
-      await generateDocsBarrel();
     }
   });
 
   const blogDirPrefix = BLOG_DIR + path.sep;
-  mochiEvents.setHandler('blog-cache-clear', 'file:change', async ({ path: changed }) => {
+  mochiEvents.setHandler('blog-cache-clear', 'file:change', ({ path: changed }) => {
     if (changed.startsWith(blogDirPrefix) && changed.endsWith('.md')) {
       clearBlogCaches();
       clearFeedCache();
       // The sitemap cache lives with the docs caches and includes blog URLs.
       clearDocsCaches();
-      await generateBlogBarrel();
     }
   });
 }
@@ -128,7 +120,9 @@ const origin = CSRF_DOMAIN.includes('://') ? CSRF_DOMAIN : `${CSRF_PROTOCOL}://$
 const markdownConfig: MarkdownConfig = {
   compile: mdsvexCompile,
   rehypePlugins: [rehypeSlug, rehypeExternalLinks],
-  highlight: { highlighter: (code, lang) => highlightCode(code, lang) },
+  // Imported lazily so Shiki — ~11 TextMate grammars, and on Windows its own oniguruma WebAssembly.Memory — is
+  // only ever loaded by a build that actually compiles markdown, not by every server boot.
+  highlight: { highlighter: async (code, lang) => (await import('./lib/highlight.server')).highlightCode(code, lang) },
 };
 
 const speculationRules: SpeculationRules = {
