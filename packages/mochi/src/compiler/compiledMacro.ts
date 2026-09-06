@@ -4,7 +4,7 @@ import { freeIdentifiers, hoistedNames } from './compiledScope';
 import { evaluateTwin, CompiledExpressionError, type HostImport } from './compiledTwin';
 import { serializeCompiledValue, createCompiledRefScope, type CompiledSerializer } from './compiledSerialize';
 import { referencedNames } from './compiledReferences';
-import { relForDisplay } from '../utils/index';
+import { relForDisplay, toPosixPath } from '../utils/index';
 
 const MACRO_NAME = 'compiled';
 const FRAMEWORK_SPECIFIER = 'mochi-framework';
@@ -261,7 +261,7 @@ export async function transformCompiled(opts: CompiledTransformOptions): Promise
     magic.remove(0, MODULE_PREFIX.length);
     magic.remove(text.length - MODULE_SUFFIX.length, text.length);
   }
-  opts.onUsage?.({ file: opts.filePath, count });
+  opts.onUsage?.({ file: toPosixPath(opts.filePath), count });
   const body = magic.toString();
   return prepended.length > 0 ? `${prepended.join('\n')}\n${body}` : body;
 }
