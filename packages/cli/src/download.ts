@@ -56,9 +56,7 @@ export async function downloadTemplate(source: string, opts: { dir: string; forc
   const url = tarballUrl(parsed);
   const response = await fetch(url, { headers: { 'User-Agent': 'create-mochi' } });
   if (!response.ok) {
-    // A missing ref means this build's version was never tagged — i.e. it is running from source, not from npm.
-    const hint = response.status === 404 ? ` Ref "${parsed.ref}" does not exist.` : '';
-    throw new Error(`Could not download template from ${url} — HTTP ${response.status}.${hint}`);
+    throw new Error(`Could not download template from ${url} — HTTP ${response.status}.`);
   }
   await extractTemplate(await response.blob(), parsed, opts.dir);
 }

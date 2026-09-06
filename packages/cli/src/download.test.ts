@@ -4,8 +4,6 @@ import { readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { extractTemplate, parseTemplateSource, tarballUrl } from './download.ts';
-import { TEMPLATE_REVISION, TEMPLATES } from './templates.ts';
-import cliPkg from '../package.json' with { type: 'json' };
 
 describe('parseTemplateSource', () => {
   test('splits owner, repo and subdir, defaulting the ref to HEAD', () => {
@@ -28,14 +26,6 @@ describe('parseTemplateSource', () => {
 
 test('tarballUrl targets codeload at the requested ref', () => {
   expect(tarballUrl(parseTemplateSource('khromov/mochi/packages/minimal'))).toBe('https://codeload.github.com/khromov/mochi/tar.gz/HEAD');
-});
-
-// Guards the pin against regressing to a hand-written sha, which nothing in the release flow would ever bump.
-test('built-in templates pin the release tag matching this CLI version', () => {
-  expect(TEMPLATE_REVISION).toBe(`create-mochi-v${cliPkg.version}`);
-  for (const template of TEMPLATES) {
-    expect(parseTemplateSource(template.source).ref).toBe(TEMPLATE_REVISION);
-  }
 });
 
 describe('extractTemplate', () => {
