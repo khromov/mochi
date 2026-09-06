@@ -45,6 +45,22 @@ function loadInstalledFromLock(): Set<string> {
   return installed;
 }
 
+async function scanPackagesInto(index: Map<string, IndexEntry>, cwd: string, globs: Bun.Glob[]): Promise<void> {
+  for (const glob of globs) {
+    for await (const rel of glob.scan({ cwd })) {
+      const full = join(cwd, rel);
+      try {
+        const pkg = JSON.parse(readFileSync(full, 'utf8')) as PkgJson;
+        if (pkg.name && !index.has(pkg.name)) {
+          index.set(pkg.name, { pkg, dir: dirname(full) });
+        }
+      } catch {
+        // Skip unreadable/invalid package.json files
+      }
+    }
+  }
+}
+
 /**
  * Bun's isolated install layout is `node_modules/.bun/<name>@<version>/node_modules/<name>/package.json`.
  * Scan the store once and index by package name (first hit wins on duplicates,
@@ -53,62 +69,18 @@ function loadInstalledFromLock(): Set<string> {
  */
 async function indexPackages(): Promise<Map<string, IndexEntry>> {
   const index = new Map<string, IndexEntry>();
-  // Scoped packages live one folder deeper (`<store>/<flat>/node_modules/@scope/<name>/`),
-  // so we need both glob depths.
-  const globs = [
-    new Bun.Glob('*/node_modules/*/package.json'), // unscoped
-    new Bun.Glob('*/node_modules/@*/*/package.json'), // scoped
-  ];
+  // Scoped packages live one folder deeper (`<store>/<flat>/node_modules/@scope/<name>/`), so we need both glob depths.
   if (existsSync(BUN_STORE)) {
-    for (const glob of globs) {
-      for await (const rel of glob.scan({ cwd: BUN_STORE })) {
-        const full = join(BUN_STORE, rel);
-        try {
-          const pkg = JSON.parse(readFileSync(full, 'utf8')) as PkgJson;
-          if (pkg.name && !index.has(pkg.name)) {
-            index.set(pkg.name, { pkg, dir: dirname(full) });
-          }
-        } catch {
-          // Skip unreadable/invalid package.json files
-        }
-      }
-    }
+    await scanPackagesInto(index, BUN_STORE, [new Bun.Glob('*/node_modules/*/package.json'), new Bun.Glob('*/node_modules/@*/*/package.json')]);
   }
   // Fallback: top-level node_modules for any non-isolated installs.
-  const topGlobs = [
-    new Bun.Glob('*/package.json'), // unscoped
-    new Bun.Glob('@*/*/package.json'), // scoped
-  ];
   const topNodeModules = join(REPO_ROOT, 'node_modules');
   if (existsSync(topNodeModules)) {
-    for (const glob of topGlobs) {
-      for await (const rel of glob.scan({ cwd: topNodeModules })) {
-        const full = join(topNodeModules, rel);
-        try {
-          const pkg = JSON.parse(readFileSync(full, 'utf8')) as PkgJson;
-          if (pkg.name && !index.has(pkg.name)) {
-            index.set(pkg.name, { pkg, dir: dirname(full) });
-          }
-        } catch {
-          // skip
-        }
-      }
-    }
+    await scanPackagesInto(index, topNodeModules, [new Bun.Glob('*/package.json'), new Bun.Glob('@*/*/package.json')]);
   }
   // Workspace packages (`packages/*`) resolve locally rather than into node_modules,
   // so deps satisfied by an override (e.g. the msgpackr-extract stub) are only sizable here.
-  const wsGlob = new Bun.Glob('packages/*/package.json');
-  for await (const rel of wsGlob.scan({ cwd: REPO_ROOT })) {
-    const full = join(REPO_ROOT, rel);
-    try {
-      const pkg = JSON.parse(readFileSync(full, 'utf8')) as PkgJson;
-      if (pkg.name && !index.has(pkg.name)) {
-        index.set(pkg.name, { pkg, dir: dirname(full) });
-      }
-    } catch {
-      // skip
-    }
-  }
+  await scanPackagesInto(index, REPO_ROOT, [new Bun.Glob('packages/*/package.json')]);
   return index;
 }
 

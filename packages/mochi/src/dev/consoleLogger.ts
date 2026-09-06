@@ -531,7 +531,17 @@ function colorKind(kind: MochiRequestKind): string {
   }
 }
 
-function emit({ label, kind, path, status, note, duration, neutral = false, slow = DEFAULT_SLOW, verySlow = DEFAULT_VERY_SLOW, level = 'info', source }: EmitInput): void {
+function buildEmitLine({
+  label,
+  kind,
+  path,
+  status,
+  note,
+  duration,
+  neutral,
+  slow,
+  verySlow,
+}: Required<Pick<EmitInput, 'label' | 'path' | 'neutral' | 'slow' | 'verySlow'>> & Pick<EmitInput, 'kind' | 'status' | 'note' | 'duration'>): string {
   const ts = styleText('dim', formatTimestamp(new Date()));
   const labelStr = styleText('cyan', label);
   const kindStr = kind ? ' ' + colorKind(kind) : '';
@@ -540,8 +550,11 @@ function emit({ label, kind, path, status, note, duration, neutral = false, slow
   const notePart = note ?? '';
   const middle = [statusPart, notePart].filter(Boolean).join(' ');
   const durationStr = duration != null ? ' ' + (neutral ? styleText('dim', formatMs(duration)) : colorDuration(duration, slow, verySlow)) : '';
+  return `${ts} ${labelStr}${kindStr} ${pathStr} ${middle}${durationStr}`;
+}
 
-  const line = `${ts} ${labelStr}${kindStr} ${pathStr} ${middle}${durationStr}`;
+function emit({ label, kind, path, status, note, duration, neutral = false, slow = DEFAULT_SLOW, verySlow = DEFAULT_VERY_SLOW, level = 'info', source }: EmitInput): void {
+  const line = buildEmitLine({ label, kind, path, status, note, duration, neutral, slow, verySlow });
 
   const isServerError = status != null && status >= 500;
   const isSlow = !neutral && duration != null && duration >= slow;

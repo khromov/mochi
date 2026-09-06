@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { build } from './build';
+import type { MochiBuildOptions } from './build';
 import { closeAllQueueResources } from '../queue';
 import { extractServeOptions } from './extractServeOptions';
 import { updateSkill, SKILL_TARGETS, SKILL_DESTS, DEFAULT_SKILL_TARGET, type SkillTarget } from './updateSkill';
@@ -103,6 +104,27 @@ async function runGenerateKey(force: boolean) {
   }
 }
 
+type BuildCliValues = { dev?: boolean; 'out-dir'?: string; 'public-dir'?: string; 'asset-prefix'?: string };
+
+function toBuildOptions(routes: MochiBuildOptions['routes'], serveOptions: Awaited<ReturnType<typeof extractServeOptions>>, values: BuildCliValues): MochiBuildOptions {
+  return {
+    routes,
+    markdown: serveOptions?.markdown,
+    svelteCompiler: serveOptions?.svelteCompiler,
+    optimize: serveOptions && 'optimize' in serveOptions ? serveOptions.optimize : undefined,
+    barrelWarnings: serveOptions?.barrelWarnings,
+    fonts: serveOptions?.fonts,
+    errorPage: serveOptions?.errorPage,
+    resources: serveOptions?.build?.resources,
+    protection: serveOptions?.protection,
+    development: values.dev,
+    outDir: values['out-dir'],
+    // Fall back to the entry's own `publicDir` so the build validates the same directory the server will scan — an explicit flag still overrides it.
+    publicDir: values['public-dir'] ?? serveOptions?.publicDir,
+    assetPrefix: values['asset-prefix'],
+  };
+}
+
 async function main() {
   const { values, positionals } = parseArgs({
     args: Bun.argv.slice(2),
@@ -175,23 +197,7 @@ async function main() {
     process.exit(1);
   }
 
-  await build({
-    routes,
-    markdown: serveOptions?.markdown,
-    svelteCompiler: serveOptions?.svelteCompiler,
-    optimize: serveOptions && 'optimize' in serveOptions ? serveOptions.optimize : undefined,
-    barrelWarnings: serveOptions?.barrelWarnings,
-    fonts: serveOptions?.fonts,
-    errorPage: serveOptions?.errorPage,
-    resources: serveOptions?.build?.resources,
-    protection: serveOptions?.protection,
-    development: values.dev,
-    outDir: values['out-dir'],
-    // Fall back to the entry's own `publicDir` so the build validates the same
-    // directory the server will scan — an explicit flag still overrides it.
-    publicDir: values['public-dir'] ?? serveOptions?.publicDir,
-    assetPrefix: values['asset-prefix'],
-  });
+  await build(toBuildOptions(routes, serveOptions, values));
 
   // Extracting serve options imports the user's entry for real; if anything started the queue runtime, its
   // maintenance timers keep the event loop alive and hang this one-shot build. Drain and exit.

@@ -186,6 +186,28 @@ const ASPECT = 9 / 16;
 /** Mirrors FILL in src/shot/registry.ts — the fraction of the limiting axis fitScale() aims to fill. */
 const EXPECTED_FILL_PCT = 90;
 
+// A mis-scaled or off-centre subject is invisible in the PNG, so it is checked here rather than by eye.
+function collectShotProblems(measured: Measurement, width: number, height: number, fill: number, consoleErrors: string[], subject: string): string[] {
+  const problems: string[] = [];
+  if (measured.frame.w !== width || measured.frame.h !== height) {
+    problems.push(`frame is ${measured.frame.w}x${measured.frame.h}, expected ${width}x${height}`);
+  }
+  if (measured.viewport.w !== width || measured.viewport.h !== height) {
+    problems.push(`viewport is ${measured.viewport.w}x${measured.viewport.h}, expected ${width}x${height} — the shot would be cropped or letterboxed`);
+  }
+  if (Math.abs(measured.gapLeft - measured.gapRight) > 1 || Math.abs(measured.gapTop - measured.gapBottom) > 1) {
+    problems.push(`subject is off-centre (gaps L${measured.gapLeft} R${measured.gapRight} T${measured.gapTop} B${measured.gapBottom})`);
+  }
+  // fitScale() targets FILL (90%) of the limiting axis; a large miss means `natural` in the registry is wrong.
+  if (Math.abs(fill - EXPECTED_FILL_PCT) > 5) {
+    problems.push(`subject fills ${fill}% of the limiting axis, expected ~90% — check \`natural\` for '${subject}' in src/shot/registry.ts`);
+  }
+  if (consoleErrors.length > 0) {
+    problems.push(`console errors: ${consoleErrors.join(' | ')}`);
+  }
+  return problems;
+}
+
 async function main(): Promise<void> {
   const args = parseCliArgs();
   const width = args.w ?? DEFAULT_WIDTH;
@@ -234,25 +256,8 @@ async function main(): Promise<void> {
     if (measured.error) {
       throw new Error(measured.error);
     }
-    // A mis-scaled or off-centre subject is invisible in the PNG, so it is checked here rather than by eye.
-    const problems: string[] = [];
-    if (measured.frame.w !== width || measured.frame.h !== height) {
-      problems.push(`frame is ${measured.frame.w}x${measured.frame.h}, expected ${width}x${height}`);
-    }
-    if (measured.viewport.w !== width || measured.viewport.h !== height) {
-      problems.push(`viewport is ${measured.viewport.w}x${measured.viewport.h}, expected ${width}x${height} — the shot would be cropped or letterboxed`);
-    }
-    if (Math.abs(measured.gapLeft - measured.gapRight) > 1 || Math.abs(measured.gapTop - measured.gapBottom) > 1) {
-      problems.push(`subject is off-centre (gaps L${measured.gapLeft} R${measured.gapRight} T${measured.gapTop} B${measured.gapBottom})`);
-    }
     const fill = Math.max(measured.pctW, measured.pctH);
-    // fitScale() targets FILL (90%) of the limiting axis; a large miss means `natural` in the registry is wrong.
-    if (Math.abs(fill - EXPECTED_FILL_PCT) > 5) {
-      problems.push(`subject fills ${fill}% of the limiting axis, expected ~90% — check \`natural\` for '${args.subject}' in src/shot/registry.ts`);
-    }
-    if (consoleErrors.length > 0) {
-      problems.push(`console errors: ${consoleErrors.join(' | ')}`);
-    }
+    const problems = collectShotProblems(measured, width, height, fill, consoleErrors, args.subject);
     if (problems.length > 0) {
       console.error(styleText('red', 'Refusing to save a bad shot:'));
       for (const problem of problems) {

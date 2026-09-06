@@ -232,6 +232,49 @@ interface TemplateVariant {
   expectNoLintTooling: boolean;
 }
 
+type TemplateSteps = Record<'scaffold' | 'install' | 'test' | 'typecheck' | 'lint' | 'format' | 'omissions', StepResult>;
+
+// Assert an opt-out scaffold shipped no lint/format config files or scripts.
+function checkLintOmissions(scaffoldDir: string, label: string): StepResult {
+  const scripts = readScaffoldScripts(scaffoldDir);
+  const leftovers = [
+    ...['eslint.config.js', '.prettierrc', '.prettierignore'].filter((f) => existsSync(join(scaffoldDir, f))),
+    ...['lint', 'lint:fix', 'format', 'format:check'].filter((s) => scripts[s]).map((s) => `scripts.${s}`),
+  ];
+  const step: StepResult = {
+    name: 'omissions',
+    status: leftovers.length === 0 ? 'pass' : 'fail',
+    durationMs: null,
+    exitCode: null,
+    output: leftovers.length === 0 ? '' : `lint tooling present despite opt-out flags: ${leftovers.join(', ')}`,
+  };
+  console.log(`  [${label}]   omissions ${statusCell(step.status)}`);
+  return step;
+}
+
+async function runVerificationSteps(scaffoldDir: string, label: string, steps: TemplateSteps): Promise<void> {
+  console.log(`  [${label}] • test…`);
+  steps.test = toStep('test', await runCmd(['bun', 'run', 'test'], scaffoldDir));
+  console.log(`  [${label}]   ${statusCell(steps.test.status)} (${fmtDuration(steps.test.durationMs)})`);
+
+  console.log(`  [${label}] • typecheck…`);
+  steps.typecheck = toStep('typecheck', await runCmd(['bun', 'run', 'typecheck'], scaffoldDir));
+  console.log(`  [${label}]   ${statusCell(steps.typecheck.status)} (${fmtDuration(steps.typecheck.durationMs)})`);
+
+  // Lint tooling ships with create-mochi >=0.4.0 — older published CLIs scaffold without it, so these stay skipped.
+  const scripts = readScaffoldScripts(scaffoldDir);
+  if (scripts.lint) {
+    console.log(`  [${label}] • lint…`);
+    steps.lint = toStep('lint', await runCmd(['bun', 'run', 'lint'], scaffoldDir));
+    console.log(`  [${label}]   ${statusCell(steps.lint.status)} (${fmtDuration(steps.lint.durationMs)})`);
+  }
+  if (scripts['format:check']) {
+    console.log(`  [${label}] • format:check…`);
+    steps.format = toStep('format', await runCmd(['bun', 'run', 'format:check'], scaffoldDir));
+    console.log(`  [${label}]   ${statusCell(steps.format.status)} (${fmtDuration(steps.format.durationMs)})`);
+  }
+}
+
 async function runTemplate(template: TemplateId, id: string, variant?: TemplateVariant): Promise<TemplateResult> {
   const name = `mochi-test-${id}-${template}${variant?.suffix ?? ''}`;
   const scaffoldDir = join(TESTS_DIR, name);
@@ -263,19 +306,7 @@ async function runTemplate(template: TemplateId, id: string, variant?: TemplateV
     mochiVersion = extractMochiVersion(scaffold.stdout, scaffoldDir);
 
     if (variant?.expectNoLintTooling) {
-      const scripts = readScaffoldScripts(scaffoldDir);
-      const leftovers = [
-        ...['eslint.config.js', '.prettierrc', '.prettierignore'].filter((f) => existsSync(join(scaffoldDir, f))),
-        ...['lint', 'lint:fix', 'format', 'format:check'].filter((s) => scripts[s]).map((s) => `scripts.${s}`),
-      ];
-      steps.omissions = {
-        name: 'omissions',
-        status: leftovers.length === 0 ? 'pass' : 'fail',
-        durationMs: null,
-        exitCode: null,
-        output: leftovers.length === 0 ? '' : `lint tooling present despite opt-out flags: ${leftovers.join(', ')}`,
-      };
-      console.log(`  [${label}]   omissions ${statusCell(steps.omissions.status)}`);
+      steps.omissions = checkLintOmissions(scaffoldDir, label);
     }
 
     console.log(`  [${label}] • install…`);
@@ -285,29 +316,7 @@ async function runTemplate(template: TemplateId, id: string, variant?: TemplateV
 
     if (steps.install.status === 'pass') {
       mochiInstalledVersion = extractInstalledMochiVersion(scaffoldDir);
-
-      console.log(`  [${label}] • test…`);
-      const test = await runCmd(['bun', 'run', 'test'], scaffoldDir);
-      steps.test = toStep('test', test);
-      console.log(`  [${label}]   ${statusCell(steps.test.status)} (${fmtDuration(steps.test.durationMs)})`);
-
-      console.log(`  [${label}] • typecheck…`);
-      const tc = await runCmd(['bun', 'run', 'typecheck'], scaffoldDir);
-      steps.typecheck = toStep('typecheck', tc);
-      console.log(`  [${label}]   ${statusCell(steps.typecheck.status)} (${fmtDuration(steps.typecheck.durationMs)})`);
-
-      // Lint tooling ships with create-mochi >=0.4.0 — older published CLIs scaffold without it, so these stay skipped.
-      const scripts = readScaffoldScripts(scaffoldDir);
-      if (scripts.lint) {
-        console.log(`  [${label}] • lint…`);
-        steps.lint = toStep('lint', await runCmd(['bun', 'run', 'lint'], scaffoldDir));
-        console.log(`  [${label}]   ${statusCell(steps.lint.status)} (${fmtDuration(steps.lint.durationMs)})`);
-      }
-      if (scripts['format:check']) {
-        console.log(`  [${label}] • format:check…`);
-        steps.format = toStep('format', await runCmd(['bun', 'run', 'format:check'], scaffoldDir));
-        console.log(`  [${label}]   ${statusCell(steps.format.status)} (${fmtDuration(steps.format.durationMs)})`);
-      }
+      await runVerificationSteps(scaffoldDir, label, steps);
     }
   }
 
