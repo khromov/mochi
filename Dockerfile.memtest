@@ -11,12 +11,12 @@
 #   docker build -f Dockerfile.memtest -t mochi-memtest .
 #   docker run -d --restart unless-stopped -v mochi-heapsnapshots:/snapshots mochi-memtest
 
-ARG BUN_IMAGE=oven/bun:1.4.0-alpine
+ARG BUN_IMAGE=oven/bun:1.4.2-alpine
 FROM ${BUN_IMAGE} AS base
 WORKDIR /usr/src/app
 
-# Copy the whole packages/ tree so bun install can reconcile lockfile topology,
-# resolve workspace:* bin shims, and reach packages/mochi/patches/.
+# Copy the whole packages/ tree so bun install can reconcile lockfile topology
+# and resolve workspace:* bin shims.
 FROM base AS install
 COPY package.json bun.lock /temp/dev/
 COPY packages /temp/dev/packages
@@ -47,7 +47,7 @@ RUN mkdir -p /snapshots && chown bun:bun /snapshots
 VOLUME /snapshots
 
 ENV PORT=${PORT}
-ENV MODE=development
+ENV NODE_ENV=development
 ENV MOCHI_LIVE_RELOAD=false
 ENV MOCHI_DOCKER=true
 ENV MOCHI_MEMORY_PROBE=1

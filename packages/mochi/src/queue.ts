@@ -1082,7 +1082,7 @@ async function registerQueueWorker(boss: BunBoss, config: MountableQueue): Promi
   const o = config.options;
   const workOptions = omitUndefined({
     // Escape hatch first; Mochi-owned keys below win where they overlap.
-    ...omitUndefined({ ...(o?.worker ?? {}) }),
+    ...omitUndefined({ ...o?.worker }),
     batchSize: 1,
     includeMetadata: true,
     perJobResults: true,

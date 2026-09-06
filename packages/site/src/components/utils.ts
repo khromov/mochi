@@ -10,7 +10,7 @@ const cache = new Map<string, string>();
 // Every demo lists the same shared files, so a build reads each once. In dev the memo has to go: loadSources runs
 // inside a compiled() twin, whose module Bun keeps for the life of the process, so a cached read would pin the
 // source panel to whatever the file said at boot.
-const MEMOIZE_READS = process.env.MODE !== 'development';
+const MEMOIZE_READS = process.env.NODE_ENV !== 'development';
 
 async function read(path: string): Promise<string> {
   const hit = cache.get(path);

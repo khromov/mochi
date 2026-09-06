@@ -7,10 +7,22 @@ import type { PluginBuilder } from 'bun';
 import type { CompileOptions } from 'svelte/compiler';
 import { renderMochiEnvClient } from './virtualModuleTemplate';
 import type { SvelteCompilerBackend } from './svelteCompilerBackend';
+import { CLIENT_BUILD_DEFINE } from './serverOnlyModuleGuard';
 import { applyCompiled, type CompiledContext } from './compiledLoader';
 import { toPosixPath } from '../utils';
 
 const SRC_DIR = path.resolve(import.meta.dir, '..');
+
+// One definition so the island bundle and the tests that assert about it can't drift: `registerEsmEnvStrip` leaves
+// DEV/BROWSER/NODE as free identifiers, and these are the literals Bun folds them to.
+export function clientBuildDefine(development: boolean): Record<string, string> {
+  return {
+    DEV: String(development),
+    BROWSER: 'true',
+    NODE: 'false',
+    ...CLIENT_BUILD_DEFINE,
+  };
+}
 
 // Bun can't propagate constants through esm-env's conditional exports, so stripping the imports turns DEV/BROWSER/NODE
 // into free variables that Bun's `define` replaces with literal booleans, letting `if (DEV)` blocks be eliminated.

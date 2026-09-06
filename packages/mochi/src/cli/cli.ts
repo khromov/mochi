@@ -9,6 +9,7 @@ import { updateSkill, SKILL_TARGETS, SKILL_DESTS, DEFAULT_SKILL_TARGET, type Ski
 import { generateKey } from './generateKey';
 import { relForDisplay } from '../utils';
 import { markBuilding } from '../utils/buildFlag';
+import { setDevelopment } from '../utils/env';
 
 const TARGET_ALIASES: Record<string, SkillTarget> = { agy: 'antigravity' };
 
@@ -154,6 +155,8 @@ async function main() {
   // Flipped before anything imports the app entry: this whole process is a build, so server-setup code must skip
   // real-boot side effects for its entire lifetime, not just while the entry is being read.
   markBuilding();
+  // extractServeOptions hands the entry graph a by-value snapshot, so a later setDevelopment() would be invisible.
+  setDevelopment(values.dev === true);
 
   const entryPath = path.resolve(process.cwd(), values.entry ?? './src/index.ts');
   let serveOptions: Awaited<ReturnType<typeof extractServeOptions>> = null;

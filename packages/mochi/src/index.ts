@@ -30,6 +30,7 @@ export type { ResolvedImage, ImageAttrs } from './image/imageApi';
 export { reloadDeferredIsland, reloadDeferredIslandAll } from './islands/deferInvalidation';
 export { deferReloadState, DeferReloadState } from './islands/deferReloadState.svelte';
 export type { DeferredIslandChange } from './islands/deferInvalidation';
+export type { MochiDirectives, MochiDeferOptions, MochiDeferVisibleOptions, MochiHydrateVisibleOptions, MochiClientOnlyVisibleOptions } from './islands/directives';
 export type { MochiImageOptions, ImageSize, InvalidateImageOptions, ImageFormat, ImageFit, ImportedImage, ImportedImageFormat } from './image/types';
 export { IMAGE_FILE_FILTER } from './compiler/imageAssetLoader';
 export { EmailError } from './email/types';
@@ -55,6 +56,7 @@ export type { LogLevel } from './utils/log';
 export { pinGlobal } from './utils/globalState';
 export { compiled, moduleRef } from './compiled';
 export { isBuilding } from './utils/buildFlag';
+export { isDev, isServer, isBrowser } from './utils/env';
 export { mochiEvents, hasSubscribers } from './events';
 export type { MochiCompileError } from './compiler/ComponentRegistry';
 export type {

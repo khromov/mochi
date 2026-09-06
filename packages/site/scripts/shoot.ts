@@ -110,7 +110,7 @@ async function startDevServer(): Promise<{ base: string; stop: () => void }> {
   const port = await freePort();
   const proc: Subprocess = Bun.spawn(['bun', 'run', 'dev'], {
     cwd: path.join(import.meta.dir, '..'),
-    env: { ...process.env, PORT: String(port), MOCHI_PORT: String(port), MODE: 'development' },
+    env: { ...process.env, PORT: String(port), MOCHI_PORT: String(port), NODE_ENV: 'development' },
     stdout: 'pipe',
     stderr: 'pipe',
     stdin: 'ignore',

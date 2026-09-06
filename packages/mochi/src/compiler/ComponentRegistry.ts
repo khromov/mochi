@@ -38,13 +38,13 @@ import { backendId, resolveSvelteCompiler, type MochiSvelteCompiler, type Svelte
 import { applyFilter } from '../extensions';
 import { decodeSourcePath, encodeSourcePath } from './manifestPaths';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
-import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
+import { serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { registerServerOnlyComponentStubs, SSR_ONLY_COMPONENT_NAMESPACE } from './serverOnlyComponents';
 import { cleanInputs, SERVER_ONLY_MODULE_NAMESPACE } from './bundleInputPaths';
 import { renderMochiEnvServer } from './virtualModuleTemplate';
 import { buildDebugBarBundle, type DebugBarBundle } from './buildDebugBarBundle';
 import { formatBuildMessages } from './formatBuildMessages';
-import { registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
+import { clientBuildDefine, registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
 import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
 import { applyCompiled, createCompiledModuleLoader, COMPILED_MODULE_FILTER, type CompiledContext } from './compiledLoader';
 import { mayContainCompiled, type CompiledUsage } from './compiledMacro';
@@ -531,6 +531,8 @@ export class ComponentRegistry {
       let excluded = 0;
       if (exclude.length > 0) {
         const globs = exclude.map((p) => new Bun.Glob(p));
+        // Snapshot the keys: the loop deletes from `shaken` while iterating it.
+        // oxlint-disable-next-line no-useless-spread
         for (const id of [...shaken.keys()]) {
           // Glob patterns are written with forward slashes, so match against
           // POSIX-ified paths or Windows never excludes anything.
@@ -1293,12 +1295,7 @@ export class ComponentRegistry {
       plugins: [serverOnlyModuleGuard, clientPlugin],
       target: 'browser',
       conditions: ['svelte', ...(development ? ['development'] : ['production'])],
-      define: {
-        DEV: String(development),
-        BROWSER: 'true',
-        NODE: 'false',
-        ...CLIENT_BUILD_DEFINE,
-      },
+      define: clientBuildDefine(development),
       minify: true,
       splitting: true,
       naming: '[name]-[hash].[ext]',
@@ -1367,6 +1364,8 @@ export class ComponentRegistry {
     // succeeded. Replace only the client-prefix JS entries; the per-component CSS
     // entries in `clientFiles` are stable and preserved.
     const clientPrefix = `${this.assetPrefix}/client/`;
+    // Snapshot the keys: the loop deletes from `clientFiles` while iterating it.
+    // oxlint-disable-next-line no-useless-spread
     for (const key of [...this.clientFiles.keys()]) {
       if (key.startsWith(clientPrefix)) {
         this.clientFiles.delete(key);
@@ -2199,6 +2198,8 @@ export class ComponentRegistry {
       // Drop existing import-css entries from clientFiles so stale URLs don't
       // linger when content (and therefore hash) changes.
       const importCssPrefix = `${this.assetPrefix}/import-css/`;
+      // Snapshot the keys: the loop deletes from `clientFiles` while iterating it.
+      // oxlint-disable-next-line no-useless-spread
       for (const key of [...this.clientFiles.keys()]) {
         if (key.startsWith(importCssPrefix)) {
           this.clientFiles.delete(key);
