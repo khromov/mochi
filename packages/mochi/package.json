@@ -125,7 +125,7 @@
     "@happy-dom/global-registrator": "^20.11.1",
     "@tailwindcss/node": "^4.3.3",
     "@tailwindcss/oxide": "^4.3.3",
-    "@types/bun": "1.4.0",
+    "@types/bun": "1.4.1",
     "@types/smtp-server": "3.5.13",
     "fast-check": "4.9.0",
     "smtp-server": "3.19.2",

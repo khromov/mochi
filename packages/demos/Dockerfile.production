@@ -1,7 +1,7 @@
     # Production image for the standalone demos site (HN clone today).
 # Modeled on the root Dockerfile.production but scoped to packages/demos.
 
-FROM oven/bun:1.4.0 AS base
+FROM oven/bun:1.4.2 AS base
 WORKDIR /usr/src/app
 
 # install dependencies into a temp directory
