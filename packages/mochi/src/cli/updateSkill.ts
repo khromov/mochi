@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { structuredPatch } from 'diff';
 
 const DEFAULT_SKILL_URL = 'https://mochi.fast/SKILL.md';
 
@@ -42,133 +43,13 @@ export interface UpdateSkillResult {
   diff: string;
 }
 
-function lines(text: string): string[] {
-  if (text === '') {
-    return [];
-  }
-  const result = text.split('\n');
-  if (result.at(-1) === '') {
-    result.pop();
-  }
-  return result;
-}
-
-const CONTEXT_LINES = 3;
-
-// Above this the O(n*m) table stops being worth its memory; the whole file is then shown as one replacement.
-const MAX_DIFF_CELLS = 4_000_000;
-
-type DiffOp = { kind: ' ' | '-' | '+'; text: string };
-
-function diffOps(before: string[], after: string[]): DiffOp[] {
-  const n = before.length;
-  const m = after.length;
-  if (n * m > MAX_DIFF_CELLS) {
-    return [...before.map((text): DiffOp => ({ kind: '-', text })), ...after.map((text): DiffOp => ({ kind: '+', text }))];
-  }
-
-  const lcs = new Uint32Array((n + 1) * (m + 1));
-  for (let i = n - 1; i >= 0; i--) {
-    for (let j = m - 1; j >= 0; j--) {
-      lcs[i * (m + 1) + j] = before[i] === after[j] ? lcs[(i + 1) * (m + 1) + j + 1]! + 1 : Math.max(lcs[(i + 1) * (m + 1) + j]!, lcs[i * (m + 1) + j + 1]!);
-    }
-  }
-
-  const ops: DiffOp[] = [];
-  let i = 0;
-  let j = 0;
-  while (i < n && j < m) {
-    if (before[i] === after[j]) {
-      ops.push({ kind: ' ', text: before[i]! });
-      i++;
-      j++;
-    } else if (lcs[(i + 1) * (m + 1) + j]! >= lcs[i * (m + 1) + j + 1]!) {
-      ops.push({ kind: '-', text: before[i]! });
-      i++;
-    } else {
-      ops.push({ kind: '+', text: after[j]! });
-      j++;
-    }
-  }
-  for (; i < n; i++) {
-    ops.push({ kind: '-', text: before[i]! });
-  }
-  for (; j < m; j++) {
-    ops.push({ kind: '+', text: after[j]! });
-  }
-  return ops;
-}
-
-/**
- * Unified diff with one hunk per cluster of changes — the reader is being asked to spot an injected instruction in an
- * unsigned update, so unrelated distant edits must not bury it under the whole file rewritten as remove-then-add.
- */
+// Unified diff shown before an existing SKILL.md is overwritten.
 export function formatSkillDiff(previous: string, next: string, dest: string, url: string): string {
-  const ops = diffOps(lines(previous), lines(next));
-  const changed = ops.map((op) => op.kind !== ' ');
-
-  const output = [`--- ${previous === '' ? '/dev/null' : dest}`, `+++ ${url}`];
-  let oldLine = 1;
-  let newLine = 1;
-  for (let i = 0; i < ops.length;) {
-    if (!changed[i]) {
-      if (ops[i]!.kind !== '+') {
-        oldLine++;
-      }
-      if (ops[i]!.kind !== '-') {
-        newLine++;
-      }
-      i++;
-      continue;
-    }
-
-    const start = Math.max(0, i - CONTEXT_LINES);
-    let end = i;
-    // Absorb the next change too when only context separates it, so neighbouring edits share one hunk.
-    for (let scan = i; scan < ops.length; scan++) {
-      if (changed[scan]) {
-        end = scan;
-      } else if (scan - end > CONTEXT_LINES * 2) {
-        break;
-      }
-    }
-    end = Math.min(ops.length - 1, end + CONTEXT_LINES);
-
-    let oldStart = oldLine;
-    let newStart = newLine;
-    for (let back = i - 1; back >= start; back--) {
-      if (ops[back]!.kind !== '+') {
-        oldStart--;
-      }
-      if (ops[back]!.kind !== '-') {
-        newStart--;
-      }
-    }
-
-    const body: string[] = [];
-    let oldCount = 0;
-    let newCount = 0;
-    for (let k = start; k <= end; k++) {
-      const op = ops[k]!;
-      body.push(`${op.kind}${op.text}`);
-      if (op.kind !== '+') {
-        oldCount++;
-      }
-      if (op.kind !== '-') {
-        newCount++;
-      }
-    }
-    output.push(`@@ -${oldStart},${oldCount} +${newStart},${newCount} @@`, ...body);
-
-    for (let k = i; k <= end; k++) {
-      if (ops[k]!.kind !== '+') {
-        oldLine++;
-      }
-      if (ops[k]!.kind !== '-') {
-        newLine++;
-      }
-    }
-    i = end + 1;
+  const oldName = previous === '' ? '/dev/null' : dest;
+  const patch = structuredPatch(oldName, url, previous, next, undefined, undefined, { context: 3 });
+  const output = [`--- ${oldName}`, `+++ ${url}`];
+  for (const hunk of patch.hunks) {
+    output.push(`@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`, ...hunk.lines);
   }
   return `${output.join('\n')}\n`;
 }

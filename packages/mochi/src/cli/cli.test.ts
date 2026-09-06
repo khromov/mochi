@@ -39,7 +39,7 @@ describe('mochi-framework update-skill (subprocess)', () => {
 
       expect(exitCode).toBe(0);
       // Nothing to review on a first write, so the confirmation preview stays out of the way.
-      expect(stdout).not.toContain('Unsigned update fetched');
+      expect(stdout).not.toContain('Skill update fetched');
       const dest = path.join(cwd, '.claude', 'skills', 'mochi', 'SKILL.md');
       expect(existsSync(dest)).toBe(true);
       expect(await Bun.file(dest).text()).toBe('# Hosted skill body');
@@ -57,7 +57,7 @@ describe('mochi-framework update-skill (subprocess)', () => {
       const { exitCode, stdout } = await runUpdateSkill(cwd, server.url.href);
 
       expect(exitCode).toBe(0);
-      expect(stdout).toContain('Unsigned update fetched');
+      expect(stdout).toContain('Skill update fetched');
       expect(stdout).toContain('+# Hosted skill body');
       expect(await Bun.file(dest).text()).toBe('# Hosted skill body');
     } finally {

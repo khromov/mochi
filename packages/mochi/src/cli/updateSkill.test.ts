@@ -79,7 +79,7 @@ describe('updateSkill', () => {
     const cwd = freshCwd();
     const dest = path.join(cwd, SKILL_DEST);
     await Bun.write(dest, 'trusted content');
-    const fetchImpl = async () => new Response('unsigned replacement', { status: 200 });
+    const fetchImpl = async () => new Response('fresh replacement', { status: 200 });
 
     const res = await updateSkill({ cwd, fetchImpl, confirmUpdate: () => false });
 
