@@ -214,7 +214,8 @@ export class MochiCache {
    *
    * It supersedes the key's in-flight recompute, so a run already underway settles without writing. As with `delete`
    * and `markStale`, that covers a `fetch` at any point after entry — including one still awaiting its initial storage
-   * read — so this write is never overwritten by a recompute that began before it landed.
+   * read. The one gap is a recompute that had already cleared its own write guard and handed `setItem` to the backend
+   * before this call: both writes are then in flight and whichever lands last wins.
    */
   async set<T>(key: string, value: T): Promise<void> {
     this.supersedeRuns(key);
@@ -340,8 +341,10 @@ export class MochiCache {
     return raw == null ? null : (this.deserialize(raw) as CacheEntry);
   }
 
-  // Run `fn` once per key even under concurrent callers, then persist the result. `generation` is what the owning
-  // fetch captured at entry; a coalesced caller shares the owner's run and never writes.
+  // Run `fn` once per key even under concurrent callers, then persist the result. `generation` is what the owning fetch
+  // captured at entry; a coalesced caller shares the owner's run and its verdict, so a caller that entered after an
+  // invalidation is dropped along with the owner — its value came from the owner's `fn`, which may predate that
+  // invalidation — and the next fetch recomputes.
   private run<T>(key: string, fn: () => T | Promise<T>, generation: number): Promise<T> {
     const existing = this.inflight.get(key) as Promise<T> | undefined;
     if (existing) {
@@ -355,9 +358,9 @@ export class MochiCache {
     // Held until the work itself settles — past a timeout abandonment — so the write guard below reads a live generation.
     this.retainGeneration(key);
     const work = (async () => {
-      // Published before the expensive `fn` so a peer starting moments later sees it and defers, and removed once this run settles.
-      await this.writeMarker(key, runId);
       try {
+        // Published before the expensive `fn` so a peer starting moments later sees it and defers, and removed once this run settles.
+        await this.writeMarker(key, runId);
         const value = await fn();
         const serialized = this.serialize({ value, createdAt: this.now() } satisfies CacheEntry);
         // A run superseded since its fetch entered — by an inflight takeover, a timeout, or a set/delete/markStale/clear
@@ -376,9 +379,12 @@ export class MochiCache {
         return (this.deserialize(serialized) as CacheEntry).value as T;
       } finally {
         await this.removeMarker(key, runId);
-        this.releaseGeneration(key);
       }
-    })();
+    })().finally(() => {
+      // Released out here rather than in the `finally` above, because a throwing `cache:error` subscriber can reject
+      // either marker call and a skipped release would strand this key's generation entry for the process's lifetime.
+      this.releaseGeneration(key);
+    });
 
     const guarded = this.inflightTimeout > 0 && Number.isFinite(this.inflightTimeout) ? withTimeout(work, this.inflightTimeout, key) : work;
     const promise = guarded.finally(() => {

@@ -954,3 +954,70 @@ describe('MochiCache invalidation during the initial-read gap', () => {
     expect(await cache.peek('d')).toBeNull();
   });
 });
+
+describe('MochiCache generation bookkeeping under failure', () => {
+  // A throwing `cache:error` subscriber is the one way a marker write/remove can reject, and it must not strand the
+  // key's generation entry — the refcount is what keeps that map from growing without bound.
+  function markerFailingCache(failing: 'set' | 'remove') {
+    const store = new Map<string, unknown>();
+    const isMarker = (key: string) => key.startsWith('mochi:inflight:');
+    const storage: Storage = {
+      getItem: (key) => store.get(key) ?? null,
+      setItem: (key, value) => {
+        if (failing === 'set' && isMarker(key)) {
+          throw new Error('marker write failed');
+        }
+        store.set(key, value);
+      },
+      removeItem: (key) => {
+        if (failing === 'remove' && isMarker(key)) {
+          throw new Error('marker remove failed');
+        }
+        store.delete(key);
+      },
+      clear: () => store.clear(),
+    };
+    const cache = new MochiCache({ storage, crossProcessInflight: true, inflightTimeout: 5_000 });
+    mochiEvents.on('cache:error', () => {
+      throw new Error('subscriber blew up');
+    });
+    return { cache, generations: (cache as unknown as { generations: Map<string, unknown> }).generations };
+  }
+
+  test('a rejected marker write still releases the key generation', async () => {
+    const { cache, generations } = markerFailingCache('set');
+    await expect(cache.fetch('k', () => 'v')).rejects.toThrow('subscriber blew up');
+    expect(generations.size).toBe(0);
+  });
+
+  test('a rejected marker removal still releases the key generation', async () => {
+    const { cache, generations } = markerFailingCache('remove');
+    await expect(cache.fetch('k', () => 'v')).rejects.toThrow('subscriber blew up');
+    expect(generations.size).toBe(0);
+  });
+
+  test('a caller coalesced onto a superseded run is served its value but nothing is stored', async () => {
+    const store = new Map<string, unknown>();
+    const storage: Storage = {
+      getItem: (key) => store.get(key) ?? null,
+      setItem: (key, value) => void store.set(key, value),
+      removeItem: (key) => void store.delete(key),
+      clear: () => store.clear(),
+    };
+    const cache = new MochiCache({ storage, minTimeToStale: 1_000, maxTimeToLive: 5_000 });
+
+    const first = cache.fetch('k', async () => {
+      await wait(20);
+      return 'computed';
+    });
+    await cache.delete('k');
+    await wait(5);
+    // Enters after the delete has fully landed, but adopts the superseded run rather than starting its own.
+    const second = cache.fetch('k', () => 'never-called');
+
+    expect(await first).toBe('computed');
+    expect(await second).toBe('computed');
+    expect(store.size).toBe(0);
+    expect((cache as unknown as { generations: Map<string, unknown> }).generations.size).toBe(0);
+  });
+});
