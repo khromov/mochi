@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { structuredPatch } from 'diff';
 
 const DEFAULT_SKILL_URL = 'https://mochi.fast/SKILL.md';
 
@@ -25,11 +26,32 @@ export interface UpdateSkillOptions {
   url?: string;
   target?: SkillTarget;
   fetchImpl?: FetchLike;
+  confirmUpdate?: (preview: UpdateSkillPreview) => boolean | Promise<boolean>;
+}
+
+export interface UpdateSkillPreview {
+  path: string;
+  url: string;
+  created: boolean;
+  diff: string;
 }
 
 export interface UpdateSkillResult {
   path: string;
   created: boolean;
+  action: 'created' | 'updated' | 'unchanged' | 'aborted';
+  diff: string;
+}
+
+// Unified diff shown before an existing SKILL.md is overwritten.
+export function formatSkillDiff(previous: string, next: string, dest: string, url: string): string {
+  const oldName = previous === '' ? '/dev/null' : dest;
+  const patch = structuredPatch(oldName, url, previous, next, undefined, undefined, { context: 3 });
+  const output = [`--- ${oldName}`, `+++ ${url}`];
+  for (const hunk of patch.hunks) {
+    output.push(`@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`, ...hunk.lines);
+  }
+  return `${output.join('\n')}\n`;
 }
 
 // Pulls the hosted Mochi SKILL.md into the consuming project so the agent
@@ -38,7 +60,7 @@ export interface UpdateSkillResult {
 export async function updateSkill(options: UpdateSkillOptions = {}): Promise<UpdateSkillResult> {
   // MOCHI_SKILL_URL overrides the source — primarily so the CLI can be exercised
   // end-to-end against a local server without hitting the network.
-  const { cwd = process.cwd(), url = process.env.MOCHI_SKILL_URL || DEFAULT_SKILL_URL, target = DEFAULT_SKILL_TARGET, fetchImpl = fetch } = options;
+  const { cwd = process.cwd(), url = process.env.MOCHI_SKILL_URL || DEFAULT_SKILL_URL, target = DEFAULT_SKILL_TARGET, fetchImpl = fetch, confirmUpdate } = options;
 
   let res: Response;
   try {
@@ -55,7 +77,16 @@ export async function updateSkill(options: UpdateSkillOptions = {}): Promise<Upd
   const body = await res.text();
   const dest = path.resolve(cwd, SKILL_DESTS[target]);
   const created = !existsSync(dest);
+  const previous = created ? '' : await Bun.file(dest).text();
+  if (!created && previous === body) {
+    return { path: dest, created: false, action: 'unchanged', diff: '' };
+  }
+  const diff = formatSkillDiff(previous, body, dest, url);
+  // A first-time write has no prior content to review, so there is nothing for the operator to approve.
+  if (!created && confirmUpdate && !(await confirmUpdate({ path: dest, url, created, diff }))) {
+    return { path: dest, created, action: 'aborted', diff };
+  }
   await Bun.write(dest, body);
 
-  return { path: dest, created };
+  return { path: dest, created, action: created ? 'created' : 'updated', diff };
 }

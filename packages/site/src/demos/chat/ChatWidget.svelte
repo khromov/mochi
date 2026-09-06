@@ -11,6 +11,7 @@
   });
 
   let chatSocket: WebSocket | null = null;
+  let disconnected = $state<string | null>(null);
   let userId = '';
 
   if (isBrowser) {
@@ -30,11 +31,16 @@
       const msg = JSON.parse(e.data);
       messages = [...messages, { text: msg.text, fromMe: msg.userId === userId }];
     });
+    // The server closes the socket on an oversized or too-frequent message; send() on a closed socket is a silent
+    // no-op, so without this the box would keep accepting text into the void.
+    chatSocket.addEventListener('close', (e) => {
+      disconnected = e.reason || (e.code === 1009 ? 'Message too large' : 'Connection closed');
+    });
   }
 
   function send() {
     const text = input.trim();
-    if (!text || !chatSocket) {
+    if (!text || !chatSocket || chatSocket.readyState !== WebSocket.OPEN) {
       return;
     }
     chatSocket.send(JSON.stringify({ userId, text }));
@@ -64,9 +70,13 @@
     {/if}
   </div>
 
+  {#if disconnected}
+    <p class="disconnected" role="alert">{disconnected} — reload the page to reconnect.</p>
+  {/if}
+
   <div class="chat-input">
-    <input type="text" bind:value={input} onkeydown={onKeydown} placeholder="Type a message..." />
-    <button onclick={send}>Send</button>
+    <input type="text" bind:value={input} onkeydown={onKeydown} placeholder="Type a message..." disabled={!!disconnected} />
+    <button onclick={send} disabled={!!disconnected}>Send</button>
   </div>
 </div>
 
@@ -138,6 +148,15 @@
     font-size: 0.95rem;
   }
 
+  .disconnected {
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--error, #b91c1c);
+    font-size: 0.85rem;
+  }
+
   .chat-input {
     display: flex;
     gap: 0.5rem;
@@ -181,5 +200,11 @@
 
   .chat-input button:hover {
     background: var(--accent-hover);
+  }
+
+  .chat-input input:disabled,
+  .chat-input button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>
