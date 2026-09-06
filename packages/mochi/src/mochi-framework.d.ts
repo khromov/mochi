@@ -5,13 +5,7 @@
 import 'mochi-framework';
 
 declare module 'mochi-framework' {
-  /** True when rendering on the server (SSR build). */
-  export const isServer: boolean;
-  /** True when running in the browser (client build). */
-  export const isBrowser: boolean;
-  export const DEV: boolean;
-  /** True when the server was started with `development: true`. */
-  export const isDev: boolean;
+  // `isServer` / `isBrowser` / `isDev` are real exports of `utils/env.ts`; augmenting them here would duplicate them.
 
   type CookieSerializeOptions = import('./runtime/cookies').CookieSerializeOptions;
 

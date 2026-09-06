@@ -8,7 +8,9 @@ export const queues: MochiQueueConfig[] = [notificationQueue];
 
 export const routes: Record<string, MochiRouteValue> = {
   '/demos/queue': Mochi.page('./src/demos/queue/Queue.svelte', {
-    rateLimit: { limit: 30, window: '1m', skip: (req) => req.method !== 'POST' },
+    // Scoped to the enqueue POST: a page-wide limit also counts GETs (including speculation-rules
+    // prefetches), so a visitor reading the demo could be served a 429 instead of the page.
+    rateLimit: { limit: 60, window: '1m', skip: (req) => req.method !== 'POST' },
     // `suggestedUser` is generated server-side so SSR and hydration agree.
     serverProps: () => ({ initial: queueStatus(), suggestedUser: randomUsername() }),
     actions: {

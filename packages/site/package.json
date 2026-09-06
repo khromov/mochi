@@ -11,8 +11,8 @@
   "scripts": {
     "build": "bun scripts/prebuild.ts && mochi-framework build",
     "start": "bun src/index.ts",
-    "dev": "MODE=development bun src/index.ts",
-    "typecheck": "bun scripts/prebuild.ts && svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
+    "dev": "NODE_ENV=development bun src/index.ts",
+    "typecheck": "bun scripts/prebuild.ts && svelte-check --tsconfig ./tsconfig.json && tsc -p tsconfig.json --noEmit",
     "test": "bun scripts/run-tests.ts",
     "clean": "rm -rf .mochi"
   },
@@ -48,7 +48,7 @@
     "varlock": "1.16.0"
   },
   "devDependencies": {
-    "@types/bun": "1.4.0",
+    "@types/bun": "1.4.1",
     "svelte-check": "4.7.4",
     "typescript": "^6.0.3"
   }

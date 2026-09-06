@@ -784,7 +784,9 @@ await Mochi.serve({
 
 ### `$env/static/*` and `$env/dynamic/*`
 
-None of these virtual modules exist. Bun auto-loads `.env`, so read everything through `process.env.FOO`. The `mochi` virtual module (`isServer`, `isBrowser`, `isDev`) covers the SSR-only / browser-only branching that `$env/static/private` solved with import-time errors.
+None of these virtual modules exist. Bun auto-loads `.env`, so read everything through `process.env.FOO`.
+
+What `$env/static/private` really bought you was a build-time error when a private value reached a client-reachable module. In Mochi that job belongs to [`.server.ts` files](/docs/server-only-imports/), which are replaced with a throwing stub in the client build. Mochi's [environment constants](/docs/environment-constants/) (`isServer`, `isBrowser`, `isDev`) branch on render target, but they do **not** keep the untaken branch out of the bundle — reach for them to pick a code path, not to hide a secret.
 
 ```ts
 // SvelteKit
@@ -806,7 +808,7 @@ Bun loads `.env` for you. To send an environment variable to the client, pass it
 
 ### `$app/paths` (`asset`, `base`, `resolve`)
 
-No equivalent. Mochi does not support sub-path deployments through configuration. Write your app links as absolute paths (`/about`). The `assetPrefix` option on `Mochi.serve()` rewrites the URL prefix for framework-internal bundles only (default `/_mochi`), not for your own routes or static files.
+No equivalent for app links: write them as absolute paths (`/about`) and prefix them yourself when hosting under a sub-path. Framework assets are prefixed for you by `assetPrefix` (default `/_mochi`) — see [Sub-path and static hosting](/docs/deployment-options/#sub-path-and-static-hosting).
 
 ```svelte
 <!-- SvelteKit -->

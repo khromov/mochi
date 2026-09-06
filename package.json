@@ -34,8 +34,10 @@
     "clean": "bun --filter='*' run clean",
     "format:check": "prettier --check --cache .",
     "format": "prettier --write --cache .",
-    "lint": "eslint . --cache --concurrency=6",
-    "lint:fix": "eslint . --cache --concurrency=6 --fix",
+    "lint": "oxlint && eslint \"**/*.svelte\" \"**/*.svelte.ts\" \"**/*.svelte.js\" --no-error-on-unmatched-pattern --cache",
+    "lint:fix": "oxlint --fix && eslint \"**/*.svelte\" \"**/*.svelte.ts\" \"**/*.svelte.js\" --no-error-on-unmatched-pattern --cache --fix",
+    "lint:js": "oxlint",
+    "lint:svelte": "eslint \"**/*.svelte\" \"**/*.svelte.ts\" \"**/*.svelte.js\" --no-error-on-unmatched-pattern --cache",
     "checks": "bun run lint:fix && bun run format && bun run typecheck && bun run test",
     "syncpack": "syncpack lint",
     "syncpack:fix": "syncpack fix",
@@ -57,18 +59,16 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@memlab/api": "^2.0.4",
-    "@types/bun": "1.4.0",
+    "@types/bun": "1.4.1",
     "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-svelte": "^3.22.0",
+    "oxlint": "^1.80.0",
     "prettier": "^3.9.6",
     "prettier-plugin-svelte": "^4.1.1",
     "syncpack": "^15.3.2",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.65.0"
-  },
-  "patchedDependencies": {
-    "svelte-check@4.7.4": "packages/mochi/patches/svelte-check@4.7.4.patch"
   },
   "overrides": {
     "msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*"

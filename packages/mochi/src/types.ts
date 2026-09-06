@@ -464,6 +464,10 @@ export interface MochiServeOptions {
    * `reusePort`, `tls`. Spread into `Bun.serve()`; framework-owned keys are rejected.
    */
   bun?: BunServeOverrides;
+  /**
+   * Force development mode on or off. Defaults to `NODE_ENV === 'development'`, which is also what `isDev` and
+   * `setupTailwind` read, so an override makes module top-level code — which already ran — disagree with the server.
+   */
   development?: boolean;
   /** Mount the dev-only debug toolbar. Default: `true`, and ignored entirely when `development` is `false`. */
   debugBar?: boolean;

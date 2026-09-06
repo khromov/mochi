@@ -149,7 +149,7 @@ The outbox is in-memory and dev-only. It holds the most recent 100 messages, is 
 
 </Callout>
 
-Leaving `transport` unset gives you the dev/log split automatically. To pick the transport by hand, branch on `NODE_ENV` (the `isDev` constant is only available inside compiled code, not a server entry):
+Leaving `transport` unset gives you the dev/log split automatically. To pick the transport by hand, branch on `NODE_ENV` — this options object is evaluated before `Mochi.serve()` resolves [`isDev`](/docs/environment-constants/#isdev), so read the env var directly here:
 
 ```ts
 await Mochi.serve({
