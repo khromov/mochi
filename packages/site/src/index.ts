@@ -16,7 +16,7 @@ import { handle as modeWatcherHandle } from './demos/mode-watcher/routes';
 import { handle as shotHandle } from './shot/routes';
 import { encodeDebugBarGlobals } from './lib/debugBarEncode';
 import { routes, queues, cron } from './routes';
-import { CHAT_MAX_MESSAGE_BYTES } from './demos/chat/routes';
+import { CHAT_WS_MAX_PAYLOAD_BYTES } from './demos/chat/routes';
 
 const DEVELOPMENT = process.env.NODE_ENV === 'development';
 const IS_DOCKER = process.env.MOCHI_DOCKER === 'true';
@@ -171,8 +171,9 @@ await Mochi.serve({
   port: PORT,
   liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
-  // The only inbound bound that runs before Bun buffers a frame; it tightens Bun's 16 MB-per-message default.
-  websocket: { maxPayloadLength: CHAT_MAX_MESSAGE_BYTES },
+  // `maxPayloadLength` is the only inbound bound running before Bun buffers a frame, and `idleTimeout` keeps Bun's
+  // keepalive pings landing inside nginx's 60s `proxy_read_timeout`, which would otherwise drop every idle tab.
+  websocket: { maxPayloadLength: CHAT_WS_MAX_PAYLOAD_BYTES, idleTimeout: 30 },
   speculationRules,
   trailingSlash: 'always',
   // /ci/dashboard is a chrome-free always-on display — it would otherwise report a pageview every refresh.
@@ -202,7 +203,8 @@ await Mochi.serve({
   warmup: { enabledInProd: true, enabledInDev: true },
   additionalWatchPaths: ['../docs'],
   logger: { level: 'log' },
-  proxy: { origin }, // TODO: This is a bit of an awkward way to set the allowed csrf domain...
+  // nginx is the socket peer for every visitor, so reading the rightmost entry nginx appends is what distinguishes them.
+  proxy: { origin, addressHeader: 'x-forwarded-for', xffDepth: 1 }, // TODO: This is a bit of an awkward way to set the allowed csrf domain...
   // Served straight from disk as one Bun directory route for the /demos/static-dirs page
   // (kept in sync with the example shown in ./src/demoIndex.ts).
   staticDirs: { '/gallery': './images' },
