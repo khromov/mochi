@@ -76,9 +76,9 @@ await Mochi.serve({
 
 #### Request context during the handshake
 
-<VersionNote since="0.9.2" message="Earlier versions threw from getRequestContext() inside upgrade." />
+<VersionNote since="0.10.0" message="Earlier versions threw from getRequestContext() inside upgrade." />
 
-`getRequestContext()` works inside `upgrade`, so cookies, `locals` and `getClientAddress()` are available there. Later callbacks receive only the socket, so derive anything header-based here and return it on `ws.data.user`.
+`getRequestContext()` works inside `upgrade`, so cookies and `getClientAddress()` are available there. `handle` middleware does not run for WebSocket upgrades, so `locals` is empty. Later callbacks receive only the socket, so derive anything header-based here and return it on `ws.data.user`.
 
 ```ts
 // file: src/index.ts

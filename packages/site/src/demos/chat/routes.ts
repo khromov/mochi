@@ -1,4 +1,4 @@
-import { Mochi, getRequestContext } from 'mochi-framework';
+import { Mochi, getRequestContext, memoryStore } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
 
 export const CHAT_MAX_MESSAGE_BYTES = 4 * 1024;
@@ -9,11 +9,6 @@ export const CHAT_MAX_HISTORY_BYTES = 64 * 1024;
 export const CHAT_RATE_LIMIT = 20;
 export const CHAT_RATE_WINDOW_MS = 10_000;
 
-interface RateWindow {
-  messages: number;
-  startedAt: number;
-}
-
 interface HistoryEntry {
   text: string;
   bytes: number;
@@ -23,7 +18,8 @@ interface ChatSocketData {
   rateKey: string;
 }
 
-// Behind a proxy that forwards no client address, a shared key would put every visitor in one bucket and let a single burst disconnect them all.
+// `getClientAddress()` only returns null when Bun has no peer address at all (behind a proxy it still yields the proxy's IP,
+// so separating visitors there is `proxy.addressHeader`'s job); a per-socket key keeps that edge case from sharing one bucket.
 export function rateKeyFor(address: string | null): string {
   return address ? `ip:${address}` : `socket:${crypto.randomUUID()}`;
 }
@@ -32,22 +28,7 @@ export function createChatRoutes(): Record<string, MochiRouteValue> {
   const history: HistoryEntry[] = [];
   let historyBytes = 0;
   // Keyed by client address so the allowance survives a reconnect, which would otherwise hand out a fresh budget and replay the history buffer again.
-  const windows = new Map<string, RateWindow>();
-
-  function allowMessage(key: string, now: number): boolean {
-    for (const [k, window] of windows) {
-      if (now - window.startedAt >= CHAT_RATE_WINDOW_MS) {
-        windows.delete(k);
-      }
-    }
-    const window = windows.get(key) ?? { messages: 0, startedAt: now };
-    windows.set(key, window);
-    if (window.messages >= CHAT_RATE_LIMIT) {
-      return false;
-    }
-    window.messages++;
-    return true;
-  }
+  const limiter = memoryStore();
 
   return {
     '/demos/chat': Mochi.page('./src/demos/chat/Chat.svelte'),
@@ -63,7 +44,7 @@ export function createChatRoutes(): Record<string, MochiRouteValue> {
             ws.send(entry.text);
           }
         },
-        message(ws, message) {
+        async message(ws, message) {
           const bytes = typeof message === 'string' ? Buffer.byteLength(message, 'utf8') : message.byteLength;
           if (bytes > CHAT_MAX_MESSAGE_BYTES) {
             ws.close(1009, 'Message too large');
@@ -73,7 +54,8 @@ export function createChatRoutes(): Record<string, MochiRouteValue> {
             ws.close(1003, 'Chat frames must be text');
             return;
           }
-          if (!allowMessage(ws.data.user.rateKey, Date.now())) {
+          const { count } = await limiter.hit(ws.data.user.rateKey, CHAT_RATE_WINDOW_MS, CHAT_RATE_LIMIT);
+          if (count > CHAT_RATE_LIMIT) {
             ws.close(1008, 'Message rate exceeded');
             return;
           }

@@ -15,11 +15,14 @@
   let chatSocket: WebSocket | null = null;
   let disconnected = $state<string | null>(null);
   let reconnecting = $state(false);
+  const locked = $derived(!!disconnected || reconnecting);
   let userId = '';
 
   // The server states its reason for these; anything else is a transport drop worth retrying.
   const POLICY_CLOSE_CODES = new Set([1003, 1008, 1009]);
   const MAX_RECONNECT_ATTEMPTS = 5;
+  // A connection that outlived the longest backoff was healthy, so its drop starts a fresh attempt budget.
+  const STABLE_CONNECTION_MS = 500 * 2 ** MAX_RECONNECT_ATTEMPTS;
 
   if (isBrowser) {
     userId =
@@ -33,32 +36,35 @@
     const host = window.location.host;
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     let attempts = 0;
+    let openedAt = 0;
 
     const connect = () => {
-      const socket = new WebSocket(`${wsProtocol}//${host}/ws/chat`);
-      chatSocket = socket;
+      chatSocket = new WebSocket(`${wsProtocol}//${host}/ws/chat`);
 
-      socket.addEventListener('open', () => {
-        attempts = 0;
+      chatSocket.addEventListener('open', () => {
+        openedAt = Date.now();
         reconnecting = false;
         disconnected = null;
         // The server replays its whole history on every connection, so a reconnect would otherwise double every message.
         messages = [GREETING];
       });
 
-      socket.addEventListener('message', (e) => {
+      chatSocket.addEventListener('message', (e) => {
         const msg = JSON.parse(e.data);
         messages = [...messages, { text: msg.text, fromMe: msg.userId === userId }];
       });
 
       // send() on a closed socket is a silent no-op, so without this the box would keep accepting text into the void.
-      socket.addEventListener('close', (e) => {
+      chatSocket.addEventListener('close', (e) => {
         if (POLICY_CLOSE_CODES.has(e.code)) {
-          disconnected = e.reason || (e.code === 1009 ? 'Message too large' : 'Connection closed');
+          disconnected = e.reason || 'Connection closed';
           return;
         }
+        if (openedAt && Date.now() - openedAt > STABLE_CONNECTION_MS) {
+          attempts = 0;
+        }
+        openedAt = 0;
         if (attempts >= MAX_RECONNECT_ATTEMPTS) {
-          reconnecting = false;
           disconnected = 'Connection closed';
           return;
         }
@@ -109,8 +115,8 @@
   {/if}
 
   <div class="chat-input">
-    <input type="text" bind:value={input} onkeydown={onKeydown} placeholder="Type a message..." disabled={!!disconnected || reconnecting} />
-    <button onclick={send} disabled={!!disconnected || reconnecting}>Send</button>
+    <input type="text" bind:value={input} onkeydown={onKeydown} placeholder="Type a message..." disabled={locked} />
+    <button onclick={send} disabled={locked}>Send</button>
   </div>
 </div>
 

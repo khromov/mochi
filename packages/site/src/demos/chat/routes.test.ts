@@ -44,7 +44,6 @@ describe('chat rate-limit identity', () => {
     expect(rateKeyFor('203.0.113.7')).toBe(rateKeyFor('203.0.113.7'));
   });
 
-  // Behind a proxy that forwards nothing every visitor shares one address, so a shared key would let one burst disconnect them all.
   test('issues a distinct key per socket when no client address is available', () => {
     expect(rateKeyFor(null)).not.toBe(rateKeyFor(null));
     expect(rateKeyFor(null)).toStartWith('socket:');
@@ -97,7 +96,7 @@ describe('chat WebSocket resource bounds', () => {
     expect(sender.closed).toEqual([{ code: 1008, reason: 'Message rate exceeded' }]);
   });
 
-  // The counter lives on the address, so dropping the socket and redialling must not hand out a fresh allowance.
+  // The counter lives on the rate key, not the socket, so dropping the socket and redialling must not hand out a fresh allowance.
   test('keeps the budget across reconnects from the same address', async () => {
     const handlers = chatHandlers();
     const rateKey = rateKeyFor('203.0.113.7');
