@@ -46,8 +46,8 @@ import { buildDebugBarBundle, type DebugBarBundle } from './buildDebugBarBundle'
 import { formatBuildMessages } from './formatBuildMessages';
 import { clientBuildDefine, registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
 import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
-import { applyCompiled, createCompiledModuleLoader, COMPILED_MODULE_FILTER, type CompiledContext } from './compiledLoader';
-import { mayContainCompiled, type CompiledUsage } from './compiledMacro';
+import { applyCompiled, createCompiledModuleLoader, needsCompiledTransform, COMPILED_MODULE_FILTER, type CompiledContext } from './compiledLoader';
+import type { CompiledUsage } from './compiledMacro';
 import { EMAIL_TEMPLATE_DIR } from '../email/templates';
 import { registerLocalImageAsset } from '../image/localAssetRegistry';
 import type { LocalImageAsset } from '../image/types';
@@ -130,7 +130,7 @@ function createMarkdownLoader(opts: {
     // this file's own bytes change.
     // A compiled() value is derived from files outside this one, so a hit keyed on this file's bytes would replay a
     // stale inlined value for as long as the source is untouched.
-    const cached = mayContainCompiled(raw) ? undefined : opts.compileCache.get(opts.target, args.path, raw, fingerprint, opts.compileCacheStats);
+    const cached = needsCompiledTransform(raw, opts.compiled) ? undefined : opts.compileCache.get(opts.target, args.path, raw, fingerprint, opts.compileCacheStats);
     if (cached) {
       if (opts.hydration) {
         opts.hydration.fileHydratables.set(args.path, cached.hydratables);
@@ -759,7 +759,7 @@ export class ComponentRegistry {
         });
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
           const raw = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
-          const cached = mayContainCompiled(raw) ? undefined : compileCache.get('server', args.path, raw, serverFingerprint, compileCacheStats);
+          const cached = needsCompiledTransform(raw, compiledContext) ? undefined : compileCache.get('server', args.path, raw, serverFingerprint, compileCacheStats);
           if (cached) {
             fileHydratables.set(args.path, cached.hydratables);
             fileServerIslands.set(args.path, cached.serverIslands);
@@ -1256,7 +1256,7 @@ export class ComponentRegistry {
         registerSvelteModuleLoader(build, backend, mergeCompilerOptions(userCompilerOptions, { generate: 'client', dev: development }), compiledContext);
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
           const source = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
-          const cached = mayContainCompiled(source) ? undefined : compileCache.get('client', args.path, source, clientFingerprint, compileCacheStats);
+          const cached = needsCompiledTransform(source, compiledContext) ? undefined : compileCache.get('client', args.path, source, clientFingerprint, compileCacheStats);
           if (cached) {
             return { contents: cached.js, loader: 'js' };
           }

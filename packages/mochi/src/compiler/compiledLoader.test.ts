@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { createCompiledModuleLoader, isAppModulePath, type CompiledContext } from './compiledLoader';
+import { applyCompiled, createCompiledModuleLoader, isAppModulePath, needsCompiledTransform, type CompiledContext } from './compiledLoader';
 import { resetCompiledEvaluationCache } from './compiledTwin';
 import { toPosixPath } from '../utils/index';
 
@@ -9,8 +9,8 @@ let outDir: string;
 
 const FRAMEWORK_SRC = path.join(import.meta.dir, '..');
 
-function context(): CompiledContext {
-  return { outDir, development: true, isPrebuilt: () => false, onUsage: () => {} };
+function context(development = false): CompiledContext {
+  return { outDir, development, isPrebuilt: () => false, onUsage: () => {} };
 }
 
 beforeAll(() => {
@@ -85,6 +85,41 @@ describe('createCompiledModuleLoader', () => {
     const file = path.join(outDir, 'app', 'plain.ts');
     await Bun.write(file, `export const v = 1;\n`);
     expect(await createCompiledModuleLoader(context())({ path: file })).toBeUndefined();
+  });
+
+  test('removes the twin once the value is evaluated', async () => {
+    const file = path.join(outDir, 'app', 'tidy.ts');
+    await Bun.write(file, `import { compiled } from 'mochi-framework';\nexport const v = await compiled(() => 'tidy');\n`);
+    await createCompiledModuleLoader(context())({ path: file });
+    expect(existsSync(path.join(outDir, 'compiled'))).toBe(false);
+  });
+
+  // Dev runs the function at request time through the runtime fallback, so nothing is inlined and the ordinary
+  // reload path keeps the value fresh.
+  test('leaves a compiled() call alone in dev', async () => {
+    const file = path.join(outDir, 'app', 'dev.ts');
+    await Bun.write(file, `import { compiled } from 'mochi-framework';\nexport const v = await compiled(() => 6 * 7);\n`);
+    expect(await createCompiledModuleLoader(context(true))({ path: file })).toBeUndefined();
+    const svelte = `<script>\n  import { compiled } from 'mochi-framework';\n  const v = await compiled(() => 1);\n</${'script'}>`;
+    expect(await applyCompiled(svelte, path.join(outDir, 'app', 'Dev.svelte'), context(true))).toBe(svelte);
+  });
+
+  // A module ref only exists at build time, so the one module shape that cannot fall back to the runtime keeps the
+  // transform in dev.
+  test('still transforms a module that uses moduleRef() in dev', async () => {
+    const file = path.join(outDir, 'app', 'refs.ts');
+    await Bun.write(file, `import { compiled, moduleRef } from 'mochi-framework';\nexport const v = await compiled(() => ({ a: moduleRef('./a.svelte') }));\n`);
+    const result = await createCompiledModuleLoader(context(true))({ path: file });
+    expect(result?.contents).toContain(`import __mochi_ref_0__ from "./a.svelte"`);
+  });
+});
+
+describe('needsCompiledTransform', () => {
+  test('gates on the macro, then on dev and moduleRef', () => {
+    expect(needsCompiledTransform('export const a = 1;', { development: false })).toBe(false);
+    expect(needsCompiledTransform('compiled(() => 1)', { development: false })).toBe(true);
+    expect(needsCompiledTransform('compiled(() => 1)', { development: true })).toBe(false);
+    expect(needsCompiledTransform('compiled(() => moduleRef("./x"))', { development: true })).toBe(true);
   });
 
   // `.svelte.ts` matches this loader's extension filter but belongs to the runes-module loader registered after it.

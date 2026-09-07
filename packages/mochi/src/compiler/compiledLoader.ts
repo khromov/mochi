@@ -49,9 +49,25 @@ export function assertNotPrebuilt(ctx: CompiledContext, filePath: string): void 
   }
 }
 
+const MODULE_REF_PATTERN = /\bmoduleRef\b/;
+
+/**
+ * Whether the macro runs over this source at all.
+ *
+ * In dev a `compiled()` call is left in place and the runtime fallback runs the function per request, so the ordinary
+ * reload path keeps it fresh and no build-time machinery is involved. The exception is a module that uses `moduleRef()`,
+ * which has no runtime form: it is evaluated at build time in dev too.
+ */
+export function needsCompiledTransform(source: string, ctx: Pick<CompiledContext, 'development'>): boolean {
+  if (!mayContainCompiled(source)) {
+    return false;
+  }
+  return !ctx.development || MODULE_REF_PATTERN.test(source);
+}
+
 /** Run the macro over a component, markdown, or runes-module source that the caller has already read. */
 export async function applyCompiled(source: string, filePath: string, ctx: CompiledContext, kind: 'svelte' | 'module' = 'svelte'): Promise<string> {
-  if (!mayContainCompiled(source)) {
+  if (!needsCompiledTransform(source, ctx)) {
     return source;
   }
   assertNotPrebuilt(ctx, filePath);
@@ -61,8 +77,8 @@ export async function applyCompiled(source: string, filePath: string, ctx: Compi
 /**
  * `onLoad` handler for plain modules.
  *
- * Returns `undefined` for anything without a `compiled(` in it, which hands the file back to Bun's default loader —
- * so the overwhelmingly common case costs one substring scan and nothing else.
+ * Returns `undefined` for anything the macro leaves alone, which hands the file back to Bun's default loader — so the
+ * overwhelmingly common case costs one substring scan and nothing else.
  */
 export function createCompiledModuleLoader(ctx: CompiledContext) {
   return async (args: { path: string }): Promise<{ contents: string; loader: 'ts' | 'js' } | undefined> => {
@@ -79,7 +95,7 @@ export function createCompiledModuleLoader(ctx: CompiledContext) {
     } catch {
       return undefined;
     }
-    if (!mayContainCompiled(source)) {
+    if (!needsCompiledTransform(source, ctx)) {
       return undefined;
     }
     assertNotPrebuilt(ctx, args.path);

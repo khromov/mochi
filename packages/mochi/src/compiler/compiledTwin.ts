@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, rmdirSync, unlinkSync } from 'node:fs';
 import { toPosixPath, relForDisplay } from '../utils/index';
 
 /** One import declaration from the host module, as source plus the local names it binds. */
@@ -121,10 +121,14 @@ async function runTwin(source: string, outDir: string, hostPath: string): Promis
   mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `twin-${Bun.hash(source).toString(36)}.ts`);
   await Bun.write(file, source);
-  // Re-importing the same path returns the module Bun already has, so the thunk re-runs but the modules it imports keep
-  // whatever they memoized. Busting that would need a nested Bun.build, which deadlocks inside a bundler onLoad — so a
-  // build-time helper that caches module-level state stays stale in dev, and the docs say so.
-  const mod = (await import(Bun.pathToFileURL(file).href)) as { __mochi_compiled__?: unknown };
+  // The file only exists so Bun can resolve the expression's imports; once it is loaded it is garbage. Re-importing the
+  // same path later returns the module Bun already has, so the thunk re-runs but its helpers keep their module state.
+  let mod: { __mochi_compiled__?: unknown };
+  try {
+    mod = (await import(Bun.pathToFileURL(file).href)) as { __mochi_compiled__?: unknown };
+  } finally {
+    discardTwin(file, dir);
+  }
   const thunk = mod.__mochi_compiled__;
   if (typeof thunk !== 'function') {
     throw new CompiledExpressionError(`compiled() expects a function, e.g. compiled(() => loadData()) — in ${relForDisplay(hostPath)}.`);
@@ -134,6 +138,20 @@ async function runTwin(source: string, outDir: string, hostPath: string): Promis
   } catch (e) {
     // The throw comes from user code running inside a bundler plugin, where nothing else names the file it came from.
     throw new CompiledExpressionError(`compiled() in ${relForDisplay(hostPath)} threw while evaluating: ${e instanceof Error ? e.message : e}`);
+  }
+}
+
+function discardTwin(file: string, dir: string): void {
+  try {
+    unlinkSync(file);
+  } catch {
+    /* already gone */
+  }
+  // Fails while a sibling twin is still being evaluated, which is exactly when the directory must stay.
+  try {
+    rmdirSync(dir);
+  } catch {
+    /* not empty */
   }
 }
 

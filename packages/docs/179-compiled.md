@@ -103,9 +103,9 @@ After inlining, an import that only fed the function is deleted. That is what ac
 
 <Callout type="warning">
 
-In dev, every build-time value is discarded on each rebuild and recomputed, so an edit to a file the function reads is picked up. Adding or deleting a file that nothing imports is the one case the import graph cannot explain, so it rebuilds every module holding a build-time value at once. In a production build each value is evaluated once, so two calls that return the same thing cost one evaluation.
+In dev, `compiled()` is not transformed. The function runs at request time like any other `await`, so an edit to anything it reads shows up on the next reload, and the function's imports ship in the dev bundle as they would without the macro. Inside a `mochi:hydrate` island that means they must be able to run in the browser.
 
-One thing dev cannot refresh: module-level state inside the helpers your build-time function calls. The function re-runs, but the modules it imports are only instantiated once per process, so a helper that memoizes in a module-level `Map` keeps returning its first answer until you restart. Skip the memo when `process.env.NODE_ENV === 'development'` if the value has to track the filesystem.
+A module that imports `moduleRef()` is the exception, since a module ref has no runtime form: it is evaluated at build time in dev too, recomputed on every rebuild, and rebuilt when a file is added or removed anywhere in the project. Helpers such a module calls are instantiated once per process, so a module-level memo inside them keeps its first answer until you restart.
 
 </Callout>
 
