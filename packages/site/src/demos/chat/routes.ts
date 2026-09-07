@@ -1,4 +1,4 @@
-import { Mochi, getRequestContext, memoryStore } from 'mochi-framework';
+import { Mochi, getRequestContext, rateLimitMemoryStore } from 'mochi-framework';
 import type { MochiRouteValue } from 'mochi-framework';
 
 export const CHAT_MAX_MESSAGE_BYTES = 4 * 1024;
@@ -28,7 +28,7 @@ export function createChatRoutes(): Record<string, MochiRouteValue> {
   const history: HistoryEntry[] = [];
   let historyBytes = 0;
   // Keyed by client address so the allowance survives a reconnect, which would otherwise hand out a fresh budget and replay the history buffer again.
-  const limiter = memoryStore();
+  const limiter = rateLimitMemoryStore();
 
   return {
     '/demos/chat': Mochi.page('./src/demos/chat/Chat.svelte'),
