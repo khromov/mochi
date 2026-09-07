@@ -169,7 +169,7 @@ export type {
 } from './extensions';
 export { getClientAddress, resolveExpectedOrigin } from './runtime/proxy';
 export type { MochiProxyOptions } from './runtime/proxy';
-export { memoryStore, sqliteStore, postgresStore } from './runtime/rateLimit';
+export { rateLimitMemoryStore, rateLimitSqliteStore, rateLimitPostgresStore } from './runtime/rateLimit';
 export type {
   MochiRateLimitOptions,
   MochiRateLimitContext,
@@ -186,8 +186,8 @@ export type {
   MochiRateLimitBanConfig,
   MochiRateLimitStoreErrorHandler,
   MochiRateLimitResponseFormatter,
-  MochiSqliteStoreOptions,
-  MochiPostgresStoreOptions,
+  MochiRateLimitSqliteStoreOptions,
+  MochiRateLimitPostgresStoreOptions,
 } from './runtime/rateLimit';
 export type { Handle, HandleError, MochiErrorInfo, MochiEvent, MochiEventKind, MochiResolveOptions, MochiResolveFn } from './runtime/hooks';
 export type {
