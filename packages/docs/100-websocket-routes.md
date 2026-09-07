@@ -74,6 +74,37 @@ await Mochi.serve({
 
 </Callout>
 
+#### Request context during the handshake
+
+<VersionNote since="0.9.2" message="Earlier versions threw from getRequestContext() inside upgrade." />
+
+`getRequestContext()` works inside `upgrade`, so cookies, `locals` and `getClientAddress()` are available there. Later callbacks receive only the socket, so derive anything header-based here and return it on `ws.data.user`.
+
+```ts
+// file: src/index.ts
+import { Mochi, getRequestContext } from 'mochi-framework';
+
+await Mochi.serve({
+  proxy: { addressHeader: 'x-forwarded-for', xffDepth: 1 },
+  routes: {
+    '/ws/chat': Mochi.ws<{ address: string | null }>({
+      upgrade() {
+        return { address: getRequestContext().getClientAddress() };
+      },
+      message(ws, msg) {
+        console.log(ws.data.user.address, msg);
+      },
+    }),
+  },
+});
+```
+
+<Callout type="info">
+
+Behind a reverse proxy every socket shares one peer address, so `ws.remoteAddress` is the proxy rather than the visitor. Rate limiting keyed on it becomes one bucket for your whole site — configure `proxy.addressHeader` and read `getClientAddress()` instead.
+
+</Callout>
+
 ### `open`
 
 Fires once after a successful upgrade. Use it to subscribe the socket to topics or seed per-connection state.

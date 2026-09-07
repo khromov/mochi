@@ -1271,8 +1271,10 @@ export class Mochi {
           let userData: unknown = undefined;
 
           const liveWsHandlers = wsHandlersMap.get(pattern) ?? wsHandlers;
-          if (liveWsHandlers.upgrade) {
-            const result = await liveWsHandlers.upgrade(req, wsParams);
+          const upgradeHandler = liveWsHandlers.upgrade;
+          if (upgradeHandler) {
+            // The handshake is the only point in a socket's life with a Request to read, so `getRequestContext()` has to work here.
+            const result = await requestContext.run(wsHookCtx, () => upgradeHandler(req, wsParams));
             if (result === false) {
               emitWsReject(400);
               return new Response('WebSocket upgrade rejected', {

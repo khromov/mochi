@@ -1,20 +1,24 @@
 import { describe, expect, test } from 'bun:test';
 import type { ServerWebSocket } from 'bun';
 import type { MochiWsConfig, MochiWsData, MochiWsHandlers } from 'mochi-framework';
-import { CHAT_MAX_HISTORY_BYTES, CHAT_MAX_HISTORY_MESSAGES, CHAT_MAX_MESSAGE_BYTES, CHAT_RATE_LIMIT, CHAT_RATE_WINDOW_MS, createChatRoutes } from './routes';
+import { CHAT_MAX_HISTORY_BYTES, CHAT_MAX_HISTORY_MESSAGES, CHAT_MAX_MESSAGE_BYTES, CHAT_RATE_LIMIT, CHAT_RATE_WINDOW_MS, createChatRoutes, rateKeyFor } from './routes';
+
+interface ChatSocketData {
+  rateKey: string;
+}
 
 interface FakeSocket {
-  ws: ServerWebSocket<MochiWsData>;
+  ws: ServerWebSocket<MochiWsData<ChatSocketData>>;
   sent: string[];
   published: string[];
   closed: Array<{ code: number; reason: string }>;
 }
 
-function chatHandlers(): MochiWsHandlers {
-  return (createChatRoutes()['/ws/chat'] as MochiWsConfig).handlers;
+function chatHandlers(): MochiWsHandlers<ChatSocketData> {
+  return (createChatRoutes()['/ws/chat'] as MochiWsConfig).handlers as unknown as MochiWsHandlers<ChatSocketData>;
 }
 
-function fakeSocket(remoteAddress = '203.0.113.7'): FakeSocket {
+function fakeSocket(rateKey = rateKeyFor('203.0.113.7')): FakeSocket {
   const sent: string[] = [];
   const published: string[] = [];
   const closed: Array<{ code: number; reason: string }> = [];
@@ -23,24 +27,36 @@ function fakeSocket(remoteAddress = '203.0.113.7'): FakeSocket {
       __mochiRoutePattern: '/ws/chat',
       __mochiOpenedAt: performance.now(),
       __mochiPath: '/ws/chat',
-      user: undefined,
+      user: { rateKey },
     },
-    remoteAddress,
     send: (message: string | Buffer) => sent.push(String(message)),
     publish: (_topic: string, message: string | Buffer) => published.push(String(message)),
     close: (code: number, reason: string) => closed.push({ code, reason }),
     subscribe: () => true,
     unsubscribe: () => true,
-  } as unknown as ServerWebSocket<MochiWsData>;
+  } as unknown as ServerWebSocket<MochiWsData<ChatSocketData>>;
   return { ws, sent, published, closed };
 }
+
+describe('chat rate-limit identity', () => {
+  test('reuses one key per client address so a reconnect keeps the same budget', () => {
+    expect(rateKeyFor('203.0.113.7')).toBe('ip:203.0.113.7');
+    expect(rateKeyFor('203.0.113.7')).toBe(rateKeyFor('203.0.113.7'));
+  });
+
+  // Behind a proxy that forwards nothing every visitor shares one address, so a shared key would let one burst disconnect them all.
+  test('issues a distinct key per socket when no client address is available', () => {
+    expect(rateKeyFor(null)).not.toBe(rateKeyFor(null));
+    expect(rateKeyFor(null)).toStartWith('socket:');
+  });
+});
 
 describe('chat WebSocket resource bounds', () => {
   test('retains and replays only the configured message and byte window', async () => {
     const handlers = chatHandlers();
     for (let i = 0; i < CHAT_MAX_HISTORY_MESSAGES + 20; i++) {
-      // A distinct address per sender so the rate limiter never trips during setup.
-      await handlers.message(fakeSocket(`198.51.100.${i % 200}`).ws, `${i}:` + 'x'.repeat(900));
+      // A distinct key per sender so the rate limiter never trips during setup.
+      await handlers.message(fakeSocket(`ip:198.51.100.${i % 200}`).ws, `${i}:` + 'x'.repeat(900));
     }
 
     const receiver = fakeSocket();
@@ -84,9 +100,10 @@ describe('chat WebSocket resource bounds', () => {
   // The counter lives on the address, so dropping the socket and redialling must not hand out a fresh allowance.
   test('keeps the budget across reconnects from the same address', async () => {
     const handlers = chatHandlers();
+    const rateKey = rateKeyFor('203.0.113.7');
     let published = 0;
     for (let i = 0; i <= CHAT_RATE_LIMIT; i++) {
-      const sender = fakeSocket();
+      const sender = fakeSocket(rateKey);
       await handlers.message(sender.ws, String(i));
       published += sender.published.length;
       if (i === CHAT_RATE_LIMIT) {
@@ -97,18 +114,28 @@ describe('chat WebSocket resource bounds', () => {
     expect(published).toBe(CHAT_RATE_LIMIT);
   });
 
-  test('lets a different address through and forgets a window once it expires', async () => {
+  // One socket burning its window must not spend anyone else's.
+  test('leaves other clients untouched when one exhausts its window', async () => {
+    const handlers = chatHandlers();
+    const noisy = fakeSocket(rateKeyFor(null));
+    for (let i = 0; i <= CHAT_RATE_LIMIT; i++) {
+      await handlers.message(noisy.ws, String(i));
+    }
+    expect(noisy.closed).toEqual([{ code: 1008, reason: 'Message rate exceeded' }]);
+
+    const bystander = fakeSocket(rateKeyFor(null));
+    await handlers.message(bystander.ws, 'still allowed');
+    expect(bystander.closed).toEqual([]);
+    expect(bystander.published).toEqual(['still allowed']);
+  });
+
+  test('forgets a window once it expires', async () => {
     const handlers = chatHandlers();
     for (let i = 0; i < CHAT_RATE_LIMIT; i++) {
       await handlers.message(fakeSocket().ws, String(i));
     }
 
-    const other = fakeSocket('192.0.2.9');
-    await handlers.message(other.ws, 'hello');
-    expect(other.closed).toEqual([]);
-
     const later = fakeSocket();
-    Bun.sleepSync(0);
     const realNow = Date.now;
     Date.now = () => realNow() + CHAT_RATE_WINDOW_MS;
     try {
