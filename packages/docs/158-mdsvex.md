@@ -60,7 +60,7 @@ This page was rendered at {new Date().toISOString()}.
 
 The `markdown` config accepts a full plugin chain compatible with mdsvex's `rehypePlugins` and `remarkPlugins`.
 
-### Syntax highlighting
+### Syntax highlighting with Shiki
 
 Fenced code blocks pass through unchanged unless you supply `markdown.highlight.highlighter`. Install a highlighting engine (Shiki, highlight.js, Prism) and build a highlighter with the framework's `createHighlighter` factory. It adds the code-block wrapper, copy button, and Svelte-brace escape.
 
