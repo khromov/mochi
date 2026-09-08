@@ -52,7 +52,7 @@ Move the value into its own module and import it. The restriction is what keeps 
 
 <Callout type="info">
 
-Mochi strips the `await` along with the call, since the inlined value is a plain literal. You do not need `experimental.async` to use `compiled()` at the top level of a component.
+Mochi strips the `await` along with the call, since the inlined value is a plain literal.
 
 </Callout>
 
