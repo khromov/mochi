@@ -1,11 +1,11 @@
 import { stringify } from 'devalue';
 import { getRequestContext } from '../runtime/requestContext';
 
-/** One entry in the per-render dedup registry (`ctx.islandProps`): a unique serialized payload's ref id, how many islands emitted it, and the first props bag that produced it. */
+/** One entry in the per-render dedup registry (`ctx.islandProps`): a unique serialized payload's ref id, how many islands emitted it, and every props bag that serialized to it. */
 export interface IslandPropsEntry {
   id: string;
   emitCount: number;
-  bag?: Record<string, unknown>;
+  bags: Record<string, unknown>[];
 }
 
 /** Only a bag devalue would accept can stand in for one it already serialized, so anything it rejects must reach it and throw. */
@@ -32,20 +32,23 @@ function sameBag(a: Record<string, unknown>, b: Record<string, unknown>): boolea
  * count lets the render pass flag genuinely shared blocks. Server islands take the preprocessor's own branch instead,
  * since their `signed-props` payloads are encrypted and travel through URL query strings.
  *
- * A bag whose props are the very same references as an already-registered entry's bag skips serializing altogether;
+ * A bag whose props are the very same references as one already registered on an entry skips serializing altogether;
  * that assumes props are not mutated between two call sites inside one `render()`, or the render gets one shared block
  * where it wanted two.
  */
 export function emitIslandProps(value: unknown): string {
   const ctx = getRequestContext();
   const bag = isPlainBag(value) ? value : undefined;
-  let entry = bag && ctx.islandProps.values().find((e) => e.bag !== undefined && sameBag(e.bag, bag));
+  let entry = bag && ctx.islandProps.values().find((e) => e.bags.some((b) => sameBag(b, bag)));
   if (!entry) {
     const json = stringify(value);
     entry = ctx.islandProps.get(json);
     if (!entry) {
-      entry = { id: `mochi-props-${ctx.islandProps.size}`, emitCount: 0, bag };
+      entry = { id: `mochi-props-${ctx.islandProps.size}`, emitCount: 0, bags: [] };
       ctx.islandProps.set(json, entry);
+    }
+    if (bag) {
+      entry.bags.push(bag);
     }
   }
   entry.emitCount++;

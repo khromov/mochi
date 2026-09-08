@@ -142,6 +142,30 @@ describe('emitIslandProps identity fast path', () => {
     });
   });
 
+  test('a bag equal to an earlier one but built from distinct references joins the same entry, and later calls sharing either set of references hit the fast path', () => {
+    withCtx((ctx) => {
+      let walks = 0;
+      const build = () => ({
+        get items() {
+          walks++;
+          return [1, 2, 3];
+        },
+      });
+      const first = build();
+      const second = build();
+
+      expect(emitIslandProps({ nav: first })).toBe('mochi-props-0');
+      expect(emitIslandProps({ nav: second })).toBe('mochi-props-0');
+      expect(walks).toBe(2);
+
+      expect(emitIslandProps({ nav: second })).toBe('mochi-props-0');
+      expect(emitIslandProps({ nav: first })).toBe('mochi-props-0');
+      expect(walks).toBe(2);
+      expect(ctx.islandProps.size).toBe(1);
+      expect([...ctx.islandProps.values()][0]!.emitCount).toBe(4);
+    });
+  });
+
   test('0 and -0 do not collide, since devalue round-trips them differently', () => {
     withCtx((ctx) => {
       const a = emitIslandProps({ n: 0 });
