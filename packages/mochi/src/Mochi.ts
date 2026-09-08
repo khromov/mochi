@@ -818,7 +818,7 @@ export class Mochi {
       // use it, and its counters intentionally survive dev reloads.
       if (limiter && limiter !== sharedGlobalLimiter && limiter.ownsStore) {
         rateLimitStores.delete(limiter.store);
-        // sqliteStore's shutdown can throw synchronously from its finalize-verification guard, which a bare
+        // rateLimitSqliteStore's shutdown can throw synchronously from its finalize-verification guard, which a bare
         // `Promise.resolve()` would let escape into the dev watcher.
         (async () => limiter.store.shutdown?.())().catch((err: unknown) => {
           logger.warn(`Rate limit store shutdown failed: ${err instanceof Error ? err.message : err}`);
@@ -1271,8 +1271,10 @@ export class Mochi {
           let userData: unknown = undefined;
 
           const liveWsHandlers = wsHandlersMap.get(pattern) ?? wsHandlers;
-          if (liveWsHandlers.upgrade) {
-            const result = await liveWsHandlers.upgrade(req, wsParams);
+          const upgradeHandler = liveWsHandlers.upgrade;
+          if (upgradeHandler) {
+            // The handshake is the only point in a socket's life with a Request to read, so `getRequestContext()` has to work here.
+            const result = await requestContext.run(wsHookCtx, () => upgradeHandler(req, wsParams));
             if (result === false) {
               emitWsReject(400);
               return new Response('WebSocket upgrade rejected', {

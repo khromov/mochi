@@ -1,7 +1,9 @@
 <script lang="ts">
   import { isBrowser } from 'mochi-framework';
 
-  let messages: Array<{ text: string; fromMe: boolean }> = $state([{ text: 'Hello friend! How are you?', fromMe: false }]);
+  const GREETING = { text: 'Hello friend! How are you?', fromMe: false };
+
+  let messages: Array<{ text: string; fromMe: boolean }> = $state([GREETING]);
   let input = $state('');
   let messagesEl: HTMLDivElement | undefined = $state();
 
@@ -12,7 +14,15 @@
 
   let chatSocket: WebSocket | null = null;
   let disconnected = $state<string | null>(null);
+  let reconnecting = $state(false);
+  const locked = $derived(!!disconnected || reconnecting);
   let userId = '';
+
+  // The server states its reason for these; anything else is a transport drop worth retrying.
+  const POLICY_CLOSE_CODES = new Set([1003, 1008, 1009]);
+  const MAX_RECONNECT_ATTEMPTS = 5;
+  // A connection that outlived the longest backoff was healthy, so its drop starts a fresh attempt budget.
+  const STABLE_CONNECTION_MS = 500 * 2 ** MAX_RECONNECT_ATTEMPTS;
 
   if (isBrowser) {
     userId =
@@ -25,17 +35,45 @@
 
     const host = window.location.host;
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let attempts = 0;
+    let openedAt = 0;
 
-    chatSocket = new WebSocket(`${wsProtocol}//${host}/ws/chat`);
-    chatSocket.addEventListener('message', (e) => {
-      const msg = JSON.parse(e.data);
-      messages = [...messages, { text: msg.text, fromMe: msg.userId === userId }];
-    });
-    // The server closes the socket on an oversized or too-frequent message; send() on a closed socket is a silent
-    // no-op, so without this the box would keep accepting text into the void.
-    chatSocket.addEventListener('close', (e) => {
-      disconnected = e.reason || (e.code === 1009 ? 'Message too large' : 'Connection closed');
-    });
+    const connect = () => {
+      chatSocket = new WebSocket(`${wsProtocol}//${host}/ws/chat`);
+
+      chatSocket.addEventListener('open', () => {
+        openedAt = Date.now();
+        reconnecting = false;
+        disconnected = null;
+        // The server replays its whole history on every connection, so a reconnect would otherwise double every message.
+        messages = [GREETING];
+      });
+
+      chatSocket.addEventListener('message', (e) => {
+        const msg = JSON.parse(e.data);
+        messages = [...messages, { text: msg.text, fromMe: msg.userId === userId }];
+      });
+
+      // send() on a closed socket is a silent no-op, so without this the box would keep accepting text into the void.
+      chatSocket.addEventListener('close', (e) => {
+        if (POLICY_CLOSE_CODES.has(e.code)) {
+          disconnected = e.reason || 'Connection closed';
+          return;
+        }
+        if (openedAt && Date.now() - openedAt > STABLE_CONNECTION_MS) {
+          attempts = 0;
+        }
+        openedAt = 0;
+        if (attempts >= MAX_RECONNECT_ATTEMPTS) {
+          disconnected = 'Connection closed';
+          return;
+        }
+        reconnecting = true;
+        setTimeout(connect, 500 * 2 ** attempts++);
+      });
+    };
+
+    connect();
   }
 
   function send() {
@@ -72,11 +110,13 @@
 
   {#if disconnected}
     <p class="disconnected" role="alert">{disconnected} — reload the page to reconnect.</p>
+  {:else if reconnecting}
+    <p class="disconnected" role="status">Reconnecting…</p>
   {/if}
 
   <div class="chat-input">
-    <input type="text" bind:value={input} onkeydown={onKeydown} placeholder="Type a message..." disabled={!!disconnected} />
-    <button onclick={send} disabled={!!disconnected}>Send</button>
+    <input type="text" bind:value={input} onkeydown={onKeydown} placeholder="Type a message..." disabled={locked} />
+    <button onclick={send} disabled={locked}>Send</button>
   </div>
 </div>
 

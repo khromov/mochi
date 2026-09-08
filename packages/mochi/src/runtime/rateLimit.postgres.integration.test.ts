@@ -3,23 +3,23 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from '../Mochi';
-import { postgresStore } from './rateLimit';
+import { rateLimitPostgresStore } from './rateLimit';
 import { json } from '../utils';
 import { startTestPostgres, type TestPostgres } from '../__fixtures__/postgres/startTestPostgres';
 
-// Exercises the real `postgresStore()` backend (bun:sql over the wire) against an in-process
+// Exercises the real `rateLimitPostgresStore()` backend (bun:sql over the wire) against an in-process
 // PGlite Postgres. The memory/sqlite stores have coverage; this closes the Postgres gap and
 // proves counters actually round-trip to a Postgres server, not a local map.
-describe('rateLimit postgresStore backend', () => {
+describe('rateLimit rateLimitPostgresStore backend', () => {
   let pg: TestPostgres;
-  let store: ReturnType<typeof postgresStore>;
+  let store: ReturnType<typeof rateLimitPostgresStore>;
   let server: Server<undefined>;
   let outDir: string;
   let base: string;
 
   beforeAll(async () => {
     pg = await startTestPostgres();
-    store = postgresStore({ url: pg.url });
+    store = rateLimitPostgresStore({ url: pg.url });
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-pg-ratelimit-'));
     server = await Mochi.serve({
       port: 0,

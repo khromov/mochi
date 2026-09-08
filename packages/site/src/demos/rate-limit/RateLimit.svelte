@@ -11,7 +11,7 @@
 
 <DemoPage
   title="Rate Limiting"
-  description="Add rateLimit to any Mochi.page() or Mochi.api() route — or globally on Mochi.serve() — to throttle requests per client. Requests are keyed by the proxy-aware client IP by default, memory-backed out of the box, with sqliteStore and postgresStore for persistence. Blocked page routes render the error page with a 429; API routes return JSON with RateLimit-* headers."
+  description="Add rateLimit to any Mochi.page() or Mochi.api() route — or globally on Mochi.serve() — to throttle requests per client. Requests are keyed by the proxy-aware client IP by default, memory-backed out of the box, with rateLimitSqliteStore and rateLimitPostgresStore for persistence. Blocked page routes render the error page with a 429; API routes return JSON with RateLimit-* headers."
   {sources}
 >
   <div class="card">
