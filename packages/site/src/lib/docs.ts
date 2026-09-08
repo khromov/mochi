@@ -1,10 +1,9 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { compile as mdsvexCompile } from 'mdsvex';
-import { logger, trailingSlashIt } from 'mochi-framework';
+import { logger, pinGlobal, trailingSlashIt } from 'mochi-framework';
 import rehypeSlug from 'rehype-slug';
 import { SITE_ROOT } from './siteRoot';
-import { sharedCache } from './sharedCache';
 import { loadPosts, getPost } from './blog';
 import { CHANGELOG_SLUG, CHANGELOG_TITLE, CHANGELOG_DESCRIPTION, getChangelogTxt } from './changelog';
 import { demos, type Demo } from './demos';
@@ -53,7 +52,7 @@ export interface DocEntry {
   raw: string;
 }
 
-const cache = sharedCache('__mochi_site_docs_cache__', () => ({
+const cache = pinGlobal('__mochi_site_docs_cache__', () => ({
   docs: null as DocEntry[] | null,
   bySlug: null as Map<string, DocEntry> | null,
   nav: null as TocEntry[] | null,

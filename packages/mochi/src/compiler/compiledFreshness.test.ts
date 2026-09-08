@@ -38,4 +38,19 @@ describe('dev rebuilds re-evaluate a build-time module', () => {
     expect(pages).toEqual(new Set([page]));
     expect((await registry.renderComponent(page, {})).body).toContain('v2');
   }, 60_000);
+
+  test('a structural change rebuilds the build-time modules alongside the changed file in one batch', async () => {
+    const registry = new ComponentRegistry({ development: true, outDir });
+    const other = path.join(app, 'Other.svelte');
+    await Bun.write(other, `<p>other</p>\n`);
+    await registry.compileAll([page, other]);
+    expect((await registry.renderComponent(page, {})).body).toContain('v2');
+
+    await Bun.write(dep, `export const version = 'v3';\n`);
+    resetCompiledEvaluationCache();
+    // The changed file affects only Other.svelte; the flag brings the module's page into the same rebuild.
+    const { pages } = await registry.recompileChanged(other, { withBuildTimeModules: true });
+    expect(pages).toEqual(new Set([page, other]));
+    expect((await registry.renderComponent(page, {})).body).toContain('v3');
+  }, 60_000);
 });

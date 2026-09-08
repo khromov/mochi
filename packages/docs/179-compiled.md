@@ -38,7 +38,7 @@ export { __mochi_export_0__ as sources };
 
 `loadSources` and `files` are gone, and so is anything they imported — which is the point: a syntax highlighter, a markdown parser, or a database client used only to produce the value stops being a runtime dependency.
 
-The suffix is the whole convention, like [`.server.ts`](/docs/server-only-imports/). Top-level `await` works; the build awaits it. Import the module from a `.svelte`, `.md`, or `.ts` file with the extension (`./sources.compiled.ts`).
+The suffix is the whole convention, like [`.server.ts`](/docs/server-only-imports/). Top-level `await` works; the build awaits it. Import the module with the extension (`./sources.compiled.ts`) from a `.svelte` or `.md` file, or from a `.ts` module one of them imports. Only the component bundler replaces it: imported from the server entry (`routes.ts`, an API handler), it runs as a plain module, and `moduleRef()` throws.
 
 ### What a build-time module may export
 
@@ -73,11 +73,17 @@ export { __mochi_export_0__ as docComponents };
 
 Specifiers resolve relative to the `.compiled.ts` file. This replaces generating a barrel file into your source tree before every build, and the map stays typed against the real module.
 
-A build-time module cannot `import` a `.svelte` or `.md` file itself — it runs outside the bundler, where components have no loader. The build rejects the import and points at `moduleRef()`.
+A build-time module cannot `import` a `.svelte`, `.md`, or `.svelte.ts` file itself — it runs outside the bundler, where Svelte files have no loader. The build rejects the import and points at `moduleRef()`.
 
 ### In dev
 
-The module is evaluated at build time in dev too, and re-evaluated on every rebuild. An edit to the module or to anything it imports rebuilds the pages that use it. A file it only _reads_ — a directory of markdown, say — is outside the import graph: adding or removing one triggers a rebuild of every build-time module, while an edit to one needs any other rebuild to show up.
+The module is evaluated at build time in dev too, and re-evaluated on every rebuild. An edit to the module or to anything it imports rebuilds the pages that use it. A file it only _reads_ — a directory of markdown, say — is outside the import graph: adding or removing a source or data file (`.md`, `.svelte`, `.ts`, `.json`, …) rebuilds every build-time module, while an edit to one shows up on the next rebuild of a page that imports the module.
+
+<Callout type="warning">
+
+Each dev evaluation gets fresh instances of the module's own imports, but the running server keeps its own. A memo that must be shared between the two, say a parsed-docs cache the build-time module fills and a route reads, has to live on `globalThis` — use `pinGlobal(key, create)` from `mochi-framework`.
+
+</Callout>
 
 ### What the build reports
 

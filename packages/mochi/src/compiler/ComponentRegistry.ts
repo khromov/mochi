@@ -46,7 +46,7 @@ import { buildDebugBarBundle, type DebugBarBundle } from './buildDebugBarBundle'
 import { formatBuildMessages } from './formatBuildMessages';
 import { clientBuildDefine, registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
 import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
-import { COMPILED_MODULE_FILTER, createCompiledModuleLoader, type CompiledContext } from './compiledModules';
+import { COMPILED_MODULE_FILTER, createCompiledModuleLoader, currentCompiledEvaluationCache, type CompiledContext, type CompiledEvaluationCache } from './compiledModules';
 import { EMAIL_TEMPLATE_DIR } from '../email/templates';
 import { registerLocalImageAsset } from '../image/localAssetRegistry';
 import type { LocalImageAsset } from '../image/types';
@@ -459,11 +459,12 @@ export class ComponentRegistry {
   /** Instance-scoped so two registries with different markdown/preprocessor config can't serve each other stale output for the same path — see {@link CompileCache}. */
   readonly compileCache = new CompileCache();
 
-  private compiledContext(): CompiledContext {
+  private compiledContext(evaluations: CompiledEvaluationCache): CompiledContext {
     return {
       development: this.development,
       isPrebuilt: () => this.loadedFromManifest,
       onInputs: (compiledPath, inputs) => this.compiledInputs.set(path.resolve(compiledPath), inputs),
+      evaluations,
     };
   }
 
@@ -674,6 +675,8 @@ export class ComponentRegistry {
       mochiEvents.emit('compile:start', { path: f });
     }
     const compileStart = performance.now();
+    // Captured before either pass so a watcher reset landing between them cannot inline different values into one island.
+    const evaluations = currentCompiledEvaluationCache();
 
     const cssMap = new Map<string, string>();
     const importedCssPaths = new Set<string>();
@@ -698,7 +701,7 @@ export class ComponentRegistry {
       rejectUnknown: this.loadedFromManifest && !this.development,
     });
 
-    const compiledModuleLoader = createCompiledModuleLoader(this.compiledContext());
+    const compiledModuleLoader = createCompiledModuleLoader(this.compiledContext(evaluations));
 
     const sveltePlugin: BunPlugin = {
       name: 'svelte-ssr',
@@ -1115,7 +1118,7 @@ export class ComponentRegistry {
 
     this.hydratableComponents.push(...allHydratables);
     if (!opts.deferClientBundle && allHydratables.length > 0) {
-      await this.buildClientBundle();
+      await this.buildClientBundle(evaluations);
     }
   }
 
@@ -1129,7 +1132,7 @@ export class ComponentRegistry {
     }
   }
 
-  private async buildClientBundle(): Promise<void> {
+  private async buildClientBundle(evaluations: CompiledEvaluationCache = currentCompiledEvaluationCache()): Promise<void> {
     this.clientBundleCallCount += 1;
     const bundleStart = performance.now();
     const development = this.development;
@@ -1194,7 +1197,7 @@ export class ComponentRegistry {
       rejectUnknown: this.loadedFromManifest && !this.development,
     });
 
-    const compiledModuleLoader = createCompiledModuleLoader(this.compiledContext());
+    const compiledModuleLoader = createCompiledModuleLoader(this.compiledContext(evaluations));
 
     const clientPlugin: BunPlugin = {
       name: 'svelte-client',
@@ -2241,7 +2244,7 @@ export class ComponentRegistry {
    * reload for edits outside the page graph (server entry, package.json), which need a process restart anyway. Paths in
    * `pages` are absolute, matching the `window.__mochi_page_entry` value injected into SSR'd HTML.
    */
-  async recompileChanged(changedPath: string): Promise<{ pages: Set<string>; clientBundleCount: number }> {
+  async recompileChanged(changedPath: string, opts: { withBuildTimeModules?: boolean } = {}): Promise<{ pages: Set<string>; clientBundleCount: number }> {
     const changed = path.resolve(changedPath);
     const seeds = new Set([changed]);
     for (const [compiled, inputs] of this.compiledInputs) {
@@ -2249,12 +2252,13 @@ export class ComponentRegistry {
         seeds.add(compiled);
       }
     }
+    // A build-time module may read files the import graph knows nothing about, so the watcher cannot narrow this to one module.
+    if (opts.withBuildTimeModules) {
+      for (const compiled of this.getBuildTimeModules()) {
+        seeds.add(compiled);
+      }
+    }
     return this.recompileDependents(seeds, 'Targeted rebuild failed');
-  }
-
-  /** One batch for the whole cohort: a build-time module may read files the import graph knows nothing about, so the watcher cannot narrow this to one module. */
-  async recompileBuildTimeModules(): Promise<{ pages: Set<string>; clientBundleCount: number }> {
-    return this.recompileDependents(this.getBuildTimeModules(), 'Build-time module rebuild failed');
   }
 
   private async recompileDependents(seeds: Iterable<string>, label: string): Promise<{ pages: Set<string>; clientBundleCount: number }> {

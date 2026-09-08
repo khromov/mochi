@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { compile as mdsvexCompile } from 'mdsvex';
+import { pinGlobal } from 'mochi-framework';
 import { SITE_ROOT } from './siteRoot';
-import { sharedCache } from './sharedCache';
 
 export const BLOG_DIR = path.resolve(SITE_ROOT, 'src/blog');
 
@@ -27,7 +27,7 @@ export interface PostEntry {
   raw: string;
 }
 
-const cache = sharedCache('__mochi_site_blog_cache__', () => ({
+const cache = pinGlobal('__mochi_site_blog_cache__', () => ({
   posts: null as PostEntry[] | null,
   bySlug: null as Map<string, PostEntry> | null,
 }));

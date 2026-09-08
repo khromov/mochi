@@ -1,15 +1,20 @@
 import path from 'node:path';
 import { DevalueError } from 'devalue';
-import { createCompiledRefScope, serializeCompiledValue } from './compiledSerialize';
+import { compiledEvaluation, createCompiledRefScope, serializeCompiledValue } from './compiledSerialize';
 import { relForDisplay, toPosixPath } from '../utils/index';
 
 export const COMPILED_MODULE_FILTER = /\.compiled\.[jt]s$/;
 
 const COMPONENT_EXTENSIONS = new Set(['.svelte', '.md', '.svx']);
+const RUNES_MODULE = /\.svelte\.[cm]?[jt]s$/;
 const SCRIPT_EXTENSIONS = new Set(['.ts', '.mts', '.cts', '.js', '.mjs', '.cjs']);
 const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
 
 export class CompiledModuleError extends Error {}
+
+type Namespace = Record<string, unknown>;
+
+export type CompiledEvaluationCache = Map<string, Promise<Namespace>>;
 
 export interface CompiledContext {
   development: boolean;
@@ -17,6 +22,8 @@ export interface CompiledContext {
   isPrebuilt: () => boolean;
   /** The first-party files the module's evaluation loaded, so the dev watcher can rebuild it when one of them changes. */
   onInputs?: (compiledPath: string, inputs: Set<string>) => void;
+  /** The memo one compile's SSR and client passes share; a compile captures it at its start so a reset between the passes cannot split their values. */
+  evaluations?: CompiledEvaluationCache;
 }
 
 export function isCompiledModulePath(filePath: string): boolean {
@@ -35,13 +42,20 @@ function isNodeModulesLibrary(filePath: string): boolean {
   return toPosixPath(filePath).includes('/node_modules/');
 }
 
+/** A package import is a library wherever it resolves — in a workspace, `mochi-framework` realpaths to a sibling source tree, not to `node_modules`. */
+function isFirstPartySpecifier(specifier: string): boolean {
+  return specifier.startsWith('.') || path.isAbsolute(specifier);
+}
+
 const scanner = new Bun.Transpiler({ loader: 'ts' });
 
 /**
  * Every first-party module reachable from `entry` through static imports. Bun's module cache is keyed on these paths,
  * and each has to be evicted before a re-evaluation or a helper's module-level memo would survive from the last one.
+ * A production build never evicts, so it only scans `entry` itself for imports the module cannot load.
  */
-export async function collectInputs(entry: string): Promise<Set<string>> {
+export async function collectInputs(entry: string, opts: { transitive?: boolean } = {}): Promise<Set<string>> {
+  const transitive = opts.transitive ?? true;
   const inputs = new Set<string>();
   const queue = [entry];
   while (queue.length > 0) {
@@ -55,21 +69,24 @@ export async function collectInputs(entry: string): Promise<Set<string>> {
       if (imp.kind !== 'import-statement' && imp.kind !== 'dynamic-import' && imp.kind !== 'require-call') {
         continue;
       }
+      if (!isFirstPartySpecifier(imp.path)) {
+        continue;
+      }
       let resolved: string;
       try {
         resolved = Bun.resolveSync(imp.path, dir);
       } catch {
         continue;
       }
-      if (isNodeModulesLibrary(resolved)) {
-        continue;
-      }
       const ext = path.extname(resolved);
-      if (COMPONENT_EXTENSIONS.has(ext)) {
+      if (COMPONENT_EXTENSIONS.has(ext) || RUNES_MODULE.test(toPosixPath(resolved))) {
         throw new CompiledModuleError(
-          `${relForDisplay(file)} imports ${JSON.stringify(imp.path)}, but a *.compiled.ts module runs outside the bundler, where components have no loader. ` +
+          `${relForDisplay(file)} imports ${JSON.stringify(imp.path)}, but a *.compiled.ts module runs outside the bundler, where Svelte files have no loader. ` +
             `Export moduleRef(${JSON.stringify(imp.path)}) instead and import the value where it is used.`,
         );
+      }
+      if (!transitive) {
+        continue;
       }
       // Anything else Bun can load (JSON, text) is cached and evicted like a module but has no imports of its own to scan.
       if (SCRIPT_EXTENSIONS.has(ext)) {
@@ -82,16 +99,20 @@ export async function collectInputs(entry: string): Promise<Set<string>> {
   return inputs;
 }
 
-type Namespace = Record<string, unknown>;
-
 /** Evaluated once per path per rebuild: the SSR and client passes must inline an identical value, or SSR and hydration diverge. */
-const evaluated = new Map<string, Promise<Namespace>>();
+let current: CompiledEvaluationCache = new Map();
+
+/** The memo a compile captures at its start; a later reset installs a fresh map without touching in-flight captures. */
+export function currentCompiledEvaluationCache(): CompiledEvaluationCache {
+  return current;
+}
 
 export function resetCompiledEvaluationCache(): void {
-  evaluated.clear();
+  current = new Map();
 }
 
 export function evaluateCompiledModule(filePath: string, ctx: CompiledContext): Promise<Namespace> {
+  const evaluated = ctx.evaluations ?? current;
   const key = toPosixPath(filePath);
   let pending = evaluated.get(key);
   if (!pending) {
@@ -107,24 +128,28 @@ export function evaluateCompiledModule(filePath: string, ctx: CompiledContext): 
   return pending;
 }
 
-/** Evaluations run one at a time: evicting a shared helper from the module cache while another module's import of it is still in flight is a race Bun does not guard against. */
+/** Dev evaluations run one at a time: evicting a shared helper from the module cache while another module's import of it is still in flight is a race Bun does not guard against. */
 let chain: Promise<unknown> = Promise.resolve();
 
 function runModule(filePath: string, ctx: CompiledContext): Promise<Namespace> {
+  if (!ctx.development) {
+    return evaluate(filePath, ctx);
+  }
   const run = chain.then(() => evaluate(filePath, ctx));
   chain = run.catch(() => {});
   return run;
 }
 
 async function evaluate(filePath: string, ctx: CompiledContext): Promise<Namespace> {
-  const inputs = await collectInputs(filePath);
-  ctx.onInputs?.(filePath, inputs);
   // A one-shot build evaluates each module once, so only a dev rebuild needs fresh instances of what it imports.
+  const inputs = await collectInputs(filePath, { transitive: ctx.development });
   if (ctx.development) {
+    ctx.onInputs?.(filePath, inputs);
     for (const input of inputs) {
       delete require.cache[input];
     }
   }
+  compiledEvaluation.active += 1;
   try {
     return { ...((await import(Bun.pathToFileURL(filePath).href)) as Namespace) };
   } catch (e) {
@@ -132,6 +157,8 @@ async function evaluate(filePath: string, ctx: CompiledContext): Promise<Namespa
       throw e;
     }
     throw new CompiledModuleError(`${relForDisplay(filePath)} threw while evaluating: ${e instanceof Error ? e.message : e}`);
+  } finally {
+    compiledEvaluation.active -= 1;
   }
 }
 

@@ -1,4 +1,8 @@
 import { uneval } from 'devalue';
+import { pinGlobal } from '../utils/globalState';
+
+/** Pinned so `moduleRef()` in whichever framework copy the module imports sees the evaluation the loader started. */
+export const compiledEvaluation = pinGlobal('__mochi_compiled_evaluation__', () => ({ active: 0 }));
 
 /** Keyed on the global symbol registry so a marker created by one bundled copy of the framework is recognised by another. */
 const MODULE_REF = Symbol.for('mochi.moduleRef');

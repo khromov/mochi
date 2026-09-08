@@ -5,12 +5,14 @@ import {
   assertNotPrebuilt,
   collectInputs,
   createCompiledModuleLoader,
+  currentCompiledEvaluationCache,
   emitCompiledModule,
   evaluateCompiledModule,
   resetCompiledEvaluationCache,
   type CompiledContext,
 } from './compiledModules';
-import { createModuleRef } from './compiledSerialize';
+import { compiledEvaluation, createModuleRef, isModuleRef } from './compiledSerialize';
+import { moduleRef } from '../moduleRef';
 
 let dir: string;
 
@@ -27,6 +29,12 @@ beforeAll(async () => {
   await Bun.write(path.join(dir, 'fn.compiled.ts'), `export const rows = [{ fn: () => 1 }];\n`);
   await Bun.write(path.join(dir, 'data.json'), `{ "n": 41 }\n`);
   await Bun.write(path.join(dir, 'json.compiled.ts'), `import data from './data.json';\nexport const n = data.n + 1;\n`);
+  await Bun.write(path.join(dir, 'store.svelte.ts'), `export const s = $state({ n: 1 });\nexport const LIMIT = 5;\n`);
+  await Bun.write(path.join(dir, 'runes.compiled.ts'), `import { LIMIT } from './store.svelte.ts';\nexport const limit = LIMIT;\n`);
+  await Bun.write(
+    path.join(dir, 'library.compiled.ts'),
+    `import { uneval } from 'devalue';\nimport { moduleRef } from 'mochi-framework';\nexport const out = uneval(1);\nexport const ref = moduleRef('./Card.svelte');\n`,
+  );
 });
 
 afterAll(() => {
@@ -125,6 +133,42 @@ describe('evaluateCompiledModule', () => {
     expect((await evaluateCompiledModule(file, ctx())).n).toBe(100);
   });
 
+  test('a package import is a library wherever it resolves, so the framework is neither scanned nor evicted', async () => {
+    const file = path.join(dir, 'library.compiled.ts');
+    expect([...(await collectInputs(file))]).toEqual([file]);
+    resetCompiledEvaluationCache();
+    expect((await evaluateCompiledModule(file, ctx())).out).toBe('1');
+  });
+
+  test('a production build scans only the module itself', async () => {
+    const file = path.join(dir, 'value.compiled.ts');
+    expect([...(await collectInputs(file, { transitive: false }))]).toEqual([file]);
+    const seen: string[] = [];
+    resetCompiledEvaluationCache();
+    await evaluateCompiledModule(file, { ...ctx(), development: false, onInputs: (p) => seen.push(p) });
+    expect(seen).toEqual([]);
+    await expect(collectInputs(path.join(dir, 'component.compiled.ts'), { transitive: false })).rejects.toThrow(/moduleRef/);
+  });
+
+  test('a runes module import is rejected like a component', async () => {
+    resetCompiledEvaluationCache();
+    const err = await evaluateCompiledModule(path.join(dir, 'runes.compiled.ts'), ctx()).catch((e: Error) => e.message);
+    expect(err).toMatch(/runes\.compiled\.ts imports "\.\/store\.svelte\.ts", but a \*\.compiled\.ts module runs outside the bundler/);
+    expect(err).not.toContain('$state');
+  });
+
+  test('a compile keeps the memo it captured across a reset', async () => {
+    const file = path.join(dir, 'value.compiled.ts');
+    resetCompiledEvaluationCache();
+    const captured = currentCompiledEvaluationCache();
+    const ssr = await evaluateCompiledModule(file, { ...ctx(), evaluations: captured });
+    resetCompiledEvaluationCache();
+    expect(currentCompiledEvaluationCache()).not.toBe(captured);
+    // The client pass of the same compile still reads the value its SSR pass inlined.
+    expect(await evaluateCompiledModule(file, { ...ctx(), evaluations: captured })).toBe(ssr);
+    expect(await evaluateCompiledModule(file, ctx())).not.toBe(ssr);
+  });
+
   test('a component import is rejected with the moduleRef hint', async () => {
     resetCompiledEvaluationCache();
     const err = await evaluateCompiledModule(path.join(dir, 'component.compiled.ts'), ctx()).catch((e: Error) => e.message);
@@ -140,6 +184,20 @@ describe('evaluateCompiledModule', () => {
     await expect(pending).rejects.toThrow(/throws\.compiled\.ts threw while evaluating: boom/);
     expect(evaluateCompiledModule(file, ctx())).not.toBe(pending);
     await evaluateCompiledModule(file, ctx()).catch(() => {});
+  });
+});
+
+describe('moduleRef', () => {
+  test('throws outside a build-time evaluation, naming the cause', () => {
+    expect(compiledEvaluation.active).toBe(0);
+    expect(() => moduleRef('./Card.svelte')).toThrow(/moduleRef\("\.\/Card\.svelte"\) was called outside a build-time evaluation/);
+  });
+
+  test('marks a module while an evaluation is in flight', async () => {
+    resetCompiledEvaluationCache();
+    const ns = await evaluateCompiledModule(path.join(dir, 'library.compiled.ts'), ctx());
+    expect(isModuleRef(ns.ref)).toBe(true);
+    expect(compiledEvaluation.active).toBe(0);
   });
 });
 

@@ -40,8 +40,20 @@ import {
 
 const FILE_CHANGE_EVENTS = new Set<string>(['add', 'change', 'unlink', 'addDir', 'unlinkDir']);
 
-// A build-time module may derive its value from a directory listing; an edit to an existing file already reaches its dependents through the import graph.
-const STRUCTURAL_CHANGE_EVENTS = new Set<string>(['add', 'unlink', 'addDir', 'unlinkDir']);
+const STRUCTURAL_EXTENSIONS = new Set(['.svelte', '.md', '.svx', '.ts', '.mts', '.cts', '.js', '.mjs', '.cjs', '.json', '.yaml', '.yml', '.txt', '.csv', '.html']);
+
+/**
+ * Whether an add/unlink may change what a build-time module derives from a directory listing. An edit to an existing
+ * file already reaches its dependents through the import graph, and editor temp files (`.swp`, `4913`, `___jb_tmp___`,
+ * `.DS_Store`) and directories carry nothing such a module reads.
+ */
+export function isStructuralChange(event: string, filePath: string): boolean {
+  if (event !== 'add' && event !== 'unlink') {
+    return false;
+  }
+  const base = path.basename(filePath);
+  return !base.startsWith('.') && STRUCTURAL_EXTENSIONS.has(path.extname(base));
+}
 
 // Chokidar reports a rename as unlink-old + add-new, so logging the verb per
 // event surfaces both the old and new filename instead of just "changed".
@@ -178,14 +190,6 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   // Serializing rebuilds through a Promise chain holds the WebSocket reload until client JS chunks are ready; saves
   // arriving mid-rebuild append to the chain, so the browser reloads once, into fresh chunks.
   let reloadChain: Promise<void> = Promise.resolve();
-  const recompileBuildTimeModules = async (): Promise<{ pages: Set<string>; clientBundleCount: number }> => {
-    const count = registry.getBuildTimeModules().length;
-    if (count === 0) {
-      return { pages: new Set(), clientBundleCount: 0 };
-    }
-    logger.info(`Rebuilding ${count} build-time module${count === 1 ? '' : 's'} — their inputs are not in the import graph`);
-    return registry.recompileBuildTimeModules();
-  };
 
   // Sticky across the debounce window: chokidar can follow an 'add' with a 'change', and only the last call's arguments survive.
   let pendingStructural = false;
@@ -204,19 +208,22 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
       let failed = false;
       try {
-        summary = await registry.recompileChanged(filename);
-        if (summary.pages.size === 0) {
-          const resolved = path.resolve(filename);
-          if (routeComponentPaths.has(resolved)) {
-            await registry.compile(resolved, { force: true });
-            summary = { pages: new Set([resolved]), clientBundleCount: 0 };
-          } else if (structural) {
-            // Nothing in the graph depends on this file, but a build-time module may still read the directory it appeared in.
-            summary = await recompileBuildTimeModules();
+        if (structural) {
+          const count = registry.getBuildTimeModules().length;
+          if (count > 0) {
+            logger.info(`Rebuilding ${count} build-time module${count === 1 ? '' : 's'} — their inputs are not in the import graph`);
           }
+        }
+        summary = await registry.recompileChanged(filename, { withBuildTimeModules: structural });
+        const resolved = path.resolve(filename);
+        if (routeComponentPaths.has(resolved) && !summary.pages.has(resolved)) {
+          await registry.compile(resolved, { force: true });
+          summary = { pages: new Set([...summary.pages, resolved]), clientBundleCount: summary.clientBundleCount };
         }
       } catch (e) {
         failed = true;
+        // Consumed above but never acted on, so the next save still rebuilds the build-time modules.
+        pendingStructural ||= structural;
         logger.warn(`Rebuild failed: ${e instanceof Error ? e.message : e}`);
       }
       mochiEvents.emit('recompile:complete', {
@@ -732,7 +739,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         // exclusive branch is correct: one serialized task, one reload.
         triggerEntryReload(filePath);
       } else {
-        pendingStructural ||= STRUCTURAL_CHANGE_EVENTS.has(event);
+        pendingStructural ||= isStructuralChange(event, filePath);
         triggerReload(filePath);
       }
     })
