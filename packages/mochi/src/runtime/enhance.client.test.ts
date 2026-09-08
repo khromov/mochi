@@ -477,4 +477,43 @@ describe('error results are always logged', () => {
     errorSpy.mockRestore();
     cleanup();
   });
+
+  test('a throw while building the request body is reported as an error result, not an unhandled rejection', async () => {
+    const form = makeForm();
+    setFetch(() => Promise.resolve(new Response('{"type":"success"}')));
+    const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+    const RealURLSearchParams = globalThis.URLSearchParams;
+    globalThis.URLSearchParams = class {
+      constructor() {
+        throw new TypeError('body serialisation blew up');
+      }
+    } as unknown as typeof URLSearchParams;
+
+    const settled = deferred();
+    let seen: unknown;
+    const cleanup = attach(form, {
+      submit:
+        () =>
+        ({ result }) => {
+          seen = result;
+          settled.resolve();
+        },
+      onPending: (v) => {
+        if (!v) {
+          setTimeout(() => settled.resolve(), 0);
+        }
+      },
+    });
+
+    try {
+      dispatchSubmit(form);
+      await settled.promise;
+      expect(seen).toEqual({ type: 'error', error: expect.any(TypeError) });
+      expect(errorSpy.mock.calls.filter(([label]) => label === 'enhance:')).toHaveLength(1);
+    } finally {
+      globalThis.URLSearchParams = RealURLSearchParams;
+      errorSpy.mockRestore();
+      cleanup();
+    }
+  });
 });

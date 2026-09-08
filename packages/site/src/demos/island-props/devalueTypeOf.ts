@@ -1,3 +1,13 @@
+const INSTANCE_TYPES: Array<[new (...args: never[]) => object, string]> = [
+  [Date, 'Date'],
+  [RegExp, 'RegExp'],
+  [Map, 'Map'],
+  [Set, 'Set'],
+  [URL, 'URL'],
+  [URLSearchParams, 'URLSearchParams'],
+  [Uint8Array, 'Uint8Array'],
+];
+
 export function typeOf(v: unknown): string {
   if (v === undefined) {
     return 'undefined';
@@ -19,26 +29,10 @@ export function typeOf(v: unknown): string {
       return '-0';
     }
   }
-  if (v instanceof Date) {
-    return 'Date';
-  }
-  if (v instanceof RegExp) {
-    return 'RegExp';
-  }
-  if (v instanceof Map) {
-    return 'Map';
-  }
-  if (v instanceof Set) {
-    return 'Set';
-  }
-  if (v instanceof URL) {
-    return 'URL';
-  }
-  if (v instanceof URLSearchParams) {
-    return 'URLSearchParams';
-  }
-  if (v instanceof Uint8Array) {
-    return 'Uint8Array';
+  for (const [ctor, name] of INSTANCE_TYPES) {
+    if (v instanceof ctor) {
+      return name;
+    }
   }
   if (ArrayBuffer.isView(v)) {
     return (v as { constructor: { name: string } }).constructor.name;

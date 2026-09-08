@@ -25,11 +25,8 @@ function renderRow(name: string, mainLines: number, prLines: number, bold = fals
   return `| ${wrap(name)} | ${wrap(mainLines)} | ${wrap(prLines)} | ${wrap(delta(prLines - mainLines))} |`;
 }
 
-function renderPackageSection(name: string, mainReport: Report | undefined, prReport: Report | undefined, openByDefault: boolean): string[] {
-  const main = mainReport?.byCategory ?? {};
-  const pr = prReport?.byCategory ?? {};
+function diffCategories(main: Record<string, Counts>, pr: Record<string, Counts>): { changedRows: string[]; unchanged: { name: string; lines: number }[] } {
   const allCategories = new Set([...Object.keys(main), ...Object.keys(pr)]);
-
   const changedRows: string[] = [];
   const unchanged: { name: string; lines: number }[] = [];
   for (const category of allCategories) {
@@ -44,6 +41,11 @@ function renderPackageSection(name: string, mainReport: Report | undefined, prRe
     }
     changedRows.push(renderRow(`\`${category}\``, mainLines, prLines));
   }
+  return { changedRows, unchanged };
+}
+
+function renderPackageSection(name: string, mainReport: Report | undefined, prReport: Report | undefined, openByDefault: boolean): string[] {
+  const { changedRows, unchanged } = diffCategories(mainReport?.byCategory ?? {}, prReport?.byCategory ?? {});
   changedRows.push(renderRow('Total', mainReport?.totals.lines ?? 0, prReport?.totals.lines ?? 0, true));
 
   const table = ['| Category | main | PR | Δ |', '|---|---:|---:|---:|', ...changedRows];
@@ -102,22 +104,21 @@ function renderInstallSection(repo: string, runId: string): string[] {
   ];
 }
 
+function argValue(args: string[], flag: string): string | undefined {
+  const idx = args.indexOf(flag);
+  return idx !== -1 ? args[idx + 1] : undefined;
+}
+
 function main() {
   const args = process.argv.slice(2);
   const mainPath = args[0];
   const prPath = args[1];
-  const repoIdx = args.indexOf('--repo');
-  const repo = repoIdx !== -1 ? args[repoIdx + 1] : undefined;
-  const runIdIdx = args.indexOf('--run-id');
-  const runId = runIdIdx !== -1 ? args[runIdIdx + 1] : undefined;
-  const depIdx = args.indexOf('--dep-report');
-  const depReportPath = depIdx !== -1 ? args[depIdx + 1] : undefined;
-  const changedIdx = args.indexOf('--changed-paths');
-  const changedPathsPath = changedIdx !== -1 ? args[changedIdx + 1] : undefined;
-  const auditIdx = args.indexOf('--audit');
-  const auditPath = auditIdx !== -1 ? args[auditIdx + 1] : undefined;
-  const licensesIdx = args.indexOf('--licenses');
-  const licensesPath = licensesIdx !== -1 ? args[licensesIdx + 1] : undefined;
+  const repo = argValue(args, '--repo');
+  const runId = argValue(args, '--run-id');
+  const depReportPath = argValue(args, '--dep-report');
+  const changedPathsPath = argValue(args, '--changed-paths');
+  const auditPath = argValue(args, '--audit');
+  const licensesPath = argValue(args, '--licenses');
 
   if (!mainPath || !prPath) {
     console.error('Usage: bun loc-comment.ts <main.json> <pr.json> [--repo <owner/repo> --run-id <id>]');

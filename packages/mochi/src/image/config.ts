@@ -87,7 +87,6 @@ export function resolveImageOptions(opts: MochiImageOptions | undefined): Resolv
   return {
     enabled: o.enabled ?? true,
     sizes,
-    cacheDir: o.cacheDir ?? './.mochi/image-cache',
     storage: o.storage,
     defaultFormat,
     defaultQuality,
@@ -95,10 +94,23 @@ export function resolveImageOptions(opts: MochiImageOptions | undefined): Resolv
     inputFormats: o.inputFormats ?? DEFAULT_INPUT_FORMATS,
     maxPixels,
     autoOrient,
+    ...resolveRemoteFetchOptions(o),
+    ...resolveCacheOptions(o),
+  };
+}
+
+function resolveRemoteFetchOptions(o: MochiImageOptions) {
+  return {
     allowedHosts: o.allowedHosts,
     blockPrivateNetworks: o.blockPrivateNetworks ?? true,
     fetchTimeoutMs: o.fetchTimeoutMs ?? 10_000,
     maxResponseBytes: o.maxResponseBytes ?? 20 * 1024 * 1024,
+  };
+}
+
+function resolveCacheOptions(o: MochiImageOptions) {
+  return {
+    cacheDir: o.cacheDir ?? './.mochi/image-cache',
     timeToStale: o.timeToStale ?? 14_400_000,
     timeToEvict: o.timeToEvict ?? 86_400_000,
     compressPayload: o.compressPayload ?? true,

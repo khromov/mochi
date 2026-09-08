@@ -76,6 +76,35 @@ export async function runPipeline(input: Uint8Array, size: ResolvedImageSize, op
     width = Math.max(1, Math.round(meta.width * (height / meta.height)));
   }
 
+  const pipe = applyImageTransforms(img, size, width, height);
+
+  let out: Uint8Array;
+  try {
+    out = await pipe.bytes();
+  } catch (err) {
+    if (isUnsupportedFormatError(err)) {
+      throw new ImageError(415, 'Output format unsupported on this platform');
+    }
+    throw new ImageError(500, 'Image encode failed');
+  }
+
+  let outMeta: Bun.Image.Metadata;
+  try {
+    outMeta = await new Image(out).metadata();
+  } catch {
+    outMeta = { width: width ?? meta.width, height: height ?? meta.height, format: size.format };
+  }
+
+  return {
+    bytes: out,
+    contentType: MIME[size.format],
+    width: outMeta.width,
+    height: outMeta.height,
+    format: size.format,
+  };
+}
+
+function applyImageTransforms(img: Bun.Image, size: ResolvedImageSize, width: number | undefined, height: number | undefined): Bun.Image {
   let pipe = img;
   if (width) {
     const resizeOpts: Bun.Image.ResizeOptions = { fit: size.fit };
@@ -111,31 +140,7 @@ export async function runPipeline(input: Uint8Array, size: ResolvedImageSize, op
       pipe = pipe.png();
       break;
   }
-
-  let out: Uint8Array;
-  try {
-    out = await pipe.bytes();
-  } catch (err) {
-    if (isUnsupportedFormatError(err)) {
-      throw new ImageError(415, 'Output format unsupported on this platform');
-    }
-    throw new ImageError(500, 'Image encode failed');
-  }
-
-  let outMeta: Bun.Image.Metadata;
-  try {
-    outMeta = await new Image(out).metadata();
-  } catch {
-    outMeta = { width: width ?? meta.width, height: height ?? meta.height, format: size.format };
-  }
-
-  return {
-    bytes: out,
-    contentType: MIME[size.format],
-    width: outMeta.width,
-    height: outMeta.height,
-    format: size.format,
-  };
+  return pipe;
 }
 
 export async function computePlaceholder(input: Uint8Array, opts: ResolvedImageOptions): Promise<string> {

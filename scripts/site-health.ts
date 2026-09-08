@@ -76,6 +76,12 @@ const parseArgs = (argv: string[]): Args => {
       positional.push(a);
     }
   }
+  const base = (positional[0] ?? 'https://mochi.fast').replace(/\/+$/, '');
+  validateParsedArgs(concurrency, timeout, base);
+  return { base, concurrency, report, timeout };
+};
+
+function validateParsedArgs(concurrency: number, timeout: number, base: string): void {
   if (!Number.isFinite(concurrency) || concurrency < 1) {
     console.error('--concurrency must be a positive number');
     process.exit(2);
@@ -84,13 +90,11 @@ const parseArgs = (argv: string[]): Args => {
     console.error('--timeout must be at least 1000 (ms)');
     process.exit(2);
   }
-  const base = (positional[0] ?? 'https://mochi.fast').replace(/\/+$/, '');
   if (!URL.canParse(base) || !['http:', 'https:'].includes(new URL(base).protocol)) {
     console.error(`base must be an http(s) origin, got: ${base}`);
     process.exit(2);
   }
-  return { base, concurrency, report, timeout };
-};
+}
 
 /**
  * Console output that must not fail the run: third-party noise we don't control,

@@ -153,10 +153,7 @@ interface Failure {
   detail: string;
 }
 
-async function main() {
-  const { base, concurrency } = parseArgs(process.argv.slice(2));
-
-  const sitemapXml = await fetchText(`${base}/sitemap.xml`);
+function parseSitemapPages(sitemapXml: string, base: string): string[] {
   const pages: string[] = [];
   const locRe = /<loc>\s*([\s\S]*?)\s*<\/loc>/gi;
   let m: RegExpExecArray | null;
@@ -168,6 +165,142 @@ async function main() {
     }
     pages.push(rebased);
   }
+  return pages;
+}
+
+function buildDeclaredMap(indexJson: { docs: LlmsIndexEntry[]; demos: LlmsIndexEntry[] }, base: string): Map<string, Kind> {
+  const declared = new Map<string, Kind>();
+  for (const [kind, entries] of [
+    ['doc', indexJson.docs],
+    ['demo', indexJson.demos],
+  ] as const) {
+    for (const entry of entries ?? []) {
+      const url = rebase(entry.url, base);
+      if (url !== null) {
+        declared.set(url, kind);
+      }
+    }
+  }
+  return declared;
+}
+
+function slugFromLlmsUrl(url: string): string {
+  return (
+    new URL(url).pathname
+      .replace(/\/llms\.txt$/, '')
+      .split('/')
+      .pop() ?? ''
+  );
+}
+
+function buildTargets(expected: Map<string, Expected>, declared: Map<string, Kind>, base: string): Map<string, Expected> {
+  const targets = new Map<string, Expected>(expected);
+  for (const [url, kind] of declared) {
+    if (!targets.has(url)) {
+      targets.set(url, { url, kind, slug: slugFromLlmsUrl(url), page: '' });
+    }
+  }
+  for (const path of AGGREGATES) {
+    const url = `${base}${path}`;
+    targets.set(url, { url, kind: 'aggregate', slug: path, page: '' });
+  }
+  return targets;
+}
+
+function checkLlmsBody(target: Expected, body: string, contentType: string, suspect: Failure[]): void {
+  const isJson = target.url.endsWith('.json');
+  const isMarkdown = target.url.endsWith('.md');
+  if (isJson ? !contentType.includes('application/json') : !isMarkdown && !contentType.includes('text/plain')) {
+    suspect.push({ url: target.url, detail: `content-type is '${contentType}'` });
+  }
+  if (body.trim().length === 0) {
+    suspect.push({ url: target.url, detail: 'empty body' });
+    return;
+  }
+  if (!isJson && body.trimStart().startsWith('<')) {
+    suspect.push({ url: target.url, detail: 'body looks like HTML — an error page served with a 200?' });
+    return;
+  }
+  if (target.kind === 'demo') {
+    if (!body.startsWith(`## Demo: ${target.slug}`)) {
+      suspect.push({ url: target.url, detail: `expected a '## Demo: ${target.slug}' header, got '${body.slice(0, 40).split('\n')[0]}'` });
+    }
+    // A files.ts path that doesn't exist on disk is only logged server-side and silently dropped from the bundle, so count the fences that survived.
+    const fences = (body.match(/^```/gm) ?? []).length;
+    if (fences < 2) {
+      suspect.push({ url: target.url, detail: 'no fenced source blocks — every declared file was dropped?' });
+    }
+  }
+  if (target.kind === 'doc' && body.length < 100) {
+    suspect.push({ url: target.url, detail: `only ${body.length} bytes` });
+  }
+}
+
+function findMissingFromFull(fullTxt: string | undefined, declared: Map<string, Kind>): Failure[] {
+  const missing: Failure[] = [];
+  if (fullTxt === undefined) {
+    return missing;
+  }
+  for (const [url, kind] of declared) {
+    if (kind !== 'demo') {
+      continue;
+    }
+    const slug = slugFromLlmsUrl(url);
+    if (!fullTxt.includes(`## Demo: ${slug}`)) {
+      missing.push({ url, detail: `demo '${slug}' has no '## Demo: ${slug}' section in /llms-full.txt` });
+    }
+  }
+  return missing;
+}
+
+function findMissingFromIndex(indexTxt: string | undefined, declared: Map<string, Kind>, base: string): Failure[] {
+  const missing: Failure[] = [];
+  if (indexTxt === undefined) {
+    return missing;
+  }
+  const listed = new Set<string>();
+  const linkRe = /\]\((https?:\/\/[^)\s]+)\)/g;
+  let link: RegExpExecArray | null;
+  while ((link = linkRe.exec(indexTxt)) !== null) {
+    const url = rebase(link[1], base);
+    if (url !== null) {
+      listed.add(url);
+    }
+  }
+  for (const url of declared.keys()) {
+    if (!listed.has(url)) {
+      missing.push({ url, detail: 'declared in llms.json but not linked from /llms.txt' });
+    }
+  }
+  return missing;
+}
+
+function reportFindings(groups: { label: string; items: Failure[] }[], targetsSize: number, declaredSize: number): void {
+  const total = groups.reduce((sum, g) => sum + g.items.length, 0);
+  if (total === 0) {
+    console.log(styleText('green', `✓ All ${targetsSize} llms.txt sources OK (${AGGREGATES.length} aggregate, ${declaredSize} per-page).`));
+    process.exit(0);
+  }
+  for (const group of groups) {
+    if (group.items.length === 0) {
+      continue;
+    }
+    console.log(styleText('red', `✗ ${group.items.length} ${group.label}:\n`));
+    for (const f of group.items.sort((a, z) => a.url.localeCompare(z.url))) {
+      console.log(`  ${styleText('bold', f.url)}`);
+      console.log(styleText('dim', `      ${f.detail}`));
+    }
+    console.log('');
+  }
+  console.log(styleText('red', `${total} finding(s) across ${targetsSize} checked sources.`));
+  process.exit(1);
+}
+
+async function main() {
+  const { base, concurrency } = parseArgs(process.argv.slice(2));
+
+  const sitemapXml = await fetchText(`${base}/sitemap.xml`);
+  const pages = parseSitemapPages(sitemapXml, base);
   if (pages.length === 0) {
     console.error(styleText('red', `No <loc> entries in ${base}/sitemap.xml`));
     process.exit(2);
@@ -182,18 +315,7 @@ async function main() {
   }
 
   const indexJson: { docs: LlmsIndexEntry[]; demos: LlmsIndexEntry[] } = JSON.parse(await fetchText(`${base}/llms.json`));
-  const declared = new Map<string, Kind>();
-  for (const [kind, entries] of [
-    ['doc', indexJson.docs],
-    ['demo', indexJson.demos],
-  ] as const) {
-    for (const entry of entries ?? []) {
-      const url = rebase(entry.url, base);
-      if (url !== null) {
-        declared.set(url, kind);
-      }
-    }
-  }
+  const declared = buildDeclaredMap(indexJson, base);
 
   console.log(styleText('dim', `${pages.length} pages in sitemap.xml, ${declared.size} sources in llms.json — checking ${base} …\n`));
 
@@ -217,21 +339,7 @@ async function main() {
     }
   }
 
-  const targets = new Map<string, Expected>(expected);
-  for (const [url, kind] of declared) {
-    if (!targets.has(url)) {
-      const slug =
-        new URL(url).pathname
-          .replace(/\/llms\.txt$/, '')
-          .split('/')
-          .pop() ?? '';
-      targets.set(url, { url, kind, slug, page: '' });
-    }
-  }
-  for (const path of AGGREGATES) {
-    const url = `${base}${path}`;
-    targets.set(url, { url, kind: 'aggregate', slug: path, page: '' });
-  }
+  const targets = buildTargets(expected, declared, base);
 
   const broken: Failure[] = [];
   const suspect: Failure[] = [];
@@ -257,75 +365,13 @@ async function main() {
 
     const body = await res.text();
     bodies.set(target.url, body);
-    const contentType = res.headers.get('content-type') ?? '';
-    const isJson = target.url.endsWith('.json');
-    const isMarkdown = target.url.endsWith('.md');
-    if (isJson ? !contentType.includes('application/json') : !isMarkdown && !contentType.includes('text/plain')) {
-      suspect.push({ url: target.url, detail: `content-type is '${contentType}'` });
-    }
-    if (body.trim().length === 0) {
-      suspect.push({ url: target.url, detail: 'empty body' });
-      return;
-    }
-    if (!isJson && body.trimStart().startsWith('<')) {
-      suspect.push({ url: target.url, detail: 'body looks like HTML — an error page served with a 200?' });
-      return;
-    }
-    if (target.kind === 'demo') {
-      if (!body.startsWith(`## Demo: ${target.slug}`)) {
-        suspect.push({ url: target.url, detail: `expected a '## Demo: ${target.slug}' header, got '${body.slice(0, 40).split('\n')[0]}'` });
-      }
-      // A files.ts path that doesn't exist on disk is only logged server-side and
-      // silently dropped from the bundle, so count the fences that survived.
-      const fences = (body.match(/^```/gm) ?? []).length;
-      if (fences < 2) {
-        suspect.push({ url: target.url, detail: 'no fenced source blocks — every declared file was dropped?' });
-      }
-    }
-    if (target.kind === 'doc' && body.length < 100) {
-      suspect.push({ url: target.url, detail: `only ${body.length} bytes` });
-    }
+    checkLlmsBody(target, body, res.headers.get('content-type') ?? '', suspect);
   });
 
-  // Every declared demo must also survive into the /llms-full.txt bundle, which
-  // is built by a separate code path from the per-demo routes.
-  const missingFromFull: Failure[] = [];
-  const fullTxt = bodies.get(`${base}/llms-full.txt`);
-  if (fullTxt !== undefined) {
-    for (const [url, kind] of declared) {
-      if (kind !== 'demo') {
-        continue;
-      }
-      const slug =
-        new URL(url).pathname
-          .replace(/\/llms\.txt$/, '')
-          .split('/')
-          .pop() ?? '';
-      if (!fullTxt.includes(`## Demo: ${slug}`)) {
-        missingFromFull.push({ url, detail: `demo '${slug}' has no '## Demo: ${slug}' section in /llms-full.txt` });
-      }
-    }
-  }
-
+  // Every declared demo must also survive into the /llms-full.txt bundle, which is built by a separate code path from the per-demo routes.
+  const missingFromFull = findMissingFromFull(bodies.get(`${base}/llms-full.txt`), declared);
   // The /llms.txt index is what an agent actually reads to discover the rest.
-  const missingFromIndex: Failure[] = [];
-  const indexTxt = bodies.get(`${base}/llms.txt`);
-  if (indexTxt !== undefined) {
-    const listed = new Set<string>();
-    const linkRe = /\]\((https?:\/\/[^)\s]+)\)/g;
-    let link: RegExpExecArray | null;
-    while ((link = linkRe.exec(indexTxt)) !== null) {
-      const url = rebase(link[1], base);
-      if (url !== null) {
-        listed.add(url);
-      }
-    }
-    for (const url of declared.keys()) {
-      if (!listed.has(url)) {
-        missingFromIndex.push({ url, detail: 'declared in llms.json but not linked from /llms.txt' });
-      }
-    }
-  }
+  const missingFromIndex = findMissingFromIndex(bodies.get(`${base}/llms.txt`), declared, base);
 
   const groups: { label: string; items: Failure[] }[] = [
     { label: `unregistered — page exists, llms.txt was never routed (this is a 404)`, items: unregistered },
@@ -336,25 +382,7 @@ async function main() {
     { label: `orphaned — declared in llms.json with no page in sitemap.xml`, items: orphaned },
   ];
 
-  const total = groups.reduce((sum, g) => sum + g.items.length, 0);
-  if (total === 0) {
-    console.log(styleText('green', `✓ All ${targets.size} llms.txt sources OK (${AGGREGATES.length} aggregate, ${declared.size} per-page).`));
-    process.exit(0);
-  }
-
-  for (const group of groups) {
-    if (group.items.length === 0) {
-      continue;
-    }
-    console.log(styleText('red', `✗ ${group.items.length} ${group.label}:\n`));
-    for (const f of group.items.sort((a, z) => a.url.localeCompare(z.url))) {
-      console.log(`  ${styleText('bold', f.url)}`);
-      console.log(styleText('dim', `      ${f.detail}`));
-    }
-    console.log('');
-  }
-  console.log(styleText('red', `${total} finding(s) across ${targets.size} checked sources.`));
-  process.exit(1);
+  reportFindings(groups, targets.size, declared.size);
 }
 
 main();

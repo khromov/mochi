@@ -132,20 +132,28 @@ function csrfCheckDefault(
 
   const expectedOriginConfigured = Boolean(proxy?.origin || proxy?.hostHeader);
   if (!expectedOriginConfigured) {
-    if (development) {
-      logger.warn(
-        `CSRF: ${request.method} ${url.pathname} would be blocked in production: no proxy.origin or proxy.hostHeader configured, so the expected origin can't be trusted. Set Mochi.serve({ proxy: { origin: '...' } }) before deploying.`,
-      );
-      return null;
-    }
-    const message = `Cross-site ${request.method} form submissions are forbidden`;
-    const reason = 'Mochi is running in production mode without proxy.origin or proxy.hostHeader configured.';
-    logger.warn(
-      `CSRF: blocking ${request.method} ${url.pathname} from origin ${request.headers.get('origin') ?? '<missing>'}: no proxy.origin or proxy.hostHeader configured, so the expected origin can't be trusted. Set Mochi.serve({ proxy: { origin: '...' } }).`,
-    );
-    return csrfForbidden(request, message, reason);
+    return csrfUnconfiguredDecision(request, url, development);
   }
 
+  return csrfOriginMatchDecision(request, url, proxy, development, trustedOrigins);
+}
+
+function csrfUnconfiguredDecision(request: Request, url: URL, development: boolean): Response | null {
+  if (development) {
+    logger.warn(
+      `CSRF: ${request.method} ${url.pathname} would be blocked in production: no proxy.origin or proxy.hostHeader configured, so the expected origin can't be trusted. Set Mochi.serve({ proxy: { origin: '...' } }) before deploying.`,
+    );
+    return null;
+  }
+  const message = `Cross-site ${request.method} form submissions are forbidden`;
+  const reason = 'Mochi is running in production mode without proxy.origin or proxy.hostHeader configured.';
+  logger.warn(
+    `CSRF: blocking ${request.method} ${url.pathname} from origin ${request.headers.get('origin') ?? '<missing>'}: no proxy.origin or proxy.hostHeader configured, so the expected origin can't be trusted. Set Mochi.serve({ proxy: { origin: '...' } }).`,
+  );
+  return csrfForbidden(request, message, reason);
+}
+
+function csrfOriginMatchDecision(request: Request, url: URL, proxy: MochiProxyOptions | undefined, development: boolean, trustedOrigins: ReadonlySet<string>): Response | null {
   const expectedOrigin = resolveExpectedOrigin(request, url, proxy);
   const origin = request.headers.get('origin');
   const expectedNormalized = normalizeOrigin(expectedOrigin);

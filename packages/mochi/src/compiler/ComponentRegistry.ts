@@ -29,6 +29,7 @@ import {
   fontChangedSinceResolved,
   fontContentHash,
   substituteFontUrls,
+  type SurvivingFont,
 } from './cssFontAssets';
 import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
@@ -119,24 +120,27 @@ function createMarkdownLoader(opts: {
 }) {
   const highlight = opts.markdown.highlight;
   const fingerprint = compileFingerprint(opts.userCompilerOptions, opts.development, backendId(opts.backend));
+  // A hit replays the side effects the miss path would have produced (hydration metadata, scoped CSS) and skips mdsvex
+  // and the svelte compile.
+  const replayCachedMarkdown = (cached: NonNullable<ReturnType<typeof opts.compileCache.get>>, filePath: string) => {
+    if (opts.hydration) {
+      opts.hydration.fileHydratables.set(filePath, cached.hydratables);
+      opts.hydration.allHydratables.push(...cached.hydratables);
+      opts.hydration.allServerIslands.push(...cached.serverIslands);
+      opts.hydration.filePreprocessErrors.set(filePath, cached.preprocessErrors);
+    }
+    if (opts.target === 'server' && cached.css && opts.cssMap) {
+      opts.cssMap.set(filePath, cached.css);
+    }
+    return { contents: cached.js, loader: 'js' as const };
+  };
   return async (args: { path: string }) => {
     const raw = await Bun.file(args.path).text();
-    // A hit replays the side effects the miss path would have produced (hydration metadata, scoped CSS) and skips mdsvex
-    // and the svelte compile. Keying on raw source assumes mdsvex and the user preprocessors are pure in
-    // (source, filename), the standard Vite/SvelteKit contract: a plugin reading a sibling `.json` won't re-run until
-    // this file's own bytes change.
+    // Keying on raw source assumes mdsvex and the user preprocessors are pure in (source, filename), the standard
+    // Vite/SvelteKit contract: a plugin reading a sibling `.json` won't re-run until this file's own bytes change.
     const cached = opts.compileCache.get(opts.target, args.path, raw, fingerprint, opts.compileCacheStats);
     if (cached) {
-      if (opts.hydration) {
-        opts.hydration.fileHydratables.set(args.path, cached.hydratables);
-        opts.hydration.allHydratables.push(...cached.hydratables);
-        opts.hydration.allServerIslands.push(...cached.serverIslands);
-        opts.hydration.filePreprocessErrors.set(args.path, cached.preprocessErrors);
-      }
-      if (opts.target === 'server' && cached.css && opts.cssMap) {
-        opts.cssMap.set(args.path, cached.css);
-      }
-      return { contents: cached.js, loader: 'js' as const };
+      return replayCachedMarkdown(cached, args.path);
     }
     // mdsvex's `compile` declares a nested-Promise return type, so we accept
     // `unknown` at the type level and await + validate at runtime. `await`
@@ -343,6 +347,21 @@ function indexHydratables(hydratables: HydratableComponent[]): {
   };
 }
 
+type ClientBuildMetafile = NonNullable<Awaited<ReturnType<typeof Bun.build>>['metafile']>;
+type BuildOutputsMeta = ClientBuildMetafile['outputs'];
+
+// Everything one compile batch accumulates in the build plugin's onLoad hooks and consumes after the build. Passed as
+// one object so the structurally-identical hydratable/server-island maps can never be transposed between call sites.
+interface CompileBatch {
+  cssMap: Map<string, string>;
+  importedCssPaths: Set<string>;
+  allHydratables: HydratableComponent[];
+  allServerIslands: ServerIslandComponent[];
+  fileHydratables: Map<string, HydratableComponent[]>;
+  fileServerIslands: Map<string, ServerIslandComponent[]>;
+  filePreprocessErrors: Map<string, PreprocessIslandError[]>;
+}
+
 export class ComponentRegistry {
   private compiledComponents: Map<
     string,
@@ -470,11 +489,19 @@ export class ComponentRegistry {
     this.optimize = opts.optimize ?? false;
     this.fontInlineThreshold = opts.fonts?.inlineThreshold ?? 4096;
     this.fontDropLegacyWoff = opts.fonts?.dropLegacyWoff ?? true;
-    const bw = opts.barrelWarnings;
-    this.barrelWarningsEnabled = bw !== false;
-    this.barrelIgnore = new Set(typeof bw === 'object' ? (bw.ignore ?? []) : []);
-    this.barrelMinBytes = (typeof bw === 'object' ? bw.minBytes : undefined) ?? 50 * 1024;
+    const barrel = ComponentRegistry.resolveBarrelWarnings(opts.barrelWarnings);
+    this.barrelWarningsEnabled = barrel.enabled;
+    this.barrelIgnore = barrel.ignore;
+    this.barrelMinBytes = barrel.minBytes;
     this.barrelBuffering = opts.bufferBarrelWarnings ?? false;
+  }
+
+  private static resolveBarrelWarnings(bw: ComponentRegistryOptions['barrelWarnings']): { enabled: boolean; ignore: Set<string>; minBytes: number } {
+    return {
+      enabled: bw !== false,
+      ignore: new Set(typeof bw === 'object' ? (bw.ignore ?? []) : []),
+      minBytes: (typeof bw === 'object' ? bw.minBytes : undefined) ?? 50 * 1024,
+    };
   }
 
   /**
@@ -503,25 +530,7 @@ export class ComponentRegistry {
       if (shaken.size === 0) {
         logger.warn(`svelte-shaker: no .svelte components found under ${appRoot}; nothing to shake`);
       }
-      const cwd = process.cwd();
-      const exclude = typeof opt === 'object' ? (opt.exclude ?? []) : [];
-      let excluded = 0;
-      if (exclude.length > 0) {
-        const globs = exclude.map((p) => new Bun.Glob(p));
-        // Snapshot the keys: the loop deletes from `shaken` while iterating it.
-        // oxlint-disable-next-line no-useless-spread
-        for (const id of [...shaken.keys()]) {
-          // Glob patterns are written with forward slashes, so match against
-          // POSIX-ified paths or Windows never excludes anything.
-          const rel = toPosixPath(path.relative(cwd, id));
-          // Excluded files compile from original source. Safe regardless: the
-          // whole-app scan still covered them as call sites of other components.
-          if (globs.some((g) => g.match(rel) || g.match(toPosixPath(id)))) {
-            shaken.delete(id);
-            excluded++;
-          }
-        }
-      }
+      const excluded = ComponentRegistry.applyShakeExclusions(shaken, opt);
       this.shakenSources = shaken;
 
       // The shake map holds every in-scope component, returning untouched ones verbatim, so its size is the scan count.
@@ -546,6 +555,28 @@ export class ComponentRegistry {
       logger.error(e);
       this.shakenSources = new Map();
     }
+  }
+
+  // Drop shaken entries matching the `optimize.exclude` globs so they compile from original source; returns the count.
+  private static applyShakeExclusions(shaken: Map<string, string>, opt: boolean | MochiSvelteShakerOptions): number {
+    const exclude = typeof opt === 'object' ? (opt.exclude ?? []) : [];
+    if (exclude.length === 0) {
+      return 0;
+    }
+    const globs = exclude.map((p) => new Bun.Glob(p));
+    let excluded = 0;
+    // Snapshot the keys: the loop deletes from `shaken` while iterating it.
+    // oxlint-disable-next-line no-useless-spread
+    for (const id of [...shaken.keys()]) {
+      // Glob patterns are written with forward slashes, so match against POSIX-ified paths or Windows never excludes anything.
+      const rel = relForDisplay(id);
+      // Excluded files compile from original source. Safe regardless: the whole-app scan still covered them as call sites of other components.
+      if (globs.some((g) => g.match(rel) || g.match(toPosixPath(id)))) {
+        shaken.delete(id);
+        excluded++;
+      }
+    }
+    return excluded;
   }
 
   /** Log a per-component before→after source-byte breakdown for the changed components. */
@@ -632,34 +663,25 @@ export class ComponentRegistry {
       return;
     }
 
-    // A prebuilt manifest is meant to cover every component the app renders, so a miss costs a cold compile on the
-    // request that hit it — and means this deploy needs its Svelte sources and the compiler at runtime.
-    if (this.loadedFromManifest && !this.development && !opts.force) {
-      logger.warn(
-        `${todo.length} component(s) are missing from the prebuilt manifest and will be compiled now:\n` +
-          todo.map((f) => `  - ${relForDisplay(f)}`).join('\n') +
-          `\nCommon causes: an email template outside \`${EMAIL_TEMPLATE_DIR}/\` (the build walks that directory, since nothing imports a template from a route — move it there), ` +
-          `or another component rendered outside a route, which the build cannot discover. ` +
-          `Otherwise, \`mochi-framework build\` and the server must run from the same working directory (the project root), and both must use the same mochi-framework version. ` +
-          `Until it's fixed, this build needs its Svelte sources and the compiler at runtime. ` +
-          `If none of the above apply, this is a Mochi bug — please report it with a reproduction.`,
-      );
-    }
+    this.warnManifestMiss(todo, opts.force ?? false);
 
     for (const f of todo) {
       mochiEvents.emit('compile:start', { path: f });
     }
     const compileStart = performance.now();
 
-    const cssMap = new Map<string, string>();
-    const importedCssPaths = new Set<string>();
-    const allHydratables: HydratableComponent[] = [];
-    const allServerIslands: ServerIslandComponent[] = [];
+    const batch: CompileBatch = {
+      cssMap: new Map(),
+      importedCssPaths: new Set(),
+      allHydratables: [],
+      allServerIslands: [],
+      fileHydratables: new Map(),
+      fileServerIslands: new Map(),
+      filePreprocessErrors: new Map(),
+    };
+    const { cssMap, importedCssPaths, allHydratables, allServerIslands, fileHydratables, fileServerIslands, filePreprocessErrors } = batch;
     const preprocessCacheStats = createPreprocessCacheStats();
     const compileCacheStats = createCompileCacheStats();
-    const fileHydratables = new Map<string, HydratableComponent[]>();
-    const fileServerIslands = new Map<string, ServerIslandComponent[]>();
-    const filePreprocessErrors = new Map<string, PreprocessIslandError[]>();
     const development = this.development;
     const userCompilerOptions = this.svelteConfig.compilerOptions ?? {};
     const backend = await resolveSvelteCompiler(this.svelteCompiler);
@@ -815,14 +837,71 @@ export class ComponentRegistry {
       throw: false,
     });
 
-    // Detection recomputes nested-hydration and unresolved-island errors for every file in this batch, so prior ones for
-    // the recompiled files are dropped first — otherwise a fixed mistake keeps 500-ing every page until a restart and an
-    // unfixed one is duplicated on every save.
-    //
-    // This runs BEFORE the `result.success` throw on purpose: the hydration maps come from the svelte `onLoad`, which
-    // fires for every entry before Bun resolves transitive JS deps, so a later bundler failure must not swallow a
-    // structural error already detected — including under the `bun test`-only EISDIR bug, where the SSR build fails
-    // after preprocessing succeeded.
+    this.recordPreprocessErrors(batch);
+
+    this.warnOnBarrelImports(result.metafile);
+
+    this.detectNestedIslandErrors(batch);
+
+    if (!result.success) {
+      const message = `Svelte SSR build failed:\n${formatBuildMessages(result.logs)}`;
+      for (const f of todo) {
+        mochiEvents.emit('compile:error', {
+          path: f,
+          message,
+          logs: toCompileErrorLogs(result.logs),
+        });
+      }
+      throw new Error(message);
+    }
+
+    await this.registerCompiledEntries(todo, result.metafile?.outputs ?? {}, compileOutDir, batch, compileStart);
+
+    mochiEvents.emit('compile:batch-complete', {
+      count: todo.length,
+      durationMs: performance.now() - compileStart,
+    });
+
+    emitCacheSummary('preprocess-cache:summary', preprocessCacheStats);
+    emitCacheSummary('compile-cache:summary', compileCacheStats);
+
+    await this.writeComponentCss(cssMap);
+
+    if (importedCssPaths.size > 0) {
+      await this.bundleImportedCss(importedCssPaths);
+    }
+
+    this.registerServerIslandPaths(allServerIslands);
+
+    this.hydratableComponents.push(...allHydratables);
+    if (!opts.deferClientBundle && allHydratables.length > 0) {
+      await this.buildClientBundle();
+    }
+  }
+
+  private warnManifestMiss(todo: string[], force: boolean): void {
+    // A prebuilt manifest is meant to cover every component the app renders, so a miss costs a cold compile on the
+    // request that hit it — and means this deploy needs its Svelte sources and the compiler at runtime.
+    if (!this.loadedFromManifest || this.development || force) {
+      return;
+    }
+    logger.warn(
+      `${todo.length} component(s) are missing from the prebuilt manifest and will be compiled now:\n` +
+        todo.map((f) => `  - ${relForDisplay(f)}`).join('\n') +
+        `\nCommon causes: an email template outside \`${EMAIL_TEMPLATE_DIR}/\` (the build walks that directory, since nothing imports a template from a route — move it there), ` +
+        `or another component rendered outside a route, which the build cannot discover. ` +
+        `Otherwise, \`mochi-framework build\` and the server must run from the same working directory (the project root), and both must use the same mochi-framework version. ` +
+        `Until it's fixed, this build needs its Svelte sources and the compiler at runtime. ` +
+        `If none of the above apply, this is a Mochi bug — please report it with a reproduction.`,
+    );
+  }
+
+  // Recompute preprocess/island errors for this batch. Prior ones for the recompiled files are dropped first — otherwise
+  // a fixed mistake keeps 500-ing every page until a restart and an unfixed one is duplicated on every save. Runs BEFORE
+  // the `result.success` throw on purpose: the hydration maps come from the svelte `onLoad`, which fires for every entry
+  // before Bun resolves transitive JS deps, so a later bundler failure must not swallow a structural error already detected.
+  private recordPreprocessErrors(batch: CompileBatch): void {
+    const { filePreprocessErrors, fileHydratables, fileServerIslands } = batch;
     this.errors = this.errors.filter(
       (e) =>
         !(e.kind === 'nested-hydration' && fileHydratables.has(e.parentPath)) &&
@@ -848,22 +927,18 @@ export class ComponentRegistry {
         logger.error(`\n${formatCompileError(compileError)}\n`);
       }
     }
+  }
 
-    this.warnOnBarrelImports(result.metafile);
-
-    // Detect nested hydration — a hydratable component must not itself contain mochi:hydrate or mochi:hydrate:visible children
+  // Detect nested hydration and server-islands-inside-hydratables — both one file deep: a hydratable subtree can't
+  // contain another hydratable directive or a server island, which the client can't render on hydration.
+  private detectNestedIslandErrors(batch: CompileBatch): void {
+    const { fileHydratables, fileServerIslands, allHydratables } = batch;
     const hydratablePaths = new Set(allHydratables.map((h) => h.resolvedPath));
     for (const [filePath, children] of fileHydratables) {
       if (hydratablePaths.has(filePath) && children.length > 0) {
         const parent = allHydratables.find((h) => h.resolvedPath === filePath)!;
         for (const child of children) {
-          this.errors.push({
-            kind: 'nested-hydration',
-            parent: parent.displayName,
-            child: child.displayName,
-            parentPath: filePath,
-            childPath: child.resolvedPath,
-          });
+          this.errors.push({ kind: 'nested-hydration', parent: parent.displayName, child: child.displayName, parentPath: filePath, childPath: child.resolvedPath });
           logger.error(
             `\nNested hydration directives are not allowed.\n  <${child.displayName}> with mochi:hydrate, mochi:hydrate:visible, or mochi:clientOnly is inside <${parent.displayName}> which is also hydratable.\n  Remove the directive from ${child.displayName} — it hydrates automatically as part of ${parent.displayName}.\n`,
           );
@@ -878,37 +953,21 @@ export class ComponentRegistry {
       if (hydratablePaths.has(filePath) && children.length > 0) {
         const parent = allHydratables.find((h) => h.resolvedPath === filePath)!;
         for (const child of children) {
-          this.errors.push({
-            kind: 'defer-in-hydratable',
-            parent: parent.displayName,
-            child: child.displayName,
-            parentPath: filePath,
-            childPath: child.resolvedPath,
-          });
+          this.errors.push({ kind: 'defer-in-hydratable', parent: parent.displayName, child: child.displayName, parentPath: filePath, childPath: child.resolvedPath });
           logger.error(
             `\nA server island cannot sit inside a hydratable subtree.\n  <${child.displayName}> with mochi:defer or mochi:defer:visible is inside <${parent.displayName}>, which hydrates on the client — where a server island cannot render.\n  Remove mochi:defer from ${child.displayName}, or the hydrate/clientOnly directive from ${parent.displayName}.\n`,
           );
         }
       }
     }
+  }
 
-    if (!result.success) {
-      const message = `Svelte SSR build failed:\n${formatBuildMessages(result.logs)}`;
-      for (const f of todo) {
-        mochiEvents.emit('compile:error', {
-          path: f,
-          message,
-          logs: toCompileErrorLogs(result.logs),
-        });
-      }
-      throw new Error(message);
-    }
-
-    // Attribution walks Bun's output graph: `outputs[outKey].inputs` is a flat record of every source file that fed that
-    // chunk, keyed in the same shape as `inputs[]` and so stable to compare against `cssMap` / `importedCssPaths`. The
-    // source-import walk via `inputs[].imports[].path` is unusable, since Bun stores those importer-relative and
-    // `path.resolve` against cwd fabricates absolutes that miss `inputs[]`, killing the BFS one hop in.
-    const outputsMeta = result.metafile?.outputs ?? {};
+  // Walk Bun's output graph to attribute each entry's transitive inputs, then register the compiled module, per-entry
+  // hydratables/CSS/server-islands, and dev-watcher dep tracking. `outputs[outKey].inputs` is the flat record of every
+  // source file that fed a chunk — stable to compare against `cssMap`/`importedCssPaths`, unlike the importer-relative
+  // `inputs[].imports[].path`.
+  private async registerCompiledEntries(todo: string[], outputsMeta: BuildOutputsMeta, compileOutDir: string, batch: CompileBatch, compileStart: number): Promise<void> {
+    const { fileHydratables, fileServerIslands, cssMap, importedCssPaths } = batch;
     const entryToOutKey = new Map<string, string>();
     for (const [outKey, outMeta] of Object.entries(outputsMeta)) {
       if (outMeta.entryPoint) {
@@ -947,8 +1006,7 @@ export class ComponentRegistry {
         throw new Error(`Svelte SSR build produced no output for ${filename}`);
       }
 
-      // Entry names are hashed, so the on-disk filename can't be derived from the source basename; the metafile key
-      // carries the real one, and only its basename matters here.
+      // Entry names are hashed, so the on-disk filename can't be derived from the source basename; the metafile key carries the real one, and only its basename matters here.
       const outPath = path.join(compileOutDir, path.basename(outKey));
 
       // Dev rebuilds re-import the same on-disk entry, and Bun's query-string cache-busting returns the stale module on
@@ -958,9 +1016,7 @@ export class ComponentRegistry {
 
       const entryInputs = transitiveInputs(outKey);
 
-      // Side-effect CSS imports reachable from this entry. The plugin records
-      // every `.css` load globally; intersect with the entry's transitive
-      // input set to get the per-entry subset.
+      // Side-effect CSS imports reachable from this entry. The plugin records every `.css` load globally; intersect with the entry's transitive input set to get the per-entry subset.
       const entryCss = new Set<string>();
       for (const p of importedCssPaths) {
         if (entryInputs.has(path.resolve(p))) {
@@ -969,13 +1025,10 @@ export class ComponentRegistry {
       }
       this.entryImportedCss.set(filename, entryCss);
 
-      // Dev-watcher dep tracking: every absolute file path that contributed
-      // to this entry's bundle (via its own output and any shared chunks).
+      // Dev-watcher dep tracking: every absolute file path that contributed to this entry's bundle (via its own output and any shared chunks).
       this.entryDeps.set(filename, entryInputs);
 
-      // Per-entry hydratables / CSS components, restricted to files reachable
-      // from this entry. With one batched build, plugin closures see every
-      // entry's files; we narrow back per-entry via the metafile graph.
+      // Per-entry hydratables / CSS components, restricted to files reachable from this entry.
       const entryHydratables: HydratableComponent[] = [];
       const entryServerIslands: ServerIslandComponent[] = [];
       const entryCssComponents = new Set<string>();
@@ -1009,74 +1062,45 @@ export class ComponentRegistry {
         durationMs: compileDuration,
       });
     }
+  }
 
-    mochiEvents.emit('compile:batch-complete', {
-      count: todo.length,
-      durationMs: performance.now() - compileStart,
-    });
-
-    const files = preprocessCacheStats.hits + preprocessCacheStats.misses;
-    if (files > 0) {
-      mochiEvents.emit('preprocess-cache:summary', {
-        hits: preprocessCacheStats.hits,
-        misses: preprocessCacheStats.misses,
-        files,
-      });
-    }
-
-    const compileCacheFiles = compileCacheStats.hits + compileCacheStats.misses;
-    if (compileCacheFiles > 0) {
-      mochiEvents.emit('compile-cache:summary', {
-        hits: compileCacheStats.hits,
-        misses: compileCacheStats.misses,
-        files: compileCacheFiles,
-      });
-    }
-
-    // Write per-component CSS files to disk (minified) and track their URLs
+  // Write per-component scoped CSS to disk (minified) and track the served URLs, skipping components whose raw CSS is unchanged.
+  private async writeComponentCss(cssMap: Map<string, string>): Promise<void> {
     const cssOutDir = `${this.outDir}/svelte-css`;
     const cssTodo = [...cssMap].filter(([componentPath, cssCode]) => this.cssRawByPath.get(componentPath) !== cssCode);
-    if (cssTodo.length > 0) {
-      // Raw filenames carry a path hash: components that share a basename
-      // (e.g. PageOne.svelte in two demo folders) would otherwise collide on
-      // one raw file now that all of them are written before the build.
-      const rawPathFor = (componentPath: string) => `${cssOutDir}/${path.basename(componentPath, '.svelte')}-${Bun.hash(componentPath).toString(36)}.raw.css`;
-      await Promise.all(cssTodo.map(([componentPath, cssCode]) => Bun.write(rawPathFor(componentPath), cssCode)));
-      // One batched Bun.build instead of one per component. Each raw file is a
-      // standalone entrypoint (svelte-emitted CSS has no imports), so in-memory
-      // outputs map back to their entry by basename.
-      const cssResult = await Bun.build({
-        entrypoints: cssTodo.map(([componentPath]) => rawPathFor(componentPath)),
-        minify: true,
-        throw: false,
-      });
-      // Read outputs even when the batch reports failure: a single malformed
-      // file must not drop minification for the whole cohort. Entries without
-      // an output fall back to their raw CSS below.
-      const minifiedByBase = new Map<string, string>();
-      for (const out of cssResult.outputs) {
-        minifiedByBase.set(path.basename(out.path), await out.text());
-      }
-      const cssWrites: Promise<unknown>[] = [];
-      for (const [componentPath, cssCode] of cssTodo) {
-        const minified = minifiedByBase.get(path.basename(rawPathFor(componentPath))) ?? cssCode;
-        const compName = path.basename(componentPath, '.svelte');
-        const hash = Bun.hash(minified).toString(36);
-        const cssFilename = `${compName}-${hash}.css`;
-        const cssUrl = `${this.assetPrefix}/css/${cssFilename}`;
-        cssWrites.push(Bun.write(`${cssOutDir}/${cssFilename}`, minified));
-        this.clientFiles.set(cssUrl, minified);
-        this.cssFileUrls.set(componentPath, cssUrl);
-        this.cssRawByPath.set(componentPath, cssCode);
-      }
-      await Promise.all(cssWrites);
+    if (cssTodo.length === 0) {
+      return;
     }
-
-    if (importedCssPaths.size > 0) {
-      await this.bundleImportedCss(importedCssPaths);
+    // Raw filenames carry a path hash: components that share a basename (e.g. PageOne.svelte in two demo folders) would otherwise collide on one raw file now that all of them are written before the build.
+    const rawPathFor = (componentPath: string) => `${cssOutDir}/${path.basename(componentPath, '.svelte')}-${Bun.hash(componentPath).toString(36)}.raw.css`;
+    await Promise.all(cssTodo.map(([componentPath, cssCode]) => Bun.write(rawPathFor(componentPath), cssCode)));
+    // One batched Bun.build instead of one per component. Each raw file is a standalone entrypoint (svelte-emitted CSS has no imports), so in-memory outputs map back to their entry by basename.
+    const cssResult = await Bun.build({
+      entrypoints: cssTodo.map(([componentPath]) => rawPathFor(componentPath)),
+      minify: true,
+      throw: false,
+    });
+    // Read outputs even when the batch reports failure: a single malformed file must not drop minification for the whole cohort. Entries without an output fall back to their raw CSS below.
+    const minifiedByBase = new Map<string, string>();
+    for (const out of cssResult.outputs) {
+      minifiedByBase.set(path.basename(out.path), await out.text());
     }
+    const cssWrites: Promise<unknown>[] = [];
+    for (const [componentPath, cssCode] of cssTodo) {
+      const minified = minifiedByBase.get(path.basename(rawPathFor(componentPath))) ?? cssCode;
+      const compName = path.basename(componentPath, '.svelte');
+      const hash = Bun.hash(minified).toString(36);
+      const cssFilename = `${compName}-${hash}.css`;
+      const cssUrl = `${this.assetPrefix}/css/${cssFilename}`;
+      cssWrites.push(Bun.write(`${cssOutDir}/${cssFilename}`, minified));
+      this.clientFiles.set(cssUrl, minified);
+      this.cssFileUrls.set(componentPath, cssUrl);
+      this.cssRawByPath.set(componentPath, cssCode);
+    }
+    await Promise.all(cssWrites);
+  }
 
-    // Register server island component paths
+  private registerServerIslandPaths(allServerIslands: ServerIslandComponent[]): void {
     for (const si of allServerIslands) {
       this.serverIslandPaths.set(si.name, si.resolvedPath);
       if (si.exportName !== 'default') {
@@ -1084,11 +1108,6 @@ export class ComponentRegistry {
       } else {
         this.serverIslandExports.delete(si.name);
       }
-    }
-
-    this.hydratableComponents.push(...allHydratables);
-    if (!opts.deferClientBundle && allHydratables.length > 0) {
-      await this.buildClientBundle();
     }
   }
 
@@ -1126,7 +1145,7 @@ export class ComponentRegistry {
     // intact rather than 404-ing island JS until the next good build. CSS entries in `clientFiles` are per-component and
     // stable, so they survive the swap.
     const newClientFiles = new Map<string, string>();
-    const newComponentEntryUrls = new Map<string, string>();
+    let newComponentEntryUrls = new Map<string, string>();
     let newIslandBootstrapUrl: string | null = null;
 
     // The debug bar builds standalone (production-mode Svelte, own runtime) and only once per process — framework
@@ -1142,23 +1161,7 @@ export class ComponentRegistry {
     // file's module identity consistent across its three uses: `Bun.build` entrypoint, `filesMap` key, import specifier.
     const hydratableIslandPath = toPosixPath(path.join(srcDir, 'web-components', 'HydratableIsland.ts'));
 
-    // Generate per-component virtual entry points
-    const entrypoints: string[] = [hydratableIslandPath];
-    const filesMap: Record<string, string> = {};
-
-    for (const [, comp] of unique) {
-      const entryName = `_hydrate-${comp.name}.js`;
-      const entryPath = toPosixPath(path.join(srcDir, entryName));
-      // String import specifiers (`import { "x" as y }`) are valid ESM and cover
-      // export names that aren't identifiers.
-      const importStmt =
-        comp.exportName === 'default'
-          ? `import ${comp.name} from "${toPosixPath(comp.resolvedPath)}";`
-          : `import { ${JSON.stringify(comp.exportName)} as ${comp.name} } from "${toPosixPath(comp.resolvedPath)}";`;
-      const entrySource = `import { registerComponent } from "${hydratableIslandPath}";\n${importStmt}\nregisterComponent("${comp.name}", ${comp.name});\n`;
-      entrypoints.push(entryPath);
-      filesMap[entryPath] = entrySource;
-    }
+    const { entrypoints, filesMap } = buildIslandEntrypoints(unique, hydratableIslandPath, srcDir);
 
     const imageAssetLoader = createImageAssetLoader({
       outDir: this.outDir,
@@ -1273,56 +1276,83 @@ export class ComponentRegistry {
       newClientFiles.set(`${this.assetPrefix}/client/${filename}`, await output.text());
     }
 
-    // Map entry-point outputs back to components using metafile.entryPoint
-    // This avoids fragile filename matching.
+    // Map entry-point outputs back to components using metafile.entryPoint, avoiding fragile filename matching.
     if (result.metafile) {
-      // entryPath → component name, with `null` for the bootstrap. Both sides go through the same
-      // `toPosixPath(path.resolve(...))` because the entrypoints mix POSIX and native paths while Bun's metafile
-      // entryPoint is native; on Windows the formats diverge, the bootstrap lookup misses, and the hydration `<script>` disappears.
-      const entryToComponent = new Map<string, string | null>();
-      entryToComponent.set(toPosixPath(path.resolve(hydratableIslandPath)), null);
-      for (const [, comp] of unique) {
-        const entryPath = toPosixPath(path.resolve(path.join(srcDir, `_hydrate-${comp.name}.js`)));
-        entryToComponent.set(entryPath, comp.name);
-      }
-
-      for (const [outPath, outMeta] of Object.entries(result.metafile.outputs)) {
-        if (!outMeta.entryPoint) {
-          continue;
-        }
-        const resolvedEntry = toPosixPath(path.resolve(outMeta.entryPoint));
-        const compName = entryToComponent.get(resolvedEntry);
-        const url = `${this.assetPrefix}/client/${path.basename(outPath)}`;
-        if (compName === null) {
-          newIslandBootstrapUrl = url;
-        } else if (compName !== undefined) {
-          newComponentEntryUrls.set(compName, url);
-        }
-      }
-      const outputStats = Object.entries(result.metafile.outputs).map(([outPath, outMeta]) => {
-        const inputs = Object.entries(outMeta.inputs).map(([inputPath, inputMeta]) => ({
-          path: toPosixPath(inputPath).replace(toPosixPath(path.resolve('.')) + '/', ''),
-          size: inputMeta.bytesInOutput,
-        }));
-        inputs.sort((a, b) => b.size - a.size);
-        const imports = (outMeta.imports ?? []).filter((i) => i.kind === 'import-statement').map((i) => path.basename(i.path));
-        return {
-          name: path.basename(outPath),
-          size: outMeta.bytes,
-          inputs,
-          imports,
-        };
-      });
-      outputStats.sort((a, b) => b.size - a.size);
-      this.clientStats = { outputs: outputStats };
-      this.warnOnRetainedComponentStubs(result.metafile);
-      this.warnOnBarrelImports(result.metafile);
+      const urls = this.processClientMetafile(result.metafile, unique, hydratableIslandPath, srcDir);
+      newComponentEntryUrls = urls.componentEntryUrls;
+      newIslandBootstrapUrl = urls.islandBootstrapUrl;
     }
 
-    // Swap the freshly-built maps into the instance fields now the build has
-    // succeeded. Replace only the client-prefix JS entries; the per-component CSS
-    // entries in `clientFiles` are stable and preserved.
     const clientPrefix = `${this.assetPrefix}/client/`;
+    this.swapClientBuildOutputs(clientPrefix, newClientFiles, newComponentEntryUrls, newIslandBootstrapUrl);
+    await this.attachDebugBarBundle(clientPrefix);
+
+    const outputBytes = this.clientStats?.outputs.reduce((sum, o) => sum + o.size, 0) ?? 0;
+    mochiEvents.emit('client-bundle:complete', {
+      entryCount: entrypoints.length,
+      outputBytes,
+      durationMs: performance.now() - bundleStart,
+    });
+
+    emitCacheSummary('compile-cache:summary', compileCacheStats);
+  }
+
+  // Map each client-build entry-point output back to its component (or the bootstrap) via metafile.entryPoint, avoiding
+  // fragile filename matching, and record the per-output byte stats for the debug bar. Both sides go through the same
+  // `toPosixPath(path.resolve(...))` because the entrypoints mix POSIX and native paths while Bun's metafile entryPoint
+  // is native; on Windows the formats diverge, the bootstrap lookup misses, and the hydration `<script>` disappears.
+  private processClientMetafile(
+    metafile: ClientBuildMetafile,
+    unique: Map<string, HydratableComponent>,
+    hydratableIslandPath: string,
+    srcDir: string,
+  ): { componentEntryUrls: Map<string, string>; islandBootstrapUrl: string | null } {
+    const entryToComponent = new Map<string, string | null>();
+    entryToComponent.set(toPosixPath(path.resolve(hydratableIslandPath)), null);
+    for (const [, comp] of unique) {
+      const entryPath = toPosixPath(path.resolve(path.join(srcDir, `_hydrate-${comp.name}.js`)));
+      entryToComponent.set(entryPath, comp.name);
+    }
+
+    const componentEntryUrls = new Map<string, string>();
+    let islandBootstrapUrl: string | null = null;
+    for (const [outPath, outMeta] of Object.entries(metafile.outputs)) {
+      if (!outMeta.entryPoint) {
+        continue;
+      }
+      const resolvedEntry = toPosixPath(path.resolve(outMeta.entryPoint));
+      const compName = entryToComponent.get(resolvedEntry);
+      const url = `${this.assetPrefix}/client/${path.basename(outPath)}`;
+      if (compName === null) {
+        islandBootstrapUrl = url;
+      } else if (compName !== undefined) {
+        componentEntryUrls.set(compName, url);
+      }
+    }
+    const outputStats = Object.entries(metafile.outputs).map(([outPath, outMeta]) => {
+      const inputs = Object.entries(outMeta.inputs).map(([inputPath, inputMeta]) => ({
+        path: toPosixPath(inputPath).replace(toPosixPath(path.resolve('.')) + '/', ''),
+        size: inputMeta.bytesInOutput,
+      }));
+      inputs.sort((a, b) => b.size - a.size);
+      const imports = (outMeta.imports ?? []).filter((i) => i.kind === 'import-statement').map((i) => path.basename(i.path));
+      return { name: path.basename(outPath), size: outMeta.bytes, inputs, imports };
+    });
+    outputStats.sort((a, b) => b.size - a.size);
+    this.clientStats = { outputs: outputStats };
+    this.warnOnRetainedComponentStubs(metafile);
+    this.warnOnBarrelImports(metafile);
+    return { componentEntryUrls, islandBootstrapUrl };
+  }
+
+  // Swap the freshly-built maps into the instance fields now the build has succeeded. Replace only the client-prefix JS
+  // entries; the per-component CSS entries in `clientFiles` are stable and preserved.
+  private swapClientBuildOutputs(
+    clientPrefix: string,
+    newClientFiles: Map<string, string>,
+    newComponentEntryUrls: Map<string, string>,
+    newIslandBootstrapUrl: string | null,
+  ): void {
     // Snapshot the keys: the loop deletes from `clientFiles` while iterating it.
     // oxlint-disable-next-line no-useless-spread
     for (const key of [...this.clientFiles.keys()]) {
@@ -1338,13 +1368,14 @@ export class ComponentRegistry {
       this.componentEntryUrls.set(k, v);
     }
     this.islandBootstrapUrl = newIslandBootstrapUrl;
+  }
 
+  private async attachDebugBarBundle(clientPrefix: string): Promise<void> {
     if (this.debugBarBuildPromise && !this.debugBarBundle) {
       try {
         this.debugBarBundle = await this.debugBarBuildPromise;
       } catch (err) {
-        // A rejected promise must not be memoized (the next rebuild retries), and a broken debug bar must not take
-        // down page serving.
+        // A rejected promise must not be memoized (the next rebuild retries), and a broken debug bar must not take down page serving.
         this.debugBarBuildPromise = null;
         logger.warn(`[mochi] debug bar build failed: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -1355,22 +1386,6 @@ export class ComponentRegistry {
       this.debugBarUrl = debugBarUrl;
     } else {
       this.debugBarUrl = null;
-    }
-
-    const outputBytes = this.clientStats?.outputs.reduce((sum, o) => sum + o.size, 0) ?? 0;
-    mochiEvents.emit('client-bundle:complete', {
-      entryCount: entrypoints.length,
-      outputBytes,
-      durationMs: performance.now() - bundleStart,
-    });
-
-    const compileCacheFiles = compileCacheStats.hits + compileCacheStats.misses;
-    if (compileCacheFiles > 0) {
-      mochiEvents.emit('compile-cache:summary', {
-        hits: compileCacheStats.hits,
-        misses: compileCacheStats.misses,
-        files: compileCacheFiles,
-      });
     }
   }
 
@@ -1497,23 +1512,7 @@ export class ComponentRegistry {
       return out;
     };
 
-    const renderOptions: {
-      props?: Record<string, unknown>;
-      transformError: typeof transformError;
-      idPrefix?: string;
-      context?: Map<unknown, unknown>;
-    } = {
-      transformError,
-    };
-    if (props) {
-      renderOptions.props = props;
-    }
-    if (opts?.idPrefix) {
-      renderOptions.idPrefix = opts.idPrefix;
-    }
-    if (opts?.context) {
-      renderOptions.context = opts.context;
-    }
+    const renderOptions = buildRenderOptions(props, opts, transformError);
 
     // Each render owns the whole `islandProps` map: `emitIslandProps` fills it during this `render()` and the
     // HTMLRewriter pass below drains it, so clearing up front keeps sequential same-ctx renders self-contained — an
@@ -1521,169 +1520,63 @@ export class ComponentRegistry {
     const ctx = requestContext.getStore();
     ctx?.islandProps.clear();
 
-    const component = opts?.exportName && opts.exportName !== 'default' ? mod[opts.exportName] : mod.default;
-    if (!component) {
-      throw new Error(
-        `renderComponent: ${filename} has no export "${opts?.exportName ?? 'default'}" — the compiled module and the island registry disagree (stale manifest or removed export).`,
-      );
-    }
+    const component = resolveExportedComponent(mod, opts?.exportName, filename);
     const { body, head } = await render(component, renderOptions);
 
-    let output = body;
-
-    // Track which islands are lazy (have CSS_URL placeholders) during replacement
-    const lazyIslandPaths = new Set<string>();
-    let hasServerCssPlaceholders = false;
-    // Placeholders only exist in island wrapper attributes, so one probe spares island-free pages four full-body scans.
-    if (output.includes('__MOCHI_')) {
-      output = output.replace(/__MOCHI_COMPONENT_URL__(\w+)__/g, (_, name: string) => this.componentEntryUrls.get(name) ?? '');
-
-      output = output.replace(/__MOCHI_CSS_URL__(\w+)__/g, (_, name: string) => {
-        const h = hydratablesByName.get(name);
-        if (h) {
-          lazyIslandPaths.add(h.resolvedPath);
-          return this.cssFileUrls.get(h.resolvedPath) ?? '';
-        }
-        return '';
-      });
-
-      output = output.replace(/__MOCHI_SERVER_CSS_URL__(\w+)__/g, (_, name: string) => {
-        hasServerCssPlaceholders = true;
-        const resolvedPath = this.serverIslandPaths.get(name);
-        return resolvedPath ? (this.cssFileUrls.get(resolvedPath) ?? '') : '';
-      });
-
-      output = output.replaceAll('__MOCHI_ASSET_PREFIX__', this.assetPrefix);
-    }
+    const placeholders = this.resolveIslandPlaceholders(body, hydratablesByName);
+    let output = placeholders.output;
+    const lazyIslandPaths = placeholders.lazyIslandPaths;
 
     const shouldStrip = opts?.stripMarkers !== false && hydratables.length === 0;
-    const hasIslandsOrServerIslands = hydratables.length > 0 || hasServerCssPlaceholders;
+    const hasIslandsOrServerIslands = hydratables.length > 0 || placeholders.hasServerCssPlaceholders;
 
-    // Indexed by ref id so the rewriter below emits each payload as a `<script type="application/json">` block just
-    // before the first island referencing it — HTMLRewriter visits elements in document order, so the first callback for
-    // a given `props-ref` is that payload's first island. Byte-identical payloads share one block, tagged `data-shared`.
-    const propsById = new Map<string, { json: string; emitCount: number }>();
-    if (ctx) {
-      for (const [json, entry] of ctx.islandProps) {
-        propsById.set(entry.id, { json, emitCount: entry.emitCount });
-      }
-    }
-    const emittedProps = new Set<string>();
+    // Indexed by ref id so the rewriter emits each payload as a `<script type="application/json">` block just before the
+    // first island referencing it. Byte-identical payloads share one block, tagged `data-shared`.
+    const propsById = collectIslandPropsById(ctx);
 
-    // Single HTMLRewriter pass: inject island props blocks, collect rendered
-    // island names, detect server islands, and conditionally strip page-level
-    // hydration markers.
-    const renderedIslandNames = new Set<string>();
-    let hasServerIslands = false;
-    if (hasIslandsOrServerIslands || shouldStrip) {
-      let islandDepth = 0;
-      const rewriter = new HTMLRewriter();
-      if (hasIslandsOrServerIslands) {
-        rewriter
-          .on('mochi-hydratable-island', {
-            element(el) {
-              islandDepth++;
-              el.onEndTag(() => {
-                islandDepth--;
-              });
-              const raw = el.getAttribute('component-name');
-              if (raw) {
-                renderedIslandNames.add(raw);
-              }
-              injectIslandPropsBlock(el, propsById, emittedProps);
-            },
-          })
-          .on('mochi-server-island', {
-            element(el) {
-              islandDepth++;
-              el.onEndTag(() => {
-                islandDepth--;
-              });
-              hasServerIslands = true;
-            },
-          });
-      }
-      if (shouldStrip) {
-        rewriter.onDocument({
-          comments(comment) {
-            if (islandDepth === 0 && isSvelteMarker(comment.text)) {
-              comment.remove();
-            }
-          },
-        });
-      }
-      output = rewriter.transform(output);
-    }
+    const rewritten = this.runIslandRewriter(output, hasIslandsOrServerIslands, shouldStrip, propsById);
+    output = rewritten.output;
+    const renderedIslandNames = rewritten.renderedIslandNames;
+    const hasServerIslands = rewritten.hasServerIslands;
 
-    let debugBarData: RenderResult['debugBarData'];
-    if (ctx?.debugBarData) {
-      debugBarData = { ...ctx.debugBarData };
+    const debugBarData = this.buildRenderDebugBarData(ctx, hydratables.length > 0, renderedIslandNames);
 
-      if (this.debugBarEnabled && this.clientStats) {
-        const urlToComponent = new Map<string, string>();
-        for (const [name, url] of this.componentEntryUrls) {
-          urlToComponent.set(url, name);
-        }
-        // Island identity keys are `<localName>_<hash>`; show the bare local name
-        // in the debug bar's bundle list instead of the hashed key.
-        const displayByKey = new Map(this.hydratableComponents.map((h) => [h.name, h.displayName]));
-        const pageHasIslands = hydratables.length > 0;
-        const bundles: NonNullable<typeof debugBarData.bundles> = [];
-        const outputByName = new Map(this.clientStats.outputs.map((o) => [o.name, o]));
+    const { cssUrls, fontPreloadUrls } = this.collectRenderCssUrls({ entryKey, cssComponents, islandPaths, hydratablesByPath, lazyIslandPaths, renderedIslandNames });
 
-        // Code splitting hoists anything two entries share into a `chunk-*.js`, but a chunk only
-        // reaches the browser if one of *this page's* entries imports it. Walk the import graph
-        // from the bootstrap plus the islands actually rendered here, so the panel reports (and
-        // totals) the bytes the page really ships rather than every chunk in the build.
-        const clientPrefix = `${this.assetPrefix}/client/`;
-        const entryRoots: string[] = [];
-        if (pageHasIslands && this.islandBootstrapUrl) {
-          entryRoots.push(this.islandBootstrapUrl.slice(clientPrefix.length));
-        }
-        for (const name of renderedIslandNames) {
-          const entryUrl = this.componentEntryUrls.get(name);
-          if (entryUrl) {
-            entryRoots.push(entryUrl.slice(clientPrefix.length));
-          }
-        }
-        const reachable = ComponentRegistry.reachableOutputNames(entryRoots, outputByName);
-        for (const output of this.clientStats.outputs) {
-          const url = `${this.assetPrefix}/client/${output.name}`;
-          if (url === this.islandBootstrapUrl) {
-            if (!pageHasIslands) {
-              continue;
-            }
-            const wcInputs = this.collectWebComponentInputs(output, outputByName);
-            const wcSize = wcInputs.reduce((sum, i) => sum + i.size, 0);
-            bundles.push({
-              url,
-              label: 'Island runtime',
-              sizeBytes: wcSize,
-              kind: 'bootstrap',
-              inputs: cleanInputs(wcInputs),
-            });
-          } else {
-            const compName = urlToComponent.get(url);
-            const cleaned = cleanInputs(output.inputs);
-            const nonWc = cleaned.filter((i) => !i.path.includes('web-components/'));
-            const wcDeduct = cleaned.reduce((s, i) => s + (i.path.includes('web-components/') ? i.size : 0), 0);
-            if (compName) {
-              if (!renderedIslandNames.has(compName)) {
-                continue;
-              }
-              bundles.push({ url, label: displayByKey.get(compName) ?? compName, sizeBytes: output.size - wcDeduct, kind: 'island', inputs: nonWc });
-            } else {
-              if (!reachable.has(output.name)) {
-                continue;
-              }
-              bundles.push({ url, label: output.name, sizeBytes: output.size - wcDeduct, kind: 'chunk', inputs: nonWc });
-            }
-          }
-        }
-        debugBarData.bundles = bundles;
-      }
-    }
+    // Collapse the doubled-marker Svelte SSR bug (`$state` arrays + `{@attach}`); only island wrappers can carry it,
+    // so island-free renders skip the scan.
+    const normalized = hydratables.length > 0 ? normalizeIslandHydrationMarkers(output) : output;
+    const headStr = head ?? '';
+    return {
+      body: normalized,
+      head: shouldStrip ? stripHydrationMarkers(headStr) : headStr,
+      cssUrls,
+      fontPreloadUrls,
+      // Gated on wrappers actually present in the output — the entry's compile-time hydratables may all sit in branches
+      // this render never took.
+      bootstrapUrl: renderedIslandNames.size > 0 ? this.islandBootstrapUrl : null,
+      hasServerIslands,
+      debugBarData,
+    };
+  }
 
+  // Scoped CSS URLs for this render: each component's own stylesheet, minus lazy islands and islands that didn't render,
+  // plus the side-effect CSS imports reachable from the entry and their font preloads.
+  private collectRenderCssUrls({
+    entryKey,
+    cssComponents,
+    islandPaths,
+    hydratablesByPath,
+    lazyIslandPaths,
+    renderedIslandNames,
+  }: {
+    entryKey: string;
+    cssComponents: Set<string>;
+    islandPaths: Set<string>;
+    hydratablesByPath: Map<string, HydratableComponent[]>;
+    lazyIslandPaths: Set<string>;
+    renderedIslandNames: Set<string>;
+  }): { cssUrls: string[]; fontPreloadUrls: string[] } {
     const cssUrls: string[] = [];
     for (const componentPath of cssComponents) {
       const cssUrl = this.cssFileUrls.get(componentPath);
@@ -1702,10 +1595,7 @@ export class ComponentRegistry {
       cssUrls.push(cssUrl);
     }
 
-    // Append URLs for side-effect CSS imports reachable from this entry
-    // (e.g. @fontsource fonts imported in a page's <script>).
-    // Deduped: two CSS imports sharing a font produce the same content-hashed URL, and a duplicate would burn one of
-    // the FONT_PRELOAD_MAX slots.
+    // Deduped: two CSS imports sharing a font produce the same content-hashed URL, and a duplicate would burn one of the FONT_PRELOAD_MAX slots.
     const fontPreloadUrls = new Set<string>();
     const imported = this.entryImportedCss.get(entryKey);
     if (imported) {
@@ -1722,22 +1612,163 @@ export class ComponentRegistry {
         }
       }
     }
+    return { cssUrls, fontPreloadUrls: [...fontPreloadUrls] };
+  }
 
-    // Collapse the doubled-marker Svelte SSR bug (`$state` arrays + `{@attach}`); only island wrappers can carry it,
-    // so island-free renders skip the scan.
-    const normalized = hydratables.length > 0 ? normalizeIslandHydrationMarkers(output) : output;
-    const headStr = head ?? '';
-    return {
-      body: normalized,
-      head: shouldStrip ? stripHydrationMarkers(headStr) : headStr,
-      cssUrls,
-      fontPreloadUrls: [...fontPreloadUrls],
-      // Gated on wrappers actually present in the output — the entry's compile-time hydratables may all sit in branches
-      // this render never took.
-      bootstrapUrl: renderedIslandNames.size > 0 ? this.islandBootstrapUrl : null,
-      hasServerIslands,
-      debugBarData,
-    };
+  // Substitute the `__MOCHI_*__` island-wrapper placeholders with resolved URLs, tracking lazy islands and whether any
+  // server-island CSS placeholder appeared. Placeholders only exist in island wrappers, so one probe spares island-free
+  // pages four full-body scans.
+  private resolveIslandPlaceholders(
+    body: string,
+    hydratablesByName: Map<string, HydratableComponent>,
+  ): { output: string; lazyIslandPaths: Set<string>; hasServerCssPlaceholders: boolean } {
+    const lazyIslandPaths = new Set<string>();
+    let hasServerCssPlaceholders = false;
+    let output = body;
+    if (!output.includes('__MOCHI_')) {
+      return { output, lazyIslandPaths, hasServerCssPlaceholders };
+    }
+    output = output.replace(/__MOCHI_COMPONENT_URL__(\w+)__/g, (_, name: string) => this.componentEntryUrls.get(name) ?? '');
+    output = output.replace(/__MOCHI_CSS_URL__(\w+)__/g, (_, name: string) => {
+      const h = hydratablesByName.get(name);
+      if (h) {
+        lazyIslandPaths.add(h.resolvedPath);
+        return this.cssFileUrls.get(h.resolvedPath) ?? '';
+      }
+      return '';
+    });
+    output = output.replace(/__MOCHI_SERVER_CSS_URL__(\w+)__/g, (_, name: string) => {
+      hasServerCssPlaceholders = true;
+      const resolvedPath = this.serverIslandPaths.get(name);
+      return resolvedPath ? (this.cssFileUrls.get(resolvedPath) ?? '') : '';
+    });
+    output = output.replaceAll('__MOCHI_ASSET_PREFIX__', this.assetPrefix);
+    return { output, lazyIslandPaths, hasServerCssPlaceholders };
+  }
+
+  // Single HTMLRewriter pass: inject island props blocks, collect rendered island names, detect server islands, and
+  // conditionally strip page-level hydration markers.
+  private runIslandRewriter(
+    output: string,
+    hasIslandsOrServerIslands: boolean,
+    shouldStrip: boolean,
+    propsById: Map<string, { json: string; emitCount: number }>,
+  ): { output: string; renderedIslandNames: Set<string>; hasServerIslands: boolean } {
+    const renderedIslandNames = new Set<string>();
+    let hasServerIslands = false;
+    if (!(hasIslandsOrServerIslands || shouldStrip)) {
+      return { output, renderedIslandNames, hasServerIslands };
+    }
+    const emittedProps = new Set<string>();
+    let islandDepth = 0;
+    const rewriter = new HTMLRewriter();
+    if (hasIslandsOrServerIslands) {
+      rewriter
+        .on('mochi-hydratable-island', {
+          element(el) {
+            islandDepth++;
+            el.onEndTag(() => {
+              islandDepth--;
+            });
+            const raw = el.getAttribute('component-name');
+            if (raw) {
+              renderedIslandNames.add(raw);
+            }
+            injectIslandPropsBlock(el, propsById, emittedProps);
+          },
+        })
+        .on('mochi-server-island', {
+          element(el) {
+            islandDepth++;
+            el.onEndTag(() => {
+              islandDepth--;
+            });
+            hasServerIslands = true;
+          },
+        });
+    }
+    if (shouldStrip) {
+      rewriter.onDocument({
+        comments(comment) {
+          if (islandDepth === 0 && isSvelteMarker(comment.text)) {
+            comment.remove();
+          }
+        },
+      });
+    }
+    return { output: rewriter.transform(output), renderedIslandNames, hasServerIslands };
+  }
+
+  private buildRenderDebugBarData(ctx: ReturnType<typeof requestContext.getStore>, pageHasIslands: boolean, renderedIslandNames: Set<string>): RenderResult['debugBarData'] {
+    if (!ctx?.debugBarData) {
+      return undefined;
+    }
+    const debugBarData: RenderResult['debugBarData'] = { ...ctx.debugBarData };
+    if (this.debugBarEnabled && this.clientStats) {
+      debugBarData.bundles = this.computeDebugBundles(this.clientStats, pageHasIslands, renderedIslandNames);
+    }
+    return debugBarData;
+  }
+
+  // Build the debug bar's per-bundle byte breakdown for this render: only the chunks this page actually ships, walking
+  // the import graph from the bootstrap plus the islands rendered here.
+  private computeDebugBundles(
+    clientStats: NonNullable<ComponentRegistry['clientStats']>,
+    pageHasIslands: boolean,
+    renderedIslandNames: Set<string>,
+  ): NonNullable<NonNullable<RenderResult['debugBarData']>['bundles']> {
+    const urlToComponent = new Map<string, string>();
+    for (const [name, url] of this.componentEntryUrls) {
+      urlToComponent.set(url, name);
+    }
+    // Island identity keys are `<localName>_<hash>`; show the bare local name in the debug bar's bundle list instead of the hashed key.
+    const displayByKey = new Map(this.hydratableComponents.map((h) => [h.name, h.displayName]));
+    const bundles: NonNullable<NonNullable<RenderResult['debugBarData']>['bundles']> = [];
+    const outputByName = new Map(clientStats.outputs.map((o) => [o.name, o]));
+
+    // Code splitting hoists anything two entries share into a `chunk-*.js`, but a chunk only reaches the browser if one
+    // of *this page's* entries imports it. Walk the import graph from the bootstrap plus the islands actually rendered
+    // here, so the panel reports the bytes the page really ships rather than every chunk in the build.
+    const clientPrefix = `${this.assetPrefix}/client/`;
+    const entryRoots: string[] = [];
+    if (pageHasIslands && this.islandBootstrapUrl) {
+      entryRoots.push(this.islandBootstrapUrl.slice(clientPrefix.length));
+    }
+    for (const name of renderedIslandNames) {
+      const entryUrl = this.componentEntryUrls.get(name);
+      if (entryUrl) {
+        entryRoots.push(entryUrl.slice(clientPrefix.length));
+      }
+    }
+    const reachable = ComponentRegistry.reachableOutputNames(entryRoots, outputByName);
+    for (const output of clientStats.outputs) {
+      const url = `${this.assetPrefix}/client/${output.name}`;
+      if (url === this.islandBootstrapUrl) {
+        if (!pageHasIslands) {
+          continue;
+        }
+        const wcInputs = this.collectWebComponentInputs(output, outputByName);
+        const wcSize = wcInputs.reduce((sum, i) => sum + i.size, 0);
+        bundles.push({ url, label: 'Island runtime', sizeBytes: wcSize, kind: 'bootstrap', inputs: cleanInputs(wcInputs) });
+      } else {
+        const compName = urlToComponent.get(url);
+        const cleaned = cleanInputs(output.inputs);
+        const nonWc = cleaned.filter((i) => !i.path.includes('web-components/'));
+        const wcDeduct = cleaned.reduce((s, i) => s + (i.path.includes('web-components/') ? i.size : 0), 0);
+        if (compName) {
+          if (!renderedIslandNames.has(compName)) {
+            continue;
+          }
+          bundles.push({ url, label: displayByKey.get(compName) ?? compName, sizeBytes: output.size - wcDeduct, kind: 'island', inputs: nonWc });
+        } else {
+          if (!reachable.has(output.name)) {
+            continue;
+          }
+          bundles.push({ url, label: output.name, sizeBytes: output.size - wcDeduct, kind: 'chunk', inputs: nonWc });
+        }
+      }
+    }
+    return bundles;
   }
 
   /**
@@ -1985,6 +2016,45 @@ export class ComponentRegistry {
     });
   }
 
+  // Write each extracted font to a content-hashed disk path (once, atomically across parallel bundles) and return the
+  // marker→URL map for `url()` substitution plus the preload-worthy URLs.
+  private async writeExtractedFonts(fonts: SurvivingFont[], cssPath: string): Promise<{ preloadUrls: string[]; fontUrlByMarker: Map<string, string> }> {
+    const preloadUrls: string[] = [];
+    const fontUrlByMarker = new Map<string, string>();
+    for (const font of fonts) {
+      const bytes = font.ref.bytes ?? (await Bun.file(font.ref.path).bytes());
+      if (fontChangedSinceResolved(font.ref, bytes)) {
+        const message = `the source font ${relForDisplay(font.ref.path)} was ${font.ref.size} bytes when the bundle resolved it but read back ${bytes.length}, so it changed mid-build. If this persists the file is corrupt.`;
+        logger.error(`CSS bundle for ${cssPath}: ${message}`);
+        this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
+      }
+      const fileName = fontAssetFileName(font.ref, bytes);
+      const diskPath = path.join(this.outDir, 'fonts', fileName);
+      const fontUrl = `${this.assetPrefix}/fonts/${fileName}`;
+      fontUrlByMarker.set(font.markerUri, fontUrl);
+      if (font.preload) {
+        preloadUrls.push(fontUrl);
+      }
+      // Registering before the first await keeps the check-then-set atomic across the concurrently bundling
+      // entrypoints, so a font shared between stylesheets is written and counted in the stats exactly once.
+      if (!this.fontAssets.has(fontUrl)) {
+        this.fontAssets.set(fontUrl, { diskPath, contentType: font.contentType });
+        this.importedCssStats.push({
+          name: path.posix.join('fonts', fileName),
+          size: bytes.length,
+          inputs: [{ path: relForDisplay(font.ref.path), size: bytes.length }],
+          imports: [],
+        });
+        // The content-hashed name means an existing file already holds these exact bytes; skipping the rewrite
+        // keeps a dev-rebundle from truncating a file a concurrent request may be reading.
+        if (!(await Bun.file(diskPath).exists())) {
+          await Bun.write(diskPath, bytes);
+        }
+      }
+    }
+    return { preloadUrls, fontUrlByMarker };
+  }
+
   private async bundleImportedCssBatch(cssPaths: Iterable<string>): Promise<void> {
     const importCssOutDir = path.resolve(`${this.outDir}/import-css`);
     const todo = [...cssPaths].filter((p) => !this.importedCssUrls.has(p));
@@ -2070,39 +2140,7 @@ export class ComponentRegistry {
           logger.error(`CSS bundle for ${cssPath}: ${message}`);
           this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
         }
-        const preloadUrls: string[] = [];
-        const fontUrlByMarker = new Map<string, string>();
-        for (const font of fontPass.fonts) {
-          const bytes = font.ref.bytes ?? (await Bun.file(font.ref.path).bytes());
-          if (fontChangedSinceResolved(font.ref, bytes)) {
-            const message = `the source font ${relForDisplay(font.ref.path)} was ${font.ref.size} bytes when the bundle resolved it but read back ${bytes.length}, so it changed mid-build. If this persists the file is corrupt.`;
-            logger.error(`CSS bundle for ${cssPath}: ${message}`);
-            this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
-          }
-          const fileName = fontAssetFileName(font.ref, bytes);
-          const diskPath = path.join(this.outDir, 'fonts', fileName);
-          const fontUrl = `${this.assetPrefix}/fonts/${fileName}`;
-          fontUrlByMarker.set(font.markerUri, fontUrl);
-          if (font.preload) {
-            preloadUrls.push(fontUrl);
-          }
-          // Registering before the first await keeps the check-then-set atomic across the concurrently bundling
-          // entrypoints, so a font shared between stylesheets is written and counted in the stats exactly once.
-          if (!this.fontAssets.has(fontUrl)) {
-            this.fontAssets.set(fontUrl, { diskPath, contentType: font.contentType });
-            this.importedCssStats.push({
-              name: path.posix.join('fonts', fileName),
-              size: bytes.length,
-              inputs: [{ path: relForDisplay(font.ref.path), size: bytes.length }],
-              imports: [],
-            });
-            // The content-hashed name means an existing file already holds these exact bytes; skipping the rewrite
-            // keeps a dev-rebundle from truncating a file a concurrent request may be reading.
-            if (!(await Bun.file(diskPath).exists())) {
-              await Bun.write(diskPath, bytes);
-            }
-          }
-        }
+        const { preloadUrls, fontUrlByMarker } = await this.writeExtractedFonts(fontPass.fonts, cssPath);
         cssText = substituteFontUrls(cssText, fontUrlByMarker);
         for (const font of fontPass.fonts) {
           if (cssText.includes(font.ref.markerB64)) {
@@ -2405,7 +2443,32 @@ export class ComponentRegistry {
       registry.clientFiles.set(urlPath, content);
     }
 
-    // Restore side-effect CSS import mappings
+    ComponentRegistry.restoreManifestCssMaps(registry, manifest, resolveManifestPath);
+
+    // Load SSR modules and populate compiledComponents
+    for (const [filename, entry] of Object.entries(manifest.components)) {
+      const modulePath = resolveManifestPath(entry.ssrModule);
+      const mod = await import(Bun.pathToFileURL(modulePath).href);
+      // Manifests written before exportName existed omit it — those islands are
+      // all default imports, so normalize before anything indexes on it.
+      const hydratables = entry.hydratables.map((h) => ({ ...h, exportName: h.exportName ?? 'default', resolvedPath: decodeSourcePath(h.resolvedPath) }));
+      registry.compiledComponents.set(decodeSourcePath(filename), {
+        module: mod,
+        cssComponents: new Set(entry.cssComponents.map((p) => decodeSourcePath(p))),
+        hydratables,
+        ...indexHydratables(hydratables),
+        ssrPath: modulePath,
+      });
+      registry.hydratableComponents.push(...hydratables);
+    }
+
+    await ComponentRegistry.restoreManifestIslandAssets(registry, manifest, resolveManifestPath);
+
+    return registry;
+  }
+
+  // Restore side-effect CSS import mappings, font assets, and per-entry CSS from the manifest.
+  private static restoreManifestCssMaps(registry: ComponentRegistry, manifest: MochiManifest, resolveManifestPath: (p: string) => string): void {
     if (manifest.importedCssUrls) {
       for (const [cssPath, url] of Object.entries(manifest.importedCssUrls)) {
         registry.importedCssUrls.set(decodeSourcePath(cssPath), url);
@@ -2431,25 +2494,10 @@ export class ComponentRegistry {
         registry.entryImportedCss.set(decodeSourcePath(entryPath), new Set(cssPaths.map((p) => decodeSourcePath(p))));
       }
     }
+  }
 
-    // Load SSR modules and populate compiledComponents
-    for (const [filename, entry] of Object.entries(manifest.components)) {
-      const modulePath = resolveManifestPath(entry.ssrModule);
-      const mod = await import(Bun.pathToFileURL(modulePath).href);
-      // Manifests written before exportName existed omit it — those islands are
-      // all default imports, so normalize before anything indexes on it.
-      const hydratables = entry.hydratables.map((h) => ({ ...h, exportName: h.exportName ?? 'default', resolvedPath: decodeSourcePath(h.resolvedPath) }));
-      registry.compiledComponents.set(decodeSourcePath(filename), {
-        module: mod,
-        cssComponents: new Set(entry.cssComponents.map((p) => decodeSourcePath(p))),
-        hydratables,
-        ...indexHydratables(hydratables),
-        ssrPath: modulePath,
-      });
-      registry.hydratableComponents.push(...hydratables);
-    }
-
-    // Load server island paths from manifest
+  // Restore server-island paths/exports, locally-imported image assets, and the prebuilt ServerIsland inline script.
+  private static async restoreManifestIslandAssets(registry: ComponentRegistry, manifest: MochiManifest, resolveManifestPath: (p: string) => string): Promise<void> {
     if (manifest.serverIslandPaths) {
       for (const [name, resolvedPath] of Object.entries(manifest.serverIslandPaths)) {
         registry.serverIslandPaths.set(name, decodeSourcePath(resolvedPath));
@@ -2461,8 +2509,7 @@ export class ComponentRegistry {
       }
     }
 
-    // Restore locally-imported image assets and repopulate the global request-time
-    // registry so the serving process can stream/transform them from disk.
+    // Restore locally-imported image assets and repopulate the global request-time registry so the serving process can stream/transform them from disk.
     if (manifest.localImageAssets) {
       for (const [url, asset] of Object.entries(manifest.localImageAssets)) {
         const diskPath = resolveManifestPath(asset.diskPath);
@@ -2475,7 +2522,72 @@ export class ComponentRegistry {
     if (manifest.serverIslandScript) {
       registry.serverIslandClientJs = await Bun.file(resolveManifestPath(manifest.serverIslandScript)).text();
     }
-
-    return registry;
   }
+}
+
+function buildRenderOptions(
+  props: Record<string, unknown> | undefined,
+  opts: { idPrefix?: string; context?: Map<unknown, unknown> } | undefined,
+  transformError: (err: unknown) => Error,
+): { props?: Record<string, unknown>; transformError: (err: unknown) => Error; idPrefix?: string; context?: Map<unknown, unknown> } {
+  const renderOptions: { props?: Record<string, unknown>; transformError: (err: unknown) => Error; idPrefix?: string; context?: Map<unknown, unknown> } = { transformError };
+  if (props) {
+    renderOptions.props = props;
+  }
+  if (opts?.idPrefix) {
+    renderOptions.idPrefix = opts.idPrefix;
+  }
+  if (opts?.context) {
+    renderOptions.context = opts.context;
+  }
+  return renderOptions;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- the SSR module is dynamically imported, so its export shape is untyped.
+function resolveExportedComponent(mod: { default: any } & Record<string, any>, exportName: string | undefined, filename: string): any {
+  const component = exportName && exportName !== 'default' ? mod[exportName] : mod.default;
+  if (!component) {
+    throw new Error(
+      `renderComponent: ${filename} has no export "${exportName ?? 'default'}" — the compiled module and the island registry disagree (stale manifest or removed export).`,
+    );
+  }
+  return component;
+}
+
+function buildIslandEntrypoints(
+  unique: Map<string, HydratableComponent>,
+  hydratableIslandPath: string,
+  srcDir: string,
+): { entrypoints: string[]; filesMap: Record<string, string> } {
+  const entrypoints: string[] = [hydratableIslandPath];
+  const filesMap: Record<string, string> = {};
+  for (const [, comp] of unique) {
+    const entryPath = toPosixPath(path.join(srcDir, `_hydrate-${comp.name}.js`));
+    // String import specifiers (`import { "x" as y }`) are valid ESM and cover export names that aren't identifiers.
+    const importStmt =
+      comp.exportName === 'default'
+        ? `import ${comp.name} from "${toPosixPath(comp.resolvedPath)}";`
+        : `import { ${JSON.stringify(comp.exportName)} as ${comp.name} } from "${toPosixPath(comp.resolvedPath)}";`;
+    const entrySource = `import { registerComponent } from "${hydratableIslandPath}";\n${importStmt}\nregisterComponent("${comp.name}", ${comp.name});\n`;
+    entrypoints.push(entryPath);
+    filesMap[entryPath] = entrySource;
+  }
+  return { entrypoints, filesMap };
+}
+
+function emitCacheSummary(event: 'preprocess-cache:summary' | 'compile-cache:summary', stats: { hits: number; misses: number }): void {
+  const files = stats.hits + stats.misses;
+  if (files > 0) {
+    mochiEvents.emit(event, { hits: stats.hits, misses: stats.misses, files });
+  }
+}
+
+function collectIslandPropsById(ctx: ReturnType<typeof requestContext.getStore>): Map<string, { json: string; emitCount: number }> {
+  const propsById = new Map<string, { json: string; emitCount: number }>();
+  if (ctx) {
+    for (const [json, entry] of ctx.islandProps) {
+      propsById.set(entry.id, { json, emitCount: entry.emitCount });
+    }
+  }
+  return propsById;
 }

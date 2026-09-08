@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { BunPlugin } from 'bun';
 import MagicString from 'magic-string';
-import { parseCss, parseDataUri, removalSpans, type FontSource, type UrlRef } from './cssAst';
+import { parseCss, parseDataUri, removalSpans, type FontFace, type FontSource, type UrlRef } from './cssAst';
 
 /**
  * A font file Bun's bundler resolved behind a `url()` in a CSS build, replaced with marker bytes by
@@ -179,8 +179,27 @@ export function classifyFontAssets(css: string, refs: FontRef[], opts: { dropLeg
   }
 
   const edits = new MagicString(css);
+  const dropped = pruneAndMarkFontFaces(document.fontFaces, refByUrl, found, edits, opts.dropLegacyWoff);
+
+  // A ref whose sources were all pruned no longer occurs; a ref referenced outside any @font-face block still does.
+  const fonts: SurvivingFont[] = [];
+  for (const [ref, entry] of found) {
+    if (urlsByRef.get(ref)?.some((url) => !dropped.has(url))) {
+      fonts.push({ ref, ...entry });
+    }
+  }
+  return { css: edits.toString(), fonts, parseFailed: false };
+}
+
+function pruneAndMarkFontFaces(
+  fontFaces: FontFace[],
+  refByUrl: Map<UrlRef, FontRef>,
+  found: Map<FontRef, { contentType: string; markerUri: string; preload: boolean }>,
+  edits: MagicString,
+  dropLegacyWoff: boolean,
+): Set<UrlRef> {
   const dropped = new Set<UrlRef>();
-  for (const face of document.fontFaces) {
+  for (const face of fontFaces) {
     // Overlap with U+0000–00FF, the glyphs first paint always needs; a face visible there is worth preloading.
     const latinVisible = face.unicodeRanges === null || face.unicodeRanges.some((range) => range.lo <= 0xff);
     const formats = face.sources.map((source) => sourceFormat(source, source.url ? refByUrl.get(source.url) : undefined));
@@ -191,7 +210,7 @@ export function classifyFontAssets(css: string, refs: FontRef[], opts: { dropLeg
     const dropIndices = new Set<number>();
     face.sources.forEach((source, i) => {
       // Legacy woff goes whether inlined or marked — a data: URI copy is payload all the same.
-      if (opts.dropLegacyWoff && hasWoff2 && formats[i] === 'woff' && source.url) {
+      if (dropLegacyWoff && hasWoff2 && formats[i] === 'woff' && source.url) {
         dropIndices.add(i);
         return;
       }
@@ -216,15 +235,7 @@ export function classifyFontAssets(css: string, refs: FontRef[], opts: { dropLeg
       }
     }
   }
-
-  // A ref whose sources were all pruned no longer occurs; a ref referenced outside any @font-face block still does.
-  const fonts: SurvivingFont[] = [];
-  for (const [ref, entry] of found) {
-    if (urlsByRef.get(ref)?.some((url) => !dropped.has(url))) {
-      fonts.push({ ref, ...entry });
-    }
-  }
-  return { css: edits.toString(), fonts, parseFailed: false };
+  return dropped;
 }
 
 function sourceFormat(source: FontSource, ref: FontRef | undefined): string | null {

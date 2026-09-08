@@ -197,6 +197,14 @@ function parseWindow(window: string | number): number {
   return parseInt(match[1]) * WINDOW_UNITS[match[2]]!;
 }
 
+function resolveHeaderConfig(headers: MochiRateLimitOptions['headers']): { standard: boolean; legacy: boolean; retryAfter: boolean } {
+  return {
+    standard: headers?.standard ?? true,
+    legacy: headers?.legacy ?? true,
+    retryAfter: headers?.retryAfter ?? true,
+  };
+}
+
 /**
  * `autoGroup` namespaces this limiter's stored keys behind a `group:<autoGroup>:` prefix (hitlimit's `resolveKey`), so
  * counters stay separate from another route on the same persisted store. Mochi passes the route pattern for a route's
@@ -223,11 +231,7 @@ export function createRouteLimiter(options: MochiRateLimitOptions, autoGroup?: s
     tiers: options.tiers,
     tier: userTier ? (req) => userTier(req, getRequestContext()) : undefined,
     response: options.response ?? { hitlimit: true, message: DEFAULT_MESSAGE },
-    headers: {
-      standard: options.headers?.standard ?? true,
-      legacy: options.headers?.legacy ?? true,
-      retryAfter: options.headers?.retryAfter ?? true,
-    },
+    headers: resolveHeaderConfig(options.headers),
     store,
     onStoreError: options.onStoreError ?? (() => 'allow'),
     skip: userSkip ? (req) => userSkip(req, getRequestContext()) : undefined,

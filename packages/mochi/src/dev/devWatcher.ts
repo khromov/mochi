@@ -95,6 +95,34 @@ export interface DevWatcherDeps {
   initialCronSignature?: string;
 }
 
+type RouteChangeCounts = { updated: number; added: string[]; removed: string[]; api: number; ws: number; sse: number; page: number; file: number };
+
+function summarizeRouteCounts(counts: RouteChangeCounts): string[] {
+  const parts: string[] = [];
+  if (counts.api) {
+    parts.push(`${counts.api} api`);
+  }
+  if (counts.ws) {
+    parts.push(`${counts.ws} ws`);
+  }
+  if (counts.sse) {
+    parts.push(`${counts.sse} sse`);
+  }
+  if (counts.page) {
+    parts.push(`${counts.page} page`);
+  }
+  if (counts.file) {
+    parts.push(`${counts.file} file`);
+  }
+  if (counts.added.length) {
+    parts.push(`+${counts.added.length} new`);
+  }
+  if (counts.removed.length) {
+    parts.push(`-${counts.removed.length} removed`);
+  }
+  return parts;
+}
+
 /**
  * Wire up the dev-mode file watcher — chokidar over the source tree, public dir, and `svelte.config.js`. Saves debounce
  * at 100ms and serialize through a Promise chain so the live-reload signal fires only once client chunks are ready. CSS
@@ -419,10 +447,116 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     delete baseBunRoutes[pattern];
   }
 
-  async function applyRouteChanges(
-    freshRoutes: Record<string, unknown>,
-  ): Promise<{ updated: number; added: string[]; removed: string[]; api: number; ws: number; sse: number; page: number; file: number }> {
-    const counts = { updated: 0, added: [] as string[], removed: [] as string[], api: 0, ws: 0, sse: 0, page: 0, file: 0 };
+  async function reregisterRoute(pattern: string, handler: unknown, previousType: DevRouteType, counts: RouteChangeCounts): Promise<void> {
+    if (!registerRoutePattern || !unregisterRoutePattern) {
+      return;
+    }
+    unregisterRoutePattern(pattern);
+    removeBunRoute(pattern, previousType);
+    const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
+    if (!result) {
+      return;
+    }
+    addBunRoute(pattern, result.bunRouteValue, result.type);
+    if (previousType === 'file' && result.type === 'file') {
+      counts.file++;
+      counts.updated++;
+      logger.info(`Route updated file: ${pattern}`);
+    } else {
+      counts.added.push(pattern);
+      counts.removed.push(pattern);
+      logger.info(`Route retyped ${previousType}→${result.type}: ${pattern}`);
+    }
+  }
+
+  function updateRouteInPlace(pattern: string, handler: unknown, counts: RouteChangeCounts): void {
+    if (isMochiApi(handler) && apiHandlerMap?.has(pattern)) {
+      apiHandlerMap.set(pattern, handler.handler);
+      updateRouteLimiter?.(pattern, handler.rateLimit);
+      counts.api++;
+      counts.updated++;
+    } else if (isMochiWs(handler) && wsHandlersMap?.has(pattern)) {
+      wsHandlersMap.set(pattern, handler.handlers as MochiWsHandlers<unknown>);
+      counts.ws++;
+      counts.updated++;
+    } else if (isMochiSse(handler) && sseHandlerMap?.has(pattern)) {
+      sseHandlerMap.set(pattern, handler.handler);
+      counts.sse++;
+      counts.updated++;
+    } else if (isMochiPage(handler) && pageConfigMap?.has(pattern)) {
+      pageConfigMap.set(pattern, { serverProps: handler.serverProps, actions: handler.actions });
+      updateRouteLimiter?.(pattern, handler.rateLimit);
+      counts.page++;
+      counts.updated++;
+    }
+  }
+
+  async function applyExistingRoute(pattern: string, handler: unknown, type: DevRouteType, counts: RouteChangeCounts): Promise<void> {
+    const currentType = currentRouteType(pattern);
+    if (currentType && currentType !== type && registerRoutePattern && unregisterRoutePattern) {
+      await reregisterRoute(pattern, handler, currentType, counts);
+    } else if (type === 'file' && registerRoutePattern && unregisterRoutePattern) {
+      // File routes have no handler map to mutate in place — their source is baked into the registered closure — so swap by re-registering.
+      await reregisterRoute(pattern, handler, 'file', counts);
+    } else {
+      updateRouteInPlace(pattern, handler, counts);
+    }
+  }
+
+  async function addNewRoute(pattern: string, handler: unknown, counts: RouteChangeCounts): Promise<void> {
+    if (!registerRoutePattern) {
+      return;
+    }
+    try {
+      const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
+      if (result) {
+        addBunRoute(pattern, result.bunRouteValue, result.type);
+        counts[result.type]++;
+        counts.added.push(pattern);
+        logger.info(`Route added ${result.type}: ${pattern}`);
+      }
+    } catch (e) {
+      logger.warn(`Failed to register route ${pattern}: ${e instanceof Error ? e.message : e}`);
+      counts.added.push(pattern);
+    }
+  }
+
+  function removeStaleRoutes(freshPatterns: Set<string>, counts: RouteChangeCounts): void {
+    if (!unregisterRoutePattern) {
+      return;
+    }
+    for (const pattern of knownEntryPatterns) {
+      if (!freshPatterns.has(pattern)) {
+        const removedType = currentRouteType(pattern);
+        unregisterRoutePattern(pattern);
+        removeBunRoute(pattern, removedType);
+        counts.removed.push(pattern);
+        logger.info(`Route removed: ${pattern}`);
+      }
+    }
+  }
+
+  // Deleting an explicitly-declared sibling (`/a/` alongside `/a`) leaves the survivor without the mirror a cold boot
+  // would have given it, so its canonical form would redirect into a 404 until restart.
+  function ensureAltSlashMirrors(freshPatterns: Set<string>): void {
+    if (!trailingSlashPolicy) {
+      return;
+    }
+    for (const pattern of freshPatterns) {
+      const value = bunRoutes[pattern];
+      if (value === undefined || !mirrorsAltSlash(currentRouteType(pattern))) {
+        continue;
+      }
+      const alt = alternateSlashPattern(pattern);
+      if (alt && !(alt in bunRoutes)) {
+        bunRoutes[alt] = value;
+        baseBunRoutes[alt] = value;
+      }
+    }
+  }
+
+  async function applyRouteChanges(freshRoutes: Record<string, unknown>): Promise<RouteChangeCounts> {
+    const counts: RouteChangeCounts = { updated: 0, added: [], removed: [], api: 0, ws: 0, sse: 0, page: 0, file: 0 };
     const freshPatterns = new Set(Object.keys(freshRoutes));
 
     for (const [pattern, handler] of Object.entries(freshRoutes)) {
@@ -430,98 +564,39 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       if (!type) {
         continue;
       }
-
       if (knownEntryPatterns.has(pattern)) {
-        const currentType = currentRouteType(pattern);
-
-        if (currentType && currentType !== type && registerRoutePattern && unregisterRoutePattern) {
-          unregisterRoutePattern(pattern);
-          removeBunRoute(pattern, currentType);
-          const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
-          if (result) {
-            addBunRoute(pattern, result.bunRouteValue, result.type);
-            counts.added.push(pattern);
-            counts.removed.push(pattern);
-            logger.info(`Route retyped ${currentType}→${type}: ${pattern}`);
-          }
-        } else if (type === 'file' && registerRoutePattern && unregisterRoutePattern) {
-          // File routes have no handler map to mutate in place — their source
-          // is baked into the registered closure — so swap by re-registering.
-          unregisterRoutePattern(pattern);
-          removeBunRoute(pattern, 'file');
-          const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
-          if (result) {
-            addBunRoute(pattern, result.bunRouteValue, result.type);
-            counts.file++;
-            counts.updated++;
-            logger.info(`Route updated file: ${pattern}`);
-          }
-        } else {
-          if (isMochiApi(handler) && apiHandlerMap?.has(pattern)) {
-            apiHandlerMap.set(pattern, handler.handler);
-            updateRouteLimiter?.(pattern, handler.rateLimit);
-            counts.api++;
-            counts.updated++;
-          } else if (isMochiWs(handler) && wsHandlersMap?.has(pattern)) {
-            wsHandlersMap.set(pattern, handler.handlers as MochiWsHandlers<unknown>);
-            counts.ws++;
-            counts.updated++;
-          } else if (isMochiSse(handler) && sseHandlerMap?.has(pattern)) {
-            sseHandlerMap.set(pattern, handler.handler);
-            counts.sse++;
-            counts.updated++;
-          } else if (isMochiPage(handler) && pageConfigMap?.has(pattern)) {
-            pageConfigMap.set(pattern, { serverProps: handler.serverProps, actions: handler.actions });
-            updateRouteLimiter?.(pattern, handler.rateLimit);
-            counts.page++;
-            counts.updated++;
-          }
-        }
-      } else if (registerRoutePattern) {
-        try {
-          const result = await registerRoutePattern(pattern, handler as MochiRouteValue);
-          if (result) {
-            addBunRoute(pattern, result.bunRouteValue, result.type);
-            counts[result.type]++;
-            counts.added.push(pattern);
-            logger.info(`Route added ${result.type}: ${pattern}`);
-          }
-        } catch (e) {
-          logger.warn(`Failed to register route ${pattern}: ${e instanceof Error ? e.message : e}`);
-          counts.added.push(pattern);
-        }
+        await applyExistingRoute(pattern, handler, type, counts);
+      } else {
+        await addNewRoute(pattern, handler, counts);
       }
     }
 
-    if (unregisterRoutePattern) {
-      for (const pattern of knownEntryPatterns) {
-        if (!freshPatterns.has(pattern)) {
-          const removedType = currentRouteType(pattern);
-          unregisterRoutePattern(pattern);
-          removeBunRoute(pattern, removedType);
-          counts.removed.push(pattern);
-          logger.info(`Route removed: ${pattern}`);
-        }
-      }
-    }
-
-    // Deleting an explicitly-declared sibling (`/a/` alongside `/a`) leaves the survivor without the mirror a cold
-    // boot would have given it, so its canonical form would redirect into a 404 until restart.
-    if (trailingSlashPolicy) {
-      for (const pattern of freshPatterns) {
-        const value = bunRoutes[pattern];
-        if (value === undefined || !mirrorsAltSlash(currentRouteType(pattern))) {
-          continue;
-        }
-        const alt = alternateSlashPattern(pattern);
-        if (alt && !(alt in bunRoutes)) {
-          bunRoutes[alt] = value;
-          baseBunRoutes[alt] = value;
-        }
-      }
-    }
+    removeStaleRoutes(freshPatterns, counts);
+    ensureAltSlashMirrors(freshPatterns);
 
     knownEntryPatterns = freshPatterns;
+    return counts;
+  }
+
+  async function reapplyEntryRoutes(freshRoutes: Record<string, unknown>): Promise<RouteChangeCounts> {
+    if (!moduleStateWarned && reachedModuleChurnThreshold(++entryReloadCount)) {
+      mochiEvents.emit('recompile:module-churn', { reloadCount: entryReloadCount });
+      moduleStateWarned = true;
+    }
+    const counts = await applyRouteChanges(freshRoutes);
+    const hasChanges = counts.updated > 0 || counts.added.length > 0 || counts.removed.length > 0;
+    if (hasChanges) {
+      logger.info(`Entry rebuilt — ${summarizeRouteCounts(counts).join(', ')}`);
+    }
+    if (counts.added.length > 0 || counts.removed.length > 0) {
+      server.reload({
+        routes: {
+          ...bunRoutes,
+          '/__mochi_live_reload': liveReloadHandler,
+        },
+        fetch: composedFetch,
+      } as Parameters<typeof server.reload>[0]);
+    }
     return counts;
   }
 
@@ -531,59 +606,11 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       const start = performance.now();
       let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
       let failed = false;
-      let counts: { updated: number; added: string[]; removed: string[]; api: number; ws: number; sse: number; page: number; file: number } = {
-        updated: 0,
-        added: [],
-        removed: [],
-        api: 0,
-        ws: 0,
-        sse: 0,
-        page: 0,
-        file: 0,
-      };
+      let counts: RouteChangeCounts = { updated: 0, added: [], removed: [], api: 0, ws: 0, sse: 0, page: 0, file: 0 };
       try {
         const freshRoutes = await buildEntry();
         if (freshRoutes) {
-          if (!moduleStateWarned && reachedModuleChurnThreshold(++entryReloadCount)) {
-            mochiEvents.emit('recompile:module-churn', { reloadCount: entryReloadCount });
-            moduleStateWarned = true;
-          }
-          counts = await applyRouteChanges(freshRoutes);
-          const hasChanges = counts.updated > 0 || counts.added.length > 0 || counts.removed.length > 0;
-          if (hasChanges) {
-            const parts: string[] = [];
-            if (counts.api) {
-              parts.push(`${counts.api} api`);
-            }
-            if (counts.ws) {
-              parts.push(`${counts.ws} ws`);
-            }
-            if (counts.sse) {
-              parts.push(`${counts.sse} sse`);
-            }
-            if (counts.page) {
-              parts.push(`${counts.page} page`);
-            }
-            if (counts.file) {
-              parts.push(`${counts.file} file`);
-            }
-            if (counts.added.length) {
-              parts.push(`+${counts.added.length} new`);
-            }
-            if (counts.removed.length) {
-              parts.push(`-${counts.removed.length} removed`);
-            }
-            logger.info(`Entry rebuilt — ${parts.join(', ')}`);
-          }
-          if (counts.added.length > 0 || counts.removed.length > 0) {
-            server.reload({
-              routes: {
-                ...bunRoutes,
-                '/__mochi_live_reload': liveReloadHandler,
-              },
-              fetch: composedFetch,
-            } as Parameters<typeof server.reload>[0]);
-          }
+          counts = await reapplyEntryRoutes(freshRoutes);
         }
         // A server-entry module can also be inlined into page SSR bundles, so recompile any dependent page here —
         // before the reload below — so the browser fetches fresh HTML in one reload instead of a stale bundle then a

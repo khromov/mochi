@@ -2,12 +2,13 @@ import { getImageRuntime, getSize } from './config';
 import { getCachedOriginal } from './imageApi';
 import { decryptImageRequest } from './imageCrypto';
 import { originalId, variantId } from './imageCache';
+import type { ImageCache } from './imageCache';
 import { getMochiConfig } from '../mochiConfig';
 import { logger } from '../utils/log';
 import { baseContentType, INLINE_SAFE_IMAGE_TYPES } from '../utils/inlineContentTypeSafety';
 import { runPipeline } from './resize';
 import { ImageError } from './types';
-import type { ResolvedImageSize } from './types';
+import type { ResolvedImageSize, ResolvedImageOptions } from './types';
 
 function textResponse(status: number, message: string): Response {
   return new Response(message, {
@@ -92,76 +93,80 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
     // Full-size original: serve the shared cached bytes verbatim (originals may be
     // gif/svg/etc.). Covers explicit originals and unknown-size fallbacks.
     if (!size) {
-      try {
-        const { bytes, contentType, status, createdAt } = await getCachedOriginal(request.src, options, cache);
-        const etag = `"${originalId(request.src)}-${createdAt}"`;
-        const cacheControl = resolveImageCacheControl(options.timeToStale, options.timeToEvict, development);
-        if (req.headers.get('if-none-match') === etag) {
-          return new Response(null, { status: 304, headers: { ETag: etag, 'X-Content-Type-Options': 'nosniff', ...(cacheControl ? { 'Cache-Control': cacheControl } : {}) } });
-        }
-        const safe = safeOriginalContentType(contentType);
-        return new Response(bytes as unknown as BodyInit, {
-          status: 200,
-          headers: {
-            'Content-Type': safe.contentType,
-            'Content-Length': String(bytes.byteLength),
-            'X-Content-Type-Options': 'nosniff',
-            ...(safe.attachment ? { 'Content-Disposition': 'attachment' } : {}),
-            ETag: etag,
-            ...(cacheControl ? { 'Cache-Control': cacheControl } : {}),
-            'X-Mochi-Cache': status,
-          },
-        });
-      } catch (err) {
-        if (err instanceof ImageError) {
-          return textResponse(err.status, err.message);
-        }
-        return textResponse(500, 'Image processing failed');
-      }
+      return serveOriginalImage(req, request.src, options, cache, development);
     }
 
-    try {
-      const id = variantId(request.src, size.configHash);
-      const { entry, status } = await cache.getVariant(request.src, id, async () => {
-        const { bytes, createdAt } = await getCachedOriginal(request.src, options, cache);
-        const result = await runPipeline(bytes, size, options);
-        return {
-          bytes: result.bytes,
-          contentType: result.contentType,
-          width: result.width,
-          height: result.height,
-          format: result.format,
-          originalCreatedAt: createdAt,
-        };
-      });
-
-      // The ETag carries the variant id, which folds in the size config hash, plus the original generation the bytes
-      // came from, so a redefinition and a source refresh both revalidate while a re-encode from the same generation
-      // keeps its ETag and avoids a spurious re-download.
-      const etag = `"${id}-${entry.meta.originalCreatedAt ?? entry.meta.createdAt}"`;
-      const cacheControl = resolveImageCacheControl(options.timeToStale, options.timeToEvict, development);
-      if (req.headers.get('if-none-match') === etag) {
-        return new Response(null, { status: 304, headers: { ETag: etag, 'X-Content-Type-Options': 'nosniff', ...(cacheControl ? { 'Cache-Control': cacheControl } : {}) } });
-      }
-
-      // Uint8Array is a valid BodyInit at runtime; the cast bridges the
-      // ArrayBufferLike/ArrayBuffer generic mismatch in the DOM lib types.
-      return new Response(entry.bytes as unknown as BodyInit, {
-        status: 200,
-        headers: {
-          'Content-Type': entry.meta.contentType,
-          'Content-Length': String(entry.bytes.byteLength),
-          'X-Content-Type-Options': 'nosniff',
-          ETag: etag,
-          ...(cacheControl ? { 'Cache-Control': cacheControl } : {}),
-          'X-Mochi-Cache': status,
-        },
-      });
-    } catch (err) {
-      if (err instanceof ImageError) {
-        return textResponse(err.status, err.message);
-      }
-      return textResponse(500, 'Image processing failed');
-    }
+    return serveVariantImage(req, request.src, size, options, cache, development);
   };
+}
+
+// The one place image bytes become an HTTP response, so conditional-request handling and cache/security headers can
+// never diverge between originals and variants.
+function respondWithImageBytes(
+  req: Request,
+  bytes: Uint8Array,
+  meta: { etag: string; cacheControl: string | undefined; cacheStatus: string; contentType: string; attachment?: boolean },
+): Response {
+  const validators = { ETag: meta.etag, 'X-Content-Type-Options': 'nosniff', ...(meta.cacheControl ? { 'Cache-Control': meta.cacheControl } : {}) };
+  if (req.headers.get('if-none-match') === meta.etag) {
+    return new Response(null, { status: 304, headers: validators });
+  }
+  // Uint8Array is a valid BodyInit at runtime; the cast bridges the
+  // ArrayBufferLike/ArrayBuffer generic mismatch in the DOM lib types.
+  return new Response(bytes as unknown as BodyInit, {
+    status: 200,
+    headers: {
+      'Content-Type': meta.contentType,
+      'Content-Length': String(bytes.byteLength),
+      ...(meta.attachment ? { 'Content-Disposition': 'attachment' } : {}),
+      ...validators,
+      'X-Mochi-Cache': meta.cacheStatus,
+    },
+  });
+}
+
+async function serveImage(fn: () => Promise<Response>): Promise<Response> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof ImageError) {
+      return textResponse(err.status, err.message);
+    }
+    return textResponse(500, 'Image processing failed');
+  }
+}
+
+function serveOriginalImage(req: Request, src: string, options: ResolvedImageOptions, cache: ImageCache, development: boolean): Promise<Response> {
+  return serveImage(async () => {
+    const { bytes, contentType, status, createdAt } = await getCachedOriginal(src, options, cache);
+    const etag = `"${originalId(src)}-${createdAt}"`;
+    const cacheControl = resolveImageCacheControl(options.timeToStale, options.timeToEvict, development);
+    const safe = safeOriginalContentType(contentType);
+    return respondWithImageBytes(req, bytes, { etag, cacheControl, cacheStatus: status, contentType: safe.contentType, attachment: safe.attachment });
+  });
+}
+
+function serveVariantImage(req: Request, src: string, size: ResolvedImageSize, options: ResolvedImageOptions, cache: ImageCache, development: boolean): Promise<Response> {
+  return serveImage(async () => {
+    const id = variantId(src, size.configHash);
+    const { entry, status } = await cache.getVariant(src, id, async () => {
+      const { bytes, createdAt } = await getCachedOriginal(src, options, cache);
+      const result = await runPipeline(bytes, size, options);
+      return {
+        bytes: result.bytes,
+        contentType: result.contentType,
+        width: result.width,
+        height: result.height,
+        format: result.format,
+        originalCreatedAt: createdAt,
+      };
+    });
+
+    // The ETag carries the variant id, which folds in the size config hash, plus the original generation the bytes
+    // came from, so a redefinition and a source refresh both revalidate while a re-encode from the same generation
+    // keeps its ETag and avoids a spurious re-download.
+    const etag = `"${id}-${entry.meta.originalCreatedAt ?? entry.meta.createdAt}"`;
+    const cacheControl = resolveImageCacheControl(options.timeToStale, options.timeToEvict, development);
+    return respondWithImageBytes(req, entry.bytes, { etag, cacheControl, cacheStatus: status, contentType: entry.meta.contentType });
+  });
 }

@@ -636,7 +636,7 @@ function producerMethods<T>(name: string): MochiQueue<T> {
   };
 }
 
-const QUEUE_NAME_RE = /^[\w.\-/]+$/;
+export const QUEUE_NAME_RE = /^[\w.\-/]+$/;
 
 function noStorageError(name: string): Error {
   return new Error(
@@ -977,6 +977,10 @@ export async function startCronRuntime(jobs: MochiCronJob[], opts: StartCronOpti
     ...(opts.workerPollingSeconds ? { pollingIntervalSeconds: opts.workerPollingSeconds } : {}),
   } as WorkOptions & { includeMetadata: true; perJobResults: true };
 
+  await scheduleCronJobs(boss, active, cronWorkOptions);
+}
+
+async function scheduleCronJobs(boss: BunBoss, active: MochiCronJob[], cronWorkOptions: WorkOptions & { includeMetadata: true; perJobResults: true }): Promise<void> {
   for (const job of active) {
     const queueName = cronQueueName(job.name);
     await boss.createQueue(queueName); // idempotent (ON CONFLICT DO NOTHING); config-preserving on an existing queue.

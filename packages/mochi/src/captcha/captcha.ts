@@ -51,6 +51,36 @@ export function mintCaptcha(options?: { bits?: number; solveBudgetMs?: number })
   return { token, bits, solveBudgetMs };
 }
 
+function parseCaptchaClaims(opened: string | null): { iat: number; nonce: string; bits: number } | null {
+  if (opened === null) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(opened) as { iat?: unknown; nonce?: unknown; bits?: unknown };
+    if (typeof parsed.iat !== 'number' || typeof parsed.nonce !== 'string' || typeof parsed.bits !== 'number') {
+      return null;
+    }
+    return { iat: parsed.iat, nonce: parsed.nonce, bits: parsed.bits };
+  } catch {
+    return null;
+  }
+}
+
+// Re-derive the slide-step chain from the raw token: the widget only reaches the final link by actually running the
+// progression, so a PoW over the token itself (skipping the chain) fails here.
+function captchaPowSatisfies(token: string, pow: string, bits: number): boolean {
+  const challenge = deriveChain(token, nodeHashHex);
+  return leadingZeroBits(createHash('sha256').update(powInput(challenge, pow)).digest()) >= bits;
+}
+
+function resolveCaptchaMinAgeMs(override: number | undefined, resolvedMin: number, limitMs: number, bits: number, ageMs: number): number {
+  const minAgeMs = override ?? applyFilter('captcha:minAgeMs', resolvedMin, { bits, ageMs, limitMs });
+  if (!Number.isFinite(minAgeMs) || minAgeMs < 0 || minAgeMs >= limitMs) {
+    throw new Error(`Captcha: the captcha:minAgeMs filter returned ${minAgeMs}; expected a non-negative number below ${limitMs}, or every token is rejected`);
+  }
+  return minAgeMs;
+}
+
 /**
  * Verify the `captcha_token` / `captcha_pow` fields `<MochiCaptcha />` adds to the form, consuming the one-time nonce on
  * success unless `consume: false`, where you call {@link consumeCaptcha} once the submission is committed. A failure
@@ -63,23 +93,11 @@ export function mintCaptcha(options?: { bits?: number; solveBudgetMs?: number })
 export async function verifyCaptcha(formData: FormData, options?: { consume?: boolean; minAgeMs?: number; minBits?: number }): Promise<CaptchaResult> {
   const token = String(formData.get('captcha_token') ?? '');
   const pow = String(formData.get('captcha_pow') ?? '');
-  const opened = token ? decryptPayload(token, { aad: CAPTCHA_AAD }) : null;
-  if (opened === null) {
+  const claims = parseCaptchaClaims(token ? decryptPayload(token, { aad: CAPTCHA_AAD }) : null);
+  if (claims === null) {
     return reject('malformed');
   }
-
-  let iat: number;
-  let nonce: string;
-  let bits: number;
-  try {
-    const parsed = JSON.parse(opened) as { iat?: unknown; nonce?: unknown; bits?: unknown };
-    if (typeof parsed.iat !== 'number' || typeof parsed.nonce !== 'string' || typeof parsed.bits !== 'number') {
-      return reject('malformed');
-    }
-    ({ iat, nonce, bits } = parsed as { iat: number; nonce: string; bits: number });
-  } catch {
-    return reject('malformed');
-  }
+  const { iat, nonce, bits } = claims;
 
   if (options?.minBits !== undefined && bits < options.minBits) {
     return reject('bad-pow', { bits });
@@ -92,10 +110,7 @@ export async function verifyCaptcha(formData: FormData, options?: { consume?: bo
   // different machines, so the allowance widens the expiry bound alone. Padding the floor would mean subtracting from
   // it, and any allowance wider than `minAgeMs` would delete the too-fast check rather than soften it.
   const limitMs = resolved.maxAgeMs + resolved.driftAllowanceMs;
-  const minAgeMs = options?.minAgeMs ?? applyFilter('captcha:minAgeMs', resolved.minAgeMs, { bits, ageMs, limitMs });
-  if (!Number.isFinite(minAgeMs) || minAgeMs < 0 || minAgeMs >= limitMs) {
-    throw new Error(`Captcha: the captcha:minAgeMs filter returned ${minAgeMs}; expected a non-negative number below ${limitMs}, or every token is rejected`);
-  }
+  const minAgeMs = resolveCaptchaMinAgeMs(options?.minAgeMs, resolved.minAgeMs, limitMs, bits, ageMs);
 
   if (ageMs < minAgeMs) {
     return reject('too-fast', { bits, ageMs });
@@ -104,11 +119,7 @@ export async function verifyCaptcha(formData: FormData, options?: { consume?: bo
     return reject('expired', { bits, ageMs });
   }
 
-  // Re-derive the slide-step chain from the raw token: the widget only reaches
-  // the final link by actually running the progression, so a PoW over the token
-  // itself (skipping the chain) fails here.
-  const challenge = deriveChain(token, nodeHashHex);
-  if (leadingZeroBits(createHash('sha256').update(powInput(challenge, pow)).digest()) < bits) {
+  if (!captchaPowSatisfies(token, pow, bits)) {
     return reject('bad-pow', { bits, ageMs });
   }
 
