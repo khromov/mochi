@@ -50,7 +50,7 @@ describe('reachedModuleChurnThreshold', () => {
 });
 
 describe('isStructuralChange', () => {
-  test('an added or removed source or data file may change a directory listing a build-time module reads', () => {
+  test('an added or removed source or data file may change a directory listing a prerendered module reads', () => {
     expect(isStructuralChange('add', 'packages/docs/180-new.md')).toBe(true);
     expect(isStructuralChange('unlink', 'src/demos/x/Card.svelte')).toBe(true);
     expect(isStructuralChange('add', 'src/data/rows.json')).toBe(true);

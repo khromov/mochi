@@ -6,7 +6,7 @@
   import type { TocEntry } from './lib/toc';
   import { docHref } from './lib/toc';
   import type { DocNeighbor } from './lib/docs';
-  import { docComponents } from './lib/docComponents.compiled';
+  import { docComponents } from './lib/docComponents.prerender';
 
   let {
     slug,

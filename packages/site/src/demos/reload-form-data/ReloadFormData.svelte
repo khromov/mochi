@@ -1,7 +1,7 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import Guestbook from './Guestbook.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
 
   type GuestbookEntry = { id: string; name: string; at: number };
 

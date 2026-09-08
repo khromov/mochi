@@ -1,6 +1,6 @@
 <script module>
   import { getImageUrl, getImage } from 'mochi-framework';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
   import { highlightCode } from '../../lib/highlight.server';
 
   const CDN = 'https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi';

@@ -2,29 +2,29 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from './ComponentRegistry';
-import { resetCompiledEvaluationCache } from './compiledModules';
+import { resetPrerenderEvaluationCache } from './prerenderModules';
 
 let outDir: string;
 let app: string;
 
 beforeAll(async () => {
-  outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-compiled-client-'));
+  outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-prerender-client-'));
   app = path.join(outDir, 'app');
   await Bun.write(path.join(app, 'buildOnly.ts'), `globalThis.__mochi_build_only_marker__ = 'SENTINEL_SIDE_EFFECT';\nexport const greeting = () => 'hydrated build-time value';\n`);
-  await Bun.write(path.join(app, 'value.compiled.ts'), `import { greeting } from './buildOnly.ts';\nexport const text = greeting();\n`);
+  await Bun.write(path.join(app, 'value.prerender.ts'), `import { greeting } from './buildOnly.ts';\nexport const text = greeting();\n`);
   await Bun.write(
     path.join(app, 'Counter.svelte'),
-    `<script>\n  import { text } from './value.compiled.ts';\n  let n = $state(0);\n</${'script'}>\n<button onclick={() => n++}>{text} {n}</button>\n`,
+    `<script>\n  import { text } from './value.prerender.ts';\n  let n = $state(0);\n</${'script'}>\n<button onclick={() => n++}>{text} {n}</button>\n`,
   );
   await Bun.write(path.join(app, 'Page.svelte'), `<script>\n  import Counter from './Counter.svelte';\n</${'script'}>\n<Counter mochi:hydrate />\n`);
 });
 
 afterAll(() => {
-  resetCompiledEvaluationCache();
+  resetPrerenderEvaluationCache();
   rmSync(outDir, { recursive: true, force: true });
 });
 
-describe('a *.compiled.ts module inside a hydrated island', () => {
+describe('a *.prerender.ts module inside a hydrated island', () => {
   test('the client bundle carries the literal, not the producing module', async () => {
     const registry = new ComponentRegistry({ development: false, outDir });
     await registry.compileAll([path.join(app, 'Page.svelte')]);

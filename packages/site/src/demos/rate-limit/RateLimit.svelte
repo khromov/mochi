@@ -1,6 +1,6 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
 
   let { used, limit, resetIn }: { used: number; limit: number; resetIn: number } = $props();
 </script>

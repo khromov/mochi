@@ -1,6 +1,6 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
   import { getImageUrl } from 'mochi-framework';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 

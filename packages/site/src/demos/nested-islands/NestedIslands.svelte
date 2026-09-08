@@ -2,7 +2,7 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import DeferWithHydrators from './DeferWithHydrators.svelte';
   import DeferNest from './DeferNest.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
 </script>
 
 <DemoPage

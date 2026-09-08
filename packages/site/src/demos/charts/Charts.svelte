@@ -6,7 +6,7 @@
   import HtmlBars from './HtmlBars.svelte';
   import RuntimeDonut from './RuntimeDonut.svelte';
   import Callout from '../../../../docs/_components/Callout.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
   import { highlightCode } from '../../lib/highlight.server';
 
   const install = await highlightCode('bun add layerchart', 'bash');

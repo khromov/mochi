@@ -1,6 +1,6 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
   import Field from './Field.svelte';
   import LabeledField from './LabeledField.svelte';
   import ServerStamp from './ServerStamp.svelte';

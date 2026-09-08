@@ -79,7 +79,8 @@ Mochi is an islands framework for Svelte 5 + Bun with islands-based selective hy
 
 Source is grouped by subsystem; only the entry points and public API surface (`Mochi.ts`, `index.ts`, `types.ts`, `events.ts`, `extensions.ts`, `mochiConfig.ts`, `highlight.ts`, `queue.ts`, the `.d.ts` files) sit at the top level, alongside the `Mochi.serve()`-level end-to-end tests.
 
-- **`compiler/`** — the `.svelte` → JS pipeline: `ComponentRegistry.ts`, `svelteAstPreprocess.ts`, `svelteConfig.ts`, `svelteShaker.ts`, `compileCache.ts`, `preprocessCache.ts`, `serverOnlyScan.ts`, `buildInlineWebComponent.ts`, `freshImport.ts`, `tailwind.ts`.
+- **`compiler/`** — the `.svelte` → JS pipeline: `ComponentRegistry.ts`, `svelteAstPreprocess.ts`, `svelteConfig.ts`, `svelteShaker.ts`, `compileCache.ts`, `preprocessCache.ts`, `serverOnlyScan.ts`, `buildInlineWebComponent.ts`, `freshImport.ts`, `tailwind.ts`, plus `prerenderModules.ts` / `prerenderSerialize.ts`.
+- **`*.prerender.ts`** — a module the bundler evaluates at build time and replaces with its devalue-serialized exports, so neither it nor anything it imports ships. `moduleRef()` (`moduleRef.ts`) marks an export that must stay a real `import`. Suffix-only API, mirroring `.server.ts`.
 - **`runtime/`** — the per-request pipeline: `requestSetup.ts`, `requestContext.ts`, `cookies.ts`, `csrf.ts`, `proxy.ts`, `trailingSlash.ts`, `errors.ts`, `hooks.ts`, `rateLimit.ts`, `warmup.ts`, `publicDir.ts`, and forms (`forms.ts`, `formsJson.ts`, `enhance.*`).
 - **`islands/`** — `islandPropsRegistry.ts`, `serverIslandCrypto.ts`, `payloadCrypto.ts`.
 - **`cache/`** — `cache.ts`, `cache-storage.ts`.

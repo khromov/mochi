@@ -2,7 +2,7 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import CodeSnippet from '../../components/CodeSnippet.svelte';
   import Badge from '../../components/Badge.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
   import { highlightCode } from '../../lib/highlight.server';
   import type { VarlockConfig } from './env.ts';
 

@@ -2,7 +2,7 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import CodeSnippet from '../../components/CodeSnippet.svelte';
   import Callout from '../../../../docs/_components/Callout.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
   import { highlightCode } from '../../lib/highlight.server';
   import { playgroundJson } from './blocks.ts';
   import Playground from './Playground.svelte';

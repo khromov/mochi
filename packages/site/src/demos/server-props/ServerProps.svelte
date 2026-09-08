@@ -1,6 +1,6 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
 
   let { renderedAt, userAgent, random }: { renderedAt: string; userAgent: string; random: number } = $props();
 </script>

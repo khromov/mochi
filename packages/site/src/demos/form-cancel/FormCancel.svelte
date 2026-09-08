@@ -3,7 +3,7 @@
   import CancelDemo from './CancelDemo.svelte';
   import AbortDemo from './AbortDemo.svelte';
   import PlainDemo from './PlainDemo.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
 </script>
 
 <DemoPage

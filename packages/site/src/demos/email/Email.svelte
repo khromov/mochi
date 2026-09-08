@@ -2,7 +2,7 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import EmailForm from './EmailForm.svelte';
   import AttachmentForm from './AttachmentForm.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
 </script>
 
 <DemoPage

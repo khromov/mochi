@@ -2,7 +2,7 @@
   import { highlightCode } from '../../lib/highlight.server';
   import DemoPage from '../../components/DemoPage.svelte';
   import CodeSnippet from '../../components/CodeSnippet.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
 
   const handleErrorSnippet = `const handleError: HandleError = ({ error, event, status, message }) => {
   logger.info(

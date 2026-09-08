@@ -1,7 +1,7 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import EnhancedLoginForm from './EnhancedLoginForm.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
 
   let { currentUser }: { currentUser: string | null } = $props();
 </script>

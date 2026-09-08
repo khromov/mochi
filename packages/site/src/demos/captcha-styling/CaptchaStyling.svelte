@@ -1,7 +1,7 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import StylingDemo from './StylingDemo.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
   import { themes, defaultsSample, rule, markup } from './themes.ts';
   import { highlightCode } from '../../lib/highlight.server';
   import type { MintedCaptcha } from 'mochi-framework';

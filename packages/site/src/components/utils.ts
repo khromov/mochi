@@ -77,9 +77,9 @@ function stripDemoWrapper(code: string): string {
 
   let out = code;
   out = out.replace(/^[^\S\n]*import\s+DemoPage\s+from\s+['"][^'"]+['"];?[^\S\n]*\n?/m, '');
-  out = out.replace(/^[^\S\n]*import\s*\{\s*sources\s*\}\s*from\s+['"]\.\/sources\.compiled(?:\.ts)?['"];?[^\S\n]*\n?/m, '');
+  out = out.replace(/^[^\S\n]*import\s*\{\s*sources\s*\}\s*from\s+['"]\.\/sources\.prerender(?:\.ts)?['"];?[^\S\n]*\n?/m, '');
   // Multi-page demos hoist their description/sources plumbing into ./shared —
-  // hide that import like the sources.compiled.ts import it replaces.
+  // hide that import like the sources.prerender.ts import it replaces.
   out = out.replace(/^[^\S\n]*import\s*\{[^}]*\}\s*from\s+['"]\.\/shared['"];?[^\S\n]*\n?/m, '');
   out = out.replace(/<DemoPage\b(?:"[^"]*"|'[^']*'|[^>])*>([\s\S]*?)<\/DemoPage>/, (_, inner) => dedent(inner).trim());
   out = out.replace(/<script(?:\s[^>]*)?>\s*<\/script>\s*\n?/, '');

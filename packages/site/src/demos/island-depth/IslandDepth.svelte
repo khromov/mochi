@@ -2,7 +2,7 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import DepthLevel1 from './DepthLevel1.svelte';
   import FailDeep from './FailDeep.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
 </script>
 
 <DemoPage

@@ -54,8 +54,8 @@ declare module 'mochi-framework' {
   export { stringify, parse } from 'devalue';
 
   /**
-   * Mark a module to import rather than a value to serialize. Only meaningful in a `*.compiled.ts` module, where the
-   * build turns each marker into a real `import` in the generated module — which is how a build-time module hands back
+   * Mark a module to import rather than a value to serialize. Only meaningful in a `*.prerender.ts` module, where the
+   * build turns each marker into a real `import` in the generated module — which is how a prerendered module hands back
    * components it could never serialize.
    */
   export function moduleRef<T = unknown>(specifier: string): T;

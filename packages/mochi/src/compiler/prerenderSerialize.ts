@@ -2,7 +2,7 @@ import { uneval } from 'devalue';
 import { pinGlobal } from '../utils/globalState';
 
 /** Pinned so `moduleRef()` in whichever framework copy the module imports sees the evaluation the loader started. */
-export const compiledEvaluation = pinGlobal('__mochi_compiled_evaluation__', () => ({ active: 0 }));
+export const prerenderEvaluation = pinGlobal('__mochi_prerender_evaluation__', () => ({ active: 0 }));
 
 /** Keyed on the global symbol registry so a marker created by one bundled copy of the framework is recognised by another. */
 const MODULE_REF = Symbol.for('mochi.moduleRef');
@@ -32,18 +32,18 @@ export interface SerializedValue {
   imports: { identifier: string; specifier: string }[];
 }
 
-/** Identifier allocation shared by every `compiled()` call in one module, so two calls can't both mint `__mochi_ref_0__`. */
-export interface CompiledRefScope {
+/** Identifier allocation shared by every `moduleRef()` marker in one module, so two markers can't both mint `__mochi_ref_0__`. */
+export interface PrerenderRefScope {
   imports: { identifier: string; specifier: string }[];
   seen: Map<string, string>;
 }
 
-export function createCompiledRefScope(): CompiledRefScope {
+export function createPrerenderRefScope(): PrerenderRefScope {
   return { imports: [], seen: new Map() };
 }
 
 /** `devalue` escapes `<`, so a value holding markup cannot close the script block it is spliced into. */
-export function serializeCompiledValue(value: unknown, scope: CompiledRefScope = createCompiledRefScope()): SerializedValue {
+export function serializePrerenderValue(value: unknown, scope: PrerenderRefScope = createPrerenderRefScope()): SerializedValue {
   const before = scope.imports.length;
   const refIdentifier = (specifier: string): string => {
     let identifier = scope.seen.get(specifier);

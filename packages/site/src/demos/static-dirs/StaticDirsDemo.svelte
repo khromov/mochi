@@ -2,7 +2,7 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import CodeSnippet from '../../components/CodeSnippet.svelte';
   import ImageCredits from '../../components/ImageCredits.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
   import { highlightCode } from '../../lib/highlight.server';
 
   const photos = [1, 2, 3, 6, 9, 13];
