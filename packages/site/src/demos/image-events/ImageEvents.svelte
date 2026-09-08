@@ -1,12 +1,9 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
   import ImageCredits from '../../components/ImageCredits.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
+  import { sources } from './sources.compiled.ts';
   import { remote } from './log.ts';
   import { Image } from 'mochi-framework/image';
-
-  const sources = await loadSources(files);
 </script>
 
 <DemoPage

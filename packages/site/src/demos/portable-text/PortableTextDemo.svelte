@@ -2,9 +2,8 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import CodeSnippet from '../../components/CodeSnippet.svelte';
   import Callout from '../../../../docs/_components/Callout.svelte';
-  import { loadSources } from '../../components/utils.ts';
+  import { sources } from './sources.compiled.ts';
   import { highlightCode } from '../../lib/highlight.server';
-  import { files } from './files.ts';
   import { playgroundJson } from './blocks.ts';
   import Playground from './Playground.svelte';
 
@@ -15,8 +14,6 @@
   const codeImport = await ts("import { PortableText } from '@portabletext/svelte';");
   const codeBasic = await sv('<PortableText value={blocks} />');
   const codePair = await sv('<Playground source={playgroundJson} />\n<Playground mochi:hydrate source={playgroundJson} />');
-
-  const sources = await loadSources(files);
 </script>
 
 <DemoPage

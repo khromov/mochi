@@ -1,8 +1,7 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import StylingDemo from './StylingDemo.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
+  import { sources } from './sources.compiled.ts';
   import { themes, defaultsSample, rule, markup } from './themes.ts';
   import { highlightCode } from '../../lib/highlight.server';
   import type { MintedCaptcha } from 'mochi-framework';
@@ -23,8 +22,6 @@
     candy: await highlightCode(markup(themes.candy), 'svelte'),
     terminal: await highlightCode(markup(themes.terminal), 'svelte'),
   };
-
-  const sources = await loadSources(files);
 </script>
 
 <DemoPage

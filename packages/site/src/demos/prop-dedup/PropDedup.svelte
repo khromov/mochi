@@ -1,10 +1,7 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import SharedPropsCard from './SharedPropsCard.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
-
-  const sources = await loadSources(files);
+  import { sources } from './sources.compiled.ts';
 
   // Each payload is reused across three cards so Mochi dedupes it into one hoisted `<script type="application/json">` block instead of shipping it three times.
   const groups = [

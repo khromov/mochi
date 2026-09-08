@@ -1,11 +1,8 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import QueueWidget from './QueueWidget.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
+  import { sources } from './sources.compiled.ts';
   import type { QueueStatus } from './types.ts';
-
-  const sources = await loadSources(files);
 
   let { initial, suggestedUser }: { initial: QueueStatus; suggestedUser: string } = $props();
 </script>

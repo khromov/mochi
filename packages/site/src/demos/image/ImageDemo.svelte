@@ -3,8 +3,7 @@
   import CodeSnippet from '../../components/CodeSnippet.svelte';
   import ImageCredits from '../../components/ImageCredits.svelte';
   import Callout from '../../../../docs/_components/Callout.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
+  import { sources } from './sources.compiled.ts';
   import ImageIslandCard from './ImageIslandCard.svelte';
   import { Image } from 'mochi-framework/image';
   import { getImageUrl, getImagePlaceholder } from 'mochi-framework';
@@ -38,8 +37,6 @@
   const codeLocalUsage = await svelte('<Image src={hero} size="hero" alt="A local image" />');
   const codeLocalBare = await svelte('<Image src={hero} alt="At natural size" />');
   const codeLocalImg = await svelte('<img src={hero.src} width={hero.width} height={hero.height} alt="" />');
-
-  const sources = await loadSources(files);
 </script>
 
 <DemoPage

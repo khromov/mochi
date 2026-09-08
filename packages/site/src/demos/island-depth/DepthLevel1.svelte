@@ -1,6 +1,6 @@
 <script>
   import { isServer } from 'mochi-framework';
-  import { delay } from '../../components/utils.ts';
+  import { delay } from '../../components/sourceUtils';
   import DepthLevel2 from './DepthLevel2.svelte';
 
   let { inline = true } = $props();

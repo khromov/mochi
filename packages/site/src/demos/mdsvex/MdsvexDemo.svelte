@@ -1,11 +1,8 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
+  import { sources } from './sources.compiled.ts';
   import Greeting from './Greeting.md';
   import Snippet from './Snippet.svx';
-
-  const sources = await loadSources(files);
 </script>
 
 <DemoPage

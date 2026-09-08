@@ -4,6 +4,7 @@ import { compile as mdsvexCompile } from 'mdsvex';
 import { logger, trailingSlashIt } from 'mochi-framework';
 import rehypeSlug from 'rehype-slug';
 import { SITE_ROOT } from './siteRoot';
+import { sharedCache } from './sharedCache';
 import { loadPosts, getPost } from './blog';
 import { CHANGELOG_SLUG, CHANGELOG_TITLE, CHANGELOG_DESCRIPTION, getChangelogTxt } from './changelog';
 import { demos, type Demo } from './demos';
@@ -52,30 +53,32 @@ export interface DocEntry {
   raw: string;
 }
 
-let cachedDocs: DocEntry[] | null = null;
-let cachedBySlug: Map<string, DocEntry> | null = null;
-let cachedNav: TocEntry[] | null = null;
-let cachedLlmsRecommendedTxt: string | null = null;
-// Only the docs + demos + posts portion is a forever memo. The changelog block is
-// concatenated per request (getChangelogTxt is itself cached) so its 4h TTL isn't
-// frozen into this module-level string.
-let cachedLlmsFullBaseTxt: string | null = null;
-let cachedSitemapXml: string | null = null;
-const cachedDemoLlmsTxt = new Map<string, string | null>();
+const cache = sharedCache('__mochi_site_docs_cache__', () => ({
+  docs: null as DocEntry[] | null,
+  bySlug: null as Map<string, DocEntry> | null,
+  nav: null as TocEntry[] | null,
+  llmsRecommendedTxt: null as string | null,
+  // Only the docs + demos + posts portion is a forever memo. The changelog block is
+  // concatenated per request (getChangelogTxt is itself cached) so its 4h TTL isn't
+  // frozen into this string.
+  llmsFullBaseTxt: null as string | null,
+  sitemapXml: null as string | null,
+  demoLlmsTxt: new Map<string, string | null>(),
+}));
 
 export function clearDocsCaches(): void {
-  cachedDocs = null;
-  cachedBySlug = null;
-  cachedNav = null;
-  cachedLlmsRecommendedTxt = null;
-  cachedLlmsFullBaseTxt = null;
-  cachedSitemapXml = null;
-  cachedDemoLlmsTxt.clear();
+  cache.docs = null;
+  cache.bySlug = null;
+  cache.nav = null;
+  cache.llmsRecommendedTxt = null;
+  cache.llmsFullBaseTxt = null;
+  cache.sitemapXml = null;
+  cache.demoLlmsTxt.clear();
 }
 
 export async function loadDocs(): Promise<DocEntry[]> {
-  if (cachedDocs) {
-    return cachedDocs;
+  if (cache.docs) {
+    return cache.docs;
   }
 
   const glob = new Bun.Glob('*.md');
@@ -123,16 +126,16 @@ export async function loadDocs(): Promise<DocEntry[]> {
     });
   }
 
-  cachedDocs = entries;
-  cachedBySlug = new Map(entries.map((e) => [e.slug, e]));
+  cache.docs = entries;
+  cache.bySlug = new Map(entries.map((e) => [e.slug, e]));
   return entries;
 }
 
 export async function getDoc(slug: string): Promise<DocEntry | null> {
-  if (!cachedBySlug) {
+  if (!cache.bySlug) {
     await loadDocs();
   }
-  return cachedBySlug?.get(slug) ?? null;
+  return cache.bySlug?.get(slug) ?? null;
 }
 
 export interface DocNeighbor {
@@ -156,8 +159,8 @@ export async function getDocNeighbors(slug: string): Promise<{ prev: DocNeighbor
 }
 
 export async function buildDocsNav(): Promise<TocEntry[]> {
-  if (cachedNav) {
-    return cachedNav;
+  if (cache.nav) {
+    return cache.nav;
   }
   const docs = await loadDocs();
   const entries: TocEntry[] = [];
@@ -173,7 +176,7 @@ export async function buildDocsNav(): Promise<TocEntry[]> {
       }
     }
   }
-  cachedNav = entries;
+  cache.nav = entries;
   return entries;
 }
 
@@ -197,13 +200,13 @@ async function buildDemosTxt(stripStyles = false): Promise<string> {
 // the demo page renders via loadSources — so cross-folder files (e.g. shared stores,
 // the demoIndex.ts example) are included, not just files in the demo folder.
 export async function getDemoLlmsTxt(slug: string): Promise<string | null> {
-  if (cachedDemoLlmsTxt.has(slug)) {
-    return cachedDemoLlmsTxt.get(slug)!;
+  if (cache.demoLlmsTxt.has(slug)) {
+    return cache.demoLlmsTxt.get(slug)!;
   }
   const result = await buildDemoLlmsTxt(slug);
   // Source files never change at runtime, so cache the rendered bundle (including
   // the null "no such demo" result) to avoid re-reading every file on each request.
-  cachedDemoLlmsTxt.set(slug, result);
+  cache.demoLlmsTxt.set(slug, result);
   return result;
 }
 
@@ -245,12 +248,12 @@ async function buildDemoLlmsTxt(slug: string, stripStyles = false): Promise<stri
 }
 
 export async function buildLlmsRecommendedTxt(): Promise<string> {
-  if (cachedLlmsRecommendedTxt) {
-    return cachedLlmsRecommendedTxt;
+  if (cache.llmsRecommendedTxt) {
+    return cache.llmsRecommendedTxt;
   }
   const docs = await loadDocs();
-  cachedLlmsRecommendedTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n';
-  return cachedLlmsRecommendedTxt;
+  cache.llmsRecommendedTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n';
+  return cache.llmsRecommendedTxt;
 }
 
 // Component <style> blocks in demo source are presentation noise for an LLM
@@ -272,17 +275,17 @@ async function buildBlogPostsTxt(): Promise<string> {
 }
 
 export async function buildLlmsFullTxt(): Promise<string> {
-  if (!cachedLlmsFullBaseTxt) {
+  if (!cache.llmsFullBaseTxt) {
     const [docs, demos, posts] = await Promise.all([loadDocs(), buildDemosTxt(true), buildBlogPostsTxt()]);
-    cachedLlmsFullBaseTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n\n' + demos + '\n\n' + posts;
+    cache.llmsFullBaseTxt = docs.map((d) => d.raw.trimEnd()).join('\n\n') + '\n\n' + demos + '\n\n' + posts;
   }
   // The changelog is fetched (and cached) separately; concatenate it per request so its own
   // 4h TTL isn't frozen into the forever memo, and omit the block on a fetch miss.
   const changelog = await getChangelogTxt();
   if (changelog === null) {
-    return cachedLlmsFullBaseTxt;
+    return cache.llmsFullBaseTxt;
   }
-  return `${cachedLlmsFullBaseTxt}\n\n# Changelog\n\n${changelog.trimEnd()}\n`;
+  return `${cache.llmsFullBaseTxt}\n\n# Changelog\n\n${changelog.trimEnd()}\n`;
 }
 
 export const SITE_BASE = 'https://mochi.fast';
@@ -290,8 +293,8 @@ const SITEMAP_NS = 'http://www.sitemaps.org/schemas/sitemap/0.9';
 export const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>';
 
 export async function buildSitemapXml(): Promise<string> {
-  if (cachedSitemapXml) {
-    return cachedSitemapXml;
+  if (cache.sitemapXml) {
+    return cache.sitemapXml;
   }
   const docs = await loadDocs();
   // Published posts only — loadPosts() without includeDrafts never exposes drafts.
@@ -309,8 +312,8 @@ export async function buildSitemapXml(): Promise<string> {
     ...internalDemos.map((d) => trailingSlashIt(`${SITE_BASE}${d.href}`)),
   ];
 
-  cachedSitemapXml = `${XML_DECLARATION}\n${Bun.XML.stringify({ urlset: { '@xmlns': SITEMAP_NS, url: urls.map((loc) => ({ loc })) } })}\n`;
-  return cachedSitemapXml;
+  cache.sitemapXml = `${XML_DECLARATION}\n${Bun.XML.stringify({ urlset: { '@xmlns': SITEMAP_NS, url: urls.map((loc) => ({ loc })) } })}\n`;
+  return cache.sitemapXml;
 }
 
 export async function getDocLlmsTxt(slug: string): Promise<string | null> {
