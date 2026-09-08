@@ -1,7 +1,7 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
   import HydrationProbe from './HydrationProbe.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
 </script>
 
 <DemoPage

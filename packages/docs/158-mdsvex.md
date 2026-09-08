@@ -124,12 +124,12 @@ Omitting the `markdown` config disables `.md`/`.svx` handling, so importing one 
 
 ### Mapping slugs to markdown components
 
-<VersionNote since="0.10.0" message="*.compiled.ts modules and moduleRef() are not in the published release yet." />
+<VersionNote since="0.10.0" message="*.prerender.ts modules and moduleRef() are not in the published release yet." />
 
-A docs or blog section usually needs every `.md` file keyed by slug. Build that map in a [build-time module](/docs/compiled/) instead of generating a barrel file into your source tree:
+A docs or blog section usually needs every `.md` file keyed by slug. Build that map in a [prerendered module](/docs/prerender/) instead of generating a barrel file into your source tree:
 
 ```ts
-// src/lib/docs.compiled.ts
+// src/lib/docs.prerender.ts
 import { moduleRef } from 'mochi-framework';
 import type { Component } from 'svelte';
 import { loadDocs } from './docs';

@@ -1,7 +1,7 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
   import FileViewer from './FileViewer.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
 </script>
 
 <DemoPage

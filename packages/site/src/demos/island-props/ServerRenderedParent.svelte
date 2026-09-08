@@ -3,7 +3,7 @@
   import CodeSnippet from '../../components/CodeSnippet.svelte';
   import ClientRenderedChild from './ClientRenderedChild.svelte';
   import { typeOf } from './devalueTypeOf.ts';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
   import { highlightCode } from '../../lib/highlight.server';
 
   const codeProps = await highlightCode(

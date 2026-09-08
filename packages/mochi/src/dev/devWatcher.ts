@@ -4,7 +4,7 @@ import path from 'node:path';
 import chokidar from 'chokidar';
 import debounce from '../vendor/debounce/index';
 import type { ComponentRegistry } from '../compiler/ComponentRegistry';
-import { resetCompiledEvaluationCache } from '../compiler/compiledModules';
+import { resetPrerenderEvaluationCache } from '../compiler/prerenderModules';
 import { mochiEvents } from '../events';
 import type { MochiFileChangeType } from '../events';
 import { logger } from '../utils/log';
@@ -43,7 +43,7 @@ const FILE_CHANGE_EVENTS = new Set<string>(['add', 'change', 'unlink', 'addDir',
 const STRUCTURAL_EXTENSIONS = new Set(['.svelte', '.md', '.svx', '.ts', '.mts', '.cts', '.js', '.mjs', '.cjs', '.json', '.yaml', '.yml', '.txt', '.csv', '.html']);
 
 /**
- * Whether an add/unlink may change what a build-time module derives from a directory listing. An edit to an existing
+ * Whether an add/unlink may change what a prerendered module derives from a directory listing. An edit to an existing
  * file already reaches its dependents through the import graph, and editor temp files (`.swp`, `4913`, `___jb_tmp___`,
  * `.DS_Store`) and directories carry nothing such a module reads.
  */
@@ -199,7 +199,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     reloadChain = reloadChain.then(async () => {
       // Cleared here rather than on the watcher event, so it cannot land between this rebuild's server and client
       // passes and let them inline different values into the same island.
-      resetCompiledEvaluationCache();
+      resetPrerenderEvaluationCache();
       // pageCount on the start event is the universe size, not the
       // affected size — the watcher doesn't know which pages depend on
       // the changed file until recompileChanged inspects the graph.
@@ -209,12 +209,12 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       let failed = false;
       try {
         if (structural) {
-          const count = registry.getBuildTimeModules().length;
+          const count = registry.getPrerenderModules().length;
           if (count > 0) {
-            logger.info(`Rebuilding ${count} build-time module${count === 1 ? '' : 's'} — their inputs are not in the import graph`);
+            logger.info(`Rebuilding ${count} prerendered module${count === 1 ? '' : 's'} — their inputs are not in the import graph`);
           }
         }
-        summary = await registry.recompileChanged(filename, { withBuildTimeModules: structural });
+        summary = await registry.recompileChanged(filename, { withPrerenderModules: structural });
         const resolved = path.resolve(filename);
         if (routeComponentPaths.has(resolved) && !summary.pages.has(resolved)) {
           await registry.compile(resolved, { force: true });
@@ -222,7 +222,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         }
       } catch (e) {
         failed = true;
-        // Consumed above but never acted on, so the next save still rebuilds the build-time modules.
+        // Consumed above but never acted on, so the next save still rebuilds the prerendered modules.
         pendingStructural ||= structural;
         logger.warn(`Rebuild failed: ${e instanceof Error ? e.message : e}`);
       }
@@ -557,7 +557,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
 
   const triggerEntryReload = debounce((filename: string) => {
     reloadChain = reloadChain.then(async () => {
-      resetCompiledEvaluationCache();
+      resetPrerenderEvaluationCache();
       mochiEvents.emit('recompile:start', { trigger: 'entry', path: filename, pageCount: registry.getPageCount() });
       const start = performance.now();
       let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
@@ -751,7 +751,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   const svelteConfigPath = path.resolve('svelte.config.js');
   const reloadSvelteConfig = debounce(() => {
     reloadChain = reloadChain.then(async () => {
-      resetCompiledEvaluationCache();
+      resetPrerenderEvaluationCache();
       const pageCount = registry.getPageCount();
       mochiEvents.emit('recompile:start', { trigger: 'svelte-config', path: svelteConfigPath, pageCount });
       const start = performance.now();

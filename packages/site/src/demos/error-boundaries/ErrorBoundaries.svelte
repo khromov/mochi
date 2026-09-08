@@ -4,7 +4,7 @@
   import ThrowOnClient from './ThrowOnClient.svelte';
   import ThrowOnServerIsland from './ThrowOnServerIsland.svelte';
   import HealthyServerIsland from './HealthyServerIsland.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
 </script>
 
 {#snippet caughtFallback(error: unknown)}

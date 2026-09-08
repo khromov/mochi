@@ -5,7 +5,7 @@
   import LiveCounter from './LiveCounter.svelte';
   import FlakyPanel from './FlakyPanel.svelte';
   import ErrorModes from './ErrorModes.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
 </script>
 
 <DemoPage

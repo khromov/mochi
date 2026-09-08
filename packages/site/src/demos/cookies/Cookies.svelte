@@ -1,7 +1,7 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
   import CookieDemo from './CookieDemo.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
 
   const cuteNames = ['mochi_fan', 'bun_bun', 'pixel_panda', 'tiny_tanuki', 'cloud_kitten', 'waffle_fox', 'cocoa_bear', 'starry_otter', 'maple_duck', 'peach_pup'];
   const randomCuteName = cuteNames[Math.floor(Math.random() * cuteNames.length)];

@@ -46,7 +46,7 @@ import { buildDebugBarBundle, type DebugBarBundle } from './buildDebugBarBundle'
 import { formatBuildMessages } from './formatBuildMessages';
 import { clientBuildDefine, registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
 import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
-import { COMPILED_MODULE_FILTER, createCompiledModuleLoader, currentCompiledEvaluationCache, type CompiledContext, type CompiledEvaluationCache } from './compiledModules';
+import { PRERENDER_MODULE_FILTER, createPrerenderModuleLoader, currentPrerenderEvaluationCache, type PrerenderContext, type PrerenderEvaluationCache } from './prerenderModules';
 import { EMAIL_TEMPLATE_DIR } from '../email/templates';
 import { registerLocalImageAsset } from '../image/localAssetRegistry';
 import type { LocalImageAsset } from '../image/types';
@@ -395,8 +395,8 @@ export class ComponentRegistry {
    * watcher's `recompileChanged()` invalidates only the pages whose dep graph contains the changed file.
    */
   private entryDeps: Map<string, Set<string>> = new Map();
-  /** A build-time module's imports vanish from the bundle, so the metafile cannot say which first-party files feed it. */
-  private compiledInputs: Map<string, Set<string>> = new Map();
+  /** A prerendered module's imports vanish from the bundle, so the metafile cannot say which first-party files feed it. */
+  private prerenderInputs: Map<string, Set<string>> = new Map();
   private clientStats: {
     outputs: {
       name: string;
@@ -459,21 +459,21 @@ export class ComponentRegistry {
   /** Instance-scoped so two registries with different markdown/preprocessor config can't serve each other stale output for the same path — see {@link CompileCache}. */
   readonly compileCache = new CompileCache();
 
-  private compiledContext(evaluations: CompiledEvaluationCache): CompiledContext {
+  private prerenderContext(evaluations: PrerenderEvaluationCache): PrerenderContext {
     return {
       development: this.development,
       isPrebuilt: () => this.loadedFromManifest,
-      onInputs: (compiledPath, inputs) => this.compiledInputs.set(path.resolve(compiledPath), inputs),
+      onInputs: (prerenderPath, inputs) => this.prerenderInputs.set(path.resolve(prerenderPath), inputs),
       evaluations,
     };
   }
 
-  /** Distinct `*.compiled.ts` modules across every compiled page's dep graph, for the build report and the dev watcher. */
-  getBuildTimeModules(): string[] {
+  /** Distinct `*.prerender.ts` modules across every compiled page's dep graph, for the build report and the dev watcher. */
+  getPrerenderModules(): string[] {
     const files = new Set<string>();
     for (const deps of this.entryDeps.values()) {
       for (const dep of deps) {
-        if (COMPILED_MODULE_FILTER.test(dep)) {
+        if (PRERENDER_MODULE_FILTER.test(dep)) {
           files.add(dep);
         }
       }
@@ -676,7 +676,7 @@ export class ComponentRegistry {
     }
     const compileStart = performance.now();
     // Captured before either pass so a watcher reset landing between them cannot inline different values into one island.
-    const evaluations = currentCompiledEvaluationCache();
+    const evaluations = currentPrerenderEvaluationCache();
 
     const cssMap = new Map<string, string>();
     const importedCssPaths = new Set<string>();
@@ -701,13 +701,13 @@ export class ComponentRegistry {
       rejectUnknown: this.loadedFromManifest && !this.development,
     });
 
-    const compiledModuleLoader = createCompiledModuleLoader(this.compiledContext(evaluations));
+    const prerenderModuleLoader = createPrerenderModuleLoader(this.prerenderContext(evaluations));
 
     const sveltePlugin: BunPlugin = {
       name: 'svelte-ssr',
       setup(build) {
         build.onLoad({ filter: applyFilter('image:fileFilter', IMAGE_FILE_FILTER, { target: 'server' }) }, imageAssetLoader);
-        build.onLoad({ filter: COMPILED_MODULE_FILTER }, compiledModuleLoader);
+        build.onLoad({ filter: PRERENDER_MODULE_FILTER }, prerenderModuleLoader);
         // Bun resolves bare specifiers like `@fontsource-variable/inter` through package.json#main to the real `.css`,
         // so filtering on the resolved path catches direct and package imports alike. The path is recorded and the import
         // stripped from the SSR JS bundle; the CSS is bundled out-of-band below and served as `/import-css/*`.
@@ -1132,7 +1132,7 @@ export class ComponentRegistry {
     }
   }
 
-  private async buildClientBundle(evaluations: CompiledEvaluationCache = currentCompiledEvaluationCache()): Promise<void> {
+  private async buildClientBundle(evaluations: PrerenderEvaluationCache = currentPrerenderEvaluationCache()): Promise<void> {
     this.clientBundleCallCount += 1;
     const bundleStart = performance.now();
     const development = this.development;
@@ -1197,13 +1197,13 @@ export class ComponentRegistry {
       rejectUnknown: this.loadedFromManifest && !this.development,
     });
 
-    const compiledModuleLoader = createCompiledModuleLoader(this.compiledContext(evaluations));
+    const prerenderModuleLoader = createPrerenderModuleLoader(this.prerenderContext(evaluations));
 
     const clientPlugin: BunPlugin = {
       name: 'svelte-client',
       setup(build) {
         build.onLoad({ filter: applyFilter('image:fileFilter', IMAGE_FILE_FILTER, { target: 'client' }) }, imageAssetLoader);
-        build.onLoad({ filter: COMPILED_MODULE_FILTER }, compiledModuleLoader);
+        build.onLoad({ filter: PRERENDER_MODULE_FILTER }, prerenderModuleLoader);
         // Mirrors the SSR side-effect-CSS strip, since the SSR-rendered `<head>` already links the bundle via
         // entryImportedCss → importedCssUrls. Bun's default CSS handling would otherwise inline JS-injected styles or
         // fail the build for any hydratable component importing a stylesheet.
@@ -2244,18 +2244,18 @@ export class ComponentRegistry {
    * reload for edits outside the page graph (server entry, package.json), which need a process restart anyway. Paths in
    * `pages` are absolute, matching the `window.__mochi_page_entry` value injected into SSR'd HTML.
    */
-  async recompileChanged(changedPath: string, opts: { withBuildTimeModules?: boolean } = {}): Promise<{ pages: Set<string>; clientBundleCount: number }> {
+  async recompileChanged(changedPath: string, opts: { withPrerenderModules?: boolean } = {}): Promise<{ pages: Set<string>; clientBundleCount: number }> {
     const changed = path.resolve(changedPath);
     const seeds = new Set([changed]);
-    for (const [compiled, inputs] of this.compiledInputs) {
+    for (const [prerenderModule, inputs] of this.prerenderInputs) {
       if (inputs.has(changed)) {
-        seeds.add(compiled);
+        seeds.add(prerenderModule);
       }
     }
-    // A build-time module may read files the import graph knows nothing about, so the watcher cannot narrow this to one module.
-    if (opts.withBuildTimeModules) {
-      for (const compiled of this.getBuildTimeModules()) {
-        seeds.add(compiled);
+    // A prerendered module may read files the import graph knows nothing about, so the watcher cannot narrow this to one module.
+    if (opts.withPrerenderModules) {
+      for (const prerenderModule of this.getPrerenderModules()) {
+        seeds.add(prerenderModule);
       }
     }
     return this.recompileDependents(seeds, 'Targeted rebuild failed');

@@ -1,7 +1,7 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import CaptchaForm from './CaptchaForm.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
   import type { MintedCaptcha } from 'mochi-framework';
 
   let { captcha }: { captcha: MintedCaptcha } = $props();

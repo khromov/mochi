@@ -1,7 +1,7 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import QueueWidget from './QueueWidget.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
   import type { QueueStatus } from './types.ts';
 
   let { initial, suggestedUser }: { initial: QueueStatus; suggestedUser: string } = $props();

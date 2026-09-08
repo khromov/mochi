@@ -1,7 +1,7 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import ApiProbe from './ApiProbe.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
   import type { MochiFormResult } from 'mochi-framework';
 
   let { form }: { form: MochiFormResult } = $props();

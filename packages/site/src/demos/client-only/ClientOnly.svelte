@@ -2,7 +2,7 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import BrowserCanvas from './BrowserCanvas.svelte';
   import MountClock from './MountClock.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
 </script>
 
 <DemoPage

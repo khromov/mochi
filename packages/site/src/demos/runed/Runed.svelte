@@ -6,7 +6,7 @@
   import Elements from './Elements.svelte';
   import Sensors from './Sensors.svelte';
   import AsyncFsm from './AsyncFsm.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
   import { highlightCode } from '../../lib/highlight.server';
 
   const codeInstall = await highlightCode('bun add runed', 'bash');

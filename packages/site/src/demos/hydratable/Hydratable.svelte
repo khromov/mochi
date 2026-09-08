@@ -2,7 +2,7 @@
   import { hydratable } from 'svelte';
   import { Database } from 'bun:sqlite';
   import DemoPage from '../../components/DemoPage.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
   import FactCard from './FactCard.svelte';
   import FactCardProps from './FactCardProps.svelte';
 

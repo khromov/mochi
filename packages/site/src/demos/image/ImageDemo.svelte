@@ -3,7 +3,7 @@
   import CodeSnippet from '../../components/CodeSnippet.svelte';
   import ImageCredits from '../../components/ImageCredits.svelte';
   import Callout from '../../../../docs/_components/Callout.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
   import ImageIslandCard from './ImageIslandCard.svelte';
   import { Image } from 'mochi-framework/image';
   import { getImageUrl, getImagePlaceholder } from 'mochi-framework';

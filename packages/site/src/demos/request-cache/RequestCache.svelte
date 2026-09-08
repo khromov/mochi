@@ -1,6 +1,6 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
-  import { sources } from './sources.compiled.ts';
+  import { sources } from './sources.prerender.ts';
   import { highlightCode } from '../../lib/highlight.server';
   import { overview, topWords, themes, extremes, richness } from './analyzeBook.ts';
 

@@ -4,7 +4,7 @@
   import NewsletterEmbed from './components/NewsletterEmbed.svelte';
   import type { TocEntry } from './lib/toc';
   import { formatPostDate } from './lib/formatDate';
-  import { blogComponents } from './lib/blogComponents.compiled';
+  import { blogComponents } from './lib/blogComponents.prerender';
   import { getAuthor } from './lib/authors';
 
   let {
