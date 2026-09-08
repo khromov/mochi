@@ -62,9 +62,9 @@ The `markdown` config accepts a full plugin chain compatible with mdsvex's `rehy
 
 ### Syntax highlighting
 
-<VersionNote since="0.10.0" message="createTwinkleplopHighlighter was added in 0.10.0; before it, wire an engine through createHighlighter yourself." />
+Fenced code blocks pass through unchanged unless you supply `markdown.highlight.highlighter`. `createHighlighter` turns any engine into one — it adds the code-block wrapper, copy button, Svelte-brace escape, and memoization per `(code, lang)`.
 
-Fenced code blocks pass through unchanged unless you supply `markdown.highlight.highlighter`. Install the [twinkleplop](https://twinkleplop.pngwn.workers.dev/docs) grammars you need and build a highlighter with `createTwinkleplopHighlighter`. It adds the code-block wrapper, copy button, and Svelte-brace escape.
+The site is built on [twinkleplop](https://twinkleplop.pngwn.workers.dev/docs), which ships one package per language and highlights synchronously:
 
 ```sh
 bun add @twinkleplop/typescript @twinkleplop/bash
@@ -74,9 +74,14 @@ bun add @twinkleplop/typescript @twinkleplop/bash
 // src/lib/highlightCode.ts
 import { language as bash } from '@twinkleplop/bash';
 import { language as typescript } from '@twinkleplop/typescript';
-import { createTwinkleplopHighlighter } from 'mochi-framework/highlight';
+import { createHighlighter } from 'mochi-framework/highlight';
 
-export const highlightCode = createTwinkleplopHighlighter({ languages: { bash, typescript } });
+const grammars: Record<string, (code: string) => string> = {
+  bash: bash(),
+  typescript: typescript(),
+};
+
+export const highlightCode = createHighlighter((code, lang) => (grammars[lang] ?? grammars.typescript)(code));
 ```
 
 ```ts
@@ -89,16 +94,21 @@ markdown: {
 }
 ```
 
-Highlighting is synchronous and each grammar is instantiated on first use, so registering a language you never render costs nothing. Mochi memoizes results per `(code, lang)`. The cache holds 1000 snippets and evicts in insertion order. Tune it with `cacheSize` (`0` disables memoization).
+The cache holds 1000 snippets and evicts in insertion order. Tune it with `cacheSize` (`0` disables memoization).
 
-Common aliases resolve automatically — `ts`, `js`, `sh`, `yml`, `xml`, `dockerfile` and friends map to the grammar that handles them. Add your own with `aliases`. A language with no grammar renders escaped and unhighlighted rather than throwing.
+<Callout type="info">
+
+twinkleplop has no alias table, so the `lang` mdsvex hands you is the raw fence word — map `ts`, `js`, `sh`, `yml` and friends onto your grammar keys yourself, and decide what an unknown language does. `escapeHtmlAttr` from `mochi-framework` renders one unhighlighted without throwing.
+
+</Callout>
+
+Any other engine drops in the same way, sync or async:
 
 ```ts
-createTwinkleplopHighlighter({
-  languages: { typescript },
-  aliases: { svx: 'markdown' },
-  lineNumbers: true,
-});
+import hljs from 'highlight.js';
+import { createHighlighter } from 'mochi-framework/highlight';
+
+export const highlightCode = createHighlighter((code, lang) => hljs.highlight(code, { language: lang }).value);
 ```
 
 #### Theming
@@ -120,18 +130,7 @@ Import a ready-made one (`import '@twinkleplop/theme-github'`), or write the rul
 }
 ```
 
-With `lineNumbers: true` each line gains a leading `<span class="ln">` to style as a gutter.
-
-#### Another engine
-
-`createHighlighter` accepts any `(code, lang) => string | Promise<string>` function, so Prism, highlight.js or Shiki drop in the same way:
-
-```ts
-import hljs from 'highlight.js';
-import { createHighlighter } from 'mochi-framework/highlight';
-
-export const highlightCode = createHighlighter((code, lang) => hljs.highlight(code, { language: lang }).value);
-```
+Engines that inline their own colours (Shiki, highlight.js themes) need no stylesheet of yours.
 
 ### Islands in markdown
 

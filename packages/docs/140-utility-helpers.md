@@ -85,6 +85,20 @@ const token = encryptPayload(JSON.stringify({ iat: Date.now() }), { aad: 'my-for
 const opened = decryptPayload(token, { aad: 'my-form' }); // string | null
 ```
 
+### HTML escaping
+
+<VersionNote since="0.10.0" message="escapeHtmlAttr became a public export in 0.10.0." />
+
+`escapeHtmlAttr(value)` replaces `&`, `"`, `<` and `>` with entities. It is the framework’s single attribute encoder, so values round-trip exactly through `getAttribute()` — including payloads that already contain entity sequences like `&quot;`, which a bare `"`-only replace would corrupt. It works for text content too.
+
+```ts
+import { escapeHtmlAttr } from 'mochi-framework';
+
+const html = `<pre><code>${escapeHtmlAttr(source)}</code></pre>`;
+```
+
+It has zero imports on purpose, so server modules, SSR, hydrated components and client-bundled web components all share the one implementation.
+
 ### Process singletons
 
 `pinGlobal(key, factory)` returns one instance per `key` for the life of the process, pinned on `globalThis`. The `factory` runs at most once per key; every later call with the same key returns the same value.

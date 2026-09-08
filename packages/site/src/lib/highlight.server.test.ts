@@ -17,16 +17,18 @@ describe('highlightCode', () => {
     expect(html).toContain('class="tok property"');
   });
 
-  // Every fence language the docs and demo sources actually use, so a missing grammar fails here
-  // rather than silently rendering a page's code blocks as plaintext.
+  // Every fence language the docs and demo sources actually use, so a missing grammar or alias fails
+  // here rather than silently rendering a page's code blocks as plaintext.
   test.each([
     ['ts', 'const a = 1;'],
     ['typescript', 'const a = 1;'],
     ['js', 'const a = 1;'],
     ['svelte', '<p>hi</p>'],
     ['html', '<p>hi</p>'],
+    ['xml', '<p>hi</p>'],
     ['sh', 'echo "hi"'],
     ['bash', 'echo "hi"'],
+    ['dockerfile', 'RUN echo "hi"'],
     ['json', '{ "a": 1 }'],
     ['css', 'p { color: red; }'],
     ['toml', 'a = 1'],
@@ -35,7 +37,21 @@ describe('highlightCode', () => {
     expect(highlightCode(code, lang)).toContain('class="tok ');
   });
 
-  test('escapes an unregistered language instead of throwing', () => {
-    expect(highlightCode('<b>', 'brainfuck')).toContain('<pre class="twinkleplop"><code>&lt;b&gt;</code></pre>');
+  test('renders an unregistered language as escaped plaintext instead of throwing', () => {
+    const html = highlightCode('<b> & "q"', 'brainfuck');
+    expect(html).toContain('<pre class="twinkleplop"><code>&lt;b&gt; &amp; &quot;q&quot;</code></pre>');
+    expect(html).toContain('<div class="code-block">');
+  });
+
+  test('an absent language falls through to the plaintext path', () => {
+    expect(highlightCode('a = 1')).toContain('<pre class="twinkleplop"><code>a = 1</code></pre>');
+  });
+
+  test('memoizes per (code, lang) and escapes Svelte braces', () => {
+    const first = highlightCode('const a = { b };', 'ts');
+    expect(highlightCode('const a = { b };', 'ts')).toBe(first);
+    expect(first).toContain('&#123;');
+    expect(first).toContain('&#125;');
+    expect(first).not.toContain('{');
   });
 });
