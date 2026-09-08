@@ -461,20 +461,14 @@ export class ComponentRegistry {
   private clientBundleCallCount = 0;
   /** Instance-scoped so two registries with different markdown/preprocessor config can't serve each other stale output for the same path — see {@link CompileCache}. */
   readonly compileCache = new CompileCache();
-  /** Every `compiled()` call inlined during this build, keyed by file, for the build report. Highest count wins rather than a running total: the server and client passes each load the same file, and a dev rebuild loads it again. */
+  /** Highest count wins rather than a running total: the server and client passes each load the same file, and a dev rebuild loads it again. */
   private compiledUsage: Map<string, number> = new Map();
 
-  /** Files that had `compiled()` calls inlined, with how many each had — consumed by the build report. */
   getCompiledUsage(): CompiledUsage[] {
     return [...this.compiledUsage].map(([file, count]) => ({ file: relForDisplay(file), count })).sort((a, b) => a.file.localeCompare(b.file));
   }
 
-  /**
-   * Absolute paths of every module that had a `compiled()` value inlined.
-   *
-   * A build-time function usually reads files nobody imports — a docs directory, a source list — so the bundler's
-   * dependency graph cannot say when its value went stale. Dev recompiles these whenever a change affects nothing else.
-   */
+  /** A build-time function usually reads files nobody imports, so the bundler's dependency graph cannot say when its value went stale. */
   getCompiledSourceFiles(): string[] {
     return [...this.compiledUsage.keys()];
   }
@@ -2256,13 +2250,7 @@ export class ComponentRegistry {
     return this.recompileDependents([changedPath], 'Targeted rebuild failed');
   }
 
-  /**
-   * Rebuild every page that inlines a build-time value.
-   *
-   * One batch for the whole cohort: a `compiled()` value's real inputs are not in the import graph, so the watcher
-   * cannot narrow this to a single module, and rebuilding them one at a time costs a full `Bun.build` plus a client
-   * bundle per module.
-   */
+  /** One batch for the whole cohort: a `compiled()` value's real inputs are not in the import graph, so the watcher cannot narrow this to a single module. */
   async recompileCompiledSources(): Promise<{ pages: Set<string>; clientBundleCount: number }> {
     return this.recompileDependents(this.compiledUsage.keys(), 'Build-time value rebuild failed');
   }

@@ -1,12 +1,7 @@
 import { styleText } from 'node:util';
 import type { CompiledUsage } from '../compiler/compiledMacro';
 
-/**
- * Report every `compiled()` call the build evaluated and inlined.
- *
- * Worth its own section rather than a log line: a build-time value is invisible in the output bundle by design, so this
- * is the only place the work shows up at all.
- */
+/** A build-time value is invisible in the output bundle by design, so this report is the only place the work shows up. */
 export function printCompiledTree(rows: CompiledUsage[]): void {
   if (rows.length === 0) {
     return;

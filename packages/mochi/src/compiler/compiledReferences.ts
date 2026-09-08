@@ -35,12 +35,8 @@ function collect(node: unknown, out: Set<string>, inImport: boolean): void {
 }
 
 /**
- * Every name a parsed module or component still mentions, ignoring import declarations themselves.
- *
- * Used to decide whether an import survived inlining. It walks the AST rather than the text because an inlined value is
- * frequently source code itself — the demo source viewer bakes in highlighted Svelte, which contains the very
- * identifiers being tested for — and a textual scan would match inside those string literals and never prune anything.
- * Over-reporting is safe here: a name wrongly kept only leaves an unused import.
+ * Walks the AST rather than the text because an inlined value is frequently source code itself, and a textual scan
+ * would match inside those string literals and never prune anything.
  */
 export function referencedNames(source: string, kind: 'svelte' | 'module'): Set<string> {
   const out = new Set<string>();

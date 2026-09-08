@@ -12,8 +12,7 @@ let app: string;
 beforeAll(async () => {
   outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-compiled-compile-'));
   app = path.join(outDir, 'app');
-  // A module with a top-level side effect, so the bundler cannot tree-shake it away on its own. If the macro did not
-  // prune the import, this marker would appear in the emitted chunk.
+  // A top-level side effect the bundler cannot tree-shake on its own, so the marker reaches the chunk unless the macro pruned the import.
   await Bun.write(path.join(app, 'buildOnly.ts'), `globalThis.__mochi_build_only_marker__ = 'SENTINEL_SIDE_EFFECT';\nexport const greeting = () => 'from build time';\n`);
   await Bun.write(
     path.join(app, 'Page.svelte'),

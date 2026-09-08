@@ -4,7 +4,6 @@ function isNode(value: unknown): value is Node {
   return typeof value === 'object' && value !== null && typeof (value as Node).type === 'string';
 }
 
-/** Every name a binding pattern introduces (`{a, b: [c]}`, `...rest`, `x = 1`). */
 export function patternNames(node: unknown, out: Set<string> = new Set()): Set<string> {
   if (!isNode(node)) {
     return out;
@@ -75,11 +74,8 @@ function functionScope(node: Node, bound: ReadonlySet<string>): Set<string> {
 }
 
 /**
- * Identifiers an expression references but does not itself bind.
- *
  * Conservative in one direction only: missing a reference makes the generated twin fail to compile with a clear error,
- * whereas inventing one would reject valid user code. So non-reference positions — member properties, non-computed
- * object keys, labels, and TypeScript type nodes — are skipped explicitly rather than filtered out afterwards.
+ * whereas inventing one would reject valid user code.
  */
 export function freeIdentifiers(expression: unknown): Set<string> {
   const free = new Set<string>();

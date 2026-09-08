@@ -45,12 +45,7 @@ interface ScriptRegion {
 
 const SCRIPT_CLOSE = new RegExp(String.raw`</scr` + `ipt`, 'gi');
 
-/**
- * Blunt a closing script tag so the Svelte parser can read a plain module wrapped in a synthetic script block.
- *
- * The replacement is the same length, so every AST offset still lines up with the real text — which is what the
- * transform slices expressions from and hands to MagicString. Only bytes inside strings and comments differ.
- */
+/** The replacement is the same length as what it blunts, so every AST offset still lines up with the real text the transform slices from. */
 function neutralizeScriptClose(text: string): string {
   return text.slice(0, text.length - MODULE_SUFFIX.length).replace(SCRIPT_CLOSE, '<%scr' + 'ipt') + MODULE_SUFFIX;
 }
@@ -72,12 +67,7 @@ function parseRegions(source: string, kind: 'svelte' | 'module'): { text: string
   return { text: source, regions, fragment: ast.fragment };
 }
 
-/**
- * Reject a compiled() written in markup (an {#await} block, a {@const}).
- *
- * Only script regions are transformed, so a markup call would fall through to the runtime shim and quietly ship the
- * dependency the macro exists to erase — and a moduleRef() inside one would reach the browser as a bare marker.
- */
+/** Only script regions are transformed, so a call in markup would fall through to the runtime shim and quietly ship the dependency the macro exists to erase. */
 function assertNoMacroInMarkup(fragment: unknown, filePath: string): void {
   const visit = (node: unknown): void => {
     if (!node || typeof node !== 'object') {
@@ -144,7 +134,6 @@ interface MacroCall {
   end: number;
 }
 
-/** Every `compiled(...)` call in a program, in source order, but only when `compiled` really is the framework import. */
 function macroCalls(program: Node, imports: HostImport[]): MacroCall[] {
   const bound = imports.some((imp) => imp.specifier === FRAMEWORK_SPECIFIER && imp.names.includes(MACRO_NAME));
   if (!bound) {
@@ -188,11 +177,7 @@ function macroCalls(program: Node, imports: HostImport[]): MacroCall[] {
   return calls;
 }
 
-/**
- * Evaluate every `compiled()` call in a module at build time and inline the result.
- *
- * Returns the original source untouched when the file has no macro calls, so the common case costs one substring scan.
- */
+/** Returns the original source untouched when the file has no macro calls, so the common case costs one substring scan. */
 export async function transformCompiled(opts: CompiledTransformOptions): Promise<string> {
   if (!mayContainCompiled(opts.source)) {
     return opts.source;
@@ -266,13 +251,7 @@ export async function transformCompiled(opts: CompiledTransformOptions): Promise
   return prepended.length > 0 ? `${prepended.join('\n')}\n${body}` : body;
 }
 
-/**
- * Drop imports that only fed a now-inlined expression.
- *
- * This is load-bearing rather than cosmetic: a module like a Shiki-backed highlighter has top-level side effects, so
- * the bundler will not tree-shake it away on its own and the whole dependency would still ship. Pruning is deliberately
- * one-directional — a name still referenced anywhere else, including in Svelte markup, keeps its import.
- */
+/** Load-bearing rather than cosmetic: a module like a Shiki-backed highlighter has top-level side effects, so the bundler will not tree-shake it away on its own. */
 function pruneDeadImports(magic: MagicString, text: string, candidates: Set<HostImport>, kind: 'svelte' | 'module'): void {
   if (candidates.size === 0) {
     return;

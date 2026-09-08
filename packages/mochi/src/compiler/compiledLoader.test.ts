@@ -22,8 +22,7 @@ afterAll(() => {
   rmSync(outDir, { recursive: true, force: true });
 });
 
-// The root is injected here so the Windows case is reachable from any platform: on Linux `path.sep` is already `/`,
-// so a real-path test can never exercise the separator mismatch that broke every Windows build.
+// The root is injected so the Windows separator mismatch is reachable from any platform.
 describe('isAppModulePath', () => {
   const WIN_SRC = 'D:\\a\\mochi\\mochi\\packages\\mochi\\src';
 
@@ -47,9 +46,7 @@ describe('isAppModulePath', () => {
 });
 
 describe('createCompiledModuleLoader', () => {
-  // The client build gives its synthetic island entrypoints forward-slash paths under the framework's own src/, even
-  // on Windows. Comparing with native separators missed them there, so the loader tried to read a file that only ever
-  // existed in the bundler's `files` map and failed every Windows build with ENOENT.
+  // Comparing with native separators missed these on Windows, so the loader tried to read a file that only ever existed in the bundler's `files` map.
   test('skips the client build synthetic island entrypoints, POSIX-style path and all', async () => {
     const load = createCompiledModuleLoader(context());
     const entryPath = toPosixPath(path.join(FRAMEWORK_SRC, '_hydrate-BackLink_a77hw5w5b52b.js'));
@@ -94,8 +91,7 @@ describe('createCompiledModuleLoader', () => {
     expect(existsSync(path.join(outDir, 'compiled'))).toBe(false);
   });
 
-  // Dev runs the function at request time through the runtime fallback, so nothing is inlined and the ordinary
-  // reload path keeps the value fresh.
+  // Dev runs the function at request time through the runtime fallback, so nothing is inlined.
   test('leaves a compiled() call alone in dev', async () => {
     const file = path.join(outDir, 'app', 'dev.ts');
     await Bun.write(file, `import { compiled } from 'mochi-framework';\nexport const v = await compiled(() => 6 * 7);\n`);
@@ -104,8 +100,7 @@ describe('createCompiledModuleLoader', () => {
     expect(await applyCompiled(svelte, path.join(outDir, 'app', 'Dev.svelte'), context(true))).toBe(svelte);
   });
 
-  // A module ref only exists at build time, so the one module shape that cannot fall back to the runtime keeps the
-  // transform in dev.
+  // A module ref only exists at build time, so this is the one shape that cannot fall back to the runtime in dev.
   test('still transforms a module that uses moduleRef() in dev', async () => {
     const file = path.join(outDir, 'app', 'refs.ts');
     await Bun.write(file, `import { compiled, moduleRef } from 'mochi-framework';\nexport const v = await compiled(() => ({ a: moduleRef('./a.svelte') }));\n`);
@@ -122,8 +117,7 @@ describe('needsCompiledTransform', () => {
     expect(needsCompiledTransform('compiled(() => moduleRef("./x"))', { development: true })).toBe(true);
   });
 
-  // `.svelte.ts` matches this loader's extension filter but belongs to the runes-module loader registered after it.
-  // Claiming it here meant `$state` reached the bundle uncompiled.
+  // `.svelte.ts` matches this loader's filter but belongs to the runes loader; claiming it here meant `$state` reached the bundle uncompiled.
   test('declines a runes module so the Svelte module loader can claim it', async () => {
     const file = path.join(outDir, 'app', 'state.svelte.ts');
     await Bun.write(file, `import { compiled } from 'mochi-framework';\nexport const v = await compiled(() => 1);\nexport const s = $state(null);\n`);

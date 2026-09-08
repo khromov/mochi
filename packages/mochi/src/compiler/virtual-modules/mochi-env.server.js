@@ -77,6 +77,6 @@ export { memoryStore, sqliteStore, postgresStore } from "__MOCHI_RATE_LIMIT__";
 // The built-in protection interstitial's absolute path — lets a docs/tooling
 // component read the default `protection.page` source straight from disk.
 export const PROTECTION_SHELL_COMPONENT = "__MOCHI_PROTECTION_SHELL_PATH__";
-// Build-time evaluation. A production build splices the calls out before this module is
-// reached; in dev they stay and run through this re-export.
+// A production build splices these calls out; in dev they stay and run through this
+// re-export.
 export { compiled, moduleRef } from "__MOCHI_COMPILED__";

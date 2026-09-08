@@ -36,8 +36,7 @@ describe('serializeCompiledValue', () => {
     expect(expression).toBe('{intro:__mochi_ref_0__,same:__mochi_ref_0__,other:__mochi_ref_1__}');
   });
 
-  // A compiled value is spliced into a `<script>` block, so a literal `</script>` anywhere in it would close the tag at
-  // the HTML-parsing layer. The demo source viewer bakes highlighted Svelte source, so this is a real payload.
+  // A compiled value is spliced into a `<script>` block, and the demo source viewer bakes highlighted Svelte source into one.
   test('escapes markup that would otherwise close the surrounding script tag', () => {
     const payload = `<script>alert(1)</${'script'}>`;
     for (const mode of ['devalue', 'json'] as const) {

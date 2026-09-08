@@ -64,8 +64,7 @@ describe('transformCompiled', () => {
     expect(out).not.toContain('mochi-framework');
   });
 
-  // The inlined payload is frequently source code itself, so a textual scan for `items` would match inside the
-  // string literal and never prune anything. Reference counting has to be AST-based.
+  // The inlined payload is frequently source code itself, so a textual scan for `items` would match inside the string literal.
   test('prunes an import whose name also appears inside the inlined value', async () => {
     const out = await run(
       `<script>\n  import { compiled } from 'mochi-framework';\n  import { items } from './data.ts';\n  const v = await compiled(() => \`rendered source mentioning items: \${items.length}\`);\n${CLOSE}`,

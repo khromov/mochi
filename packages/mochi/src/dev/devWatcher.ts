@@ -40,8 +40,7 @@ import {
 
 const FILE_CHANGE_EVENTS = new Set<string>(['add', 'change', 'unlink', 'addDir', 'unlinkDir']);
 
-// A compiled() value can be derived from a directory listing, which only changes when a file appears or disappears.
-// An edit to an existing file already reaches its dependents through the import graph.
+// A compiled() value can be derived from a directory listing; an edit to an existing file already reaches its dependents through the import graph.
 const STRUCTURAL_CHANGE_EVENTS = new Set<string>(['add', 'unlink', 'addDir', 'unlinkDir']);
 
 // Chokidar reports a rename as unlink-old + add-new, so logging the verb per
@@ -179,7 +178,6 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   // Serializing rebuilds through a Promise chain holds the WebSocket reload until client JS chunks are ready; saves
   // arriving mid-rebuild append to the chain, so the browser reloads once, into fresh chunks.
   let reloadChain: Promise<void> = Promise.resolve();
-  /** Rebuild the pages that inline a build-time value, whose real inputs the bundler's dependency graph never sees. */
   const recompileCompiledSources = async (): Promise<{ pages: Set<string>; clientBundleCount: number }> => {
     const count = registry.getCompiledSourceFiles().length;
     if (count === 0) {
@@ -189,16 +187,14 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     return registry.recompileCompiledSources();
   };
 
-  // Sticky across the debounce window: chokidar can follow an 'add' with a 'change' within it, and only the last
-  // call's arguments survive — losing the one flag that says the import graph cannot explain this change.
+  // Sticky across the debounce window: chokidar can follow an 'add' with a 'change', and only the last call's arguments survive.
   let pendingStructural = false;
   const triggerReload = debounce((filename: string) => {
     const structural = pendingStructural;
     pendingStructural = false;
     reloadChain = reloadChain.then(async () => {
       // Cleared here rather than on the watcher event, so it cannot land between this rebuild's server and client
-      // passes and let them inline different values into the same island. Wholesale because a compiled() value is
-      // usually derived from files other than the one it was written in — only the next compile knows its inputs.
+      // passes and let them inline different values into the same island.
       resetCompiledEvaluationCache();
       // pageCount on the start event is the universe size, not the
       // affected size — the watcher doesn't know which pages depend on
@@ -215,8 +211,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
             await registry.compile(resolved, { force: true });
             summary = { pages: new Set([resolved]), clientBundleCount: 0 };
           } else if (structural) {
-            // Nothing in the graph depends on this file — but a compiled() value may still read the directory it
-            // appeared in, and that is the one input the graph cannot see.
+            // Nothing in the graph depends on this file, but a compiled() value may still read the directory it appeared in.
             summary = await recompileCompiledSources();
           }
         }

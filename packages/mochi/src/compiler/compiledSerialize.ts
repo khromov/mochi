@@ -1,6 +1,6 @@
 import { uneval } from 'devalue';
 
-/** Brand for `moduleRef()` markers. A symbol keyed on the global registry so a marker created by one bundled copy of the framework is recognised by another. */
+/** Keyed on the global symbol registry so a marker created by one bundled copy of the framework is recognised by another. */
 const MODULE_REF = Symbol.for('mochi.moduleRef');
 
 export interface ModuleRefMarker {
@@ -26,7 +26,6 @@ export function moduleRefSpecifier(value: ModuleRefMarker): string {
 export type CompiledSerializer = 'devalue' | 'json' | ((value: unknown) => string);
 
 export interface SerializedValue {
-  /** JS expression source for the value. */
   expression: string;
   /** Imports this call newly needed, in identifier order — a specifier already minted by an earlier call in the same scope is reused and not repeated here. */
   imports: { identifier: string; specifier: string }[];
@@ -46,12 +45,7 @@ export function createCompiledRefScope(): CompiledRefScope {
   return { imports: [], seen: new Map() };
 }
 
-/**
- * Serialize a compiled value to inlinable source, turning any `moduleRef()` marker into a generated import identifier.
- *
- * `json` mode cannot represent module refs (they are not JSON), so a value containing one is rejected rather than
- * silently flattened to `{}`.
- */
+/** `json` mode cannot represent module refs, so a value containing one is rejected rather than silently flattened to `{}`. */
 export function serializeCompiledValue(value: unknown, serializer: CompiledSerializer = 'devalue', scope: CompiledRefScope = createCompiledRefScope()): SerializedValue {
   const before = scope.imports.length;
   const imports = () => scope.imports.slice(before);
@@ -80,11 +74,8 @@ export function serializeCompiledValue(value: unknown, serializer: CompiledSeria
 }
 
 /**
- * Escape `<` inside a JS string literal.
- *
- * The expression is spliced into a Svelte script block, and a literal closing script tag in the payload would end
- * that block at the HTML-parsing layer long before the compiler sees it. `devalue` escapes this itself;
- * `JSON.stringify` does not. The escape is decoded by the JS engine, so `JSON.parse` still receives `<`.
+ * A closing script tag in the payload would end the Svelte script block this is spliced into long before the compiler
+ * sees it, and `JSON.stringify` — unlike `devalue` — does not escape it.
  */
 function escapeMarkup(literal: string): string {
   return literal.replaceAll('<', '\\u003C');

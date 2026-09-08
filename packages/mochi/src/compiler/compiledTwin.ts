@@ -2,7 +2,6 @@ import path from 'node:path';
 import { mkdirSync, rmdirSync, unlinkSync } from 'node:fs';
 import { toPosixPath, relForDisplay } from '../utils/index';
 
-/** One import declaration from the host module, as source plus the local names it binds. */
 export interface HostImport {
   source: string;
   specifier: string;
@@ -13,13 +12,10 @@ export interface HostImport {
 }
 
 export interface TwinRequest {
-  /** Absolute path of the module the `compiled()` call was written in. */
   hostPath: string;
-  /** Source text of the expression passed to `compiled()`. */
   expression: string;
   /** Identifiers the expression references but does not bind. */
   free: Set<string>;
-  /** Every import declaration visible to the expression. */
   imports: HostImport[];
   /** Names the host module declares itself. A free reference to one of these is an error even when a same-named build-process global exists. */
   hostLocals: ReadonlySet<string>;
@@ -47,9 +43,8 @@ export class CompiledExpressionError extends Error {}
 const COMPONENT_EXTENSIONS = new Set(['.svelte', '.md', '.svx']);
 
 /**
- * Build the source of a build-time twin: the lifted expression plus only the imports its free identifiers actually
- * need. Sibling component imports the expression never touches are left out on purpose — the Bun runtime has no loader
- * for them, so including them would fail the evaluation.
+ * Carries only the imports the expression's free identifiers actually need: the Bun runtime has no loader for a
+ * sibling component import, so bringing one along would fail the evaluation.
  */
 export function buildTwinSource(req: TwinRequest): { source: string; used: HostImport[] } {
   const hostDir = path.dirname(req.hostPath);
@@ -121,8 +116,7 @@ async function runTwin(source: string, outDir: string, hostPath: string): Promis
   mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `twin-${Bun.hash(source).toString(36)}.ts`);
   await Bun.write(file, source);
-  // The file only exists so Bun can resolve the expression's imports; once it is loaded it is garbage. Re-importing the
-  // same path later returns the module Bun already has, so the thunk re-runs but its helpers keep their module state.
+  // The file only exists so Bun can resolve the expression's imports; once it is loaded it is garbage.
   let mod: { __mochi_compiled__?: unknown };
   try {
     mod = (await import(Bun.pathToFileURL(file).href)) as { __mochi_compiled__?: unknown };

@@ -5,22 +5,17 @@ import { relForDisplay, toPosixPath } from '../utils/index';
 
 export const COMPILED_MODULE_FILTER = /\.(ts|mts|js|mjs)$/;
 
-/** Runes modules match the filter above but belong to the Svelte module loader, which is registered after this one. */
 const SVELTE_MODULE_FILTER = /\.svelte\.[jt]s$/;
 
 /** The framework's own `src/`, so its implementation of the macro is never itself macro-processed. */
 const FRAMEWORK_SRC = toPosixPath(path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..'));
 
 /**
- * Whether a module is eligible for build-time evaluation.
+ * Dependencies and the framework's own source are excluded because `compiled(` occurs in this package's own prose and
+ * error strings, which the transform would then choke on.
  *
- * Dependencies and the framework's own source are excluded: `compiled(` occurs in this package's error strings and
- * documentation comments, and processing those would both waste work and, because the transform parses a module by
- * wrapping it in a Svelte script block, choke on any comment that mentions markup.
- *
- * Compared POSIX-normalized on both sides. The client build's synthetic island entrypoints are deliberately given
- * forward-slash paths under this same directory (see `buildClientBundle`), so a native-separator comparison misses them
- * on Windows and they fall through to the disk read below — which they have no file for.
+ * Compared POSIX-normalized on both sides: the client build gives its synthetic island entrypoints forward-slash paths
+ * under this same directory, so a native-separator comparison misses them on Windows.
  */
 export function isAppModulePath(filePath: string, frameworkSrc: string = FRAMEWORK_SRC): boolean {
   const posix = toPosixPath(filePath);
@@ -52,11 +47,8 @@ export function assertNotPrebuilt(ctx: CompiledContext, filePath: string): void 
 const MODULE_REF_PATTERN = /\bmoduleRef\b/;
 
 /**
- * Whether the macro runs over this source at all.
- *
- * In dev a `compiled()` call is left in place and the runtime fallback runs the function per request, so the ordinary
- * reload path keeps it fresh and no build-time machinery is involved. The exception is a module that uses `moduleRef()`,
- * which has no runtime form: it is evaluated at build time in dev too.
+ * In dev the call is left in place for the runtime fallback, so the ordinary reload path keeps its value fresh — except
+ * for `moduleRef()`, which has no runtime form and must be inlined even then.
  */
 export function needsCompiledTransform(source: string, ctx: Pick<CompiledContext, 'development'>): boolean {
   if (!mayContainCompiled(source)) {
@@ -65,7 +57,6 @@ export function needsCompiledTransform(source: string, ctx: Pick<CompiledContext
   return !ctx.development || MODULE_REF_PATTERN.test(source);
 }
 
-/** Run the macro over a component, markdown, or runes-module source that the caller has already read. */
 export async function applyCompiled(source: string, filePath: string, ctx: CompiledContext, kind: 'svelte' | 'module' = 'svelte'): Promise<string> {
   if (!needsCompiledTransform(source, ctx)) {
     return source;
@@ -74,21 +65,14 @@ export async function applyCompiled(source: string, filePath: string, ctx: Compi
   return transformCompiled({ source, filePath, outDir: ctx.outDir, kind, serializer: ctx.serializer, onUsage: ctx.onUsage });
 }
 
-/**
- * `onLoad` handler for plain modules.
- *
- * Returns `undefined` for anything the macro leaves alone, which hands the file back to Bun's default loader — so the
- * overwhelmingly common case costs one substring scan and nothing else.
- */
+/** Returns `undefined` for anything the macro leaves alone, so the common case costs one substring scan and stays on Bun's default loader. */
 export function createCompiledModuleLoader(ctx: CompiledContext) {
   return async (args: { path: string }): Promise<{ contents: string; loader: 'ts' | 'js' } | undefined> => {
-    // A `.svelte.ts` needs the Svelte module compiler, and Bun stops at the first handler that returns something —
-    // so this one must decline and let the runes loader (registered after it) apply the macro itself.
+    // Bun stops at the first handler that returns something, so a `.svelte.ts` must fall through to the runes loader registered after this one.
     if (!isAppModule(args.path) || SVELTE_MODULE_FILTER.test(args.path)) {
       return undefined;
     }
-    // The filter matches by extension, which also catches modules that exist only in a `Bun.build({ files })` map and
-    // have nothing on disk. Hand those back to the bundler untouched rather than failing the build on a missing file.
+    // The extension filter also catches modules that exist only in a `Bun.build({ files })` map, with nothing on disk.
     let source: string;
     try {
       source = await Bun.file(args.path).text();

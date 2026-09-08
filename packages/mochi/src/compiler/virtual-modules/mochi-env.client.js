@@ -137,8 +137,8 @@ export { enhance, deserialize } from "__MOCHI_ENHANCE_CLIENT__";
 export function isHydratable() { return true; }
 // Server filesystem path — meaningless in the browser.
 export const PROTECTION_SHELL_COMPONENT = undefined;
-// Build-time evaluation. A production build inlines these away; in dev the call is left
-// in place and runs here, but a moduleRef can only ever be resolved at build time.
+// A production build inlines these away; in dev the call stays and runs here, where a
+// moduleRef can never resolve.
 export async function compiled(fn) { return await fn(); }
 export function moduleRef(specifier) {
   throw new Error("moduleRef(" + JSON.stringify(specifier) + ") only works inside a compiled() value that the build inlined.");
