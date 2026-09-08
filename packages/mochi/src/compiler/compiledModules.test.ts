@@ -82,6 +82,29 @@ describe('evaluateCompiledModule', () => {
     expect(before.call).toBe(1);
   });
 
+  test('a production build keeps the module cache, so helpers are instantiated once', async () => {
+    const file = path.join(dir, 'value.compiled.ts');
+    resetCompiledEvaluationCache();
+    const first = await evaluateCompiledModule(file, { ...ctx(), development: false });
+    resetCompiledEvaluationCache();
+    const second = await evaluateCompiledModule(file, { ...ctx(), development: false });
+    // Nothing was evicted, so the second import is Bun's cached module rather than a fresh run of it.
+    expect(second.call).toBe(first.call);
+  });
+
+  test('evaluations never overlap', async () => {
+    resetCompiledEvaluationCache();
+    const order: string[] = [];
+    await Bun.write(
+      path.join(dir, 'slow.compiled.ts'),
+      `globalThis.__order__.push('slow:start');\nawait new Promise((r) => setTimeout(r, 50));\nglobalThis.__order__.push('slow:end');\nexport const ok = true;\n`,
+    );
+    await Bun.write(path.join(dir, 'fast.compiled.ts'), `globalThis.__order__.push('fast');\nexport const ok = true;\n`);
+    (globalThis as { __order__?: string[] }).__order__ = order;
+    await Promise.all([evaluateCompiledModule(path.join(dir, 'slow.compiled.ts'), ctx()), evaluateCompiledModule(path.join(dir, 'fast.compiled.ts'), ctx())]);
+    expect(order).toEqual(['slow:start', 'slow:end', 'fast']);
+  });
+
   test('reports the first-party inputs, ignoring type-only imports', async () => {
     const file = path.join(dir, 'value.compiled.ts');
     const inputs = await collectInputs(file);

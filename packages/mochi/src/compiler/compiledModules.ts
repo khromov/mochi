@@ -108,11 +108,23 @@ export function evaluateCompiledModule(filePath: string, ctx: CompiledContext): 
   return pending;
 }
 
-async function runModule(filePath: string, ctx: CompiledContext): Promise<Namespace> {
+/** Evaluations run one at a time: evicting a shared helper from the module cache while another module's import of it is still in flight is a race Bun does not guard against. */
+let chain: Promise<unknown> = Promise.resolve();
+
+function runModule(filePath: string, ctx: CompiledContext): Promise<Namespace> {
+  const run = chain.then(() => evaluate(filePath, ctx));
+  chain = run.catch(() => {});
+  return run;
+}
+
+async function evaluate(filePath: string, ctx: CompiledContext): Promise<Namespace> {
   const inputs = await collectInputs(filePath);
   ctx.onInputs?.(filePath, inputs);
-  for (const input of inputs) {
-    delete require.cache[input];
+  // A one-shot build evaluates each module once, so only a dev rebuild needs fresh instances of what it imports.
+  if (ctx.development) {
+    for (const input of inputs) {
+      delete require.cache[input];
+    }
   }
   try {
     return { ...((await import(Bun.pathToFileURL(filePath).href)) as Namespace) };
