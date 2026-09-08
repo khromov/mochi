@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createHighlighter } from './highlight';
+import { createHighlighter, createTwinkleplopHighlighter } from './highlight';
 
 describe('createHighlighter', () => {
   test('wraps highlighted HTML in the code-block shell and escapes Svelte braces', () => {
@@ -95,5 +95,91 @@ describe('createHighlighter', () => {
     highlight('a', 'ts');
     highlight('a', 'ts');
     expect(calls).toBe(2);
+  });
+});
+
+describe('createTwinkleplopHighlighter', () => {
+  const fakeLanguage = (name: string) => () => (code: string) => `<pre class="twinkleplop">${name}:${code}</pre>`;
+
+  test('resolves built-in aliases to the canonical grammar', () => {
+    const highlight = createTwinkleplopHighlighter({
+      languages: { typescript: fakeLanguage('typescript'), bash: fakeLanguage('bash'), html: fakeLanguage('html') },
+    });
+    expect(highlight('x', 'ts')).toContain('typescript:x');
+    expect(highlight('x', 'sh')).toContain('bash:x');
+    expect(highlight('x', 'dockerfile')).toContain('bash:x');
+    expect(highlight('x', 'xml')).toContain('html:x');
+  });
+
+  test('caller aliases override the built-in table', () => {
+    const highlight = createTwinkleplopHighlighter({
+      languages: { bash: fakeLanguage('bash'), typescript: fakeLanguage('typescript') },
+      aliases: { ts: 'bash' },
+    });
+    expect(highlight('x', 'ts')).toContain('bash:x');
+  });
+
+  test('renders an unregistered language as escaped plaintext instead of throwing', () => {
+    const highlight = createTwinkleplopHighlighter({ languages: {} });
+    const html = highlight('<b> & "q"', 'brainfuck');
+    expect(html).toContain('<pre class="twinkleplop"><code>&lt;b&gt; &amp; &quot;q&quot;</code></pre>');
+    expect(html).toContain('<div class="code-block">');
+  });
+
+  test('an absent language falls through to the plaintext path', () => {
+    const highlight = createTwinkleplopHighlighter({ languages: { typescript: fakeLanguage('typescript') } });
+    expect(highlight('x')).toContain('<pre class="twinkleplop"><code>x</code></pre>');
+  });
+
+  test('instantiates each grammar once, on first use', () => {
+    let bashCalls = 0;
+    let tsCalls = 0;
+    const highlight = createTwinkleplopHighlighter({
+      languages: {
+        bash: () => {
+          bashCalls += 1;
+          return (code) => code;
+        },
+        typescript: () => {
+          tsCalls += 1;
+          return (code) => code;
+        },
+      },
+      cacheSize: 0,
+    });
+    highlight('a', 'sh');
+    highlight('b', 'bash');
+    expect(bashCalls).toBe(1);
+    expect(tsCalls).toBe(0);
+  });
+
+  test('forwards lineNumbers to the grammar renderer', () => {
+    const seen: unknown[] = [];
+    const languages = {
+      typescript: () => (code: string, options?: { line_numbers?: boolean }) => {
+        seen.push(options);
+        return code;
+      },
+    };
+    createTwinkleplopHighlighter({ languages, lineNumbers: true })('x', 'ts');
+    createTwinkleplopHighlighter({ languages })('x', 'ts');
+    expect(seen).toEqual([{ line_numbers: true }, undefined]);
+  });
+
+  test('wraps and memoizes like createHighlighter', () => {
+    let calls = 0;
+    const highlight = createTwinkleplopHighlighter({
+      languages: {
+        typescript: () => (code) => {
+          calls += 1;
+          return `<pre>${code}</pre>`;
+        },
+      },
+    });
+    const first = highlight('const a = { b };', 'ts');
+    expect(highlight('const a = { b };', 'ts')).toBe(first);
+    expect(calls).toBe(1);
+    expect(first).toContain('class="code-copy"');
+    expect(first).toContain('&#123; b &#125;');
   });
 });

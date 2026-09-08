@@ -1,3 +1,5 @@
+import { escapeHtmlAttr } from './utils/htmlEscape';
+
 function escapeForSvelte(html: string): string {
   return html.replace(/\{/g, '&#123;').replace(/\}/g, '&#125;');
 }
@@ -20,16 +22,18 @@ export interface CreateHighlighterOptions {
 
 /**
  * Build a `highlightCode(code, lang)` function from any highlighting engine. You supply `highlight`, turning source into
- * themed HTML (e.g. Shiki's `codeToHtml`), and the result composes it with the code-block wrapper, copy button, and
- * Svelte-brace escape. Results memoize per `(code, lang)`, so a page re-highlighting the same snippets pays once.
+ * themed HTML, and the result composes it with the code-block wrapper, copy button, and Svelte-brace escape.
+ * Results memoize per `(code, lang)`, so a page re-highlighting the same snippets pays once.
+ *
+ * For twinkleplop grammars, reach for {@link createTwinkleplopHighlighter} instead — it wires the language map
+ * and alias resolution on top of this.
  *
  * ```ts
- * import { createHighlighter as createShiki } from 'shiki';
+ * import hljs from 'highlight.js';
  * import { createHighlighter } from 'mochi-framework/highlight';
  *
- * const shiki = await createShiki({ themes: ['vitesse-dark'], langs: ['typescript'] });
  * export const highlightCode = createHighlighter((code, lang) =>
- *   shiki.codeToHtml(code, { lang, theme: 'vitesse-dark' }),
+ *   hljs.highlight(code, { language: lang }).value,
  * );
  * ```
  */
@@ -38,7 +42,7 @@ export function createHighlighter(
   options: CreateHighlighterOptions = {},
 ): (code: string, lang?: string | null) => string | Promise<string> {
   const max = options.cacheSize ?? DEFAULT_HIGHLIGHT_CACHE_SIZE;
-  // Highlighting is pure in (code, lang) but a TextMate grammar pass costs milliseconds per snippet, enough that a page
+  // Highlighting is pure in (code, lang) but a tokenizer pass costs milliseconds per snippet, enough that a page
   // re-highlighting its own code blocks each SSR render spends longer in the highlighter than in Svelte. The in-flight
   // promise is stored so concurrent callers share one pass, and insertion-ordered eviction bounds an app highlighting
   // user content.
@@ -74,4 +78,77 @@ export function createHighlighter(
 
 function finish(result: string | Promise<string>): string | Promise<string> {
   return typeof result === 'string' ? wrapCodeBlock(result) : result.then(wrapCodeBlock);
+}
+
+/** A twinkleplop grammar factory — the `language` export of any `@twinkleplop/<lang>` package. */
+export type TwinkleplopLanguage = () => (code: string, options?: { line_numbers?: boolean }) => string;
+
+export interface CreateTwinkleplopHighlighterOptions extends CreateHighlighterOptions {
+  /** Grammar factories keyed by canonical language name, e.g. `{ typescript, svelte }`. */
+  languages: Record<string, TwinkleplopLanguage>;
+  /** Extra name → canonical-name mappings, merged over the built-in table. */
+  aliases?: Record<string, string>;
+  /** Emit `<span class="ln">` gutter numbers. Default: `false`. */
+  lineNumbers?: boolean;
+}
+
+// Each twinkleplop grammar is its own package and carries no alias table, so the names markdown fences and
+// file extensions actually use have to be mapped here or every ```ts block falls through to plaintext.
+const TWINKLEPLOP_ALIASES: Record<string, string> = {
+  cjs: 'javascript',
+  console: 'bash',
+  cts: 'typescript',
+  dockerfile: 'bash',
+  js: 'javascript',
+  json5: 'json',
+  jsonc: 'json',
+  md: 'markdown',
+  mjs: 'javascript',
+  mts: 'typescript',
+  py: 'python',
+  rs: 'rust',
+  sh: 'bash',
+  shell: 'bash',
+  ts: 'typescript',
+  xml: 'html',
+  yml: 'yaml',
+  zsh: 'bash',
+};
+
+/**
+ * Build a `highlightCode(code, lang)` function from twinkleplop grammars. Pass the `language` export of each
+ * `@twinkleplop/<lang>` package you want; the result resolves aliases, instantiates each grammar on first use,
+ * and composes the same code-block wrapper, copy button, and memoization as {@link createHighlighter}. A
+ * language with no grammar renders escaped and unhighlighted rather than throwing.
+ *
+ * twinkleplop emits token classes (`<span class="tok keyword">`) rather than inline colours, so the theme is a
+ * stylesheet you supply.
+ *
+ * ```ts
+ * import { language as typescript } from '@twinkleplop/typescript';
+ * import { language as svelte } from '@twinkleplop/svelte';
+ * import { createTwinkleplopHighlighter } from 'mochi-framework/highlight';
+ *
+ * export const highlightCode = createTwinkleplopHighlighter({ languages: { typescript, svelte } });
+ * ```
+ */
+export function createTwinkleplopHighlighter(options: CreateTwinkleplopHighlighterOptions): (code: string, lang?: string | null) => string {
+  const { languages, aliases, lineNumbers, ...cacheOptions } = options;
+  const canonical = { ...TWINKLEPLOP_ALIASES, ...aliases };
+  const renderOptions = lineNumbers ? { line_numbers: true } : undefined;
+  const instances = new Map<string, ReturnType<TwinkleplopLanguage>>();
+
+  return createHighlighter((code, lang) => {
+    const name = canonical[lang] ?? lang;
+    const factory = languages[name];
+    if (!factory) {
+      return `<pre class="twinkleplop"><code>${escapeHtmlAttr(code)}</code></pre>`;
+    }
+    let render = instances.get(name);
+    if (!render) {
+      render = factory();
+      instances.set(name, render);
+    }
+    return render(code, renderOptions);
+  }, cacheOptions) as (code: string, lang?: string | null) => string;
 }

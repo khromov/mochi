@@ -120,7 +120,7 @@ const origin = CSRF_DOMAIN.includes('://') ? CSRF_DOMAIN : `${CSRF_PROTOCOL}://$
 const markdownConfig: MarkdownConfig = {
   compile: mdsvexCompile,
   rehypePlugins: [rehypeSlug, rehypeExternalLinks],
-  // Imported lazily so Shiki is only ever loaded by a build that actually compiles markdown, not by every server boot.
+  // Imported lazily so the grammars are only ever loaded by a build that actually compiles markdown, not by every server boot.
   highlight: { highlighter: async (code, lang) => (await import('./lib/highlight.server')).highlightCode(code, lang) },
 };
 

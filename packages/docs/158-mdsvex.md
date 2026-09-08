@@ -60,37 +60,24 @@ This page was rendered at {new Date().toISOString()}.
 
 The `markdown` config accepts a full plugin chain compatible with mdsvex's `rehypePlugins` and `remarkPlugins`.
 
-### Syntax highlighting with Shiki
+### Syntax highlighting
 
-Fenced code blocks pass through unchanged unless you supply `markdown.highlight.highlighter`. Install a highlighting engine (Shiki, highlight.js, Prism) and build a highlighter with the framework's `createHighlighter` factory. It adds the code-block wrapper, copy button, and Svelte-brace escape.
+<VersionNote since="0.10.0" message="createTwinkleplopHighlighter was added in 0.10.0; before it, wire an engine through createHighlighter yourself." />
+
+Fenced code blocks pass through unchanged unless you supply `markdown.highlight.highlighter`. Install the [twinkleplop](https://twinkleplop.pngwn.workers.dev/docs) grammars you need and build a highlighter with `createTwinkleplopHighlighter`. It adds the code-block wrapper, copy button, and Svelte-brace escape.
 
 ```sh
-bun add shiki
+bun add @twinkleplop/typescript @twinkleplop/bash
 ```
 
 ```ts
 // src/lib/highlightCode.ts
-import { createHighlighter as createShiki, createJavaScriptRegexEngine } from 'shiki';
-import { createHighlighter } from 'mochi-framework/highlight';
+import { language as bash } from '@twinkleplop/bash';
+import { language as typescript } from '@twinkleplop/typescript';
+import { createTwinkleplopHighlighter } from 'mochi-framework/highlight';
 
-const shiki = await createShiki({
-  engine: createJavaScriptRegexEngine({ forgiving: true }),
-  themes: ['vitesse-dark'],
-  langs: ['typescript', 'bash'],
-});
-
-export const highlightCode = createHighlighter((code, lang) => shiki.codeToHtml(code, { lang, theme: 'vitesse-dark' }));
+export const highlightCode = createTwinkleplopHighlighter({ languages: { bash, typescript } });
 ```
-
-Mochi memoizes results per `(code, lang)`. The cache holds 1000 snippets and evicts in insertion order. Tune it with `cacheSize` (`0` disables memoization).
-
-`createJavaScriptRegexEngine` uses the JS `RegExp` engine, so no WASM is loaded — Shiki's default oniguruma WASM engine grows `WebAssembly.Memory` that is never reclaimed.
-
-<Callout type="info">
-
-The JS `RegExp` engine can hang on Windows. Gate it behind `process.platform !== 'win32'` and fall back to the WASM default there.
-
-</Callout>
 
 ```ts
 // src/index.ts
@@ -102,7 +89,49 @@ markdown: {
 }
 ```
 
-`createHighlighter` accepts any `(code, lang) => string | Promise<string>` function.
+Highlighting is synchronous and each grammar is instantiated on first use, so registering a language you never render costs nothing. Mochi memoizes results per `(code, lang)`. The cache holds 1000 snippets and evicts in insertion order. Tune it with `cacheSize` (`0` disables memoization).
+
+Common aliases resolve automatically — `ts`, `js`, `sh`, `yml`, `xml`, `dockerfile` and friends map to the grammar that handles them. Add your own with `aliases`. A language with no grammar renders escaped and unhighlighted rather than throwing.
+
+```ts
+createTwinkleplopHighlighter({
+  languages: { typescript },
+  aliases: { svx: 'markdown' },
+  lineNumbers: true,
+});
+```
+
+#### Theming
+
+twinkleplop emits token classes rather than inline colours, so the theme is a stylesheet you supply:
+
+```html
+<pre class="twinkleplop"><code><span class="l"><span class="tok keyword">const</span> …</span></code></pre>
+```
+
+Import a ready-made one (`import '@twinkleplop/theme-github'`), or write the rules yourself against the [token names](https://twinkleplop.pngwn.workers.dev/docs/themes):
+
+```css
+.twinkleplop .tok.keyword {
+  color: #a7c9a8;
+}
+.twinkleplop .tok.string {
+  color: #d5b982;
+}
+```
+
+With `lineNumbers: true` each line gains a leading `<span class="ln">` to style as a gutter.
+
+#### Another engine
+
+`createHighlighter` accepts any `(code, lang) => string | Promise<string>` function, so Prism, highlight.js or Shiki drop in the same way:
+
+```ts
+import hljs from 'highlight.js';
+import { createHighlighter } from 'mochi-framework/highlight';
+
+export const highlightCode = createHighlighter((code, lang) => hljs.highlight(code, { language: lang }).value);
+```
 
 ### Islands in markdown
 
