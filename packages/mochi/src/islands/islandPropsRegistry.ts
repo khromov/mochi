@@ -1,10 +1,40 @@
 import { stringify } from 'devalue';
 import { getRequestContext } from '../runtime/requestContext';
+import { pinGlobal } from '../utils/globalState';
 
 /** One entry in the per-render dedup registry (`ctx.islandProps`): a unique serialized payload's ref id and how many islands emitted it. */
 export interface IslandPropsEntry {
   id: string;
   emitCount: number;
+}
+
+type IslandPropsMap = Map<string, IslandPropsEntry>;
+
+type EmittedBag = { value: Record<string, unknown>; entry: IslandPropsEntry };
+
+// Pinned because the copy of the framework that clears a render's registry is often not the copy whose
+// `emitIslandProps` filled it, and a bag outliving its payload map would name a block that render never emits.
+const emittedBags = pinGlobal('__mochi_island_props_bags__', () => new WeakMap<IslandPropsMap, EmittedBag[]>());
+
+/** Only a bag devalue would accept can stand in for one it already serialized, so anything it rejects must reach it and throw. */
+function isPlainBag(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value) as unknown;
+  return (proto === Object.prototype || proto === null) && Object.getOwnPropertySymbols(value).length === 0;
+}
+
+/** `Object.is` is what makes this safe to substitute for comparing serialized bytes: it separates `0` from `-0`, which devalue round-trips apart. */
+function sameBag(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((key) => Object.is(a[key], b[key]));
+}
+
+/** The bag list has to be dropped with the payload map it indexes, or a surviving entry names a block the next render never emits. */
+export function clearIslandProps(ctx: { islandProps: IslandPropsMap }): void {
+  ctx.islandProps.clear();
+  emittedBags.delete(ctx.islandProps);
 }
 
 /**
@@ -15,16 +45,37 @@ export interface IslandPropsEntry {
  * Two islands with byte-identical serialized JSON share one ref id — the whole dedup mechanism — and the per-id emit
  * count lets the render pass flag genuinely shared blocks. Server islands take the preprocessor's own branch instead,
  * since their `signed-props` payloads are encrypted and travel through URL query strings.
+ *
+ * Props reached through the identity fast path are assumed not to be mutated between two call sites inside one
+ * `render()`; a render that did that would get one shared block where it wanted two.
  */
 export function emitIslandProps(value: unknown): string {
-  const json = stringify(value);
   const ctx = getRequestContext();
+
+  // Serializing is how a duplicate is found, so it is paid for before it is discovered.
+  const bags = emittedBags.get(ctx.islandProps);
+  if (bags && isPlainBag(value)) {
+    for (const bag of bags) {
+      if (sameBag(bag.value, value)) {
+        bag.entry.emitCount++;
+        return bag.entry.id;
+      }
+    }
+  }
+
+  const json = stringify(value);
   let entry = ctx.islandProps.get(json);
   if (!entry) {
     entry = { id: `mochi-props-${ctx.islandProps.size}`, emitCount: 0 };
     ctx.islandProps.set(json, entry);
   }
   entry.emitCount++;
+
+  if (isPlainBag(value)) {
+    const list = bags ?? [];
+    list.push({ value, entry });
+    emittedBags.set(ctx.islandProps, list);
+  }
   return entry.id;
 }
 

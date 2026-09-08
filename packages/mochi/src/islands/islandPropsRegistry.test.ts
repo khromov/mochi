@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
-import { emitIslandProps, injectIslandPropsBlock, renderIslandPropsScript } from './islandPropsRegistry';
+import { clearIslandProps, emitIslandProps, injectIslandPropsBlock, renderIslandPropsScript } from './islandPropsRegistry';
 import { requestContext, type MochiRequestContext } from '../runtime/requestContext';
 import { MochiCookieJar } from '../runtime/cookies';
 
@@ -95,6 +95,102 @@ describe('emitIslandProps', () => {
     // Same payload, but each request started fresh — both should get id 0.
     expect(id1).toBe('mochi-props-0');
     expect(id2).toBe('mochi-props-0');
+  });
+});
+
+// These cover that the identity shortcut agrees with the serializing path, and never fires when the two would disagree.
+describe('emitIslandProps identity fast path', () => {
+  test('two call sites sharing prop references dedupe, and the second never walks the payload', () => {
+    withCtx((ctx) => {
+      // Only devalue recurses, so a getter one level down is read once per serialization and not at all on a fast-path hit.
+      let walks = 0;
+      const docsNav = {
+        get entries() {
+          walks++;
+          return [{ level: 2, text: 'Intro', slug: 'intro' }];
+        },
+      };
+      const demos = [{ slug: 'url' }];
+
+      const a = emitIslandProps({ docsNav, demos, currentSlug: 'intro' });
+      const b = emitIslandProps({ docsNav, demos, currentSlug: 'intro' });
+
+      expect(a).toBe(b);
+      expect(walks).toBe(1);
+      expect(ctx.islandProps.size).toBe(1);
+      expect([...ctx.islandProps.values()][0]!.emitCount).toBe(2);
+    });
+  });
+
+  test('same references but a different primitive prop stay distinct', () => {
+    withCtx((ctx) => {
+      const docsNav = [{ level: 2, text: 'Intro', slug: 'intro' }];
+      const a = emitIslandProps({ docsNav, currentSlug: 'intro' });
+      const b = emitIslandProps({ docsNav, currentSlug: 'cache' });
+      expect(a).not.toBe(b);
+      expect(ctx.islandProps.size).toBe(2);
+    });
+  });
+
+  test('equal-but-distinct references still dedupe, via the serializing path', () => {
+    withCtx((ctx) => {
+      const a = emitIslandProps({ items: [1, 2, 3] });
+      const b = emitIslandProps({ items: [1, 2, 3] });
+      expect(a).toBe(b);
+      expect(ctx.islandProps.size).toBe(1);
+      expect([...ctx.islandProps.values()][0]!.emitCount).toBe(2);
+    });
+  });
+
+  test('0 and -0 do not collide, since devalue round-trips them differently', () => {
+    withCtx((ctx) => {
+      const a = emitIslandProps({ n: 0 });
+      const b = emitIslandProps({ n: -0 });
+      expect(a).not.toBe(b);
+      expect(ctx.islandProps.size).toBe(2);
+    });
+  });
+
+  test('non-plain and symbol-keyed bags decline the fast path and let devalue rule', () => {
+    withCtx(() => {
+      class Bag {
+        constructor(public x: number) {}
+      }
+      // The fast path must not paper over a value devalue rejects by answering from identity instead.
+      expect(() => emitIslandProps(new Bag(1))).toThrow(/non-POJO/);
+      expect(() => emitIslandProps({ x: 1, [Symbol('s')]: 'one' })).toThrow(/symbolic keys/);
+    });
+  });
+
+  test('clearIslandProps drops the shape index too, so ids never outlive their block', () => {
+    withCtx((ctx) => {
+      const docsNav = [{ level: 2, text: 'Intro', slug: 'intro' }];
+      const first = emitIslandProps({ docsNav });
+      expect(first).toBe('mochi-props-0');
+
+      clearIslandProps(ctx);
+      expect(ctx.islandProps.size).toBe(0);
+
+      // Without dropping the shape index this returns the id of a block the second render never emits.
+      const second = emitIslandProps({ docsNav });
+      expect(second).toBe('mochi-props-0');
+      expect(ctx.islandProps.size).toBe(1);
+      expect([...ctx.islandProps.values()][0]!.emitCount).toBe(1);
+    });
+  });
+
+  test('two requests sharing prop references keep independent registries', () => {
+    const docsNav = [{ level: 2, text: 'Intro', slug: 'intro' }];
+    const one = withCtx((ctx) => {
+      const id = emitIslandProps({ docsNav });
+      return { id, size: ctx.islandProps.size };
+    });
+    const two = withCtx((ctx) => {
+      const id = emitIslandProps({ docsNav });
+      return { id, size: ctx.islandProps.size };
+    });
+    expect(one).toEqual({ id: 'mochi-props-0', size: 1 });
+    expect(two).toEqual({ id: 'mochi-props-0', size: 1 });
   });
 });
 
