@@ -22,17 +22,10 @@ export function moduleRefSpecifier(value: ModuleRefMarker): string {
   return value[MODULE_REF];
 }
 
-/** How a compiled value is turned into source. `devalue` handles Date/Map/Set/RegExp/BigInt/cycles; `json` emits `JSON.parse("…")`, which parses faster than a large object literal but only supports plain JSON. */
-export type CompiledSerializer = 'devalue' | 'json' | ((value: unknown) => string);
-
 export interface SerializedValue {
   expression: string;
   /** Imports this call newly needed, in identifier order — a specifier already minted by an earlier call in the same scope is reused and not repeated here. */
   imports: { identifier: string; specifier: string }[];
-}
-
-function identifierFor(index: number): string {
-  return `__mochi_ref_${index}__`;
 }
 
 /** Identifier allocation shared by every `compiled()` call in one module, so two calls can't both mint `__mochi_ref_0__`. */
@@ -45,51 +38,18 @@ export function createCompiledRefScope(): CompiledRefScope {
   return { imports: [], seen: new Map() };
 }
 
-/** `json` mode cannot represent module refs, so a value containing one is rejected rather than silently flattened to `{}`. */
-export function serializeCompiledValue(value: unknown, serializer: CompiledSerializer = 'devalue', scope: CompiledRefScope = createCompiledRefScope()): SerializedValue {
+/** `devalue` handles Date/Map/Set/RegExp/BigInt/cycles and escapes `<`, so a value holding markup cannot close the script block it is spliced into. */
+export function serializeCompiledValue(value: unknown, scope: CompiledRefScope = createCompiledRefScope()): SerializedValue {
   const before = scope.imports.length;
-  const imports = () => scope.imports.slice(before);
-
   const refIdentifier = (specifier: string): string => {
     let identifier = scope.seen.get(specifier);
     if (identifier === undefined) {
-      identifier = identifierFor(scope.imports.length);
+      identifier = `__mochi_ref_${scope.imports.length}__`;
       scope.seen.set(specifier, identifier);
       scope.imports.push({ identifier, specifier });
     }
     return identifier;
   };
-
-  if (typeof serializer === 'function') {
-    return { expression: serializer(value), imports: imports() };
-  }
-
-  if (serializer === 'json') {
-    assertNoModuleRefs(value);
-    return { expression: `JSON.parse(${escapeMarkup(JSON.stringify(JSON.stringify(value)))})`, imports: imports() };
-  }
-
   const expression = uneval(value, (v) => (isModuleRef(v) ? refIdentifier(moduleRefSpecifier(v)) : undefined));
-  return { expression, imports: imports() };
-}
-
-/**
- * A closing script tag in the payload would end the Svelte script block this is spliced into long before the compiler
- * sees it, and `JSON.stringify` — unlike `devalue` — does not escape it.
- */
-function escapeMarkup(literal: string): string {
-  return literal.replaceAll('<', '\\u003C');
-}
-
-function assertNoModuleRefs(value: unknown, seen = new Set<unknown>()): void {
-  if (isModuleRef(value)) {
-    throw new Error(`compiled(): moduleRef(${JSON.stringify(moduleRefSpecifier(value))}) cannot be serialized with the 'json' serializer — use the default 'devalue' serializer.`);
-  }
-  if (typeof value !== 'object' || value === null || seen.has(value)) {
-    return;
-  }
-  seen.add(value);
-  for (const child of Array.isArray(value) ? value : Object.values(value)) {
-    assertNoModuleRefs(child, seen);
-  }
+  return { expression, imports: scope.imports.slice(before) };
 }

@@ -1,3 +1,5 @@
+import { walk } from 'zimmerframe';
+
 type Node = { type: string; [key: string]: unknown };
 
 function isNode(value: unknown): value is Node {
@@ -34,7 +36,7 @@ export function patternNames(node: unknown, out: Set<string> = new Set()): Set<s
   return out;
 }
 
-/** Names a statement list declares, gathered up front so a reference earlier in the block still resolves to the local. */
+/** Names a module declares at its top level. */
 export function hoistedNames(body: unknown): Set<string> {
   const names = new Set<string>();
   for (const stmt of (body as Node[]) ?? []) {
@@ -52,182 +54,67 @@ export function hoistedNames(body: unknown): Set<string> {
   return names;
 }
 
-function withNames(bound: ReadonlySet<string>, extra: Iterable<string>): Set<string> {
-  const next = new Set(bound);
-  for (const name of extra) {
-    next.add(name);
+function isReference(node: Node, parent: Node | undefined): boolean {
+  switch (parent?.type) {
+    case 'MemberExpression':
+      return parent.computed === true || parent.property !== node;
+    case 'Property':
+    case 'PropertyDefinition':
+    case 'MethodDefinition':
+      return parent.computed === true || parent.shorthand === true || parent.key !== node;
+    case 'LabeledStatement':
+    case 'BreakStatement':
+    case 'ContinueStatement':
+    case 'MetaProperty':
+      return false;
+    default:
+      return true;
   }
-  return next;
-}
-
-function functionScope(node: Node, bound: ReadonlySet<string>): Set<string> {
-  const names = new Set<string>();
-  if (isNode(node.id)) {
-    names.add(node.id.name as string);
-  }
-  for (const param of (node.params as Node[]) ?? []) {
-    for (const name of patternNames(param)) {
-      names.add(name);
-    }
-  }
-  return withNames(bound, names);
 }
 
 /**
- * Conservative in one direction only: missing a reference makes the generated twin fail to compile with a clear error,
- * whereas inventing one would reject valid user code.
+ * Scope is flattened: a name bound anywhere in the expression counts as bound everywhere in it. That is conservative in
+ * the one direction that matters — a missed reference makes the generated twin fail with a clear error, whereas
+ * inventing one would reject valid user code.
  */
-export function freeIdentifiers(expression: unknown): Set<string> {
-  const free = new Set<string>();
-
-  const visit = (node: unknown, bound: ReadonlySet<string>): void => {
-    if (Array.isArray(node)) {
-      for (const child of node) {
-        visit(child, bound);
-      }
-      return;
-    }
-    if (!isNode(node)) {
-      return;
-    }
-
-    // acorn-typescript emits TS* nodes for annotations; nothing inside one is a value reference.
-    if (node.type.startsWith('TS')) {
-      return;
-    }
-
-    switch (node.type) {
-      case 'Identifier': {
-        const name = node.name as string;
-        if (!bound.has(name)) {
-          free.add(name);
-        }
+export function freeIdentifiers(expression: Node): Set<string> {
+  const declared = new Set<string>();
+  const referenced = new Set<string>();
+  walk(expression, null, {
+    _(node, { next, path }) {
+      // acorn-typescript emits TS* nodes for annotations; nothing inside one is a value reference.
+      if (node.type.startsWith('TS')) {
         return;
       }
-      case 'MemberExpression':
-        visit(node.object, bound);
-        if (node.computed) {
-          visit(node.property, bound);
-        }
-        return;
-      case 'Property':
-        if (node.computed) {
-          visit(node.key, bound);
-        }
-        visit(node.value, bound);
-        return;
-      case 'PropertyDefinition':
-        if (node.computed) {
-          visit(node.key, bound);
-        }
-        visit(node.value, bound);
-        return;
-      case 'MethodDefinition':
-        if (node.computed) {
-          visit(node.key, bound);
-        }
-        visit(node.value, bound);
-        return;
-      case 'LabeledStatement':
-        visit(node.body, bound);
-        return;
-      case 'BreakStatement':
-      case 'ContinueStatement':
-        return;
-      case 'FunctionDeclaration':
-      case 'FunctionExpression':
-      case 'ArrowFunctionExpression': {
-        const scope = functionScope(node, bound);
-        visit(node.body, scope);
-        for (const param of (node.params as Node[]) ?? []) {
-          // Defaults can reference outer names: `(a = outer) => …`.
-          visitPatternDefaults(param, scope, visit);
-        }
-        return;
+      switch (node.type) {
+        case 'FunctionDeclaration':
+        case 'FunctionExpression':
+        case 'ArrowFunctionExpression':
+        case 'ClassDeclaration':
+        case 'ClassExpression':
+          if (isNode(node.id)) {
+            declared.add(node.id.name as string);
+          }
+          for (const param of (node.params as Node[]) ?? []) {
+            patternNames(param, declared);
+          }
+          break;
+        case 'VariableDeclarator':
+          patternNames(node.id, declared);
+          break;
+        case 'CatchClause':
+          patternNames(node.param, declared);
+          break;
+        case 'Identifier':
+          if (isReference(node, path.at(-1))) {
+            referenced.add(node.name as string);
+          }
+          break;
+        default:
+          break;
       }
-      case 'CatchClause': {
-        const scope = withNames(bound, patternNames(node.param));
-        visit(node.body, scope);
-        return;
-      }
-      case 'BlockStatement':
-      case 'Program': {
-        const scope = withNames(bound, hoistedNames(node.body));
-        visit(node.body, scope);
-        return;
-      }
-      case 'ForStatement': {
-        const scope = withNames(bound, hoistedNames([node.init]));
-        visit(node.init, scope);
-        visit(node.test, scope);
-        visit(node.update, scope);
-        visit(node.body, scope);
-        return;
-      }
-      case 'ForOfStatement':
-      case 'ForInStatement': {
-        const left = node.left as Node | undefined;
-        const declares = left?.type === 'VariableDeclaration';
-        const scope = declares ? withNames(bound, hoistedNames([left])) : bound;
-        // The iterable is evaluated before the head binding exists.
-        visit(node.right, bound);
-        if (!declares) {
-          visit(left, scope);
-        }
-        visit(node.body, scope);
-        return;
-      }
-      case 'SwitchStatement': {
-        // Every case shares one block scope, so a braceless `case 1: const x = …` is visible to the other cases too.
-        const consequents = ((node.cases as Node[]) ?? []).flatMap((c) => (c.consequent as Node[]) ?? []);
-        visit(node.discriminant, bound);
-        visit(node.cases, withNames(bound, hoistedNames(consequents)));
-        return;
-      }
-      // `import.meta` and `new.target` are single tokens — neither child is a reference.
-      case 'MetaProperty':
-        return;
-      case 'VariableDeclarator':
-        // The declared names are already in scope via the enclosing block's hoist pass.
-        visit(node.init, bound);
-        return;
-      default:
-        break;
-    }
-
-    for (const [key, value] of Object.entries(node)) {
-      if (key !== 'type' && key !== 'start' && key !== 'end' && key !== 'loc' && key !== 'range') {
-        visit(value, bound);
-      }
-    }
-  };
-
-  visit(expression, new Set());
-  return free;
-}
-
-function visitPatternDefaults(node: unknown, bound: ReadonlySet<string>, visit: (n: unknown, b: ReadonlySet<string>) => void): void {
-  if (!isNode(node)) {
-    return;
-  }
-  if (node.type === 'AssignmentPattern') {
-    visit(node.right, bound);
-    visitPatternDefaults(node.left, bound, visit);
-    return;
-  }
-  if (node.type === 'ObjectPattern') {
-    for (const prop of (node.properties as Node[]) ?? []) {
-      visitPatternDefaults(prop.type === 'Property' ? prop.value : prop.argument, bound, visit);
-    }
-    return;
-  }
-  if (node.type === 'ArrayPattern') {
-    for (const el of (node.elements as Node[]) ?? []) {
-      visitPatternDefaults(el, bound, visit);
-    }
-    return;
-  }
-  if (node.type === 'RestElement') {
-    visitPatternDefaults(node.argument, bound, visit);
-  }
+      next();
+    },
+  });
+  return referenced.difference(declared);
 }

@@ -39,21 +39,9 @@ describe('serializeCompiledValue', () => {
   // A compiled value is spliced into a `<script>` block, and the demo source viewer bakes highlighted Svelte source into one.
   test('escapes markup that would otherwise close the surrounding script tag', () => {
     const payload = `<script>alert(1)</${'script'}>`;
-    for (const mode of ['devalue', 'json'] as const) {
-      const { expression } = serializeCompiledValue({ html: payload }, mode);
-      expect(expression).not.toContain(`</${'script'}`);
-      expect(new Function(`return ${expression};`)()).toEqual({ html: payload });
-    }
-  });
-
-  test('json mode emits a JSON.parse call and rejects module refs', () => {
-    expect(new Function(`return ${serializeCompiledValue({ a: [1, 2] }, 'json').expression};`)()).toEqual({ a: [1, 2] });
-    expect(serializeCompiledValue({ a: 1 }, 'json').expression).toStartWith('JSON.parse(');
-    expect(() => serializeCompiledValue({ c: createModuleRef('./x.md') }, 'json')).toThrow(/moduleRef/);
-  });
-
-  test('accepts a custom serializer', () => {
-    expect(serializeCompiledValue({ a: 1 }, () => '"custom"').expression).toBe('"custom"');
+    const { expression } = serializeCompiledValue({ html: payload });
+    expect(expression).not.toContain(`</${'script'}`);
+    expect(new Function(`return ${expression};`)()).toEqual({ html: payload });
   });
 
   test('recognises markers across framework copies via a registry symbol', () => {

@@ -1,6 +1,5 @@
 import path from 'node:path';
 import { transformCompiled, mayContainCompiled, type CompiledUsage } from './compiledMacro';
-import type { CompiledSerializer } from './compiledSerialize';
 import { relForDisplay, toPosixPath } from '../utils/index';
 
 export const COMPILED_MODULE_FILTER = /\.(ts|mts|js|mjs)$/;
@@ -22,14 +21,9 @@ export function isAppModulePath(filePath: string, frameworkSrc: string = FRAMEWO
   return !posix.includes('/node_modules/') && !posix.startsWith(`${toPosixPath(frameworkSrc)}/`);
 }
 
-function isAppModule(filePath: string): boolean {
-  return isAppModulePath(filePath);
-}
-
 export interface CompiledContext {
   outDir: string;
   development: boolean;
-  serializer?: CompiledSerializer;
   /** True once a prebuilt manifest is serving: reaching a `compiled()` on the on-demand path then means the build is stale. */
   isPrebuilt: () => boolean;
   onUsage: (usage: CompiledUsage) => void;
@@ -62,14 +56,14 @@ export async function applyCompiled(source: string, filePath: string, ctx: Compi
     return source;
   }
   assertNotPrebuilt(ctx, filePath);
-  return transformCompiled({ source, filePath, outDir: ctx.outDir, kind, serializer: ctx.serializer, onUsage: ctx.onUsage });
+  return transformCompiled({ source, filePath, outDir: ctx.outDir, kind, onUsage: ctx.onUsage });
 }
 
 /** Returns `undefined` for anything the macro leaves alone, so the common case costs one substring scan and stays on Bun's default loader. */
 export function createCompiledModuleLoader(ctx: CompiledContext) {
   return async (args: { path: string }): Promise<{ contents: string; loader: 'ts' | 'js' } | undefined> => {
     // Bun stops at the first handler that returns something, so a `.svelte.ts` must fall through to the runes loader registered after this one.
-    if (!isAppModule(args.path) || SVELTE_MODULE_FILTER.test(args.path)) {
+    if (!isAppModulePath(args.path) || SVELTE_MODULE_FILTER.test(args.path)) {
       return undefined;
     }
     // The extension filter also catches modules that exist only in a `Bun.build({ files })` map, with nothing on disk.
@@ -79,18 +73,10 @@ export function createCompiledModuleLoader(ctx: CompiledContext) {
     } catch {
       return undefined;
     }
-    if (!needsCompiledTransform(source, ctx)) {
+    const contents = await applyCompiled(source, args.path, ctx, 'module');
+    if (contents === source) {
       return undefined;
     }
-    assertNotPrebuilt(ctx, args.path);
-    const contents = await transformCompiled({
-      source,
-      filePath: args.path,
-      outDir: ctx.outDir,
-      kind: 'module',
-      serializer: ctx.serializer,
-      onUsage: ctx.onUsage,
-    });
     const ext = path.extname(args.path);
     return { contents, loader: ext === '.js' || ext === '.mjs' ? 'js' : 'ts' };
   };

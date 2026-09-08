@@ -1,9 +1,9 @@
 import MagicString from 'magic-string';
 import { parse } from 'svelte/compiler';
+import { walk } from 'zimmerframe';
 import { freeIdentifiers, hoistedNames } from './compiledScope';
 import { evaluateTwin, CompiledExpressionError, type HostImport } from './compiledTwin';
-import { serializeCompiledValue, createCompiledRefScope, type CompiledSerializer } from './compiledSerialize';
-import { referencedNames } from './compiledReferences';
+import { serializeCompiledValue, createCompiledRefScope } from './compiledSerialize';
 import { relForDisplay, toPosixPath } from '../utils/index';
 
 const MACRO_NAME = 'compiled';
@@ -28,7 +28,6 @@ export interface CompiledTransformOptions {
   outDir: string;
   /** `.svelte` parses as a component; everything else is wrapped in a synthetic module script. */
   kind: 'svelte' | 'module';
-  serializer?: CompiledSerializer;
   onUsage?: (usage: CompiledUsage) => void;
 }
 
@@ -50,13 +49,13 @@ function neutralizeScriptClose(text: string): string {
   return text.slice(0, text.length - MODULE_SUFFIX.length).replace(SCRIPT_CLOSE, '<%scr' + 'ipt') + MODULE_SUFFIX;
 }
 
-function parseRegions(source: string, kind: 'svelte' | 'module'): { text: string; regions: ScriptRegion[]; fragment?: unknown } {
+function parseRegions(source: string, kind: 'svelte' | 'module'): { text: string; regions: ScriptRegion[]; fragment?: Node } {
   if (kind === 'module') {
     const text = MODULE_PREFIX + source + MODULE_SUFFIX;
     const ast = parse(neutralizeScriptClose(text), { modern: true }) as unknown as { module?: { content: Node } };
     return { text, regions: ast.module ? [{ program: ast.module.content, insertAt: null }] : [] };
   }
-  const ast = parse(source, { modern: true }) as unknown as { instance?: Node; module?: Node; fragment?: unknown };
+  const ast = parse(source, { modern: true }) as unknown as { instance?: Node; module?: Node; fragment?: Node };
   const regions: ScriptRegion[] = [];
   for (const element of [ast.module, ast.instance]) {
     if (element) {
@@ -65,38 +64,6 @@ function parseRegions(source: string, kind: 'svelte' | 'module'): { text: string
     }
   }
   return { text: source, regions, fragment: ast.fragment };
-}
-
-/** Only script regions are transformed, so a call in markup would fall through to the runtime shim and quietly ship the dependency the macro exists to erase. */
-function assertNoMacroInMarkup(fragment: unknown, filePath: string): void {
-  const visit = (node: unknown): void => {
-    if (!node || typeof node !== 'object') {
-      return;
-    }
-    if (Array.isArray(node)) {
-      for (const child of node) {
-        visit(child);
-      }
-      return;
-    }
-    const n = node as Node;
-    if (n.type === 'CallExpression') {
-      const callee = n.callee as Node | undefined;
-      if (callee?.type === 'Identifier' && callee.name === MACRO_NAME) {
-        throw new CompiledExpressionError(
-          'compiled() only works inside a script block, but ' +
-            relForDisplay(filePath) +
-            ' calls it from markup. Move the call into the component script and reference the result.',
-        );
-      }
-    }
-    for (const [key, value] of Object.entries(n)) {
-      if (key !== 'type' && key !== 'start' && key !== 'end') {
-        visit(value);
-      }
-    }
-  };
-  visit(fragment);
 }
 
 function importsOf(program: Node, text: string): HostImport[] {
@@ -134,47 +101,57 @@ interface MacroCall {
   end: number;
 }
 
-function macroCalls(program: Node, imports: HostImport[]): MacroCall[] {
-  const bound = imports.some((imp) => imp.specifier === FRAMEWORK_SPECIFIER && imp.names.includes(MACRO_NAME));
-  if (!bound) {
-    return [];
-  }
+function macroCalls(root: Node | undefined): MacroCall[] {
   const calls: MacroCall[] = [];
-  const visit = (node: unknown, parent: Node | null): void => {
-    if (!node || typeof node !== 'object') {
-      return;
-    }
-    if (Array.isArray(node)) {
-      for (const child of node) {
-        visit(child, parent);
-      }
-      return;
-    }
-    const n = node as Node;
-    if (typeof n.type !== 'string') {
-      return;
-    }
-    if (n.type === 'CallExpression') {
-      const callee = n.callee as Node | undefined;
-      if (callee?.type === 'Identifier' && callee.name === MACRO_NAME) {
-        const awaited = parent?.type === 'AwaitExpression' && parent.argument === n;
-        if (!awaited && parent?.type === 'MemberExpression' && parent.object === n) {
+  if (!root) {
+    return calls;
+  }
+  walk(root, null, {
+    CallExpression(node, { next, path }) {
+      const callee = node.callee as Node;
+      if (callee.type === 'Identifier' && callee.name === MACRO_NAME) {
+        const parent = path.at(-1);
+        const awaited = parent?.type === 'AwaitExpression';
+        if (!awaited && parent?.type === 'MemberExpression' && parent.object === node) {
           throw new CompiledExpressionError(
             'compiled() must be awaited directly, as in: await compiled(() => loadData()). The call is replaced by the value it returned, so chaining off the promise it appears to return cannot work.',
           );
         }
-        calls.push({ call: n, start: awaited ? parent.start : n.start, end: awaited ? parent.end : n.end });
+        calls.push({ call: node, start: awaited ? parent.start : node.start, end: awaited ? parent.end : node.end });
       }
+      next();
+    },
+  });
+  return calls.sort((a, b) => a.start - b.start);
+}
+
+/**
+ * Names the file references outside its import lists and macro calls, which is what decides whether an import survives
+ * pruning. Read off the AST rather than the text because an inlined value is frequently source code itself, and a
+ * textual scan would match inside those string literals and never prune anything.
+ */
+function referencedNames(roots: (Node | undefined)[], calls: MacroCall[]): Set<string> {
+  const names = new Set<string>();
+  for (const root of roots) {
+    if (!root) {
+      continue;
     }
-    for (const [key, value] of Object.entries(n)) {
-      if (key !== 'type' && key !== 'start' && key !== 'end') {
-        visit(value, n);
-      }
-    }
-  };
-  visit(program.body, null);
-  calls.sort((a, b) => a.start - b.start);
-  return calls;
+    walk(root, null, {
+      _(node, { next }) {
+        if (node.type === 'ImportDeclaration' || calls.some((c) => c.start <= node.start && node.end <= c.end)) {
+          return;
+        }
+        if (node.type === 'Identifier') {
+          names.add(node.name as string);
+        } else if (node.type === 'Component') {
+          // `<Foo.Bar />` in markup keeps the `Foo` import alive.
+          names.add((node.name as string).split('.')[0]!);
+        }
+        next();
+      },
+    });
+  }
+  return names;
 }
 
 /** Returns the original source untouched when the file has no macro calls, so the common case costs one substring scan. */
@@ -184,37 +161,42 @@ export async function transformCompiled(opts: CompiledTransformOptions): Promise
   }
 
   const { text, regions, fragment } = parseRegions(opts.source, opts.kind);
-  assertNoMacroInMarkup(fragment, opts.filePath);
+  // Only script regions are transformed, so a call in markup would fall through to the runtime shim and quietly ship the dependency the macro exists to erase.
+  if (macroCalls(fragment).length > 0) {
+    throw new CompiledExpressionError(
+      'compiled() only works inside a script block, but ' +
+        relForDisplay(opts.filePath) +
+        ' calls it from markup. Move the call into the component script and reference the result.',
+    );
+  }
   const magic = new MagicString(text);
-  const usedImports = new Set<HostImport>();
+  const candidates = new Set<HostImport>();
+  const allCalls: MacroCall[] = [];
   const prepended: string[] = [];
   const refScope = createCompiledRefScope();
-  let count = 0;
 
   for (const region of regions) {
     const imports = importsOf(region.program, text);
-    const calls = macroCalls(region.program, imports);
+    const bound = imports.some((imp) => imp.specifier === FRAMEWORK_SPECIFIER && imp.names.includes(MACRO_NAME));
+    const calls = bound ? macroCalls(region.program) : [];
     const hostLocals = hoistedNames(region.program.body);
     for (const { call, start, end } of calls) {
-      const args = (call.arguments as Node[]) ?? [];
-      const expression = args[0];
+      const expression = ((call.arguments as Node[]) ?? [])[0];
       if (!expression) {
         throw new CompiledExpressionError(`compiled() needs a function argument, e.g. compiled(() => loadData()) — in ${relForDisplay(opts.filePath)}.`);
       }
-      const expressionSource = text.slice(expression.start, expression.end);
-      const free = freeIdentifiers(expression);
       const { value, used } = await evaluateTwin({
         hostPath: opts.filePath,
-        expression: expressionSource,
-        free,
+        expression: text.slice(expression.start, expression.end),
+        free: freeIdentifiers(expression),
         imports,
         hostLocals,
         outDir: opts.outDir,
       });
       for (const imp of used) {
-        usedImports.add(imp);
+        candidates.add(imp);
       }
-      const { expression: serialized, imports: refImports } = serializeCompiledValue(value, opts.serializer, refScope);
+      const { expression: serialized, imports: refImports } = serializeCompiledValue(value, refScope);
       const generated = refImports.map((r) => `import ${r.identifier} from ${JSON.stringify(r.specifier)};`).join('\n');
       magic.overwrite(start, end, serialized);
       if (generated) {
@@ -224,21 +206,21 @@ export async function transformCompiled(opts: CompiledTransformOptions): Promise
           magic.appendLeft(region.insertAt, `\n${generated}`);
         }
       }
-      count++;
     }
+    allCalls.push(...calls);
     // The macro import itself only ever exists to be erased.
     for (const imp of imports) {
       if (imp.specifier === FRAMEWORK_SPECIFIER && imp.names.some((n) => n === MACRO_NAME || n === 'moduleRef')) {
-        usedImports.add(imp);
+        candidates.add(imp);
       }
     }
   }
 
-  if (count === 0) {
+  if (allCalls.length === 0) {
     return opts.source;
   }
 
-  pruneDeadImports(magic, text, usedImports, opts.kind);
+  pruneDeadImports(magic, text, candidates, referencedNames([...regions.map((r) => r.program), fragment], allCalls));
 
   if (opts.kind === 'module') {
     // Strip the synthetic wrapper through MagicString rather than slicing the output by prefix length: inserted
@@ -246,24 +228,16 @@ export async function transformCompiled(opts: CompiledTransformOptions): Promise
     magic.remove(0, MODULE_PREFIX.length);
     magic.remove(text.length - MODULE_SUFFIX.length, text.length);
   }
-  opts.onUsage?.({ file: toPosixPath(opts.filePath), count });
+  opts.onUsage?.({ file: toPosixPath(opts.filePath), count: allCalls.length });
   const body = magic.toString();
   return prepended.length > 0 ? `${prepended.join('\n')}\n${body}` : body;
 }
 
 /** Load-bearing rather than cosmetic: a module like a Shiki-backed highlighter has top-level side effects, so the bundler will not tree-shake it away on its own. */
-function pruneDeadImports(magic: MagicString, text: string, candidates: Set<HostImport>, kind: 'svelte' | 'module'): void {
-  if (candidates.size === 0) {
-    return;
-  }
-  const output = magic.toString();
-  const referenced = referencedNames(kind === 'module' ? neutralizeScriptClose(output) : output, kind);
+function pruneDeadImports(magic: MagicString, text: string, candidates: Set<HostImport>, referenced: Set<string>): void {
   for (const imp of candidates) {
     // A bare `import './side-effects.ts'` binds nothing and is never ours to remove.
-    if (imp.names.length === 0) {
-      continue;
-    }
-    if (imp.names.some((name) => referenced.has(name))) {
+    if (imp.names.length === 0 || imp.names.some((name) => referenced.has(name))) {
       continue;
     }
     // Take the declaration's own indentation and line ending too, or pruning leaves an orphaned blank line behind.

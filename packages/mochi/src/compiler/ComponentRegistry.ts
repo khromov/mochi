@@ -468,6 +468,15 @@ export class ComponentRegistry {
     return [...this.compiledUsage].map(([file, count]) => ({ file: relForDisplay(file), count })).sort((a, b) => a.file.localeCompare(b.file));
   }
 
+  private compiledContext(): CompiledContext {
+    return {
+      outDir: this.outDir,
+      development: this.development,
+      isPrebuilt: () => this.loadedFromManifest,
+      onUsage: (usage) => this.compiledUsage.set(usage.file, Math.max(this.compiledUsage.get(usage.file) ?? 0, usage.count)),
+    };
+  }
+
   /** A build-time function usually reads files nobody imports, so the bundler's dependency graph cannot say when its value went stale. */
   getCompiledSourceFiles(): string[] {
     return [...this.compiledUsage.keys()];
@@ -690,12 +699,7 @@ export class ComponentRegistry {
       assets: this.localImageAssets,
       rejectUnknown: this.loadedFromManifest && !this.development,
     });
-    const compiledContext: CompiledContext = {
-      outDir: this.outDir,
-      development: this.development,
-      isPrebuilt: () => this.loadedFromManifest,
-      onUsage: (usage: CompiledUsage) => this.compiledUsage.set(usage.file, Math.max(this.compiledUsage.get(usage.file) ?? 0, usage.count)),
-    };
+    const compiledContext = this.compiledContext();
     const compiledModuleLoader = createCompiledModuleLoader(compiledContext);
 
     const sveltePlugin: BunPlugin = {
@@ -736,21 +740,7 @@ export class ComponentRegistry {
         build.onResolve({ filter: /^mochi-framework\/hydratable-boundary$/ }, () => ({
           path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
         }));
-        build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
-          let source = await applyCompiled(await Bun.file(args.path).text(), args.path, compiledContext, 'module');
-          if (args.path.endsWith('.ts')) {
-            const transpiler = new Bun.Transpiler({ loader: 'ts' });
-            source = transpiler.transformSync(source);
-          }
-          const { js } = backend.compileModule(
-            source,
-            mergeCompilerOptions(userCompilerOptions, {
-              generate: 'server',
-              filename: args.path,
-            }),
-          );
-          return { contents: js.code, loader: 'js' };
-        });
+        registerSvelteModuleLoader(build, backend, mergeCompilerOptions(userCompilerOptions, { generate: 'server' }), compiledContext);
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
           const raw = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
           const cached = needsCompiledTransform(raw, compiledContext) ? undefined : compileCache.get('server', args.path, raw, serverFingerprint, compileCacheStats);
@@ -1193,12 +1183,7 @@ export class ComponentRegistry {
       rejectUnknown: this.loadedFromManifest && !this.development,
     });
 
-    const compiledContext: CompiledContext = {
-      outDir: this.outDir,
-      development: this.development,
-      isPrebuilt: () => this.loadedFromManifest,
-      onUsage: (usage: CompiledUsage) => this.compiledUsage.set(usage.file, Math.max(this.compiledUsage.get(usage.file) ?? 0, usage.count)),
-    };
+    const compiledContext = this.compiledContext();
     const compiledModuleLoader = createCompiledModuleLoader(compiledContext);
 
     const clientPlugin: BunPlugin = {

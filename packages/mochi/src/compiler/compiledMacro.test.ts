@@ -206,6 +206,20 @@ describe('transformCompiled', () => {
     await expect(run(source)).rejects.toThrow(/references "File"/);
   });
 
+  // Scope is flattened, so a name bound in one inner function counts as bound in every other; the twin's own error covers what is left.
+  test('lets the twin report a reference that only an inner binding shadows', async () => {
+    const source = `<script>\n  import { compiled } from 'mochi-framework';\n  const v = await compiled(() => { const pick = (items) => items[0]; return pick(items); });\n${CLOSE}`;
+    await expect(run(source)).rejects.toThrow(/threw while evaluating: .*items/);
+  });
+
+  test('treats a shorthand property and a nested binding as references', async () => {
+    const out = await run(
+      `<script>\n  import { compiled } from 'mochi-framework';\n  import { items, load } from './data.ts';\n  const v = await compiled(() => ({ items, first: load(items).map((s) => s)[0] }));\n${CLOSE}`,
+    );
+    expect(out).toContain('{items:["a","b"],first:"A"}');
+    expect(out).not.toContain('./data.ts');
+  });
+
   test('names every missing reference with plural wording', async () => {
     const source = `<script>\n  import { compiled } from 'mochi-framework';\n  const a = 1;\n  const b = 2;\n  const v = await compiled(() => a + b);\n${CLOSE}`;
     await expect(run(source)).rejects.toThrow(/"a", "b"\. Move those values into their own modules and import them\./);
