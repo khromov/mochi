@@ -89,7 +89,7 @@ const opened = decryptPayload(token, { aad: 'my-form' }); // string | null
 
 <VersionNote since="0.10.0" message="escapeHtmlAttr became a public export in 0.10.0." />
 
-`escapeHtmlAttr(value)` replaces `&`, `"`, `<` and `>` with entities. It is the framework’s single attribute encoder, so values round-trip exactly through `getAttribute()` — including payloads that already contain entity sequences like `&quot;`, which a bare `"`-only replace would corrupt. It works for text content too.
+`escapeHtmlAttr(value)` replaces `&`, `"`, `<` and `>` with entities. It is the framework's single attribute encoder, so values round-trip exactly through `getAttribute()` — including payloads that already contain entity sequences like `&quot;`, which a bare `"`-only replace would corrupt. It works for text content too.
 
 ```ts
 import { escapeHtmlAttr } from 'mochi-framework';

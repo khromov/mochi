@@ -60,11 +60,11 @@ This page was rendered at {new Date().toISOString()}.
 
 The `markdown` config accepts a full plugin chain compatible with mdsvex's `rehypePlugins` and `remarkPlugins`.
 
-### Syntax highlighting
+### Syntax highlighting with Shiki or twinkleplop
 
-Fenced code blocks pass through unchanged unless you supply `markdown.highlight.highlighter`. `createHighlighter` turns any engine into one — it adds the code-block wrapper, copy button, Svelte-brace escape, and memoization per `(code, lang)`.
+Fenced code blocks pass through unchanged unless you supply `markdown.highlight.highlighter`. Install a highlighting engine (twinkleplop, Shiki, highlight.js, Prism) and build a highlighter with the framework's `createHighlighter` factory. It adds the code-block wrapper, copy button, Svelte-brace escape, and memoization per `(code, lang)`.
 
-The site is built on [twinkleplop](https://twinkleplop.pngwn.workers.dev/docs), which ships one package per language and highlights synchronously:
+This site uses twinkleplop, which ships one package per language and highlights synchronously:
 
 ```sh
 bun add @twinkleplop/typescript @twinkleplop/bash
@@ -119,7 +119,7 @@ twinkleplop emits token classes rather than inline colours, so the theme is a st
 <pre class="twinkleplop"><code><span class="l"><span class="tok keyword">const</span> …</span></code></pre>
 ```
 
-Import a ready-made one (`import '@twinkleplop/theme-github'`), or write the rules yourself against the [token names](https://twinkleplop.pngwn.workers.dev/docs/themes):
+Import a ready-made one (`import '@twinkleplop/theme-github'`), or write the rules yourself against the token names the theme packages export from their `/tokens` subpath:
 
 ```css
 .twinkleplop .tok.keyword {
