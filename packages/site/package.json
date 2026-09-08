@@ -9,10 +9,10 @@
     "loadPath": "./src/demos/varlock/.env.schema"
   },
   "scripts": {
-    "build": "bun scripts/prebuild.ts && mochi-framework build",
+    "build": "mochi-framework build",
     "start": "bun src/index.ts",
     "dev": "NODE_ENV=development bun src/index.ts",
-    "typecheck": "bun scripts/prebuild.ts && svelte-check --tsconfig ./tsconfig.json && tsc -p tsconfig.json --noEmit",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json && tsc -p tsconfig.json --noEmit",
     "test": "bun scripts/run-tests.ts",
     "clean": "rm -rf .mochi"
   },
@@ -38,7 +38,6 @@
     "rehype-slug": "^6.0.0",
     "runed": "^0.37.1",
     "shiki": "^4.4.1",
-    "slugify": "^1.6.9",
     "svelte": "^5.56.8",
     "svelte-french-toast": "2.0.0-alpha.0",
     "svelte-meta-tags": "^5.0.2",

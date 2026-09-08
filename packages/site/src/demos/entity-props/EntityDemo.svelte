@@ -2,11 +2,8 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import CodeSnippet from '../../components/CodeSnippet.svelte';
   import EntityIsland from './EntityIsland.svelte';
-  import { loadSources } from '../../components/utils.ts';
+  import { sources } from './sources.compiled.ts';
   import { highlightCode } from '../../lib/highlight.server';
-  import { files } from './files.ts';
-
-  const sources = await loadSources(files);
 
   const name = 'friend';
 

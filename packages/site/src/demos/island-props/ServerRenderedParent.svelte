@@ -3,11 +3,8 @@
   import CodeSnippet from '../../components/CodeSnippet.svelte';
   import ClientRenderedChild from './ClientRenderedChild.svelte';
   import { typeOf } from './devalueTypeOf.ts';
-  import { loadSources } from '../../components/utils.ts';
+  import { sources } from './sources.compiled.ts';
   import { highlightCode } from '../../lib/highlight.server';
-  import { files } from './files.ts';
-
-  const sources = await loadSources(files);
 
   const codeProps = await highlightCode(
     `const dateVal = new Date('2025-01-15T12:00:00Z');

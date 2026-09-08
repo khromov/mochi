@@ -15,12 +15,14 @@ import { scanEmailTemplates } from '../email/templates';
 import { encodeSourcePath } from '../compiler/manifestPaths';
 import { loadSvelteConfig } from '../compiler/svelteConfig';
 import { logger, setLogLevel } from '../utils/log';
+import { relForDisplay } from '../utils/index';
 import { consoleLogger } from '../dev/consoleLogger';
 import { mochiEvents } from '../events';
 import type { MochiCompileCompleteEvent } from '../events';
 import { styleText } from 'node:util';
 import prettyBytes from '../vendor/pretty-bytes';
 import { collectFontResources, collectImageResources, mergeResourceRows, printResourceTree } from './resourceReport';
+import { printBuildTimeModules } from './compiledReport';
 
 export interface MochiBuildOptions {
   routes: Record<string, MochiRouteValue>;
@@ -248,6 +250,8 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     // Flush after every compile pass — including the deferred client bundle — so
     // island-only and client-only barrels are in the summary.
     registry.flushBarrelWarnings();
+
+    printBuildTimeModules(registry.getBuildTimeModules().map(relForDisplay));
 
     allRoutes.sort((a, b) => a.pattern.localeCompare(b.pattern, undefined, { numeric: true }));
     printBuildTree({

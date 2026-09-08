@@ -2,10 +2,7 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import BrowserCanvas from './BrowserCanvas.svelte';
   import MountClock from './MountClock.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
-
-  const sources = await loadSources(files);
+  import { sources } from './sources.compiled.ts';
 </script>
 
 <DemoPage

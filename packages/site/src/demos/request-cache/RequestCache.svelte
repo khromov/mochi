@@ -1,11 +1,8 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
-  import { loadSources } from '../../components/utils';
+  import { sources } from './sources.compiled.ts';
   import { highlightCode } from '../../lib/highlight.server';
-  import { files } from './files.ts';
   import { overview, topWords, themes, extremes, richness } from './analyzeBook.ts';
-
-  const sources = await loadSources(files);
 
   // Each helper wraps the same memoized analysis, so these five calls parse the book exactly once.
   const facetOverview = overview();

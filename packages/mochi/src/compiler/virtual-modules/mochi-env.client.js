@@ -137,3 +137,6 @@ export { enhance, deserialize } from "__MOCHI_ENHANCE_CLIENT__";
 export function isHydratable() { return true; }
 // Server filesystem path — meaningless in the browser.
 export const PROTECTION_SHELL_COMPONENT = undefined;
+export function moduleRef(specifier) {
+  throw new Error("moduleRef(" + JSON.stringify(specifier) + ") only works inside a *.compiled.ts module, which runs at build time.");
+}

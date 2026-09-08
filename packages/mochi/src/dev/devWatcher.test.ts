@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import path from 'node:path';
-import { isServerEntryDep, reachedModuleChurnThreshold } from './devWatcher';
+import { isServerEntryDep, isStructuralChange, reachedModuleChurnThreshold } from './devWatcher';
 
 describe('isServerEntryDep', () => {
   const shared = path.resolve('/proj/src/plugin-list.ts');
@@ -46,5 +46,26 @@ describe('reachedModuleChurnThreshold', () => {
   test('honours a custom threshold', () => {
     expect(reachedModuleChurnThreshold(3, 3)).toBe(true);
     expect(reachedModuleChurnThreshold(2, 3)).toBe(false);
+  });
+});
+
+describe('isStructuralChange', () => {
+  test('an added or removed source or data file may change a directory listing a build-time module reads', () => {
+    expect(isStructuralChange('add', 'packages/docs/180-new.md')).toBe(true);
+    expect(isStructuralChange('unlink', 'src/demos/x/Card.svelte')).toBe(true);
+    expect(isStructuralChange('add', 'src/data/rows.json')).toBe(true);
+  });
+
+  test('an edit reaches its dependents through the import graph instead', () => {
+    expect(isStructuralChange('change', 'packages/docs/180-new.md')).toBe(false);
+  });
+
+  test('editor temp files, dotfiles, and directories never count', () => {
+    expect(isStructuralChange('add', 'src/.Page.svelte.swp')).toBe(false);
+    expect(isStructuralChange('add', 'src/4913')).toBe(false);
+    expect(isStructuralChange('add', 'src/Page.svelte___jb_tmp___')).toBe(false);
+    expect(isStructuralChange('add', 'src/.DS_Store')).toBe(false);
+    expect(isStructuralChange('addDir', 'src/new-folder')).toBe(false);
+    expect(isStructuralChange('unlinkDir', 'src/old-folder')).toBe(false);
   });
 });

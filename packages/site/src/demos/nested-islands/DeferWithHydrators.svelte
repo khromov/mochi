@@ -1,6 +1,6 @@
 <script>
   import { isServer } from 'mochi-framework';
-  import { delay } from '../../components/utils.ts';
+  import { delay } from '../../components/sourceUtils';
   import Counter from './Counter.svelte';
 
   await (isServer ? delay(800, 1500) : Promise.resolve());

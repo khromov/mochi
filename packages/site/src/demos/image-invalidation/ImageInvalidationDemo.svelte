@@ -1,7 +1,6 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
+  import { sources } from './sources.compiled.ts';
   import { getImageUrl } from 'mochi-framework';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 
@@ -17,8 +16,6 @@
   // re-request the otherwise URL-stable images so the swap is visible immediately.
   const bust = (url) => `${url}&g=${generation}`;
   const originalUrl = bust(getImageUrl(src));
-
-  const sources = await loadSources(files);
 </script>
 
 <DemoPage

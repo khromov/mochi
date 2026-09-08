@@ -6,10 +6,7 @@
   import PokemonMeta from './PokemonMeta.svelte';
   import PokemonStats from './PokemonStats.svelte';
   import PokemonSelector from './PokemonSelector.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
-
-  const sources = await loadSources(files);
+  import { sources } from './sources.compiled.ts';
 
   const id = (params.id ?? 'pikachu').toLowerCase();
 

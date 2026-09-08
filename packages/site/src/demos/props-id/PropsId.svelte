@@ -1,14 +1,11 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
+  import { sources } from './sources.compiled.ts';
   import Field from './Field.svelte';
   import LabeledField from './LabeledField.svelte';
   import ServerStamp from './ServerStamp.svelte';
   import ServerHydratedStamp from './ServerHydratedStamp.svelte';
   import ClientStamp from './ClientStamp.svelte';
-
-  const sources = await loadSources(files);
 </script>
 
 <DemoPage

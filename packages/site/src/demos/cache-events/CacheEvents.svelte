@@ -1,10 +1,7 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
-  import { loadSources } from '../../components/utils';
-  import { files } from './files.ts';
+  import { sources } from './sources.compiled.ts';
   import { getSlowTime } from './log';
-
-  const sources = await loadSources(files);
 
   const { value: time, status } = await getSlowTime();
 </script>

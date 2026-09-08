@@ -37,6 +37,8 @@ export const getVersion = (): string => (db.query('SELECT sqlite_version() as v'
 
 The `.server.ts` (or `.server.js`) suffix is the whole convention — no runtime API, no config. Import with the extension (`./db.server.ts`). Extensionless `./db.server` also works.
 
+The sibling convention `*.compiled.ts` goes the other way: the module runs at build time and only its values ship — see [Build-time modules](/docs/compiled/).
+
 ### Types are free
 
 A type-only import is erased before the client build resolves anything, so a `.server.ts` file is also the right home for the types describing its data — even for types used inside a hydratable island.
