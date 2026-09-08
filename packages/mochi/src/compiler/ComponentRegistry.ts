@@ -14,7 +14,7 @@ import {
   toCompileErrorLogs,
   toPosixPath,
 } from '../utils';
-import { clearIslandProps, injectIslandPropsBlock } from '../islands/islandPropsRegistry';
+import { injectIslandPropsBlock } from '../islands/islandPropsRegistry';
 import { requestContext, renderDetached } from '../runtime/requestContext';
 import type { DebugBarData } from '../runtime/requestContext';
 import { logger } from '../utils/log';
@@ -1552,9 +1552,7 @@ export class ComponentRegistry {
     // HTMLRewriter pass below drains it, so clearing up front keeps sequential same-ctx renders self-contained — an
     // error page after a failed render, an action's POST re-render.
     const ctx = requestContext.getStore();
-    if (ctx) {
-      clearIslandProps(ctx);
-    }
+    ctx?.islandProps.clear();
 
     const component = opts?.exportName && opts.exportName !== 'default' ? mod[opts.exportName] : mod.default;
     if (!component) {

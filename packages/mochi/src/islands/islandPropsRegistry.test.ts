@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
-import { clearIslandProps, emitIslandProps, injectIslandPropsBlock, renderIslandPropsScript } from './islandPropsRegistry';
+import { emitIslandProps, injectIslandPropsBlock, renderIslandPropsScript } from './islandPropsRegistry';
 import { requestContext, type MochiRequestContext } from '../runtime/requestContext';
 import { MochiCookieJar } from '../runtime/cookies';
 
@@ -162,16 +162,15 @@ describe('emitIslandProps identity fast path', () => {
     });
   });
 
-  test('clearIslandProps drops the shape index too, so ids never outlive their block', () => {
+  test('clearing the registry drops the bags with it, so ids never outlive their block', () => {
     withCtx((ctx) => {
       const docsNav = [{ level: 2, text: 'Intro', slug: 'intro' }];
       const first = emitIslandProps({ docsNav });
       expect(first).toBe('mochi-props-0');
 
-      clearIslandProps(ctx);
+      ctx.islandProps.clear();
       expect(ctx.islandProps.size).toBe(0);
 
-      // Without dropping the shape index this returns the id of a block the second render never emits.
       const second = emitIslandProps({ docsNav });
       expect(second).toBe('mochi-props-0');
       expect(ctx.islandProps.size).toBe(1);
