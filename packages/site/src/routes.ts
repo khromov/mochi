@@ -137,19 +137,14 @@ const supportRoute = vanityRedirect(SUPPORT_ORIGIN);
 const mcpRoute = Mochi.api(({ request }) => respondMcp(request));
 
 export const routes: Record<string, MochiRouteValue> = {
-  ...(DEVELOPMENT
+  // Gating on the mode would put these out of reach of their only caller, which profiles the production build.
+  ...(profilerEnabled()
     ? {
         '/_profiler/start': Mochi.api(async () => {
-          if (!profilerEnabled()) {
-            return new Response('Not Found', { status: 404 });
-          }
           await startProfiler();
           return Response.json({ ok: true });
         }),
         '/_profiler/stop': Mochi.api(async () => {
-          if (!profilerEnabled()) {
-            return new Response('Not Found', { status: 404 });
-          }
           const profile = await stopProfiler();
           return Response.json(profile);
         }),

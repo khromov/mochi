@@ -1,10 +1,26 @@
 import { stringify } from 'devalue';
 import { getRequestContext } from '../runtime/requestContext';
 
-/** One entry in the per-render dedup registry (`ctx.islandProps`): a unique serialized payload's ref id and how many islands emitted it. */
+/** One entry in the per-render dedup registry (`ctx.islandProps`): a unique serialized payload's ref id, how many islands emitted it, and every props bag that serialized to it. */
 export interface IslandPropsEntry {
   id: string;
   emitCount: number;
+  bags: Record<string, unknown>[];
+}
+
+/** Only a bag devalue would accept can stand in for one it already serialized, so anything it rejects must reach it and throw. */
+function isPlainBag(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value) as unknown;
+  return (proto === Object.prototype || proto === null) && Object.getOwnPropertySymbols(value).length === 0;
+}
+
+/** `Object.is` is what makes this safe to substitute for comparing serialized bytes: it separates `0` from `-0`, which devalue round-trips apart. */
+function sameBag(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((key) => Object.is(a[key], b[key]));
 }
 
 /**
@@ -15,14 +31,25 @@ export interface IslandPropsEntry {
  * Two islands with byte-identical serialized JSON share one ref id — the whole dedup mechanism — and the per-id emit
  * count lets the render pass flag genuinely shared blocks. Server islands take the preprocessor's own branch instead,
  * since their `signed-props` payloads are encrypted and travel through URL query strings.
+ *
+ * A bag whose props are the very same references as one already registered on an entry skips serializing altogether;
+ * that assumes props are not mutated between two call sites inside one `render()`, or the render gets one shared block
+ * where it wanted two.
  */
 export function emitIslandProps(value: unknown): string {
-  const json = stringify(value);
   const ctx = getRequestContext();
-  let entry = ctx.islandProps.get(json);
+  const bag = isPlainBag(value) ? value : undefined;
+  let entry = bag && ctx.islandProps.values().find((e) => e.bags.some((b) => sameBag(b, bag)));
   if (!entry) {
-    entry = { id: `mochi-props-${ctx.islandProps.size}`, emitCount: 0 };
-    ctx.islandProps.set(json, entry);
+    const json = stringify(value);
+    entry = ctx.islandProps.get(json);
+    if (!entry) {
+      entry = { id: `mochi-props-${ctx.islandProps.size}`, emitCount: 0, bags: [] };
+      ctx.islandProps.set(json, entry);
+    }
+    if (bag) {
+      entry.bags.push(bag);
+    }
   }
   entry.emitCount++;
   return entry.id;

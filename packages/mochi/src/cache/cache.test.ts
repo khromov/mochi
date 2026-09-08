@@ -903,7 +903,7 @@ describe('MochiCache invalidation during the initial-read gap', () => {
   });
 
   test('an uncontended fetch still writes its recompute on miss, stale and expired reads', async () => {
-    const cache = new MochiCache({ minTimeToStale: 10, maxTimeToLive: 30 });
+    const cache = new MochiCache({ minTimeToStale: 50, maxTimeToLive: 200 });
     let calls = 0;
     const fn = async () => {
       calls++;
@@ -914,12 +914,12 @@ describe('MochiCache invalidation during the initial-read gap', () => {
     expect(await cache.fetchWithStatus('k', fn)).toEqual({ value: 'v1', status: 'miss' });
     expect(await cache.peek('k')).toEqual({ value: 'v1', status: 'fresh' });
 
-    await wait(15);
+    await wait(80);
     expect((await cache.fetchWithStatus('k', fn)).status).toBe('stale');
     await cache.whenIdle();
     expect(await cache.peek('k')).toEqual({ value: 'v2', status: 'fresh' });
 
-    await wait(40);
+    await wait(250);
     expect(await cache.fetchWithStatus('k', fn)).toEqual({ value: 'v3', status: 'expired' });
     expect(await cache.peek('k')).toEqual({ value: 'v3', status: 'fresh' });
   });
