@@ -1,7 +1,16 @@
-import { describe, expect, test } from 'bun:test';
-import { highlightCode } from './highlight.server';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { getLogLevel, setLogLevel } from 'mochi-framework';
+import { createGrammarHighlighter, highlightCode } from './highlight.server';
 
 describe('highlightCode', () => {
+  // The fallback paths log a warning; silence it so the suite output stays clean.
+  let prevLevel: ReturnType<typeof getLogLevel>;
+  beforeAll(() => {
+    prevLevel = getLogLevel();
+    setLogLevel('silent');
+  });
+  afterAll(() => setLogLevel(prevLevel));
+
   test('tokenizes TypeScript through the ts alias', () => {
     const html = highlightCode('const answer = 42;', 'ts');
     expect(html).toContain('<pre class="twinkleplop">');
@@ -53,5 +62,25 @@ describe('highlightCode', () => {
     expect(first).toContain('&#123;');
     expect(first).toContain('&#125;');
     expect(first).not.toContain('{');
+  });
+
+  test('a fence named after an Object.prototype member falls through to plaintext', () => {
+    for (const lang of ['constructor', 'toString', 'hasOwnProperty', 'valueOf']) {
+      expect(highlightCode('x', lang)).toContain('<pre class="twinkleplop"><code>x</code></pre>');
+    }
+  });
+
+  test('degrades to plaintext when a grammar throws instead of 500ing the page', () => {
+    const highlight = createGrammarHighlighter(
+      {
+        typescript: () => () => {
+          throw new Error('boom');
+        },
+      },
+      { ts: 'typescript' },
+    );
+    const html = highlight('<b> & "q"', 'ts');
+    expect(html).toContain('<pre class="twinkleplop"><code>&lt;b&gt; &amp; &quot;q&quot;</code></pre>');
+    expect(html).toContain('<div class="code-block">');
   });
 });
