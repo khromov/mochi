@@ -206,7 +206,7 @@ describe('transformCompiled', () => {
     await expect(run(source)).rejects.toThrow(/references "File"/);
   });
 
-  // Scope is flattened, so a name bound in one inner function counts as bound in every other; the twin's own error covers what is left.
+  // Scope is flattened, so a name bound in one inner function counts as bound in every other.
   test('lets the twin report a reference that only an inner binding shadows', async () => {
     const source = `<script>\n  import { compiled } from 'mochi-framework';\n  const v = await compiled(() => { const pick = (items) => items[0]; return pick(items); });\n${CLOSE}`;
     await expect(run(source)).rejects.toThrow(/threw while evaluating: .*items/);

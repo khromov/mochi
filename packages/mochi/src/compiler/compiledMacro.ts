@@ -125,11 +125,7 @@ function macroCalls(root: Node | undefined): MacroCall[] {
   return calls.sort((a, b) => a.start - b.start);
 }
 
-/**
- * Names the file references outside its import lists and macro calls, which is what decides whether an import survives
- * pruning. Read off the AST rather than the text because an inlined value is frequently source code itself, and a
- * textual scan would match inside those string literals and never prune anything.
- */
+/** Read off the AST rather than the text because an inlined value is often source code itself, and a textual scan would match inside it and never prune anything. */
 function referencedNames(roots: (Node | undefined)[], calls: MacroCall[]): Set<string> {
   const names = new Set<string>();
   for (const root of roots) {

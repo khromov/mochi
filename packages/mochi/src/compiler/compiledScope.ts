@@ -36,7 +36,6 @@ export function patternNames(node: unknown, out: Set<string> = new Set()): Set<s
   return out;
 }
 
-/** Names a module declares at its top level. */
 export function hoistedNames(body: unknown): Set<string> {
   const names = new Set<string>();
   for (const stmt of (body as Node[]) ?? []) {
@@ -72,11 +71,7 @@ function isReference(node: Node, parent: Node | undefined): boolean {
   }
 }
 
-/**
- * Scope is flattened: a name bound anywhere in the expression counts as bound everywhere in it. That is conservative in
- * the one direction that matters — a missed reference makes the generated twin fail with a clear error, whereas
- * inventing one would reject valid user code.
- */
+/** Scope is flattened because a missed reference only makes the twin fail with a clear error, whereas an invented one would reject valid user code. */
 export function freeIdentifiers(expression: Node): Set<string> {
   const declared = new Set<string>();
   const referenced = new Set<string>();

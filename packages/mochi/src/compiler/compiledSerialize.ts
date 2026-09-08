@@ -38,7 +38,7 @@ export function createCompiledRefScope(): CompiledRefScope {
   return { imports: [], seen: new Map() };
 }
 
-/** `devalue` handles Date/Map/Set/RegExp/BigInt/cycles and escapes `<`, so a value holding markup cannot close the script block it is spliced into. */
+/** `devalue` escapes `<`, so a value holding markup cannot close the script block it is spliced into. */
 export function serializeCompiledValue(value: unknown, scope: CompiledRefScope = createCompiledRefScope()): SerializedValue {
   const before = scope.imports.length;
   const refIdentifier = (specifier: string): string => {
