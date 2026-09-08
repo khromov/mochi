@@ -25,6 +25,8 @@ beforeAll(async () => {
   await Bun.write(path.join(dir, 'component.compiled.ts'), `import Card from './Card.svelte';\nexport const card = Card;\n`);
   await Bun.write(path.join(dir, 'throws.compiled.ts'), `throw new Error('boom');\n`);
   await Bun.write(path.join(dir, 'fn.compiled.ts'), `export const rows = [{ fn: () => 1 }];\n`);
+  await Bun.write(path.join(dir, 'data.json'), `{ "n": 41 }\n`);
+  await Bun.write(path.join(dir, 'json.compiled.ts'), `import data from './data.json';\nexport const n = data.n + 1;\n`);
 });
 
 afterAll(() => {
@@ -88,6 +90,16 @@ describe('evaluateCompiledModule', () => {
     resetCompiledEvaluationCache();
     await evaluateCompiledModule(file, { ...ctx(), onInputs: (p, i) => seen.push(p, ...i) });
     expect(seen).toContain(path.join(dir, 'dep.ts'));
+  });
+
+  test('a JSON import is an input to evict but not a module to scan', async () => {
+    const file = path.join(dir, 'json.compiled.ts');
+    expect([...(await collectInputs(file))]).toEqual([file, path.join(dir, 'data.json')]);
+    resetCompiledEvaluationCache();
+    expect((await evaluateCompiledModule(file, ctx())).n).toBe(42);
+    await Bun.write(path.join(dir, 'data.json'), `{ "n": 99 }\n`);
+    resetCompiledEvaluationCache();
+    expect((await evaluateCompiledModule(file, ctx())).n).toBe(100);
   });
 
   test('a component import is rejected with the moduleRef hint', async () => {

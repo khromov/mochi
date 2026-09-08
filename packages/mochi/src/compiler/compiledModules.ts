@@ -6,7 +6,7 @@ import { relForDisplay, toPosixPath } from '../utils/index';
 export const COMPILED_MODULE_FILTER = /\.compiled\.[jt]s$/;
 
 const COMPONENT_EXTENSIONS = new Set(['.svelte', '.md', '.svx']);
-const SOURCE_EXTENSIONS = new Set(['.ts', '.mts', '.cts', '.js', '.mjs', '.cjs', '.jsx', '.tsx', '.json']);
+const SCRIPT_EXTENSIONS = new Set(['.ts', '.mts', '.cts', '.js', '.mjs', '.cjs']);
 const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
 
 export class CompiledModuleError extends Error {}
@@ -72,8 +72,11 @@ export async function collectInputs(entry: string): Promise<Set<string>> {
             `Export moduleRef(${JSON.stringify(imp.path)}) instead and import the value where it is used.`,
         );
       }
-      if (SOURCE_EXTENSIONS.has(ext)) {
+      // Anything else Bun can load (JSON, text) is cached and evicted like a module but has no imports of its own to scan.
+      if (SCRIPT_EXTENSIONS.has(ext)) {
         queue.push(resolved);
+      } else {
+        inputs.add(resolved);
       }
     }
   }
