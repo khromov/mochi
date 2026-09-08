@@ -49,6 +49,7 @@ function neutralizeScriptClose(text: string): string {
   return text.slice(0, text.length - MODULE_SUFFIX.length).replace(SCRIPT_CLOSE, '<%scr' + 'ipt') + MODULE_SUFFIX;
 }
 
+/** A plain module is wrapped in a synthetic `<script module>` so the Svelte parser serves both kinds, and the wrapper is stripped again at the end of the transform. */
 function parseRegions(source: string, kind: 'svelte' | 'module'): { text: string; regions: ScriptRegion[]; fragment?: Node } {
   if (kind === 'module') {
     const text = MODULE_PREFIX + source + MODULE_SUFFIX;
