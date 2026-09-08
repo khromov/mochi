@@ -20,8 +20,7 @@ export interface CompiledContext {
 }
 
 export function isCompiledModulePath(filePath: string): boolean {
-  const posix = toPosixPath(filePath);
-  return COMPILED_MODULE_FILTER.test(posix) && !posix.includes('/node_modules/');
+  return COMPILED_MODULE_FILTER.test(toPosixPath(filePath)) && !isNodeModulesLibrary(filePath);
 }
 
 export function assertNotPrebuilt(ctx: Pick<CompiledContext, 'development' | 'isPrebuilt'>, filePath: string): void {
@@ -32,8 +31,8 @@ export function assertNotPrebuilt(ctx: Pick<CompiledContext, 'development' | 'is
   }
 }
 
-function isFirstParty(filePath: string): boolean {
-  return !toPosixPath(filePath).includes('/node_modules/');
+function isNodeModulesLibrary(filePath: string): boolean {
+  return toPosixPath(filePath).includes('/node_modules/');
 }
 
 const scanner = new Bun.Transpiler({ loader: 'ts' });
@@ -62,7 +61,7 @@ export async function collectInputs(entry: string): Promise<Set<string>> {
       } catch {
         continue;
       }
-      if (!isFirstParty(resolved)) {
+      if (isNodeModulesLibrary(resolved)) {
         continue;
       }
       const ext = path.extname(resolved);
