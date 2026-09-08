@@ -201,6 +201,7 @@ await Mochi.serve({
   idleTimeout: 60,
   compressServerIslandProps: true,
   warmup: { enabledInProd: true, enabledInDev: true },
+  compressionDictionary: true,
   additionalWatchPaths: ['../docs'],
   logger: { level: 'log' },
   // nginx is the socket peer for every visitor, so reading the rightmost entry nginx appends is what distinguishes them.

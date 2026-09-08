@@ -79,6 +79,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `proxy` — `MochiProxyOptions` for trusted reverse-proxy headers. See below.
 - `hooks` / `filters` — named lifecycle hooks and value filters. See [Extensions](/docs/extensions/).
 - `warmup` — warm the SSR pipeline at startup by invoking every static page route once. `boolean | { enabledInProd, enabledInDev }`. Default: `false`. See below.
+- `compressionDictionary` — serve `dcz`-compressed HTML navigations via Compression Dictionary Transport (RFC 9842). `boolean | MochiCompressionDictionaryOptions`; `true` enables in production only. Default: `false`. See [Compression Dictionaries](/docs/compression-dictionaries/).
 - `bun` — escape hatch for raw `Bun.serve()` options Mochi does not surface — `idleTimeout`, `maxRequestBodySize`, `reusePort`, `tls`. `fetch` / `websocket` / `routes` / `error` are framework-owned and throw if set. See below.
 
 <Callout type="info">
