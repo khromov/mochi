@@ -5,6 +5,7 @@
  * `./web-components/ServerIsland.ts`.
  */
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
+import { devalueAliasPlugin } from './devalueAlias';
 
 // This file lives in `src/compiler/`, so climb one level: resolving `relPath`
 // against `import.meta.url` would anchor callers' paths to `src/compiler/`.
@@ -14,7 +15,7 @@ export async function buildInlineWebComponent(relPath: string): Promise<string> 
   const entry = Bun.fileURLToPath(new URL(relPath, SRC_URL));
   const result = await Bun.build({
     entrypoints: [entry],
-    plugins: [serverOnlyModuleGuard],
+    plugins: [serverOnlyModuleGuard, devalueAliasPlugin],
     target: 'browser',
     define: { ...CLIENT_BUILD_DEFINE },
     minify: true,

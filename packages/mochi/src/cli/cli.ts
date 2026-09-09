@@ -203,6 +203,7 @@ async function main() {
     routes,
     markdown: serveOptions?.markdown,
     svelteCompiler: serveOptions?.svelteCompiler,
+    useOptimizedDevalue: serveOptions?.useOptimizedDevalue,
     optimize: serveOptions && 'optimize' in serveOptions ? serveOptions.optimize : undefined,
     barrelWarnings: serveOptions?.barrelWarnings,
     fonts: serveOptions?.fonts,

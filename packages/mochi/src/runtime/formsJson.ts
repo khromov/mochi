@@ -1,4 +1,4 @@
-import { stringify as devalueStringify } from 'devalue';
+import { stringify as devalueStringify } from '../utils/devalue';
 import { json, negotiate } from '../utils';
 
 /**

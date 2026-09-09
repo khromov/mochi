@@ -10,6 +10,10 @@ Every folder under `packages/mochi/src/vendor/` is a copy of a small upstream np
 
 **Files must be added AS IS from what npm published for that version.** Do not diff the old and new upstream sources and hand-patch changes into the existing vendored file, and do not otherwise edit, refactor, or "fix" the vendored code yourself — that risks silently introducing behavior the upstream package never had. The only permitted mechanical step is re-applying the same file-format treatment already established for that vendor folder (e.g. the `.ts` extension, the ESM/CJS-build merge via the `typeof process !== 'undefined'` runtime switch) so it fits the existing build — never a judgment-based content edit.
 
+**Exception — forks.** A folder whose `// Vendored from` version carries a `+<sha>` build tag is a **fork**: a published release plus commits that are not on npm. `devalue` is one (`5.9.2+bc3ef3a` — v5.9.2 plus an unreleased perf commit). Never replace a fork from `npm pack`; that reverts the fork's commits with nothing in the diff to show for it. `bun run check-vendored-versions` compares against npm's `latest` tag only, so a fork reads as "behind" whenever anything newer is published — expected, not a signal to update.
+
+To update a fork: rebase the fork's own repository onto the new upstream tag, re-copy its sources, bump the marker to `<newversion>+<newsha>`, and re-run its parity test (`packages/mochi/src/devalueParity.test.ts` for devalue). If the fork's commits no longer apply cleanly, or have landed upstream, stop and report — dropping back to plain vendoring, or to the plain npm dep, is the user's call.
+
 ## Step 1 — check
 
 ```sh

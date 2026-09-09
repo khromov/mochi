@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { toPosixPath } from '../utils';
+import { devalueModulePath } from '../utils/devalue';
 
 /** Directory containing this file (`src/compiler/`). */
 const FRAMEWORK_DIR = path.dirname(Bun.fileURLToPath(import.meta.url));
@@ -32,7 +33,7 @@ export function renderMochiEnvServer(development: boolean): string {
     __MOCHI_DEV__: String(development),
     __MOCHI_LOG__: frameworkFile('utils/log.ts'),
     __MOCHI_GLOBAL_STATE__: frameworkFile('utils/globalState.ts'),
-    __MOCHI_DEVALUE__: toPosixPath(Bun.resolveSync('devalue', FRAMEWORK_DIR)),
+    __MOCHI_DEVALUE__: devalueModulePath(),
     __MOCHI_TRAILING_SLASH__: frameworkFile('runtime/trailingSlash.ts'),
     __MOCHI_ISLAND_PROPS__: frameworkFile('islands/islandPropsRegistry.ts'),
     __MOCHI_IS_HYDRATABLE__: frameworkFile('islands/isHydratable.ts'),
@@ -57,7 +58,7 @@ export function renderMochiEnvClient(development: boolean, cookiesClientPath: st
     __MOCHI_COOKIES_CLIENT__: cookiesClientPath,
     __MOCHI_LOG__: frameworkFile('utils/log.ts'),
     __MOCHI_GLOBAL_STATE__: frameworkFile('utils/globalState.ts'),
-    __MOCHI_DEVALUE__: toPosixPath(Bun.resolveSync('devalue', FRAMEWORK_DIR)),
+    __MOCHI_DEVALUE__: devalueModulePath(),
     __MOCHI_TRAILING_SLASH__: frameworkFile('runtime/trailingSlash.ts'),
     __MOCHI_DEFER_API__: frameworkFile('islands/deferInvalidation.ts'),
     __MOCHI_DEFER_REACTIVE__: frameworkFile('islands/deferReloadState.svelte.ts'),
