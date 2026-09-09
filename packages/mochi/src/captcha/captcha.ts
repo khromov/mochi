@@ -3,6 +3,8 @@ import { encryptPayload, decryptPayload } from '../islands/payloadCrypto';
 import { applyFilter } from '../extensions';
 import { mochiEvents } from '../events';
 import type { MochiCaptchaReason } from '../events';
+import { requestContext } from '../runtime/requestContext';
+import { bindActive, bindHashEqual, computeBindHashes, isBindHeaderName, resolveBindOptions, type MochiClientBindOptions } from '../runtime/clientBind';
 import { getCaptchaRuntime } from './config';
 import { CAPTCHA_AAD, deriveChain, powInput, leadingZeroBits } from './pow';
 import type { CaptchaResult } from './types';
@@ -33,21 +35,61 @@ export interface MintedCaptcha {
   solveBudgetMs: number;
 }
 
+/** The request a token is bound to, for minting or verifying outside a request context. */
+export interface CaptchaBindInputs {
+  address: string | null;
+  headers: Headers;
+}
+
+function contextBindInputs(): CaptchaBindInputs | null {
+  const ctx = requestContext.getStore();
+  return ctx ? { address: ctx.getClientAddress(), headers: ctx.request.headers } : null;
+}
+
+/** The client-binding spec a token was sealed with — verification recomputes against exactly this, so config drift can't strand in-flight tokens. */
+interface SealedBind {
+  h: string[];
+  hh?: string;
+  ph?: string;
+  f?: number;
+}
+
 /**
  * Mint a single-use captcha challenge. Spread the result onto `<MochiCaptcha />`.
  *
  * `bits` is sealed inside the encrypted token, so {@link verifyCaptcha} always
  * checks the difficulty this token was actually minted at — reconfiguring the
  * server can never silently weaken or break tokens already in flight.
+ *
+ * `bind` overrides the configured client binding for this token alone, and `bindInputs` supplies the request to bind
+ * to when there is no ambient request context — without either, minting a bound token outside one throws.
  */
-export function mintCaptcha(options?: { bits?: number; solveBudgetMs?: number }): MintedCaptcha {
+export function mintCaptcha(options?: { bits?: number; solveBudgetMs?: number; bind?: MochiClientBindOptions; bindInputs?: CaptchaBindInputs }): MintedCaptcha {
   const resolved = getCaptchaRuntime().options;
   const bits = options?.bits ?? resolved.bits;
   const solveBudgetMs = options?.solveBudgetMs ?? resolved.solveBudgetMs;
   if (!Number.isFinite(solveBudgetMs) || solveBudgetMs <= 0) {
     throw new Error(`Captcha: solveBudgetMs must be a positive finite number, got ${solveBudgetMs}`);
   }
-  const token = encryptPayload(JSON.stringify({ iat: Date.now(), nonce: randomUUID(), bits }), { aad: CAPTCHA_AAD });
+  const bind = options?.bind !== undefined ? resolveBindOptions(options.bind, false, 'Captcha') : resolved.bind;
+  let sealedBind: SealedBind | undefined;
+  if (bindActive(bind)) {
+    // Throwing beats silently minting unbound, which would defeat the opt-in without a trace.
+    const inputs = options?.bindInputs ?? contextBindInputs();
+    if (!inputs) {
+      throw new Error('Captcha: mintCaptcha with bind enabled requires a request context or explicit bindInputs');
+    }
+    const hashes = computeBindHashes(inputs, bind)!;
+    sealedBind = { h: bind.headers };
+    if (bind.headers.length > 0) {
+      sealedBind.hh = hashes.hh;
+    }
+    if (bind.network) {
+      sealedBind.ph = hashes.ph;
+      sealedBind.f = hashes.f;
+    }
+  }
+  const token = encryptPayload(JSON.stringify({ iat: Date.now(), nonce: randomUUID(), bits, ...(sealedBind ? { b: sealedBind } : {}) }), { aad: CAPTCHA_AAD });
   return { token, bits, solveBudgetMs };
 }
 
@@ -60,7 +102,10 @@ export function mintCaptcha(options?: { bits?: number; solveBudgetMs?: number })
  * per-call, it also bypasses the app-wide `captcha:minAgeMs` filter. `minBits` refuses tokens minted below a difficulty
  * floor — without it, any endpoint minting easier tokens (a low-bits form captcha) devalues a harder one's proof.
  */
-export async function verifyCaptcha(formData: FormData, options?: { consume?: boolean; minAgeMs?: number; minBits?: number }): Promise<CaptchaResult> {
+export async function verifyCaptcha(
+  formData: FormData,
+  options?: { consume?: boolean; minAgeMs?: number; minBits?: number; bindInputs?: CaptchaBindInputs },
+): Promise<CaptchaResult> {
   const token = String(formData.get('captcha_token') ?? '');
   const pow = String(formData.get('captcha_pow') ?? '');
   const opened = token ? decryptPayload(token, { aad: CAPTCHA_AAD }) : null;
@@ -71,18 +116,44 @@ export async function verifyCaptcha(formData: FormData, options?: { consume?: bo
   let iat: number;
   let nonce: string;
   let bits: number;
+  let sealedBind: SealedBind | undefined;
   try {
-    const parsed = JSON.parse(opened) as { iat?: unknown; nonce?: unknown; bits?: unknown };
+    const parsed = JSON.parse(opened) as { iat?: unknown; nonce?: unknown; bits?: unknown; b?: unknown };
     if (typeof parsed.iat !== 'number' || typeof parsed.nonce !== 'string' || typeof parsed.bits !== 'number') {
       return reject('malformed');
     }
     ({ iat, nonce, bits } = parsed as { iat: number; nonce: string; bits: number });
+    if (parsed.b !== undefined) {
+      const b = parsed.b as SealedBind;
+      // The names are re-validated, not just type-checked: they go straight to Headers.get(), which throws on a
+      // malformed name, and a token minted by another version or a key-sharing sibling app may carry anything.
+      if (typeof b !== 'object' || b === null || !Array.isArray(b.h) || b.h.some((n) => typeof n !== 'string' || !isBindHeaderName(n))) {
+        return reject('malformed');
+      }
+      sealedBind = b;
+    }
   } catch {
     return reject('malformed');
   }
 
   if (options?.minBits !== undefined && bits < options.minBits) {
     return reject('bad-pow', { bits });
+  }
+
+  if (sealedBind) {
+    // A bound token demands a request to compare against — fail closed rather than degrade to unbound.
+    const inputs = options?.bindInputs ?? contextBindInputs();
+    if (!inputs) {
+      return reject('bind-mismatch', { bits });
+    }
+    const current = computeBindHashes(inputs, { network: typeof sealedBind.ph === 'string', headers: sealedBind.h });
+    if (
+      !current ||
+      (typeof sealedBind.hh === 'string' && !bindHashEqual(sealedBind.hh, current.hh)) ||
+      (typeof sealedBind.ph === 'string' && !bindHashEqual(sealedBind.ph, current.ph))
+    ) {
+      return reject('bind-mismatch', { bits });
+    }
   }
 
   const { options: resolved, store } = getCaptchaRuntime();

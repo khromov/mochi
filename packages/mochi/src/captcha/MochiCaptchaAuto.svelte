@@ -71,6 +71,49 @@
     }
   }
 
+  // Stamped just before the post-verification reload. Finding it still fresh on the next mount means the server took
+  // the solution and gated the page anyway, so reloading again would loop forever, re-solving on every pass.
+  const VERIFIED_KEY = 'mochi-protection-verified';
+  const BOUNCES_KEY = 'mochi-protection-bounces';
+  const BOUNCE_WINDOW_MS = 60_000;
+  const MAX_BOUNCES = 2;
+
+  function markVerified() {
+    try {
+      sessionStorage.setItem(VERIFIED_KEY, String(Date.now()));
+    } catch {
+      // Storage unavailable — a bounce loop just goes undetected, as it did before.
+    }
+  }
+
+  /** Reads and clears the marker, so a stale one left by a verification that did land can't fire a later challenge. */
+  function takeVerifiedBounce(): boolean {
+    try {
+      const stamp = Number(sessionStorage.getItem(VERIFIED_KEY));
+      sessionStorage.removeItem(VERIFIED_KEY);
+      return stamp > 0 && Date.now() - stamp < BOUNCE_WINDOW_MS;
+    } catch {
+      return false;
+    }
+  }
+
+  function readBounces(): number {
+    try {
+      return Number(sessionStorage.getItem(BOUNCES_KEY)) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  function writeBounces(count: number): number {
+    try {
+      sessionStorage.setItem(BOUNCES_KEY, String(count));
+    } catch {
+      // Storage unavailable — the count just never accumulates.
+    }
+    return count;
+  }
+
   function cancelSolve() {
     generation++;
     if (solveTimer !== null) {
@@ -122,8 +165,15 @@
 
   onMount(() => {
     mounted = true;
+    // Reaching the interstitial without a just-completed verification means this is not a reload loop.
+    const bounced = writeBounces(takeVerifiedBounce() ? readBounces() + 1 : 0);
     if (readAttempts() >= maxAttempts) {
       phase = 'exhausted';
+    } else if (bounced >= MAX_BOUNCES) {
+      phase = 'exhausted';
+      logger.error('captcha: verification succeeded but the page is still gated — refusing to reload again');
+    } else if (bounced > 0) {
+      failWith('Verification succeeded but the page is still gated — the clearance cookie was refused');
     } else if (validateProps()) {
       startSolve();
     }
@@ -221,6 +271,7 @@
     }
     phase = 'verified';
     writeAttempts(0);
+    markVerified();
     location.reload();
   }
 </script>

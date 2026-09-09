@@ -6,8 +6,9 @@ import { finalizeCookieHeaders, type MochiCookieJar } from '../runtime/cookies';
 import { getClientAddress, type MochiProxyOptions } from '../runtime/proxy';
 import { isWarmupRequest } from '../runtime/warmup';
 import type { TrailingSlashPolicy } from '../runtime/trailingSlash';
+import { computeBindHashes } from '../runtime/clientBind';
 import { logger } from '../utils/log';
-import { hasValidClearance } from './clearance';
+import { checkClearance, clearanceCookieOptions, mintClearanceToken } from './clearance';
 import { PROTECTION_SHELL_COMPONENT } from './config';
 import type { MochiProtectionContext, MochiProtectionKind, ResolvedProtectionOptions } from './types';
 
@@ -83,7 +84,9 @@ export function createProtectionRuntime(deps: {
   };
 
   const interstitialResponse = async (input: ProtectionGateInput): Promise<Response> => {
-    const minted = mintCaptcha({ bits: options.bits });
+    // Never bind the challenge token, even under a global captcha.bind: the verify endpoint runs outside
+    // requestContext.run, and protection's client binding lives in the clearance instead.
+    const minted = mintCaptcha({ bits: options.bits, bind: false });
     // A minimal ambient context, like the error responder's: the interstitial renders outside any
     // route handler, and its hydratable island needs `ctx.islandProps` to exist.
     const ctx: MochiRequestContext = {
@@ -147,9 +150,37 @@ export function createProtectionRuntime(deps: {
     if (!isProtected(ctx)) {
       return undefined;
     }
+    // The gate's verdict now reads these headers, so blocked and cleared responses alike must vary on them.
+    for (const header of options.bind.headers) {
+      input.cookies.varyOn(header);
+    }
+    // The network half reads the trusted address header, which is just as much an input to the verdict.
+    if (options.bind.network && proxy?.addressHeader) {
+      input.cookies.varyOn(proxy.addressHeader);
+    }
+    const current = computeBindHashes(
+      { address: getClientAddress(input.request, input.server.requestIP(input.request)?.address ?? null, proxy), headers: input.request.headers },
+      options.bind,
+    );
     // Reading through the jar marks it accessed, so finalizeCookieHeaders varies
     // this and every cleared response on Cookie — shared caches stay honest.
-    if (hasValidClearance(input.cookies.get(options.cookieName), options.maxAgeMs, options.bits)) {
+    const check = checkClearance(input.cookies.get(options.cookieName), {
+      maxAgeMs: options.maxAgeMs,
+      minBits: options.bits,
+      bind: options.bind,
+      current,
+    });
+    if (check.ok) {
+      if (check.familyFlip && current) {
+        // Re-mint bound to the presenting prefix (preserving iat) so later checks are strict again. WS upgrades
+        // never finalize cookies, so there the re-mint is dropped — harmless, the flip allowance is time-boxed anyway.
+        const remainingS = Math.max(1, Math.floor((check.iat + options.maxAgeMs - Date.now()) / 1000));
+        input.cookies.set(
+          options.cookieName,
+          mintClearanceToken({ bits: check.bits, iat: check.iat, bind: current }),
+          clearanceCookieOptions(remainingS, input.url.protocol === 'https:'),
+        );
+      }
       return undefined;
     }
     return finalizeCookieHeaders(await blockedResponse(input, ctx), input.cookies);

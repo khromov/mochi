@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mintCaptcha, verifyCaptcha, consumeCaptcha, solveCaptcha } from './captcha';
-import { CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits, sha256Hex, solvePowSlice } from './pow';
+import { CAPTCHA_AAD, CAPTCHA_STEPS, chainInput, powInput, leadingZeroBits, sha256Hex, solvePowSlice } from './pow';
 import { DEFAULT_CAPTCHA_BITS, DEFAULT_CAPTCHA_DRIFT_ALLOWANCE_MS } from './config';
 import { DEFAULT_CAPTCHA_SOLVE_BUDGET_MS } from './pow';
 import { encryptPayload, decryptPayload } from '../islands/payloadCrypto';
@@ -521,5 +521,90 @@ describe('resolveCaptchaOptions', () => {
     initExtensions({ filters: { 'captcha:solveBudgetMs': () => -1 } });
     installConfig({ minAgeMs: 0 });
     expect(() => mintCaptcha()).toThrow(/solveBudgetMs must be a positive finite number/);
+  });
+});
+
+describe('client binding', () => {
+  const UA = { 'user-agent': 'TestBrowser/1.0', 'accept-language': 'en-US' };
+  const inputs = (address: string | null, headers: Record<string, string> = UA) => ({ address, headers: new Headers(headers) });
+
+  const seen: MochiCaptchaVerifyEvent[] = [];
+  const record = (e: MochiCaptchaVerifyEvent) => {
+    seen.push(e);
+  };
+  beforeEach(() => {
+    seen.length = 0;
+    mochiEvents.on('captcha:verify', record);
+  });
+  afterEach(() => {
+    mochiEvents.off('captcha:verify', record);
+  });
+
+  test('a bound token verifies against matching inputs and solveCaptcha still solves it', async () => {
+    installConfig();
+    const minted = mintCaptcha({ bind: true, bindInputs: inputs('203.0.113.7') });
+    const result = await verifyCaptcha(fields(solveCaptcha(minted)), { bindInputs: inputs('203.0.113.7') });
+    expect(result.ok).toBe(true);
+  });
+
+  test('a changed bound header rejects with the generic message and a bind-mismatch event', async () => {
+    installConfig();
+    const minted = mintCaptcha({ bind: true, bindInputs: inputs('203.0.113.7') });
+    const result = await verifyCaptcha(fields(solveCaptcha(minted)), { bindInputs: inputs('203.0.113.7', { ...UA, 'user-agent': 'Other/2.0' }) });
+    expect(result).toEqual({ ok: false, reason: 'rejected', error: 'Verification failed — reload the page and try again.' });
+    expect(seen.at(-1)).toMatchObject({ ok: false, reason: 'bind-mismatch', bits: 8 });
+  });
+
+  test('a different network prefix rejects; the same /24 passes', async () => {
+    installConfig();
+    const minted = mintCaptcha({ bind: true, bindInputs: inputs('203.0.113.7') });
+    expect((await verifyCaptcha(fields(solveCaptcha(minted)), { bindInputs: inputs('203.0.113.99') })).ok).toBe(true);
+    const minted2 = mintCaptcha({ bind: true, bindInputs: inputs('203.0.113.7') });
+    expect((await verifyCaptcha(fields(solveCaptcha(minted2)), { bindInputs: inputs('198.51.100.1') })).ok).toBe(false);
+  });
+
+  test('a bound token with no request context and no bindInputs fails closed', async () => {
+    installConfig();
+    const minted = mintCaptcha({ bind: true, bindInputs: inputs('203.0.113.7') });
+    const result = await verifyCaptcha(fields(solveCaptcha(minted)));
+    expect(result.ok).toBe(false);
+    expect(seen.at(-1)).toMatchObject({ ok: false, reason: 'bind-mismatch' });
+  });
+
+  test('minting with bind outside a request context and without bindInputs throws', () => {
+    installConfig();
+    expect(() => mintCaptcha({ bind: true })).toThrow('requires a request context or explicit bindInputs');
+  });
+
+  test('a global captcha.bind applies to bare mints and per-call bind: false opts out', () => {
+    installConfig({ bits: 8, minAgeMs: 0, bind: true });
+    expect(() => mintCaptcha()).toThrow('requires a request context or explicit bindInputs');
+    expect(() => mintCaptcha({ bind: false })).not.toThrow();
+  });
+
+  test('the header spec is sealed in the token, so custom per-call headers round-trip', async () => {
+    installConfig();
+    const bind = { network: false, headers: ['x-custom'] };
+    const minted = mintCaptcha({ bind, bindInputs: inputs(null, { 'x-custom': 'abc' }) });
+    expect((await verifyCaptcha(fields(solveCaptcha(minted)), { bindInputs: inputs(null, { 'x-custom': 'abc' }) })).ok).toBe(true);
+    const minted2 = mintCaptcha({ bind, bindInputs: inputs(null, { 'x-custom': 'abc' }) });
+    expect((await verifyCaptcha(fields(solveCaptcha(minted2)), { bindInputs: inputs(null, { 'x-custom': 'other' }) })).ok).toBe(false);
+  });
+
+  test('a sealed header name that is not a valid field name rejects instead of throwing', async () => {
+    installConfig();
+    const minted = mintCaptcha({ bind: { network: false, headers: ['x-custom'] }, bindInputs: inputs(null, { 'x-custom': 'abc' }) });
+    const payload = JSON.parse(decryptPayload(minted.token, { aad: CAPTCHA_AAD })!) as { b: { h: string[] } };
+    // What a token minted by a different version, or by a key-sharing sibling app, could carry.
+    payload.b.h = ['bad header'];
+    const forged = { ...minted, token: encryptPayload(JSON.stringify(payload), { aad: CAPTCHA_AAD }) };
+    const result = await verifyCaptcha(fields(solveCaptcha(forged)), { bindInputs: inputs(null, { 'x-custom': 'abc' }) });
+    expect(result).toMatchObject({ ok: false, reason: 'rejected' });
+    expect(seen.at(-1)).toMatchObject({ ok: false, reason: 'malformed' });
+  });
+
+  test('unbound tokens keep verifying with no context, unchanged', async () => {
+    installConfig();
+    expect((await verifyCaptcha(fields(solveCaptcha(mintCaptcha())))).ok).toBe(true);
   });
 });
