@@ -2,30 +2,29 @@
 # variant is selected by the WORKSPACE build arg:
 #   docker build --build-arg WORKSPACE=site  -f Dockerfile .   # mochi
 #   docker build --build-arg WORKSPACE=demos -f Dockerfile .   # mochi-demos
-# Running in dev mode (`bun run dev:<workspace>` sets MODE=development) so
+# Running in dev mode (`bun run dev:<workspace>` sets NODE_ENV=development) so
 # the debug bar and dev overlays are visible in the deployed environment.
 # MOCHI_LIVE_RELOAD=false strips the live-reload WS — the socket is flaky
 # behind the deploy proxy and dropped connections trigger a page reload.
 # Prebuilt production variants live at Dockerfile.production and
 # packages/demos/Dockerfile.production if we ever need to flip back.
 #
-# Base image defaults to oven/bun:1.4.0-alpine (pure musl alpine, multi-arch),
+# Base image defaults to oven/bun:1.4.2-alpine (pure musl alpine, multi-arch),
 # overridable via the BUN_IMAGE build arg so a single workspace can ride a
 # different Bun tag without moving the others. Earlier revisions used
 # frolvlad/alpine-glibc with a copied bun binary; that combo broke
 # @tailwindcss/oxide's native binding on linux/arm64 because the glibc compat
 # shim was loaded in place of musl libc.
 
-ARG BUN_IMAGE=oven/bun:1.4.0-alpine
+ARG BUN_IMAGE=oven/bun:1.4.2-alpine
 FROM ${BUN_IMAGE} AS base
 WORKDIR /usr/src/app
 
 # install dependencies into a temp directory. We copy the whole packages/
 # tree (rather than only the workspace package.json files) so bun install
 # can reconcile the lockfile topology AND resolve workspace:* bin shims
-# (e.g. mochi-framework -> src/cli.js). packages/ also carries
-# packages/mochi/patches/ which the root package.json's patchedDependencies
-# field references. Trades a bit of layer-cache granularity for robustness.
+# (e.g. mochi-framework -> src/cli.js). Trades a bit of layer-cache
+# granularity for robustness.
 FROM base AS install
 COPY package.json bun.lock /temp/dev/
 COPY packages /temp/dev/packages
@@ -56,14 +55,6 @@ RUN apk add --no-cache ncdu
 # .mochi for runtime build cache; src/ must be writable too because demos'
 # tailwind step writes app.generated.css into src/ at startup (no-op for site).
 RUN mkdir -p packages/${WORKSPACE}/.mochi && chown -R bun:bun packages/${WORKSPACE}/.mochi packages/${WORKSPACE}/src
-
-# Bake every generated barrel into the image. Dev mode regenerates these at
-# boot (index.ts), but the deployed rootfs is read-only for the `bun` user, so
-# the runtime write is a no-op that recovers onto whatever file is already
-# present — the barrel MUST exist in the image or the SSR compile fails with
-# "Could not resolve". Any new src/lib/*.generated.ts barrel needs a line here.
-RUN bun packages/site/src/lib/generateDocsBarrel.ts
-RUN bun packages/site/src/lib/generateBlogBarrel.ts
 
 ENV WORKSPACE=${WORKSPACE}
 ENV PORT=${PORT}

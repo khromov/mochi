@@ -784,7 +784,9 @@ await Mochi.serve({
 
 ### `$env/static/*` and `$env/dynamic/*`
 
-None of these virtual modules exist. Bun auto-loads `.env`, so read everything through `process.env.FOO`. The `mochi` virtual module (`isServer`, `isBrowser`, `isDev`) covers the SSR-only / browser-only branching that `$env/static/private` solved with import-time errors.
+None of these virtual modules exist. Bun auto-loads `.env`, so read everything through `process.env.FOO`.
+
+What `$env/static/private` really bought you was a build-time error when a private value reached a client-reachable module. In Mochi that job belongs to [`.server.ts` files](/docs/server-only-imports/), which are replaced with a throwing stub in the client build. Mochi's [environment constants](/docs/environment-constants/) (`isServer`, `isBrowser`, `isDev`) branch on render target, but they do **not** keep the untaken branch out of the bundle — reach for them to pick a code path, not to hide a secret.
 
 ```ts
 // SvelteKit
@@ -806,7 +808,7 @@ Bun loads `.env` for you. To send an environment variable to the client, pass it
 
 ### `$app/paths` (`asset`, `base`, `resolve`)
 
-No equivalent. Mochi does not support sub-path deployments through configuration. Write your app links as absolute paths (`/about`). The `assetPrefix` option on `Mochi.serve()` rewrites the URL prefix for framework-internal bundles only (default `/_mochi`), not for your own routes or static files.
+No equivalent for app links: write them as absolute paths (`/about`) and prefix them yourself when hosting under a sub-path. Framework assets are prefixed for you by `assetPrefix` (default `/_mochi`) — see [Sub-path and static hosting](/docs/deployment-options/#sub-path-and-static-hosting).
 
 ```svelte
 <!-- SvelteKit -->
@@ -874,7 +876,7 @@ No virtual `$lib` alias. Add the path to `tsconfig.json` if you want the same er
 
 ### Page options (`ssr`, `csr`, `prerender`)
 
-Not configurable per page. Mochi always renders on the server. Client-side JavaScript is opt-in per component with `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, or `mochi:defer:visible`. There is no prerender / SSG mode — every request renders fresh.
+Not configurable per page. Mochi always renders on the server. Client-side JavaScript is opt-in per component with `mochi:hydrate`, `mochi:hydrate:visible`, `mochi:defer`, or `mochi:defer:visible`. There is no prerender / SSG mode — every request renders fresh. The `*.prerender.ts` suffix prerenders a module, not a route; see [Prerendered modules](/docs/prerender/).
 
 Trailing-slash policy is global, not per page. Set `trailingSlash: 'never' | 'always'` on `Mochi.serve()` and Mochi registers both forms of every page route, then redirects to the canonical one. Only page routes follow it — `Mochi.api()`, `Mochi.sse()`, `Mochi.ws()` and `Mochi.file()` match the pattern you declared. See [Trailing slash](/docs/trailing-slash/).
 

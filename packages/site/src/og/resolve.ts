@@ -4,7 +4,7 @@ import { demos } from '../lib/demos.ts';
 import { CHANGELOG_TITLE } from '../lib/changelog.ts';
 import type { OgSubject } from './render.ts';
 
-const DEVELOPMENT = process.env.MODE === 'development';
+const DEVELOPMENT = process.env.NODE_ENV === 'development';
 
 /** Pages whose titles are written into a component rather than a registry. */
 const FIXED: Record<string, OgSubject> = {

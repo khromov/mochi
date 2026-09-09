@@ -9,10 +9,10 @@
     "loadPath": "./src/demos/varlock/.env.schema"
   },
   "scripts": {
-    "build": "bun scripts/prebuild.ts && mochi-framework build",
+    "build": "mochi-framework build",
     "start": "bun src/index.ts",
-    "dev": "MODE=development bun src/index.ts",
-    "typecheck": "bun scripts/prebuild.ts && svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
+    "dev": "NODE_ENV=development bun src/index.ts",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json && tsc -p tsconfig.json --noEmit",
     "test": "bun scripts/run-tests.ts",
     "clean": "rm -rf .mochi"
   },
@@ -28,6 +28,15 @@
     "@tanstack/svelte-table": "^9.0.0",
     "@tmcp/adapter-valibot": "0.1.6",
     "@tmcp/transport-http": "0.8.6",
+    "@twinkleplop/bash": "0.1.0",
+    "@twinkleplop/css": "0.1.0",
+    "@twinkleplop/html": "0.1.0",
+    "@twinkleplop/javascript": "0.1.0",
+    "@twinkleplop/json": "0.1.0",
+    "@twinkleplop/svelte": "0.1.0",
+    "@twinkleplop/toml": "0.1.0",
+    "@twinkleplop/typescript": "0.1.0",
+    "@twinkleplop/yaml": "0.1.0",
     "entities": "^8.0.0",
     "hast-util-to-html": "^9.0.5",
     "layerchart": "^2.0.3",
@@ -37,8 +46,6 @@
     "mode-watcher": "1.1.0",
     "rehype-slug": "^6.0.0",
     "runed": "^0.37.1",
-    "shiki": "^4.4.1",
-    "slugify": "^1.6.9",
     "svelte": "^5.56.8",
     "svelte-french-toast": "2.0.0-alpha.0",
     "svelte-meta-tags": "^5.0.2",
@@ -48,7 +55,7 @@
     "varlock": "1.16.0"
   },
   "devDependencies": {
-    "@types/bun": "1.4.0",
+    "@types/bun": "1.4.1",
     "svelte-check": "4.7.4",
     "typescript": "^6.0.3"
   }

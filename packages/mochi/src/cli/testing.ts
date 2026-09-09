@@ -107,7 +107,7 @@ export function extractFailures(result: Pick<FileResult, 'stdout' | 'stderr'>): 
     return { failures };
   }
 
-  const raw = (result.stderr.trim() ? result.stderr : result.stdout).split('\n').filter((l) => l.trim() && !/^bun test v/.test(l));
+  const raw = (result.stderr.trim() ? result.stderr : result.stdout).split('\n').filter((l) => l.trim() && !l.startsWith('bun test v'));
   return { failures: [], fallback: raw.slice(-20) };
 }
 
@@ -301,7 +301,9 @@ export async function runTests(options: RunTestsOptions = {}): Promise<void> {
     // collision would let a wedged file adopt its collider's green report.
     const junitPath = join(junitDir, `${junitSeq++}-${file.replaceAll('/', '_')}.xml`);
     const startedAt = performance.now();
-    const proc = Bun.spawn(['bun', 'test', '--timeout', '30000', '--reporter=junit', `--reporter-outfile=${junitPath}`, file], {
+    // The running binary, never the PATH name: an npm-installed Bun puts a `bun.cmd` shim on Windows PATH, and killing
+    // that shim leaves the real `bun test` alive holding the output pipes, so no deadline below can bound anything.
+    const proc = Bun.spawn([process.execPath, 'test', '--timeout', '30000', '--reporter=junit', `--reporter-outfile=${junitPath}`, file], {
       cwd: dir,
       stdin: 'ignore',
       stdout: 'pipe',

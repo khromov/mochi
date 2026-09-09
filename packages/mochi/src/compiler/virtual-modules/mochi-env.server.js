@@ -36,6 +36,7 @@ export function devWarn(msg) { __mochi_logger.warn(msg); }
 // Isomorphic: pins a value on globalThis so duplicate bundled copies share one
 // instance per process. Re-exported so .svelte-graph modules can dedupe singletons.
 export { pinGlobal } from "__MOCHI_GLOBAL_STATE__";
+export { escapeHtmlAttr } from "__MOCHI_HTML_ESCAPE__";
 // Re-export devalue so .svelte files (and the preprocessor's
 // injected hydration-prop import) can use stringify/parse without
 // a separate install. Resolved from the framework's own deps.
@@ -77,3 +78,7 @@ export { memoryStore, sqliteStore, postgresStore } from "__MOCHI_RATE_LIMIT__";
 // The built-in protection interstitial's absolute path — lets a docs/tooling
 // component read the default `protection.page` source straight from disk.
 export const PROTECTION_SHELL_COMPONENT = "__MOCHI_PROTECTION_SHELL_PATH__";
+// A *.prerender.ts module is replaced before the bundler resolves its imports, so this is only ever reached from a component.
+export function moduleRef(specifier) {
+  throw new Error("moduleRef(" + JSON.stringify(specifier) + ") only works inside a *.prerender.ts module, which runs at build time.");
+}

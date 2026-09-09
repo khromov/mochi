@@ -11,13 +11,16 @@ import { NOISE_SVG, NOISE_TILE_SIZE } from '../src/og/brand.ts';
 
 const ASSETS_DIR = path.join(import.meta.dir, '..', 'src', 'og', 'assets');
 
+/** GitHub Actions runners can't initialize Chrome's sandbox; CI needs these flags for Chrome to launch. */
+const CHROME_BACKEND = { type: 'chrome', argv: ['--no-sandbox', '--disable-dev-shm-usage'] } as const;
+
 type Rect = { x: number; y: number; width: number; height: number };
 
 const page = (body: string, style = '') =>
   `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:transparent}${style}</style>${body}`)}`;
 
 async function withPage<T>(url: string, fn: (view: Bun.WebView) => Promise<T>): Promise<T> {
-  const view = new Bun.WebView({ backend: 'chrome' });
+  const view = new Bun.WebView({ backend: CHROME_BACKEND });
   try {
     // cdp() needs a session, and the first navigate is what establishes one.
     await view.navigate('about:blank');

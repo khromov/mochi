@@ -4,13 +4,18 @@ import ipaddr from 'ipaddr.js';
 
 /**
  * Defense-in-depth guard for outbound fetches against user-supplied URLs: validate the host against an optional
- * allowlist and reject hosts resolving to private, loopback, link-local, or reserved addresses. DNS-rebinding stays
- * partly open, since the IP is resolved here and re-resolved by `fetch`, so an encrypted, authenticated payload remains
- * the primary protection for callers that have one.
+ * allowlist and reject hosts resolving to private, loopback, link-local, or reserved addresses. Callers close the
+ * DNS-rebinding window by connecting to one of the returned `addresses` and reusing that single resolution.
  */
 export interface UrlGuardOptions {
   allowedHosts?: string[] | undefined;
   blockPrivateNetworks?: boolean;
+}
+
+export interface ResolvedPublicUrl {
+  url: URL;
+  /** Every validated address, in resolution order; the caller pins the connection to one and fails over to the rest. */
+  addresses: string[];
 }
 
 /** Thrown for every rejection so callers can map it to their own error type. */
@@ -58,7 +63,7 @@ function isBlockedIp(ip: string): boolean {
   return addr.range() !== 'unicast';
 }
 
-export async function assertPublicUrl(src: string, opts: UrlGuardOptions): Promise<URL> {
+export async function resolvePublicUrl(src: string, opts: UrlGuardOptions): Promise<ResolvedPublicUrl> {
   let url: URL;
   try {
     url = new URL(src);
@@ -75,6 +80,7 @@ export async function assertPublicUrl(src: string, opts: UrlGuardOptions): Promi
     }
   }
 
+  let validated: string[] = [];
   if (opts.blockPrivateNetworks) {
     if (url.hostname.toLowerCase() === 'localhost') {
       throw new SsrfGuardError('Source host resolves to a private address');
@@ -94,7 +100,8 @@ export async function assertPublicUrl(src: string, opts: UrlGuardOptions): Promi
     if (addresses.length === 0 || addresses.some(isBlockedIp)) {
       throw new SsrfGuardError('Source host resolves to a private address');
     }
+    validated = addresses;
   }
 
-  return url;
+  return { url, addresses: validated };
 }

@@ -112,6 +112,7 @@ import { sendEmail } from './email/mailer';
 import type { MochiEmailMessage, MochiEmailResult } from './email/types';
 import { initMochiConfig } from './mochiConfig';
 import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './utils/log';
+import { SEEDED_IS_DEV, setDevelopment } from './utils/env';
 import { mochiEvents } from './events';
 import type { MochiActionResult, MochiErrorEvent, MochiErrorKind, MochiServerStartEvent, MochiServerStopEvent } from './events';
 import type { DebugBarData, DebugBarRuntimeData } from './runtime/requestContext';
@@ -465,9 +466,17 @@ export class Mochi {
 
     const { svelteVersion } = await checkEnvironment();
     const mochiVersion = await readMochiVersion();
+
+    // Same value `isDev` seeded from, so top-level reads — which already ran — agree by construction.
+    const development = options.development ?? SEEDED_IS_DEV;
+    // Published before initExtensions so an extension's `mochi:init` hook reads the resolved mode rather than the env
+    // seed, and before setLogLevel so a configured `logger.level` can't swallow the env-mismatch warning.
+    setDevelopment(development, { warnOnEnvMismatch: true });
+
     initExtensions(options);
     await runHook('mochi:init', { options });
-    await initMochiConfig(options);
+    // Resolved, so downstream `options.development` readers can't re-default it differently.
+    await initMochiConfig({ ...options, development });
 
     // Resolved once at startup and captured by the per-request closures below. Each default Set is copied before it
     // reaches the user, so an in-place mutation can't poison the framework default for the next call.
@@ -481,7 +490,6 @@ export class Mochi {
       logger.warn(bootCsrfWarning);
     }
 
-    const development = options.development ?? true;
     const inlineNestedIslands = options.inlineNestedIslands !== false;
     const warmupEnabled = resolveWarmupEnabled(options.warmup, development);
     const debugBarEnabled = development && (options.debugBar ?? true);
@@ -719,7 +727,7 @@ export class Mochi {
     // Mirrors the handleError logic in renderErrorResponse, skipping the HTML render for the enhanced JSON path.
     const handleEnhancedError = async (err: unknown, event: MochiEvent): Promise<Response> => {
       let status = err instanceof MochiHttpError ? err.status : 500;
-      let message = err instanceof Error ? err.message : 'Internal Error';
+      let message = err instanceof MochiHttpError ? err.message : development && err instanceof Error ? err.message : 'Internal Server Error';
       if (options.handleError) {
         try {
           const override = await options.handleError({ error: err, event, status, message });
@@ -769,7 +777,7 @@ export class Mochi {
       ...(debugBarEnabled ? buildPageCacheAdminRoutes() : {}),
       ...(emailViewerEnabled ? buildEmailViewerRoutes(registry) : {}),
     };
-    const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...(options.routes ?? {}) } : options.routes;
+    const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...options.routes } : options.routes;
 
     const rateLimitStores = new Set<MochiRateLimitStore>();
     // Route closures look their limiter up per request so the dev watcher can swap one in place when a route's
@@ -816,7 +824,7 @@ export class Mochi {
       // use it, and its counters intentionally survive dev reloads.
       if (limiter && limiter !== sharedGlobalLimiter && limiter.ownsStore) {
         rateLimitStores.delete(limiter.store);
-        // sqliteStore's shutdown can throw synchronously from its finalize-verification guard, which a bare
+        // rateLimitSqliteStore's shutdown can throw synchronously from its finalize-verification guard, which a bare
         // `Promise.resolve()` would let escape into the dev watcher.
         (async () => limiter.store.shutdown?.())().catch((err: unknown) => {
           logger.warn(`Rate limit store shutdown failed: ${err instanceof Error ? err.message : err}`);
@@ -1269,8 +1277,10 @@ export class Mochi {
           let userData: unknown = undefined;
 
           const liveWsHandlers = wsHandlersMap.get(pattern) ?? wsHandlers;
-          if (liveWsHandlers.upgrade) {
-            const result = await liveWsHandlers.upgrade(req, wsParams);
+          const upgradeHandler = liveWsHandlers.upgrade;
+          if (upgradeHandler) {
+            // The handshake is the only point in a socket's life with a Request to read, so `getRequestContext()` has to work here.
+            const result = await requestContext.run(wsHookCtx, () => upgradeHandler(req, wsParams));
             if (result === false) {
               emitWsReject(400);
               return new Response('WebSocket upgrade rejected', {

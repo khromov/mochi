@@ -3,11 +3,8 @@
   import CodeSnippet from '../../components/CodeSnippet.svelte';
   import BasicTable from './BasicTable.svelte';
   import SortableTable from './SortableTable.svelte';
-  import { loadSources } from '../../components/utils.ts';
+  import { sources } from './sources.prerender.ts';
   import { highlightCode } from '../../lib/highlight.server';
-  import { files } from './files.ts';
-
-  const sources = await loadSources(files);
 
   const codeInstall = await highlightCode('bun add @tanstack/svelte-table', 'bash');
   const codeUsage = await highlightCode(

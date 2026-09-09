@@ -1,13 +1,10 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import CaptchaForm from './CaptchaForm.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
+  import { sources } from './sources.prerender.ts';
   import type { MintedCaptcha } from 'mochi-framework';
 
   let { captcha }: { captcha: MintedCaptcha } = $props();
-
-  const sources = await loadSources(files);
 </script>
 
 <DemoPage

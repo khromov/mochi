@@ -47,7 +47,7 @@ export function collectHeadings(tree: HastNode): TocEntry[] {
   return toc;
 }
 
-/** Renders markdown that arrives at runtime (so it can't go through the build-time `.md` → Svelte barrel) to plain HTML, using the same mdsvex + rehype pipeline as the docs. */
+/** Renders markdown that arrives at runtime (so it can't go through the `*.prerender.ts` `.md` → Svelte map) to plain HTML, using the same mdsvex + rehype pipeline as the docs. */
 export async function renderMarkdown(markdown: string): Promise<string> {
   let html = '';
   // Stringify inside the plugin: mdsvex keeps transforming the tree afterwards on its

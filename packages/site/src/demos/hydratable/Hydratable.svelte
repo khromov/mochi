@@ -2,12 +2,9 @@
   import { hydratable } from 'svelte';
   import { Database } from 'bun:sqlite';
   import DemoPage from '../../components/DemoPage.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
+  import { sources } from './sources.prerender.ts';
   import FactCard from './FactCard.svelte';
   import FactCardProps from './FactCardProps.svelte';
-
-  const sources = await loadSources(files);
 
   // With hydratable, the result is serialized into <head>; the matching call inside the hydrated
   // island below reads it back from window.__svelte.h instead of re-running this function on the client.

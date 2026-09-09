@@ -7,6 +7,7 @@ description: 'Register WebSocket endpoints with Mochi.ws() and handle upgrade, o
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## WebSocket routes
@@ -73,6 +74,37 @@ await Mochi.serve({
 
 </Callout>
 
+#### Request context during the handshake
+
+<VersionNote since="0.10.0" message="Earlier versions threw from getRequestContext() inside upgrade." />
+
+`getRequestContext()` works inside `upgrade`, so cookies and `getClientAddress()` are available there. `handle` middleware does not run for WebSocket upgrades, so `locals` is empty. Later callbacks receive only the socket, so derive anything header-based here and return it on `ws.data.user`.
+
+```ts
+// file: src/index.ts
+import { Mochi, getRequestContext } from 'mochi-framework';
+
+await Mochi.serve({
+  proxy: { addressHeader: 'x-forwarded-for', xffDepth: 1 },
+  routes: {
+    '/ws/chat': Mochi.ws<{ address: string | null }>({
+      upgrade() {
+        return { address: getRequestContext().getClientAddress() };
+      },
+      message(ws, msg) {
+        console.log(ws.data.user.address, msg);
+      },
+    }),
+  },
+});
+```
+
+<Callout type="info">
+
+Behind a reverse proxy every socket shares one peer address, so `ws.remoteAddress` is the proxy rather than the visitor. Rate limiting keyed on it becomes one bucket for your whole site — configure `proxy.addressHeader` and read `getClientAddress()` instead.
+
+</Callout>
+
 ### `open`
 
 Fires once after a successful upgrade. Use it to subscribe the socket to topics or seed per-connection state.
@@ -136,6 +168,25 @@ Every socket exposes `ws.subscribe(topic)`, `ws.publish(topic, data)`, and `ws.u
 <Callout type="info">
 
 **`ws.publish` does not echo to the sender.** It delivers only to other subscribers. Call `ws.send` alongside `ws.publish` if the publisher should also receive the message.
+
+</Callout>
+
+### Socket limits
+
+<VersionNote since="0.10.0" message="The websocket serve option was added in 0.10.0." />
+
+`Mochi.serve({ websocket })` passes Bun's socket-level options through to every `Mochi.ws()` route. Mochi owns `open`, `message`, `close`, and `drain`; everything else — `maxPayloadLength`, `idleTimeout`, `backpressureLimit`, `perMessageDeflate` — is yours.
+
+```ts
+await Mochi.serve({
+  routes,
+  websocket: { maxPayloadLength: 4 * 1024 },
+});
+```
+
+<Callout type="warning">
+
+`maxPayloadLength` is the only inbound size bound that runs **before** Bun buffers the frame, and it defaults to 16 MB. It caps what the server allocates while a length check inside `message` caps what you store — set both.
 
 </Callout>
 

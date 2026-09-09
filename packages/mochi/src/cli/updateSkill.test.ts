@@ -2,7 +2,7 @@ import { describe, it, expect } from 'bun:test';
 import { mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { updateSkill } from './updateSkill';
+import { formatSkillDiff, updateSkill } from './updateSkill';
 
 const SKILL_DEST = path.join('.claude', 'skills', 'mochi', 'SKILL.md');
 
@@ -51,6 +51,73 @@ describe('updateSkill', () => {
     expect(await Bun.file(res.path).text()).toBe('fresh content');
   });
 
+  it('shows the diff before an existing skill is overwritten', async () => {
+    const cwd = freshCwd();
+    const dest = path.join(cwd, SKILL_DEST);
+    await Bun.write(dest, 'stale content\n');
+    const fetchImpl = async () => new Response('fresh content\n', { status: 200 });
+    let previewed = false;
+
+    const res = await updateSkill({
+      cwd,
+      fetchImpl,
+      confirmUpdate: async ({ diff }) => {
+        previewed = true;
+        expect(await Bun.file(dest).text()).toBe('stale content\n');
+        expect(diff).toContain('-stale content');
+        expect(diff).toContain('+fresh content');
+        return true;
+      },
+    });
+
+    expect(previewed).toBe(true);
+    expect(res.action).toBe('updated');
+    expect(await Bun.file(dest).text()).toBe('fresh content\n');
+  });
+
+  it('leaves the existing skill untouched when the preview is rejected', async () => {
+    const cwd = freshCwd();
+    const dest = path.join(cwd, SKILL_DEST);
+    await Bun.write(dest, 'trusted content');
+    const fetchImpl = async () => new Response('fresh replacement', { status: 200 });
+
+    const res = await updateSkill({ cwd, fetchImpl, confirmUpdate: () => false });
+
+    expect(res.action).toBe('aborted');
+    expect(await Bun.file(dest).text()).toBe('trusted content');
+  });
+
+  it('creates the file even when the hosted body is empty', async () => {
+    const cwd = freshCwd();
+    const dest = path.join(cwd, SKILL_DEST);
+    const fetchImpl = async () => new Response('', { status: 200 });
+
+    const res = await updateSkill({ cwd, fetchImpl });
+
+    expect(res.action).toBe('created');
+    expect(res.created).toBe(true);
+    expect(existsSync(dest)).toBe(true);
+  });
+
+  it('writes a first-time skill without asking, since there is nothing to review', async () => {
+    const cwd = freshCwd();
+    const fetchImpl = async () => new Response('fresh content', { status: 200 });
+    let asked = false;
+
+    const res = await updateSkill({
+      cwd,
+      fetchImpl,
+      confirmUpdate: () => {
+        asked = true;
+        return false;
+      },
+    });
+
+    expect(asked).toBe(false);
+    expect(res.action).toBe('created');
+    expect(await Bun.file(res.path).text()).toBe('fresh content');
+  });
+
   it('throws a helpful error when the URL 404s', async () => {
     const cwd = freshCwd();
     const fetchImpl = async () => new Response('Not found', { status: 404 });
@@ -68,5 +135,47 @@ describe('updateSkill', () => {
 
     await expect(updateSkill({ cwd, url, fetchImpl })).rejects.toThrow(/Could not reach https:\/\/mochi\.fast\/SKILL\.md/);
     expect(existsSync(path.join(cwd, SKILL_DEST))).toBe(false);
+  });
+});
+
+describe('formatSkillDiff', () => {
+  const body = (n: number) => Array.from({ length: n }, (_, i) => `line ${i}`);
+
+  it('emits one hunk per cluster of changes rather than one spanning the file', () => {
+    const before = body(60);
+    const after = body(60);
+    after[2] = 'line 2 CHANGED';
+    after[55] = 'line 55 CHANGED';
+
+    const diff = formatSkillDiff(before.join('\n'), after.join('\n'), '/tmp/SKILL.md', 'https://mochi.fast/SKILL.md');
+    const hunks = diff.split('\n').filter((line) => line.startsWith('@@'));
+    const removed = diff
+      .split('\n')
+      .slice(2)
+      .filter((line) => line.startsWith('-'));
+
+    expect(hunks).toHaveLength(2);
+    expect(removed).toEqual(['-line 2', '-line 55']);
+    expect(diff).toContain('+line 2 CHANGED');
+    expect(diff).toContain('+line 55 CHANGED');
+    // The 50 untouched lines between the two edits stay out of the output entirely.
+    expect(diff).not.toContain('line 30');
+  });
+
+  it('merges neighbouring changes into a single hunk', () => {
+    const before = body(30);
+    const after = body(30);
+    after[10] = 'line 10 CHANGED';
+    after[12] = 'line 12 CHANGED';
+
+    const diff = formatSkillDiff(before.join('\n'), after.join('\n'), '/tmp/SKILL.md', 'https://mochi.fast/SKILL.md');
+
+    expect(diff.split('\n').filter((line) => line.startsWith('@@'))).toHaveLength(1);
+  });
+
+  it('labels a first write against /dev/null', () => {
+    const diff = formatSkillDiff('', 'hello\n', '/tmp/SKILL.md', 'https://mochi.fast/SKILL.md');
+
+    expect(diff.startsWith('--- /dev/null\n+++ https://mochi.fast/SKILL.md\n@@ -1,0 +1,1 @@\n+hello')).toBe(true);
   });
 });

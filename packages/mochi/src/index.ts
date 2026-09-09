@@ -30,6 +30,7 @@ export type { ResolvedImage, ImageAttrs } from './image/imageApi';
 export { reloadDeferredIsland, reloadDeferredIslandAll } from './islands/deferInvalidation';
 export { deferReloadState, DeferReloadState } from './islands/deferReloadState.svelte';
 export type { DeferredIslandChange } from './islands/deferInvalidation';
+export type { MochiDirectives, MochiDeferOptions, MochiDeferVisibleOptions, MochiHydrateVisibleOptions, MochiClientOnlyVisibleOptions } from './islands/directives';
 export type { MochiImageOptions, ImageSize, InvalidateImageOptions, ImageFormat, ImageFit, ImportedImage, ImportedImageFormat } from './image/types';
 export { IMAGE_FILE_FILTER } from './compiler/imageAssetLoader';
 export { EmailError } from './email/types';
@@ -53,7 +54,9 @@ export type { ConsoleLoggerOptions } from './dev/consoleLogger';
 export { logger, setLogLevel, getLogLevel } from './utils/log';
 export type { LogLevel } from './utils/log';
 export { pinGlobal } from './utils/globalState';
+export { escapeHtmlAttr } from './utils/htmlEscape';
 export { isBuilding } from './utils/buildFlag';
+export { isDev, isServer, isBrowser } from './utils/env';
 export { mochiEvents, hasSubscribers } from './events';
 export type { MochiCompileError } from './compiler/ComponentRegistry';
 export type {
@@ -138,6 +141,7 @@ export { json, error, apiError, MochiHttpError } from './utils';
 export { trailingSlashIt } from './runtime/trailingSlash';
 export { fail, redirect, success } from './runtime/forms';
 export { isHydratable } from './islands/isHydratable';
+export { moduleRef } from './moduleRef';
 
 export { mintCaptcha, verifyCaptcha, consumeCaptcha, solveCaptcha } from './captcha/captcha';
 export { MemoryNonceStore, SqliteNonceStore } from './captcha/nonceStore';
@@ -169,7 +173,7 @@ export type {
 } from './extensions';
 export { getClientAddress, resolveExpectedOrigin } from './runtime/proxy';
 export type { MochiProxyOptions } from './runtime/proxy';
-export { memoryStore, sqliteStore, postgresStore } from './runtime/rateLimit';
+export { rateLimitMemoryStore, rateLimitSqliteStore, rateLimitPostgresStore } from './runtime/rateLimit';
 export type {
   MochiRateLimitOptions,
   MochiRateLimitContext,
@@ -186,8 +190,8 @@ export type {
   MochiRateLimitBanConfig,
   MochiRateLimitStoreErrorHandler,
   MochiRateLimitResponseFormatter,
-  MochiSqliteStoreOptions,
-  MochiPostgresStoreOptions,
+  MochiRateLimitSqliteStoreOptions,
+  MochiRateLimitPostgresStoreOptions,
 } from './runtime/rateLimit';
 export type { Handle, HandleError, MochiErrorInfo, MochiEvent, MochiEventKind, MochiResolveOptions, MochiResolveFn } from './runtime/hooks';
 export type {
@@ -214,6 +218,7 @@ export type {
   MochiWarmupOptions,
   MochiRouteValue,
   MochiWsConfig,
+  MochiWebSocketOptions,
   MochiWsHandlers,
   MochiWsData,
   MochiSseConfig,

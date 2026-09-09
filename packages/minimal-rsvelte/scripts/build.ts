@@ -33,6 +33,10 @@ const fallback = FALLBACK_MARKERS.find((marker) => output.includes(marker));
 
 if (fallback) {
   console.error(`\n[minimal-rsvelte] build fell back to svelte/compiler ("${fallback}") — the rsvelte binding did not load on this platform.`);
+  // The framework's own warning normally carries this; repeat it only when it didn't.
+  if (process.platform === 'win32' && output.includes('LoadLibrary') && !output.includes('VCRedist')) {
+    console.error('The prebuilt binary is on disk but its C runtime is missing. Install it and re-run: winget install --id Microsoft.VCRedist.2015+.x64 -e');
+  }
   process.exit(1);
 }
 

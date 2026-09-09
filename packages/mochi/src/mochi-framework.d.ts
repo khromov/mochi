@@ -5,13 +5,7 @@
 import 'mochi-framework';
 
 declare module 'mochi-framework' {
-  /** True when rendering on the server (SSR build). */
-  export const isServer: boolean;
-  /** True when running in the browser (client build). */
-  export const isBrowser: boolean;
-  export const DEV: boolean;
-  /** True when the server was started with `development: true`. */
-  export const isDev: boolean;
+  // `isServer` / `isBrowser` / `isDev` are real exports of `utils/env.ts`; augmenting them here would duplicate them.
 
   type CookieSerializeOptions = import('./runtime/cookies').CookieSerializeOptions;
 
@@ -58,6 +52,13 @@ declare module 'mochi-framework' {
 
   /** Re-exported from `devalue` so `.svelte` files can round-trip rich-typed values (Date, Map, Set, BigInt, cyclic refs) with no separate install, in both SSR and client builds. */
   export { stringify, parse } from 'devalue';
+
+  /**
+   * Mark a module to import rather than a value to serialize. Only meaningful in a `*.prerender.ts` module, where the
+   * build turns each marker into a real `import` in the generated module — which is how a prerendered module hands back
+   * components it could never serialize.
+   */
+  export function moduleRef<T = unknown>(specifier: string): T;
 
   /**
    * Internal: registers a hydratable island's props in the per-request dedup registry and returns a stable ref id. The

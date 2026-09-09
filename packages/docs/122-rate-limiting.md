@@ -8,6 +8,7 @@ description: 'Per-route and global request rate limiting with memory, SQLite, an
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
   import PersistenceTable from './_components/PersistenceTable.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Rate limiting
@@ -52,29 +53,31 @@ await Mochi.serve({
 
 Mochi accepts all of hitlimit's options except `logger` (Mochi logs `429`s through its own [request events](/docs/events/)):
 
-| Option         | Default       |                                                                                 |
-| -------------- | ------------- | ------------------------------------------------------------------------------- |
-| `limit`        | `100`         | Max requests per window                                                         |
-| `window`       | `'1m'`        | `'30s'`, `'1m'`, `'1h'`, `'1d'`, or milliseconds                                |
-| `key`          | client IP     | `(req, ctx) => string` — what to bucket by                                      |
-| `store`        | in-memory     | `sqliteStore(…)`, `postgresStore(…)`, or a custom `MochiRateLimitStore`         |
-| `tiers`/`tier` | —             | Named limits + `(req, ctx) => string` tier resolver                             |
-| `ban`          | —             | `{ threshold, duration }` — ban repeat offenders                                |
-| `group`        | route pattern | `string \| (req, ctx) => string` — bucket namespace; same value → shared bucket |
-| `skip`         | —             | `(req, ctx) => boolean` — bypass without consuming quota                        |
-| `response`     | hitlimit JSON | Custom 429 body (API routes)                                                    |
-| `headers`      | all on        | `{ standard, legacy, retryAfter }`                                              |
-| `onStoreError` | `'allow'`     | Fail open, or `'deny'` when the store errors                                    |
+| Option         | Default       |                                                                                           |
+| -------------- | ------------- | ----------------------------------------------------------------------------------------- |
+| `limit`        | `100`         | Max requests per window                                                                   |
+| `window`       | `'1m'`        | `'30s'`, `'1m'`, `'1h'`, `'1d'`, or milliseconds                                          |
+| `key`          | client IP     | `(req, ctx) => string` — what to bucket by                                                |
+| `store`        | in-memory     | `rateLimitSqliteStore(…)`, `rateLimitPostgresStore(…)`, or a custom `MochiRateLimitStore` |
+| `tiers`/`tier` | —             | Named limits + `(req, ctx) => string` tier resolver                                       |
+| `ban`          | —             | `{ threshold, duration }` — ban repeat offenders                                          |
+| `group`        | route pattern | `string \| (req, ctx) => string` — bucket namespace; same value → shared bucket           |
+| `skip`         | —             | `(req, ctx) => boolean` — bypass without consuming quota                                  |
+| `response`     | hitlimit JSON | Custom 429 body (API routes)                                                              |
+| `headers`      | all on        | `{ standard, legacy, retryAfter }`                                                        |
+| `onStoreError` | `'allow'`     | Fail open, or `'deny'` when the store errors                                              |
 
 ### Stores
 
-`memoryStore()` is the default — zero config, per process. Use SQLite for persistence across restarts, or Postgres for shared state across instances. All three are re-exported from `mochi-framework`, and anything else is a custom `MochiRateLimitStore`:
+<VersionNote since="0.10.0" message="The store factories were renamed in 0.10.0: memoryStore, sqliteStore and postgresStore are now rateLimitMemoryStore, rateLimitSqliteStore and rateLimitPostgresStore. The old names are gone." />
+
+`rateLimitMemoryStore()` is the default — zero config, per process. Use SQLite for persistence across restarts, or Postgres for shared state across instances. All three are re-exported from `mochi-framework`, and anything else is a custom `MochiRateLimitStore`:
 
 ```ts
-import { memoryStore, sqliteStore, postgresStore } from 'mochi-framework';
+import { rateLimitMemoryStore, rateLimitSqliteStore, rateLimitPostgresStore } from 'mochi-framework';
 
-rateLimit: { limit: 100, window: '1m', store: sqliteStore({ path: './ratelimit.db' }) }
-rateLimit: { limit: 100, window: '1m', store: postgresStore({ url: process.env.DATABASE_URL }) }
+rateLimit: { limit: 100, window: '1m', store: rateLimitSqliteStore({ path: './ratelimit.db' }) }
+rateLimit: { limit: 100, window: '1m', store: rateLimitPostgresStore({ url: process.env.DATABASE_URL }) }
 ```
 
 See [Persistence](/docs/persistence/) for how these stores compare with the other Mochi features that persist state.
@@ -87,10 +90,10 @@ Mochi buckets counters by **key within a store**. A route with its own `rateLimi
 
 </Callout>
 
-Each store instance owns its backend — a DB connection, prepared statements, and a cleanup timer. Create the store **once** and share the instance. Calling `sqliteStore({ path })` inline in every route config opens one connection per route to the same file, all fighting over SQLite's single write lock.
+Each store instance owns its backend — a DB connection, prepared statements, and a cleanup timer. Create the store **once** and share the instance. Calling `rateLimitSqliteStore({ path })` inline in every route config opens one connection per route to the same file, all fighting over SQLite's single write lock.
 
 ```ts
-const store = sqliteStore({ path: './ratelimit.db' }); // one connection…
+const store = rateLimitSqliteStore({ path: './ratelimit.db' }); // one connection…
 '/api/search': Mochi.api(search, { rateLimit: { limit: 30, window: '1m', store } }), // …own bucket
 '/api/upload': Mochi.api(upload, { rateLimit: { limit: 5, window: '1m', store } }), // …own bucket
 ```

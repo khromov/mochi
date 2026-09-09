@@ -31,6 +31,10 @@ export interface HNCommentNode extends HNItem {
 }
 
 export async function fetchItem(id: number): Promise<HNItem | null> {
+  // Every caller funnels through here, so rejecting junk ids stops both bogus cache keys and pointless upstream fetches.
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    return null;
+  }
   return itemCache.fetch(`item:${id}`, async () => {
     const res = await fetch(`${BASE}/item/${id}.json`);
     if (!res.ok) {

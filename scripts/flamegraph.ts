@@ -77,21 +77,42 @@ const drainResponse = async (res: Response): Promise<void> => {
   await res.arrayBuffer();
 };
 
-const pipePrefixed = async (src: ReadableStream<Uint8Array>, dst: NodeJS.WriteStream, prefix: string): Promise<void> => {
+const pipePrefixed = async (src: ReadableStream<Uint8Array>, dst: NodeJS.WriteStream, prefix: string, onLine?: (line: string) => void): Promise<void> => {
   const decoder = new TextDecoder();
   let buf = '';
   for await (const chunk of src) {
     buf += decoder.decode(chunk, { stream: true });
     let nl: number;
     while ((nl = buf.indexOf('\n')) !== -1) {
-      dst.write(prefix + buf.slice(0, nl) + '\n');
+      const line = buf.slice(0, nl);
+      dst.write(prefix + line + '\n');
+      onLine?.(line);
       buf = buf.slice(nl + 1);
     }
   }
   if (buf.length > 0) {
     dst.write(prefix + buf + '\n');
+    onLine?.(buf);
   }
 };
+
+// Route warmup keeps rendering other pages after the server starts listening, so profiling before it finishes would
+// charge those renders to the target URL.
+const WARMED_LINE = /WARM.*\bwarmed\b/;
+
+// An SGR escape ends in `m`, a word character, so `\bwarmed` never matches the colourised line.
+// eslint-disable-next-line no-control-regex
+const ANSI = /\u001B\[[0-9;]*m/g;
+const stripAnsi = (line: string): string => line.replace(ANSI, '');
+
+const deferred = (): { promise: Promise<void>; resolve: () => void } => {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => (resolve = r));
+  return { promise, resolve };
+};
+
+const waitForWarmup = async (warmed: Promise<void>, timeoutMs = 60000): Promise<boolean> =>
+  Promise.race([warmed.then(() => true as const), Bun.sleep(timeoutMs).then(() => false as const)]);
 
 const waitForReady = async (origin: string, timeoutMs = 30000): Promise<void> => {
   const deadline = Date.now() + timeoutMs;
@@ -132,7 +153,7 @@ const main = async (): Promise<void> => {
   const siteCwd = path.join(repoRoot, 'packages', 'site');
 
   const env = { ...process.env, PORT: String(args.port), MOCHI_PROFILER: '1', FORCE_COLOR: '1' };
-  delete env.MODE;
+  delete env.NODE_ENV;
 
   console.log(styleText('cyan', `[flamegraph] spawning site on port ${args.port} (production mode, MOCHI_PROFILER=1)`));
   const proc = spawn({
@@ -144,8 +165,14 @@ const main = async (): Promise<void> => {
     stdin: 'ignore',
   });
   const prefix = styleText('gray', '[server] ');
-  void pipePrefixed(proc.stdout as ReadableStream<Uint8Array>, process.stdout, prefix);
-  void pipePrefixed(proc.stderr as ReadableStream<Uint8Array>, process.stderr, prefix);
+  const warmed = deferred();
+  const watchForWarmed = (line: string): void => {
+    if (WARMED_LINE.test(stripAnsi(line))) {
+      warmed.resolve();
+    }
+  };
+  void pipePrefixed(proc.stdout as ReadableStream<Uint8Array>, process.stdout, prefix, watchForWarmed);
+  void pipePrefixed(proc.stderr as ReadableStream<Uint8Array>, process.stderr, prefix, watchForWarmed);
 
   const onExit = async (signal: NodeJS.Signals): Promise<never> => {
     console.log(styleText('yellow', `[flamegraph] received ${signal}, tearing down server`));
@@ -157,7 +184,11 @@ const main = async (): Promise<void> => {
 
   try {
     await waitForReady(altOrigin);
-    console.log(styleText('cyan', `[flamegraph] server ready, warming up (${args.warmup} requests)`));
+    console.log(styleText('cyan', `[flamegraph] server ready, waiting for route warmup to finish`));
+    if (!(await waitForWarmup(warmed.promise))) {
+      console.log(styleText('yellow', `[flamegraph] route warmup did not report completion within 60s — profile may include warmup work`));
+    }
+    console.log(styleText('cyan', `[flamegraph] warming up the target (${args.warmup} requests)`));
 
     for (let i = 0; i < args.warmup; i++) {
       const res = await fetch(targetUrl, { redirect: 'manual' });

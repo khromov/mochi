@@ -38,14 +38,15 @@ import { backendId, resolveSvelteCompiler, type MochiSvelteCompiler, type Svelte
 import { applyFilter } from '../extensions';
 import { decodeSourcePath, encodeSourcePath } from './manifestPaths';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
-import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
+import { serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { registerServerOnlyComponentStubs, SSR_ONLY_COMPONENT_NAMESPACE } from './serverOnlyComponents';
 import { cleanInputs, SERVER_ONLY_MODULE_NAMESPACE } from './bundleInputPaths';
 import { renderMochiEnvServer } from './virtualModuleTemplate';
 import { buildDebugBarBundle, type DebugBarBundle } from './buildDebugBarBundle';
 import { formatBuildMessages } from './formatBuildMessages';
-import { registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
+import { clientBuildDefine, registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
 import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
+import { PRERENDER_MODULE_FILTER, createPrerenderModuleLoader, currentPrerenderEvaluationCache, type PrerenderContext, type PrerenderEvaluationCache } from './prerenderModules';
 import { EMAIL_TEMPLATE_DIR } from '../email/templates';
 import { registerLocalImageAsset } from '../image/localAssetRegistry';
 import type { LocalImageAsset } from '../image/types';
@@ -394,6 +395,8 @@ export class ComponentRegistry {
    * watcher's `recompileChanged()` invalidates only the pages whose dep graph contains the changed file.
    */
   private entryDeps: Map<string, Set<string>> = new Map();
+  /** A prerendered module's imports vanish from the bundle, so the metafile cannot say which first-party files feed it. */
+  private prerenderInputs: Map<string, Set<string>> = new Map();
   private clientStats: {
     outputs: {
       name: string;
@@ -456,6 +459,28 @@ export class ComponentRegistry {
   /** Instance-scoped so two registries with different markdown/preprocessor config can't serve each other stale output for the same path — see {@link CompileCache}. */
   readonly compileCache = new CompileCache();
 
+  private prerenderContext(evaluations: PrerenderEvaluationCache): PrerenderContext {
+    return {
+      development: this.development,
+      isPrebuilt: () => this.loadedFromManifest,
+      onInputs: (prerenderPath, inputs) => this.prerenderInputs.set(path.resolve(prerenderPath), inputs),
+      evaluations,
+    };
+  }
+
+  /** Distinct `*.prerender.ts` modules across every compiled page's dep graph, for the build report and the dev watcher. */
+  getPrerenderModules(): string[] {
+    const files = new Set<string>();
+    for (const deps of this.entryDeps.values()) {
+      for (const dep of deps) {
+        if (PRERENDER_MODULE_FILTER.test(dep)) {
+          files.add(dep);
+        }
+      }
+    }
+    return [...files].sort();
+  }
+
   constructor(opts: ComponentRegistryOptions = {}) {
     this.development = opts.development ?? true;
     this.debugBarEnabled = this.development && (opts.debugBar ?? true);
@@ -508,6 +533,8 @@ export class ComponentRegistry {
       let excluded = 0;
       if (exclude.length > 0) {
         const globs = exclude.map((p) => new Bun.Glob(p));
+        // Snapshot the keys: the loop deletes from `shaken` while iterating it.
+        // oxlint-disable-next-line no-useless-spread
         for (const id of [...shaken.keys()]) {
           // Glob patterns are written with forward slashes, so match against
           // POSIX-ified paths or Windows never excludes anything.
@@ -648,6 +675,8 @@ export class ComponentRegistry {
       mochiEvents.emit('compile:start', { path: f });
     }
     const compileStart = performance.now();
+    // Captured before either pass so a watcher reset landing between them cannot inline different values into one island.
+    const evaluations = currentPrerenderEvaluationCache();
 
     const cssMap = new Map<string, string>();
     const importedCssPaths = new Set<string>();
@@ -672,10 +701,13 @@ export class ComponentRegistry {
       rejectUnknown: this.loadedFromManifest && !this.development,
     });
 
+    const prerenderModuleLoader = createPrerenderModuleLoader(this.prerenderContext(evaluations));
+
     const sveltePlugin: BunPlugin = {
       name: 'svelte-ssr',
       setup(build) {
         build.onLoad({ filter: applyFilter('image:fileFilter', IMAGE_FILE_FILTER, { target: 'server' }) }, imageAssetLoader);
+        build.onLoad({ filter: PRERENDER_MODULE_FILTER }, prerenderModuleLoader);
         // Bun resolves bare specifiers like `@fontsource-variable/inter` through package.json#main to the real `.css`,
         // so filtering on the resolved path catches direct and package imports alike. The path is recorded and the import
         // stripped from the SSR JS bundle; the CSS is bundled out-of-band below and served as `/import-css/*`.
@@ -1086,7 +1118,7 @@ export class ComponentRegistry {
 
     this.hydratableComponents.push(...allHydratables);
     if (!opts.deferClientBundle && allHydratables.length > 0) {
-      await this.buildClientBundle();
+      await this.buildClientBundle(evaluations);
     }
   }
 
@@ -1100,7 +1132,7 @@ export class ComponentRegistry {
     }
   }
 
-  private async buildClientBundle(): Promise<void> {
+  private async buildClientBundle(evaluations: PrerenderEvaluationCache = currentPrerenderEvaluationCache()): Promise<void> {
     this.clientBundleCallCount += 1;
     const bundleStart = performance.now();
     const development = this.development;
@@ -1165,10 +1197,13 @@ export class ComponentRegistry {
       rejectUnknown: this.loadedFromManifest && !this.development,
     });
 
+    const prerenderModuleLoader = createPrerenderModuleLoader(this.prerenderContext(evaluations));
+
     const clientPlugin: BunPlugin = {
       name: 'svelte-client',
       setup(build) {
         build.onLoad({ filter: applyFilter('image:fileFilter', IMAGE_FILE_FILTER, { target: 'client' }) }, imageAssetLoader);
+        build.onLoad({ filter: PRERENDER_MODULE_FILTER }, prerenderModuleLoader);
         // Mirrors the SSR side-effect-CSS strip, since the SSR-rendered `<head>` already links the bundle via
         // entryImportedCss → importedCssUrls. Bun's default CSS handling would otherwise inline JS-injected styles or
         // fail the build for any hydratable component importing a stylesheet.
@@ -1252,12 +1287,7 @@ export class ComponentRegistry {
       plugins: [serverOnlyModuleGuard, clientPlugin],
       target: 'browser',
       conditions: ['svelte', ...(development ? ['development'] : ['production'])],
-      define: {
-        DEV: String(development),
-        BROWSER: 'true',
-        NODE: 'false',
-        ...CLIENT_BUILD_DEFINE,
-      },
+      define: clientBuildDefine(development),
       minify: true,
       splitting: true,
       naming: '[name]-[hash].[ext]',
@@ -1326,6 +1356,8 @@ export class ComponentRegistry {
     // succeeded. Replace only the client-prefix JS entries; the per-component CSS
     // entries in `clientFiles` are stable and preserved.
     const clientPrefix = `${this.assetPrefix}/client/`;
+    // Snapshot the keys: the loop deletes from `clientFiles` while iterating it.
+    // oxlint-disable-next-line no-useless-spread
     for (const key of [...this.clientFiles.keys()]) {
       if (key.startsWith(clientPrefix)) {
         this.clientFiles.delete(key);
@@ -2158,6 +2190,8 @@ export class ComponentRegistry {
       // Drop existing import-css entries from clientFiles so stale URLs don't
       // linger when content (and therefore hash) changes.
       const importCssPrefix = `${this.assetPrefix}/import-css/`;
+      // Snapshot the keys: the loop deletes from `clientFiles` while iterating it.
+      // oxlint-disable-next-line no-useless-spread
       for (const key of [...this.clientFiles.keys()]) {
         if (key.startsWith(importCssPrefix)) {
           this.clientFiles.delete(key);
@@ -2210,15 +2244,33 @@ export class ComponentRegistry {
    * reload for edits outside the page graph (server entry, package.json), which need a process restart anyway. Paths in
    * `pages` are absolute, matching the `window.__mochi_page_entry` value injected into SSR'd HTML.
    */
-  async recompileChanged(changedPath: string): Promise<{ pages: Set<string>; clientBundleCount: number }> {
+  async recompileChanged(changedPath: string, opts: { withPrerenderModules?: boolean } = {}): Promise<{ pages: Set<string>; clientBundleCount: number }> {
     const changed = path.resolve(changedPath);
-    const affected = new Set<string>();
-    if (this.compiledComponents.has(changed)) {
-      affected.add(changed);
+    const seeds = new Set([changed]);
+    for (const [prerenderModule, inputs] of this.prerenderInputs) {
+      if (inputs.has(changed)) {
+        seeds.add(prerenderModule);
+      }
     }
-    for (const [entry, deps] of this.entryDeps) {
-      if (deps.has(changed)) {
-        affected.add(entry);
+    // A prerendered module may read files the import graph knows nothing about, so the watcher cannot narrow this to one module.
+    if (opts.withPrerenderModules) {
+      for (const prerenderModule of this.getPrerenderModules()) {
+        seeds.add(prerenderModule);
+      }
+    }
+    return this.recompileDependents(seeds, 'Targeted rebuild failed');
+  }
+
+  private async recompileDependents(seeds: Iterable<string>, label: string): Promise<{ pages: Set<string>; clientBundleCount: number }> {
+    const affected = new Set<string>();
+    for (const seed of seeds) {
+      if (this.compiledComponents.has(seed)) {
+        affected.add(seed);
+      }
+      for (const [entry, deps] of this.entryDeps) {
+        if (deps.has(seed)) {
+          affected.add(entry);
+        }
       }
     }
     if (affected.size === 0) {
@@ -2228,7 +2280,7 @@ export class ComponentRegistry {
     this.clientBundleCallCount = 0;
     // Rebuild every affected entry in a single Bun.build so transitive deps
     // dedupe across them.
-    await this.safeBatchCompile([...affected], 'Targeted rebuild failed');
+    await this.safeBatchCompile([...affected], label);
     this.rebuildHydratables();
     // `compileAll` already calls `buildClientBundle` once when the cohort contributes hydratables, so a trailing call is
     // forced only where this recompile removed the cohort's hydratables while other cached pages still have some, leaving

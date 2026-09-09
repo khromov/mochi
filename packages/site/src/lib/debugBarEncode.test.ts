@@ -14,6 +14,7 @@ function decodeEmittedGlobal(transformedHtml: string, name: string): unknown {
     throw new Error(`no transformed <script> for window.${name}`);
   }
   // The RHS uses atob/TextDecoder/Uint8Array — all available as Bun globals — so eval matches the browser.
+  // oxlint-disable-next-line no-eval
   return eval(m[1]!);
 }
 

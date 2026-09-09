@@ -21,6 +21,7 @@ function makeCtx(): MochiRequestContext {
 // microtask only when awaited — not a Promise, and not run on construction.
 function lazyThenable<T>(work: () => T): Promise<T> {
   return {
+    // oxlint-disable-next-line no-thenable
     then(resolve: (v: T) => void, reject: (e: unknown) => void) {
       queueMicrotask(() => {
         try {

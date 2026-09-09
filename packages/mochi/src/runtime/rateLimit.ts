@@ -105,12 +105,12 @@ export interface MochiRateLimitOptions {
   group?: string | MochiRateLimitGroup;
 }
 
-export interface MochiSqliteStoreOptions {
+export interface MochiRateLimitSqliteStoreOptions {
   /** Database file path. Omit for an in-memory database. */
   path?: string;
 }
 
-export interface MochiPostgresStoreOptions {
+export interface MochiRateLimitPostgresStoreOptions {
   /** Connection string. The store creates and owns a Bun `SQL` client. */
   url?: string;
   /** Caller-owned Bun `SQL` client. The store uses it but never closes it. */
@@ -120,11 +120,11 @@ export interface MochiPostgresStoreOptions {
   skipTableCreation?: boolean;
 }
 
-export function memoryStore(): MochiRateLimitStore {
+export function rateLimitMemoryStore(): MochiRateLimitStore {
   return hitlimitMemoryStore();
 }
 
-export function postgresStore(options: MochiPostgresStoreOptions): MochiRateLimitStore {
+export function rateLimitPostgresStore(options: MochiRateLimitPostgresStoreOptions): MochiRateLimitStore {
   return hitlimitPostgresStore(options);
 }
 
@@ -143,7 +143,7 @@ export function postgresStore(options: MochiPostgresStoreOptions): MochiRateLimi
  * find() asserted to locate a statement), catching a hitlimit bump that moves
  * statements off own-enumerable fields before it becomes a silent Windows unlink leak.
  */
-export function sqliteStore(options?: MochiSqliteStoreOptions): MochiRateLimitStore {
+export function rateLimitSqliteStore(options?: MochiRateLimitSqliteStoreOptions): MochiRateLimitStore {
   const store = hitlimitSqliteStore(options);
   const close = store.shutdown?.bind(store);
   store.shutdown = () => {
@@ -204,7 +204,7 @@ function parseWindow(window: string | number): number {
  * `group` wins, and is how you opt back into cross-route sharing.
  */
 export function createRouteLimiter(options: MochiRateLimitOptions, autoGroup?: string): RouteLimiter {
-  const store = options.store ?? memoryStore();
+  const store = options.store ?? rateLimitMemoryStore();
   const userKey = options.key;
   const userTier = options.tier;
   const userSkip = options.skip;

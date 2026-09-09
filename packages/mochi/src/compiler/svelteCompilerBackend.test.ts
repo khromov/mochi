@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { compile as svelteCompile } from 'svelte/compiler';
 import { logger } from '../utils/log';
-import { backendId, isBackend, loadRsvelte, officialBackend, resetSvelteCompilerCache, resolveSvelteCompiler } from './svelteCompilerBackend';
+import { backendId, isBackend, loadRsvelte, officialBackend, resetSvelteCompilerCache, resolveSvelteCompiler, rsvelteFallbackAdvice } from './svelteCompilerBackend';
 
 const ENV_VAR = 'MOCHI_SVELTE_COMPILER';
 const original = process.env[ENV_VAR];
@@ -88,6 +88,38 @@ describe('loadRsvelte fallback', () => {
     const fake = { name: 'rsvelte', version: '0.2.8+svelte5.56.4', compile: () => ({ js: { code: '' } }), compileModule: () => ({ js: { code: '' } }) };
     expect(await loadRsvelte(async () => ({ svelteCompilerBackend: fake }))).toBe(fake);
     expect(backendId(fake)).toBe('rsvelte@0.2.8+svelte5.56.4');
+  });
+});
+
+describe('rsvelteFallbackAdvice', () => {
+  const withPlatform = <T>(platform: string, fn: () => T): T => {
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { ...descriptor, value: platform });
+    try {
+      return fn();
+    } finally {
+      Object.defineProperty(process, 'platform', descriptor);
+    }
+  };
+
+  it('advises installing the adapter when it simply is not there', () => {
+    expect(rsvelteFallbackAdvice(`Cannot find module '@mochi-framework/rsvelte'`)).toContain('bun add -d @mochi-framework/rsvelte');
+  });
+
+  // The binding's own loader blames a skipped optional dependency for what is really a missing
+  // C runtime, so an install suggestion here sends people hunting for a phantom install problem.
+  it('advises the VC++ redistributable for a Windows binding-load failure', () => {
+    const advice = withPlatform('win32', () => rsvelteFallbackAdvice('LoadLibrary failed: The specified module could not be found.'));
+    expect(advice).toContain('Microsoft.VCRedist.2015+.x64');
+    expect(advice).not.toContain('bun add');
+  });
+
+  it('stays quiet when the adapter already explained the cause', () => {
+    expect(withPlatform('win32', () => rsvelteFallbackAdvice('… winget install --id Microsoft.VCRedist.2015+.x64 -e … LoadLibrary failed'))).toBe('');
+  });
+
+  it('does not blame the redistributable off Windows', () => {
+    expect(withPlatform('linux', () => rsvelteFallbackAdvice('LoadLibrary failed'))).toContain('bun add -d');
   });
 });
 

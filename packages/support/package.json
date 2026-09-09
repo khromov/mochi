@@ -8,8 +8,8 @@
   "scripts": {
     "build": "mochi-framework build",
     "start": "bun src/index.ts",
-    "dev": "MODE=development bun src/index.ts",
-    "typecheck": "svelte-check --tsconfig ./tsconfig.json --compiler-warnings 'attribute_illegal_colon:ignore' && tsc -p tsconfig.json --noEmit",
+    "dev": "NODE_ENV=development SUPPORT_DEV=1 bun src/index.ts",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json && tsc -p tsconfig.json --noEmit",
     "test": "bun scripts/run-tests.ts",
     "clean": "rm -rf .mochi"
   },
@@ -22,7 +22,7 @@
     "svelte": "^5.56.8"
   },
   "devDependencies": {
-    "@types/bun": "1.4.0",
+    "@types/bun": "1.4.1",
     "devalue": "^5.9.0",
     "svelte-check": "4.7.4",
     "typescript": "^6.0.3"

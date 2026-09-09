@@ -86,7 +86,7 @@ import { routes as viewTransitionsRoutes } from './demos/view-transitions/routes
 import { routes as customTransitionsRoutes } from './demos/custom-transitions/routes';
 import { routes as yourFirstMochiAppRoutes } from './demos/your-first-mochi-app/routes';
 
-const DEVELOPMENT = process.env.MODE === 'development';
+const DEVELOPMENT = process.env.NODE_ENV === 'development';
 const HEAP_SNAPSHOTS_ENABLED = process.env.HEAP_SNAPSHOTS_ENABLED === 'true';
 
 // Served by packages/support; NEWSLETTER_EMBED_URL overrides it. The trailing
@@ -137,19 +137,14 @@ const supportRoute = vanityRedirect(SUPPORT_ORIGIN);
 const mcpRoute = Mochi.api(({ request }) => respondMcp(request));
 
 export const routes: Record<string, MochiRouteValue> = {
-  ...(DEVELOPMENT
+  // Gating on the mode would put these out of reach of their only caller, which profiles the production build.
+  ...(profilerEnabled()
     ? {
         '/_profiler/start': Mochi.api(async () => {
-          if (!profilerEnabled()) {
-            return new Response('Not Found', { status: 404 });
-          }
           await startProfiler();
           return Response.json({ ok: true });
         }),
         '/_profiler/stop': Mochi.api(async () => {
-          if (!profilerEnabled()) {
-            return new Response('Not Found', { status: 404 });
-          }
           const profile = await stopProfiler();
           return Response.json(profile);
         }),
@@ -161,6 +156,9 @@ export const routes: Record<string, MochiRouteValue> = {
   ...(HEAP_SNAPSHOTS_ENABLED
     ? {
         '/_heapsnapshot': Mochi.api(() => {
+          // Bun.generateHeapSnapshot() does not collect first, so without this the dump mixes live
+          // objects with uncollected garbage and every size read off it comes out high.
+          Bun.gc(true);
           const snapshot = Bun.generateHeapSnapshot('v8');
           const filename = `mochi-${Date.now()}.heapsnapshot`;
           return new Response(snapshot, {

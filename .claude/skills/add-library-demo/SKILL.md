@@ -16,17 +16,18 @@ The demo's intro (a `<p>`/`<div>` at the top of the `DemoPage` **body**, not the
 2. **Basic install info** — an install line (`bun add <lib>`).
 3. **A very basic code sample of using the library** — a minimal real snippet (an import plus the simplest call), not just the install command.
 
-Render both through `CodeSnippet` (`import CodeSnippet from '../../components/CodeSnippet.svelte'`) fed by `highlightCode(code, 'bash' | 'typescript')` from `../../lib/highlight.server` — Shiki-highlighted and consistent with the other demos, and it sidesteps the `.svelte` brace/generic-parsing trap of putting a literal code sample in markup. 4. **A link to the library's website**, `target="_blank" rel="noopener noreferrer"` (matches the site's outbound-link convention).
+Render both through `CodeSnippet` (`import CodeSnippet from '../../components/CodeSnippet.svelte'`) fed by `highlightCode(code, 'bash' | 'typescript')` from `../../lib/highlight.server` — syntax-highlighted and consistent with the other demos, and it sidesteps the `.svelte` brace/generic-parsing trap of putting a literal code sample in markup. 4. **A link to the library's website**, `target="_blank" rel="noopener noreferrer"` (matches the site's outbound-link convention).
 
 ## Steps
 
 1. **Pin the version, then add the dep:** `bun info <lib> version`, then `bun add <lib> --cwd packages/site`. This is likely the first third-party _runtime_ library bundled into an island — that's fine, but see the browser check below.
 
 2. **Create `packages/site/src/demos/<slug>/`** — model on `demos/cookies/` and `demos/hydration/`:
-   - Entry `<Name>.svelte`: wrap in `<DemoPage title description {sources}>`, `const sources = await loadSources(files)`, place each island with `mochi:hydrate`. Group by theme — one island component per themed card reads better than one giant island.
+   - Entry `<Name>.svelte`: wrap in `<DemoPage title description {sources}>`, `import { sources } from './sources.prerender.ts'`, place each island with `mochi:hydrate`. Group by theme — one island component per themed card reads better than one giant island.
    - Island component(s): `<script lang="ts">`, import from `<lib>`, scoped `<style>` using the site CSS custom properties (`--surface`, `--border`, `--text`, `--accent`, `--font-mono`, `--code-bg`, badge tokens…). Reuse `components/Badge.svelte` for status pills. Element-ref utilities need `$state()` + `bind:this` passed as a getter `() => el`.
    - `routes.ts`: `'/demos/<slug>': Mochi.page('./src/demos/<slug>/<Name>.svelte')` plus any backing `Mochi.api` the demo needs.
    - `files.ts`: `SourceSpec[]` listing every source, ending with `{ label: 'index.ts', path: './src/demoIndex.ts' }` (verbatim, like every demo).
+   - `sources.prerender.ts`: three lines, verbatim like every demo — `import { loadSources } from '../../components/utils.ts';`, `import { files } from './files.ts';`, `export const sources = await loadSources(files);`. Running at build time is what keeps Shiki out of the demo's SSR chunk.
 
 3. **Wire the four registration points** (`demoRegistry.test.ts` enforces they stay consistent):
    - `src/routes.ts` — `import { routes as <x>Routes } from './demos/<slug>/routes';` + `...<x>Routes,`.

@@ -4,6 +4,7 @@ import path from 'node:path';
 import chokidar from 'chokidar';
 import debounce from '../vendor/debounce/index';
 import type { ComponentRegistry } from '../compiler/ComponentRegistry';
+import { resetPrerenderEvaluationCache } from '../compiler/prerenderModules';
 import { mochiEvents } from '../events';
 import type { MochiFileChangeType } from '../events';
 import { logger } from '../utils/log';
@@ -38,6 +39,21 @@ import {
 } from '../types';
 
 const FILE_CHANGE_EVENTS = new Set<string>(['add', 'change', 'unlink', 'addDir', 'unlinkDir']);
+
+const STRUCTURAL_EXTENSIONS = new Set(['.svelte', '.md', '.svx', '.ts', '.mts', '.cts', '.js', '.mjs', '.cjs', '.json', '.yaml', '.yml', '.txt', '.csv', '.html']);
+
+/**
+ * Whether an add/unlink may change what a prerendered module derives from a directory listing. An edit to an existing
+ * file already reaches its dependents through the import graph, and editor temp files (`.swp`, `4913`, `___jb_tmp___`,
+ * `.DS_Store`) and directories carry nothing such a module reads.
+ */
+export function isStructuralChange(event: string, filePath: string): boolean {
+  if (event !== 'add' && event !== 'unlink') {
+    return false;
+  }
+  const base = path.basename(filePath);
+  return !base.startsWith('.') && STRUCTURAL_EXTENSIONS.has(path.extname(base));
+}
 
 // Chokidar reports a rename as unlink-old + add-new, so logging the verb per
 // event surfaces both the old and new filename instead of just "changed".
@@ -174,8 +190,16 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   // Serializing rebuilds through a Promise chain holds the WebSocket reload until client JS chunks are ready; saves
   // arriving mid-rebuild append to the chain, so the browser reloads once, into fresh chunks.
   let reloadChain: Promise<void> = Promise.resolve();
+
+  // Sticky across the debounce window: chokidar can follow an 'add' with a 'change', and only the last call's arguments survive.
+  let pendingStructural = false;
   const triggerReload = debounce((filename: string) => {
+    const structural = pendingStructural;
+    pendingStructural = false;
     reloadChain = reloadChain.then(async () => {
+      // Cleared here rather than on the watcher event, so it cannot land between this rebuild's server and client
+      // passes and let them inline different values into the same island.
+      resetPrerenderEvaluationCache();
       // pageCount on the start event is the universe size, not the
       // affected size — the watcher doesn't know which pages depend on
       // the changed file until recompileChanged inspects the graph.
@@ -184,16 +208,22 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
       let failed = false;
       try {
-        summary = await registry.recompileChanged(filename);
-        if (summary.pages.size === 0) {
-          const resolved = path.resolve(filename);
-          if (routeComponentPaths.has(resolved)) {
-            await registry.compile(resolved, { force: true });
-            summary = { pages: new Set([resolved]), clientBundleCount: 0 };
+        if (structural) {
+          const count = registry.getPrerenderModules().length;
+          if (count > 0) {
+            logger.info(`Rebuilding ${count} prerendered module${count === 1 ? '' : 's'} — their inputs are not in the import graph`);
           }
+        }
+        summary = await registry.recompileChanged(filename, { withPrerenderModules: structural });
+        const resolved = path.resolve(filename);
+        if (routeComponentPaths.has(resolved) && !summary.pages.has(resolved)) {
+          await registry.compile(resolved, { force: true });
+          summary = { pages: new Set([...summary.pages, resolved]), clientBundleCount: summary.clientBundleCount };
         }
       } catch (e) {
         failed = true;
+        // Consumed above but never acted on, so the next save still rebuilds the prerendered modules.
+        pendingStructural ||= structural;
         logger.warn(`Rebuild failed: ${e instanceof Error ? e.message : e}`);
       }
       mochiEvents.emit('recompile:complete', {
@@ -527,6 +557,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
 
   const triggerEntryReload = debounce((filename: string) => {
     reloadChain = reloadChain.then(async () => {
+      resetPrerenderEvaluationCache();
       mochiEvents.emit('recompile:start', { trigger: 'entry', path: filename, pageCount: registry.getPageCount() });
       const start = performance.now();
       let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
@@ -708,6 +739,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         // exclusive branch is correct: one serialized task, one reload.
         triggerEntryReload(filePath);
       } else {
+        pendingStructural ||= isStructuralChange(event, filePath);
         triggerReload(filePath);
       }
     })
@@ -719,6 +751,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   const svelteConfigPath = path.resolve('svelte.config.js');
   const reloadSvelteConfig = debounce(() => {
     reloadChain = reloadChain.then(async () => {
+      resetPrerenderEvaluationCache();
       const pageCount = registry.getPageCount();
       mochiEvents.emit('recompile:start', { trigger: 'svelte-config', path: svelteConfigPath, pageCount });
       const start = performance.now();
