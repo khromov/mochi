@@ -35,6 +35,8 @@ function equalish(actual: any, expected: any): boolean | undefined {
   return isUsp || isUrl ? String(actual) === String(expected) : undefined;
 }
 
+// `equal` maps to toStrictEqual, not toEqual: uvu's assert.equal is `dequal`, which compares prototypes and does
+// not ignore undefined-valued properties. toEqual would silently accept both.
 export const assert = {
   equal: (actual: any, expected: any, _msg?: string) => {
     const special = equalish(actual, expected);
@@ -42,7 +44,7 @@ export const assert = {
       expect(special).toBe(true);
       return;
     }
-    expect(actual).toEqual(expected);
+    expect(actual).toStrictEqual(expected);
   },
   is: (actual: any, expected: any, _msg?: string) => expect(actual).toBe(expected),
   ok: (value: any, _msg?: string) => expect(value).toBeTruthy(),
