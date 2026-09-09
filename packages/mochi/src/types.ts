@@ -420,7 +420,7 @@ export interface MarkdownConfig {
   remarkPlugins?: unknown[];
   /**
    * Syntax highlighter for fenced code blocks; omit for mdsvex's bare `<pre><code>` output.
-   * Wrap Shiki, highlight.js, or any other library in a `(code, lang) => string | Promise<string>` function.
+   * Build one with `createTwinkleplopHighlighter` (or wrap any other library in a `(code, lang) => string | Promise<string>` function with `createHighlighter`) from `mochi-framework/highlight`.
    */
   highlight?: { highlighter: MarkdownHighlighter };
 }

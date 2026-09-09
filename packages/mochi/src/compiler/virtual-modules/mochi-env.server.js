@@ -36,6 +36,7 @@ export function devWarn(msg) { __mochi_logger.warn(msg); }
 // Isomorphic: pins a value on globalThis so duplicate bundled copies share one
 // instance per process. Re-exported so .svelte-graph modules can dedupe singletons.
 export { pinGlobal } from "__MOCHI_GLOBAL_STATE__";
+export { escapeHtmlAttr } from "__MOCHI_HTML_ESCAPE__";
 // Re-export devalue so .svelte files (and the preprocessor's
 // injected hydration-prop import) can use stringify/parse without
 // a separate install. Resolved from the framework's own deps.

@@ -8,7 +8,7 @@
 
   let { captchas }: { captchas: MintedCaptcha[] } = $props();
 
-  // Highlighted here rather than in the island: Shiki is server-only.
+  // Highlighted here rather than in the island: the highlighter is server-only.
   const css = {
     defaults: await highlightCode(defaultsSample, 'css'),
     themed: await highlightCode(rule('.themed', themes.themed.css), 'css'),
