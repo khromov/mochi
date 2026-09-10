@@ -21,7 +21,7 @@
     },
     "packages/cli": {
       "name": "create-mochi",
-      "version": "0.3.1",
+      "version": "0.4.0",
       "bin": {
         "create-mochi": "src/cli.js",
       },
@@ -102,7 +102,7 @@
     },
     "packages/mochi": {
       "name": "mochi-framework",
-      "version": "0.9.1",
+      "version": "0.10.0",
       "bin": {
         "mochi-framework": "src/cli/cli.js",
       },
@@ -155,7 +155,7 @@
     },
     "packages/mochi-rsvelte": {
       "name": "@mochi-framework/rsvelte",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "@rsvelte/vite-plugin-svelte-native": ">=0.2.8 <1.0.0",
       },
@@ -174,7 +174,7 @@
     },
     "packages/mochi-svelte-shaker": {
       "name": "@mochi-framework/svelte-shaker",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "svelte-shaker": ">=0.18.1",
       },
