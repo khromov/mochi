@@ -1,6 +1,6 @@
 {
   "name": "@mochi-framework/svelte-shaker",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Opt-in whole-program svelte-shaker optimizer for mochi-framework.",
   "type": "module",
   "license": "MIT",
