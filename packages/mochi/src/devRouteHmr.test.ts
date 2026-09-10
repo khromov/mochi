@@ -105,9 +105,20 @@ describe('route HMR during a dev session', () => {
     ).toBe(200);
   }, 90_000);
 
-  afterAll(() => {
+  afterAll(async () => {
     proc?.kill();
-    rmSync(appDir, { recursive: true, force: true });
+    // kill() only signals — the dev server still holds handles on its outDir until it actually exits, and Windows
+    // refuses to remove a directory that anything has open. Same best-effort retry as the queue suites: never fail
+    // the run over an ephemeral temp dir. (Bun ignores rmSync's maxRetries option, so retry by hand.)
+    await proc?.exited;
+    for (let attempt = 0; attempt < 25; attempt++) {
+      try {
+        rmSync(appDir, { recursive: true, force: true });
+        return;
+      } catch {
+        await Bun.sleep(100);
+      }
+    }
   });
 
   test('a brand-new route pattern starts serving without a restart', async () => {
