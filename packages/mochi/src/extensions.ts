@@ -318,6 +318,13 @@ export function runHook<K extends keyof MochiHookContext>(name: K, ctx: MochiHoo
   return undefined as never;
 }
 
+// A filter that hands back the value it was given is indistinguishable from no filter at all, so callers that need to
+// tell "the app decided this" from "nothing was registered" — CSRF diagnostics — have to ask the registry directly.
+export function hasFilter<K extends keyof MochiFilterValue>(name: K): boolean {
+  assertServerOnly(`hasFilter('${name}')`, SERVER_ONLY_REASON);
+  return registry.filters[name] !== undefined;
+}
+
 // Returns the filtered value, or the input unchanged when no fn is registered. Async-kind filters may return a Promise,
 // and the conditional return type forces the caller to await those.
 export function applyFilter<K extends keyof MochiFilterValue>(
