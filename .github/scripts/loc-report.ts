@@ -44,6 +44,7 @@ const PACKAGES: Package[] = [
     root: join(REPO_ROOT, 'packages', 'mochi'),
     categories: [
       'src/**/*.test.ts',
+      'src/vendor/**',
       'src/Mochi.ts',
       'src/ComponentRegistry.ts',
       'src/hooks.ts',

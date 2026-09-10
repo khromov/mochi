@@ -117,7 +117,7 @@ import { mochiEvents } from './events';
 import type { MochiActionResult, MochiErrorEvent, MochiErrorKind, MochiServerStartEvent, MochiServerStopEvent } from './events';
 import type { DebugBarData, DebugBarRuntimeData } from './runtime/requestContext';
 import { consoleLogger } from './dev/consoleLogger';
-import { parse as devalueParse, stringify as devalueStringify } from 'devalue';
+import { getUseOptimizedDevalue, parse as devalueParse, setUseOptimizedDevalue, stringify as devalueStringify } from './utils/devalue';
 import { ISLAND_FAILURE_CSS, ISLAND_FAILURE_DEV_CSS, islandFailureStub } from './web-components/islandFailureStub';
 import { resolvePublicFiles, registerPublicRoutes, isExcludedDotPath } from './runtime/publicDir';
 import { installMemoryPressureHandler, removeMemoryPressureHandler } from './runtime/memoryPressure';
@@ -547,6 +547,10 @@ export class Mochi {
 
     // In production, load prebuilt assets from manifest if available
     const manifestPath = options.manifest ?? `${outDir}/manifest.json`;
+    // Set before the registry exists: the alias plugin and the `mochi-env` templates read it at resolve time, and a
+    // production boot without a manifest compiles at startup.
+    setUseOptimizedDevalue(options.useOptimizedDevalue !== false);
+
     let registry: ComponentRegistry;
     if (!development && existsSync(manifestPath)) {
       logger.info(`Loading prebuilt manifest from ${manifestPath}`);
@@ -557,6 +561,16 @@ export class Mochi {
         logger.warn(
           `assetPrefix in Mochi.serve() (${JSON.stringify(options.assetPrefix)}) differs from the manifest (${JSON.stringify(registry.assetPrefix)}). Using the manifest value — URLs are baked in at build time.`,
         );
+      }
+      // Which devalue the compiled chunks hold was decided at build time, and every island-props serialization runs
+      // inside them, so honouring a conflicting runtime value would leave the opt-out not actually opting out.
+      if (registry.builtWithOptimizedDevalue !== undefined && options.useOptimizedDevalue !== undefined && options.useOptimizedDevalue !== registry.builtWithOptimizedDevalue) {
+        logger.warn(
+          `useOptimizedDevalue in Mochi.serve() (${options.useOptimizedDevalue}) differs from the manifest (${registry.builtWithOptimizedDevalue}). Using the manifest value — the implementation is baked into the compiled chunks. Re-run \`mochi-framework build\` to change it.`,
+        );
+      }
+      if (registry.builtWithOptimizedDevalue !== undefined) {
+        setUseOptimizedDevalue(registry.builtWithOptimizedDevalue);
       }
     } else {
       const svelteConfig = await loadSvelteConfig(options.svelteConfigPath);
@@ -611,6 +625,10 @@ export class Mochi {
         liveReload: liveReloadEnabled,
         warmup: warmupEnabled,
         compressServerIslandProps: options.compressServerIslandProps ?? false,
+        // Read live, unlike its neighbours: a dev entry edit can flip this after the object is built.
+        get useOptimizedDevalue(): boolean {
+          return getUseOptimizedDevalue();
+        },
         trailingSlash: options.trailingSlash ?? 'never',
         assetPrefix: registry.assetPrefix || undefined,
         logLevel: resolvedLogLevel,

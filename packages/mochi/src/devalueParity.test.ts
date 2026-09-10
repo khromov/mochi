@@ -1,0 +1,244 @@
+/**
+ * The vendored devalue fork must be a drop-in for the published package: same bytes out, same errors, same paths.
+ * That is what lets `useOptimizedDevalue` be a pure performance switch, and what makes keeping the npm dependency
+ * worthwhile — it is the reference implementation upstream's own release process tested.
+ */
+import { describe, expect, test } from 'bun:test';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import path from 'node:path';
+import fc from 'fast-check';
+import * as npm from 'devalue';
+import * as vendored from './vendor/devalue/index.ts';
+
+// Compile-time drift guard: the fork's inferred signatures must still satisfy the published types.
+const _stringifyParity: typeof npm.stringify = vendored.stringify;
+const _parseParity: typeof npm.parse = vendored.parse;
+const _unevalParity: typeof npm.uneval = vendored.uneval;
+(void _stringifyParity, _parseParity, _unevalParity);
+
+/** The directory holding the resolved module's `package.json`, so the checks below survive a future release moving its entry into a subfolder. */
+function packageRootOf(entry: string): string {
+  let dir = path.dirname(entry);
+  while (!existsSync(path.join(dir, 'package.json'))) {
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      throw new Error(`no package.json above ${entry}`);
+    }
+    dir = parent;
+  }
+  return dir;
+}
+
+describe('the devalue under comparison', () => {
+  test('is an installed release, not a linked working tree', () => {
+    // Linking a local devalue checkout over the installed package would make every assertion below compare the fork
+    // against itself and pass vacuously. Asserted on the package rather than its location, which varies with the
+    // install layout — a hoisted node_modules, a workspace-local one, or bun's global install cache.
+    const packageDir = packageRootOf(realpathSync(Bun.resolveSync('devalue', import.meta.dir)));
+    const installed = JSON.parse(readFileSync(path.join(packageDir, 'package.json'), 'utf8')) as { name: string; version: string };
+    const declared = (JSON.parse(readFileSync(path.join(import.meta.dir, '..', 'package.json'), 'utf8')) as { dependencies: Record<string, string> }).dependencies.devalue;
+    expect(installed.name).toBe('devalue');
+    expect(declared).toBeString();
+    expect(Bun.semver.satisfies(installed.version, declared ?? '')).toBe(true);
+    // A checkout carries the repository the release is cut from; an installed copy never does.
+    expect(existsSync(path.join(packageDir, '.git'))).toBe(false);
+  });
+});
+
+const sharedRef = { id: 1, tags: ['a', 'b'] };
+const cyclic: Record<string, unknown> = { name: 'root' };
+cyclic.self = cyclic;
+const manyRefs: { a: { i: number }[]; b?: unknown } = { a: Array.from({ length: 70_000 }, (_, i) => ({ i })) };
+manyRefs.b = manyRefs.a;
+
+const sparseLateHole = (): unknown[] => {
+  const a = [1, 2];
+  a[9] = 3;
+  return a;
+};
+
+const viewsOverOneBuffer = (): unknown => {
+  const buffer = new ArrayBuffer(8);
+  return { a: new Uint8Array(buffer), b: new Uint16Array(buffer) };
+};
+
+/** The shapes where 5.9.x releases and the perf commit actually diverged, so a regression is named rather than stumbled on. */
+const HARD_CASES: [string, unknown][] = [
+  ['negative zero', -0],
+  ['NaN', NaN],
+  ['infinities', [Infinity, -Infinity]],
+  ['null prototype', Object.assign(Object.create(null), { a: 1 })],
+  ['sparse array', [1, , 3]],
+  ['sparse array, first hole after index 0', sparseLateHole()],
+  ['array with non-numeric props', Object.assign([1, 2], { extra: 'x' })],
+  ['-0 in Float64Array', new Float64Array([-0, 0, 1.5])],
+  ['-0 in Float32Array', new Float32Array([-0, 0])],
+  ['DataView with byte offset', new DataView(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]).buffer, 2, 4)],
+  ['BigInt64Array', new BigInt64Array([1n, -2n])],
+  ['boxed primitives', [Object(1), Object('s'), Object(true)]],
+  ['URL', new URL('https://example.com/a?b=c#d')],
+  ['URLSearchParams', new URLSearchParams('foo=1&foo=2&baz=<+>')],
+  ['RegExp with flags', /ab+c/giu],
+  ['Date', new Date(1700000000000)],
+  [
+    'Map and Set',
+    [
+      new Map<unknown, unknown>([
+        [1, 'a'],
+        [{ k: 1 }, 'b'],
+      ]),
+      new Set([1, 'two', null]),
+    ],
+  ],
+  ['BigInt', 12345678901234567890n],
+  ['escape-heavy string', '<div>\x00\x1f"\\\u2028\u2029\t\n</div>'],
+  ['lone surrogate', '\ud800'],
+  ['shared reference', { x: sharedRef, y: sharedRef }],
+  ['cyclic reference', cyclic],
+  ['70k repeated references', manyRefs],
+  ['Temporal.Instant', Temporal.Instant.from('2024-01-01T00:00:00Z')],
+  ['typed array views over one buffer', viewsOverOneBuffer()],
+];
+
+function expectAgreement(value: unknown): void {
+  const npmJson = npm.stringify(value);
+  expect(vendored.stringify(value)).toBe(npmJson);
+  expect(vendored.uneval(value)).toBe(npm.uneval(value));
+  // Each side must revive the other's payload, not merely its own. Compared as re-serialized bytes rather than with
+  // toEqual, which is both stricter and sidesteps Bun's toEqual reporting equal URLSearchParams as unequal.
+  expect(npm.stringify(vendored.parse(npmJson))).toBe(npm.stringify(npm.parse(vendored.stringify(value))));
+}
+
+describe('byte parity with the published package', () => {
+  for (const [name, value] of HARD_CASES) {
+    test(name, () => expectAgreement(value));
+  }
+
+  test('island-props shaped payloads', () => {
+    expectAgreement({ user: { name: 'Ada', id: 42 }, visitedAt: new Date(0), tags: new Set(['svelte', 'bun']), nested: { deep: [1, 2, { x: null }] } });
+    expectAgreement({ sources: [{ label: 'A.svelte', lang: 'svelte', html: '<div class="x">&amp;</div>' }] });
+  });
+});
+
+describe('error parity', () => {
+  const REJECTED: [string, unknown][] = [
+    ['function', () => undefined],
+    ['symbol', Symbol('nope')],
+    ['nested function', { a: { b: () => undefined } }],
+    ['class instance', new (class Foo {})()],
+    ['promise', Promise.resolve(1)],
+    ['weakmap', new WeakMap()],
+    ['symbol-keyed POJO', { a: 1, [Symbol.toStringTag]: 'Custom' }],
+  ];
+
+  for (const [name, value] of REJECTED) {
+    test(`${name} fails identically`, () => {
+      let npmErr: { name?: string; message?: string; path?: string } | undefined;
+      let vendoredErr: { name?: string; message?: string; path?: string } | undefined;
+      try {
+        npm.stringify(value);
+      } catch (e) {
+        npmErr = e as typeof npmErr;
+      }
+      try {
+        vendored.stringify(value);
+      } catch (e) {
+        vendoredErr = e as typeof vendoredErr;
+      }
+      expect(npmErr).toBeDefined();
+      expect(vendoredErr).toBeDefined();
+      expect(vendoredErr?.name).toBe(npmErr?.name as string);
+      expect(vendoredErr?.message).toBe(npmErr?.message as string);
+      // The perf commit rewrote error paths to be built only on throw, so `.path` is the highest-risk field.
+      expect(vendoredErr?.path).toBe(npmErr?.path as string);
+    });
+  }
+
+  test('parse rejects malformed input identically', () => {
+    for (const bad of ['[["Set",7]]', '[]', '', '][', '[["Uint8Array",1],["Uint8Array",0]]']) {
+      let npmErr: { message?: string } | undefined;
+      let vendoredErr: { message?: string } | undefined;
+      try {
+        npm.parse(bad);
+      } catch (e) {
+        npmErr = e as typeof npmErr;
+      }
+      try {
+        vendored.parse(bad);
+      } catch (e) {
+        vendoredErr = e as typeof vendoredErr;
+      }
+      expect(Boolean(vendoredErr)).toBe(Boolean(npmErr));
+      expect(vendoredErr?.message).toBe(npmErr?.message as string);
+    }
+  });
+});
+
+describe('property-based parity', () => {
+  /** Agreement includes agreeing to reject: devalue refuses functions, symbol keys and `__proto__` keys, and the two must refuse the same things the same way. */
+  function expectSameOutcome(op: 'stringify' | 'uneval', value: unknown): void {
+    let npmOut: string | undefined;
+    let npmMessage: string | undefined;
+    try {
+      npmOut = npm[op](value as never);
+    } catch (e) {
+      npmMessage = (e as Error).message;
+    }
+    let vendoredOut: string | undefined;
+    let vendoredMessage: string | undefined;
+    try {
+      vendoredOut = vendored[op](value as never);
+    } catch (e) {
+      vendoredMessage = (e as Error).message;
+    }
+    expect(vendoredMessage).toBe(npmMessage as string);
+    expect(vendoredOut).toBe(npmOut as string);
+  }
+
+  const leaf = fc.oneof(
+    fc.constantFrom(undefined, null, true, false, -0, 0, NaN, Infinity, -Infinity),
+    fc.integer(),
+    fc.double(),
+    fc.bigInt(),
+    fc.string(),
+    fc.date(),
+    fc.constantFrom(new URL('https://a.example/x'), new URLSearchParams('a=1&b=2'), /x[ab]+/g),
+    fc.uint8Array(),
+    fc.float64Array(),
+  );
+
+  const anyValue = fc.letrec<{ node: unknown }>((tie) => ({
+    node: fc.oneof(
+      { depthSize: 'small' },
+      leaf,
+      fc.array(tie('node'), { maxLength: 6 }),
+      fc.dictionary(fc.string(), tie('node'), { maxKeys: 6 }),
+      fc.array(tie('node'), { maxLength: 5 }).map((v) => new Set(v)),
+      fc.array(fc.tuple(fc.string(), tie('node')), { maxLength: 5 }).map((v) => new Map(v)),
+    ),
+  })).node;
+
+  test('stringify and uneval agree on arbitrary values', () => {
+    fc.assert(
+      fc.property(anyValue, (value) => {
+        expectSameOutcome('stringify', value);
+        expectSameOutcome('uneval', value);
+      }),
+      { numRuns: 500 },
+    );
+  });
+
+  test('shared and cyclic graphs agree', () => {
+    fc.assert(
+      fc.property(anyValue, fc.boolean(), (value, cycle) => {
+        const graph: Record<string, unknown> = { a: value, b: value };
+        if (cycle) {
+          graph.self = graph;
+        }
+        expectSameOutcome('stringify', graph);
+        expectSameOutcome('uneval', graph);
+      }),
+      { numRuns: 300 },
+    );
+  });
+});

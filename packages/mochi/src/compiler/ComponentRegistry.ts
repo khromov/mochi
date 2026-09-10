@@ -42,6 +42,8 @@ import { serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { registerServerOnlyComponentStubs, SSR_ONLY_COMPONENT_NAMESPACE } from './serverOnlyComponents';
 import { cleanInputs, SERVER_ONLY_MODULE_NAMESPACE } from './bundleInputPaths';
 import { renderMochiEnvServer } from './virtualModuleTemplate';
+import { devalueAliasPlugin } from './devalueAlias';
+import { getUseOptimizedDevalue } from '../utils/devalue';
 import { buildDebugBarBundle, type DebugBarBundle } from './buildDebugBarBundle';
 import { formatBuildMessages } from './formatBuildMessages';
 import { clientBuildDefine, registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
@@ -96,7 +98,7 @@ const builtinTsPreprocessor: PreprocessorGroup = {
 const SRC_DIR = path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..');
 
 /** Manifest schema version this runtime writes; see `MochiManifest.version` for the path families it implies. */
-const MANIFEST_VERSION = 3;
+const MANIFEST_VERSION = 4;
 
 const MARKDOWN_EXTENSIONS = ['.md', '.svx'];
 const MARKDOWN_FILE_FILTER = /\.(md|svx)$/;
@@ -431,6 +433,8 @@ export class ComponentRegistry {
   readonly development: boolean;
   /** Set by `fromManifest()`; distinguishes a prebuilt-manifest boot from a live, compile-on-demand one. */
   loadedFromManifest = false;
+  /** Which devalue the prebuilt chunks were compiled against; `Mochi.serve()` matches it rather than letting the two disagree. */
+  builtWithOptimizedDevalue: boolean | undefined;
   /** Files `publicDir` held when this manifest was built; see `MochiManifest.publicFileCount`. 0 when not loaded from one. */
   publicFileCountAtBuild = 0;
   readonly debugBarEnabled: boolean;
@@ -825,7 +829,7 @@ export class ComponentRegistry {
     const compileOutDir = path.resolve(`${this.outDir}/svelte-compile`);
     const result = await Bun.build({
       entrypoints: todo,
-      plugins: [sveltePlugin],
+      plugins: [devalueAliasPlugin, sveltePlugin],
       target: 'bun',
       conditions: ['svelte'],
       // Svelte stays external as a peer dep the consumer already provides; everything else bundles, and `splitting: true`
@@ -1327,7 +1331,7 @@ export class ComponentRegistry {
       files: filesMap,
       // The guard goes first so its `onResolve` sees a server-only specifier
       // before any of the client plugin's own handlers can claim it.
-      plugins: [serverOnlyModuleGuard, clientPlugin],
+      plugins: [serverOnlyModuleGuard, devalueAliasPlugin, clientPlugin],
       target: 'browser',
       conditions: ['svelte', ...(development ? ['development'] : ['production'])],
       define: clientBuildDefine(development),
@@ -2410,6 +2414,7 @@ export class ComponentRegistry {
 
     const manifest: MochiManifest = {
       version: MANIFEST_VERSION,
+      useOptimizedDevalue: getUseOptimizedDevalue(),
       assetPrefix: this.assetPrefix,
       bootstrapUrl: this.islandBootstrapUrl,
       componentEntryUrls: Object.fromEntries(this.componentEntryUrls),
@@ -2477,6 +2482,7 @@ export class ComponentRegistry {
       fonts: options.fonts,
     });
     registry.loadedFromManifest = true;
+    registry.builtWithOptimizedDevalue = manifest.useOptimizedDevalue ?? true;
     registry.publicFileCountAtBuild = manifest.publicFileCount ?? 0;
 
     registry.islandBootstrapUrl = manifest.bootstrapUrl;

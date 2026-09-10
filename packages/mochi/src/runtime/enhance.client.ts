@@ -1,4 +1,4 @@
-import * as devalue from 'devalue';
+import * as devalue from '../utils/devalue';
 import type { Attachment } from 'svelte/attachments';
 import type { MochiEnhanceOptions, MochiEnhanceResult, MochiFormShape, MochiSubmitFunction } from '../types';
 import { logger } from '../utils/log';

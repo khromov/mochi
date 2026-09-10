@@ -50,6 +50,7 @@
       { key: 'Live reload', value: onOff(config.liveReload), muted: !config.liveReload },
       { key: 'Warmup', value: onOff(config.warmup), muted: !config.warmup },
       { key: 'Compress island props', value: onOff(config.compressServerIslandProps), muted: !config.compressServerIslandProps },
+      { key: 'Optimized devalue', value: onOff(config.useOptimizedDevalue), muted: !config.useOptimizedDevalue },
       { key: 'Trailing slash', value: config.trailingSlash, muted: false },
       { key: 'Log level', value: config.logLevel, muted: false },
       ...(config.assetPrefix ? [{ key: 'Asset prefix', value: config.assetPrefix, muted: false }] : []),

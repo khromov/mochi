@@ -21,6 +21,7 @@ import { mochiEvents } from '../events';
 import type { MochiCompileCompleteEvent } from '../events';
 import { styleText } from 'node:util';
 import prettyBytes from '../vendor/pretty-bytes';
+import { setUseOptimizedDevalue } from '../utils/devalue';
 import { collectFontResources, collectImageResources, mergeResourceRows, printResourceTree } from './resourceReport';
 import { printPrerenderModules } from './prerenderReport';
 
@@ -51,6 +52,8 @@ export interface MochiBuildOptions {
   resources?: boolean;
   /** Mirror the value passed to `Mochi.serve({ protection })` so the interstitial page prebuilds into the manifest. Default: disabled. See `MochiServeOptions['protection']`. */
   protection?: MochiProtectionOptions;
+  /** Mirror the value passed to `Mochi.serve({ useOptimizedDevalue })`; it is baked into the compiled chunks and recorded in the manifest, so build and runtime agree. Default: `true`. See `MochiServeOptions['useOptimizedDevalue']`. */
+  useOptimizedDevalue?: boolean;
 }
 
 type RouteKind = 'page' | 'api' | 'ws' | 'sse';
@@ -97,6 +100,8 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   mochiEvents.on('compile:complete', onCompileComplete);
   try {
     const development = options.development ?? false;
+    // Set before anything compiles: the alias plugin and the `mochi-env` templates both read it at resolve time.
+    setUseOptimizedDevalue(options.useOptimizedDevalue !== false);
     const baseOutDir = options.outDir ?? './.mochi';
     // Mirror the dev/prod split in Mochi.serve(): a `--dev` build nests under
     // `dev/` so it can't clobber the production manifest at the root.
