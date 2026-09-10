@@ -939,14 +939,15 @@ export class ComponentRegistry {
     }
 
     // Attribution walks Bun's output graph: `outputs[outKey].inputs` is a flat record of every source file that fed that
-    // chunk, keyed in the same shape as `inputs[]` and so stable to compare against `cssMap` / `importedCssPaths`. The
-    // source-import walk via `inputs[].imports[].path` is unusable, since Bun stores those importer-relative and
-    // `path.resolve` against cwd fabricates absolutes that miss `inputs[]`, killing the BFS one hop in.
+    // chunk, keyed in the same shape as `inputs[]` and so stable to compare against `cssMap`.
     const outputsMeta = result.metafile?.outputs ?? {};
+    const inputsMeta = result.metafile?.inputs ?? {};
     const entryToOutKey = new Map<string, string>();
+    const entryToInputKey = new Map<string, string>();
     for (const [outKey, outMeta] of Object.entries(outputsMeta)) {
       if (outMeta.entryPoint) {
         entryToOutKey.set(path.resolve(outMeta.entryPoint), outKey);
+        entryToInputKey.set(path.resolve(outMeta.entryPoint), outMeta.entryPoint);
       }
     }
 
@@ -974,6 +975,36 @@ export class ComponentRegistry {
       return inputs;
     };
 
+    // Side-effect CSS gets stripped to an empty module, and an empty module shared by two entrypoints is hoisted by
+    // `splitting` into a chunk nothing emits an import statement for — so the output walk above reaches neither the
+    // chunk nor the stylesheet, and it ends up attributed to no page at all. The pre-chunking input graph still records
+    // the import edge, so CSS is walked there instead. Unbundled specifiers (`svelte`, `node:fs`) appear as edges with
+    // no `inputs[]` entry of their own, which is why this compares raw metafile keys rather than resolving every hop.
+    const transitiveSourceInputs = (rootInputKey: string): Set<string> => {
+      const visited = new Set<string>();
+      const queue = [rootInputKey];
+      while (queue.length > 0) {
+        const key = queue.shift()!;
+        const meta = inputsMeta[key];
+        if (visited.has(key) || !meta) {
+          continue;
+        }
+        visited.add(key);
+        for (const imp of meta.imports) {
+          queue.push(imp.path);
+        }
+      }
+      return visited;
+    };
+
+    // The CSS plugin records absolute paths while metafile keys are cwd-relative, so bridge the two once per build.
+    const cssInputKeyByPath = new Map<string, string>();
+    for (const key of Object.keys(inputsMeta)) {
+      if (key.endsWith('.css')) {
+        cssInputKeyByPath.set(path.resolve(key), key);
+      }
+    }
+
     const compileDuration = performance.now() - compileStart;
     for (const filename of todo) {
       const outKey = entryToOutKey.get(filename);
@@ -992,12 +1023,13 @@ export class ComponentRegistry {
 
       const entryInputs = transitiveInputs(outKey);
 
-      // Side-effect CSS imports reachable from this entry. The plugin records
-      // every `.css` load globally; intersect with the entry's transitive
-      // input set to get the per-entry subset.
+      // Side-effect CSS imports reachable from this entry. The plugin records every `.css` load globally, so the
+      // per-entry subset comes from the source-import walk.
+      const entrySourceInputs = transitiveSourceInputs(entryToInputKey.get(filename)!);
       const entryCss = new Set<string>();
       for (const p of importedCssPaths) {
-        if (entryInputs.has(path.resolve(p))) {
+        const cssKey = cssInputKeyByPath.get(path.resolve(p));
+        if (cssKey && entrySourceInputs.has(cssKey)) {
           entryCss.add(p);
         }
       }
@@ -1042,6 +1074,17 @@ export class ComponentRegistry {
         serverIslandCount: entryServerIslands.length,
         durationMs: compileDuration,
       });
+    }
+
+    // The build's entrypoints are exactly `todo`, so every stylesheet the plugin loaded must belong to at least one of
+    // them; one that belongs to none is bundled and served but linked by nothing, which only shows up as an unstyled page.
+    const unattributedCss = [...importedCssPaths].filter((p) => !todo.some((f) => this.entryImportedCss.get(f)?.has(p)));
+    if (unattributedCss.length > 0) {
+      logger.warn(
+        `${unattributedCss.length} imported stylesheet(s) could not be attributed to any page, so nothing will link them:\n` +
+          unattributedCss.map((p) => `  - ${relForDisplay(p)}`).join('\n') +
+          `\nThis is a Mochi bug — please report it with a reproduction.`,
+      );
     }
 
     mochiEvents.emit('compile:batch-complete', {

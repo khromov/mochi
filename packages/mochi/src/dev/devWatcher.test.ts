@@ -28,6 +28,13 @@ describe('isServerEntryDep', () => {
     const abs = path.resolve('helper.ts');
     expect(isServerEntryDep('helper.ts', new Set([abs]))).toBe(true);
   });
+
+  // The regression this guards: only a successful build populates the dep set, so a failed one used to send every
+  // later entry edit down the plain-recompile path — route HMR stayed dead for the rest of the dev session.
+  test('with no successful entry build yet, any non-.svelte change retries it', () => {
+    expect(isServerEntryDep('src/index.ts', new Set(), false)).toBe(true);
+    expect(isServerEntryDep('src/App.svelte', new Set(), false)).toBe(false);
+  });
 });
 
 describe('reachedModuleChurnThreshold', () => {

@@ -84,9 +84,11 @@ function publicChangeVerb(event: string): string {
 /**
  * Whether a changed file belongs to the server-entry bundle graph, so its change must rebuild the entry (route wiring).
  * A `.svelte` file is never routed here — it recompiles on the page path — even if it is also an entry input.
+ * Until a build has succeeded the graph is unknown, so every other change retries it: the dep set is only ever
+ * populated by a successful build, and without the retry one failed build would strand route HMR for the session.
  */
-export function isServerEntryDep(filePath: string, serverEntryDeps: Set<string>): boolean {
-  return !filePath.endsWith('.svelte') && serverEntryDeps.has(path.resolve(filePath));
+export function isServerEntryDep(filePath: string, serverEntryDeps: Set<string>, entryGraphKnown = true): boolean {
+  return !filePath.endsWith('.svelte') && (!entryGraphKnown || serverEntryDeps.has(path.resolve(filePath)));
 }
 
 // Each entry reload re-evaluates the whole first-party module graph, so a module-scoped resource (a DB pool, a timer,
@@ -314,6 +316,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   // Building the entry module discovers its transitive deps, so a dep change can rebuild, re-extract routes via
   // `extractServeOptions`, and hot-swap handlers in place for the running server.
   let serverEntryDeps: Set<string> = new Set();
+  let entryGraphKnown = false;
   const entryBuildOutDir = path.resolve(`${outDir}/entry-hmr`);
 
   let entryReloadCount = 0;
@@ -328,7 +331,9 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       packages: 'external',
       target: 'bun',
       outdir: entryBuildOutDir,
-      naming: { entry: 'entry.js' },
+      // `[ext]` and not a literal `.js`: an entry graph that also imports CSS emits a second output under this same
+      // template, and without the extension both land on `entry.js` and the whole build fails on the collision.
+      naming: { entry: 'entry.[ext]' },
       metafile: true,
       throw: false,
     });
@@ -346,6 +351,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       }
     }
     serverEntryDeps = newDeps;
+    entryGraphKnown = true;
     const outFile = path.resolve(entryBuildOutDir, 'entry.js');
     const serveOptions = await extractServeOptions(outFile, { fresh: true });
     if (!serveOptions?.routes) {
@@ -761,7 +767,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         reloadPublic();
       } else if (filePath.endsWith('.css')) {
         triggerCssReload(filePath);
-      } else if (isServerEntryDep(filePath, serverEntryDeps)) {
+      } else if (isServerEntryDep(filePath, serverEntryDeps, entryGraphKnown)) {
         // triggerEntryReload rebuilds the entry AND recompiles any page whose SSR bundle inlines this module, so the
         // exclusive branch is correct: one serialized task, one reload.
         triggerEntryReload(filePath);
