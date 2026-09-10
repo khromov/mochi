@@ -3,9 +3,12 @@
  * the wiring: that the selector and the generated `mochi-env` modules both move to the other implementation, and
  * that they move together.
  */
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { devalueModulePath, getUseOptimizedDevalue, parse, setUseOptimizedDevalue, stringify } from './utils/devalue';
+import { devalueErrorPath, getUseOptimizedDevalue, parse, setUseOptimizedDevalue, stringify } from './utils/devalue';
+import { devalueModulePath } from './compiler/devaluePath';
+import { devalueAliasPlugin } from './compiler/devalueAlias';
 import { renderMochiEnvClient, renderMochiEnvServer } from './compiler/virtualModuleTemplate';
 import { toPosixPath } from './utils/index';
 
@@ -58,5 +61,117 @@ describe('the generated mochi-env modules', () => {
       expect(renderMochiEnvServer(false)).not.toContain('__MOCHI_DEVALUE__');
       expect(renderMochiEnvClient(false, 'cookies.ts', 'enhance.ts')).not.toContain('__MOCHI_DEVALUE__');
     }
+  });
+});
+
+/**
+ * The selector's dispatch must never survive into a bundle: it reads a runtime flag the bundle cannot see, and it
+ * pulls both devalue copies in with it. Only `devalueAliasPlugin` prevents that, and it does so silently, so this
+ * builds through the plugin rather than asserting on the functions it calls.
+ */
+describe('the bundler alias', () => {
+  const SELECTOR = toPosixPath(path.join(import.meta.dir, 'utils', 'devalue.ts'));
+  const VENDORED = toPosixPath(path.join(import.meta.dir, 'vendor', 'devalue', 'index.ts'));
+  // Built at collection time, not in `beforeAll`, so the symlink case below knows whether it can run.
+  const fixtureDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-devalue-alias-'));
+  const entry = path.join(fixtureDir, 'entry.ts');
+  const selectorSpecifier = toPosixPath(path.relative(fixtureDir, SELECTOR));
+
+  // A user module that merely shares the selector's name is not the selector, and the plugin's filter sees it too.
+  writeFileSync(path.join(fixtureDir, 'devalue.ts'), `export const marker = 'user-owned-devalue';\n`);
+  // Both spellings, because framework code imports the selector without the extension and the alias matches on the
+  // resolved path.
+  writeFileSync(
+    entry,
+    `import { stringify } from '${selectorSpecifier}';\nimport { parse } from '${selectorSpecifier.replace(/\.ts$/, '')}';\nexport { marker } from './devalue';\nexport const out = parse(stringify({ a: 1 }));\n`,
+  );
+
+  // A `workspace:*` consumer reaches the framework through a symlinked `node_modules/mochi-framework`, which is where
+  // a path compare that skipped realpath let the selector through. Windows may refuse to create the symlink.
+  let symlinkedEntry: string | undefined = path.join(fixtureDir, 'linked-entry.ts');
+  try {
+    symlinkSync(import.meta.dir, path.join(fixtureDir, 'linked-src'), 'dir');
+    writeFileSync(symlinkedEntry, `import { stringify } from './linked-src/utils/devalue';\nexport const out = stringify({ a: 1 });\n`);
+  } catch {
+    symlinkedEntry = undefined;
+  }
+
+  afterAll(() => {
+    rmSync(fixtureDir, { recursive: true, force: true });
+  });
+
+  async function bundle(entrypoint: string, target: 'browser' | 'bun'): Promise<{ code: string; inputs: string[] }> {
+    const result = await Bun.build({ entrypoints: [entrypoint], target, plugins: [devalueAliasPlugin], metafile: true, throw: false });
+    expect(result.success).toBe(true);
+    const inputs = Object.keys(result.metafile?.inputs ?? {}).map((i) => toPosixPath(path.resolve(i)));
+    const [output] = result.outputs;
+    if (!output) {
+      throw new Error('the build produced no output');
+    }
+    return { code: await output.text(), inputs };
+  }
+
+  for (const target of ['browser', 'bun'] as const) {
+    test(`${target} builds hold the selected devalue and none of the dispatch`, async () => {
+      const optimized = await bundle(entry, target);
+      expect(optimized.code).not.toContain('getUseOptimizedDevalue');
+      expect(optimized.inputs).not.toContain(SELECTOR);
+      expect(optimized.inputs).toContain(VENDORED);
+
+      setUseOptimizedDevalue(false);
+      const plain = await bundle(entry, target);
+      expect(plain.inputs).not.toContain(SELECTOR);
+      expect(plain.inputs).toContain(devalueModulePath());
+      expect(plain.inputs).not.toContain(VENDORED);
+    });
+  }
+
+  test('a browser build pulls in no node builtins', async () => {
+    const { code } = await bundle(entry, 'browser');
+    expect(code).not.toContain('node:path');
+    expect(code).not.toContain('node:fs');
+    expect(code).not.toContain('Bun.resolveSync');
+  });
+
+  test.skipIf(!symlinkedEntry)('claims the selector reached through a symlinked framework directory', async () => {
+    const { inputs } = await bundle(symlinkedEntry as string, 'bun');
+    expect(inputs).not.toContain(SELECTOR);
+    expect(inputs).toContain(VENDORED);
+  });
+
+  test('leaves a same-named module that is not the selector alone', async () => {
+    const { code } = await bundle(entry, 'bun');
+    expect(code).toContain('user-owned-devalue');
+  });
+});
+
+describe('devalueErrorPath', () => {
+  test('reads the path off either implementation', () => {
+    for (const flag of [true, false]) {
+      setUseOptimizedDevalue(flag);
+      expect(() => stringify({ a: { b: () => undefined } })).toThrow();
+      try {
+        stringify({ a: { b: () => undefined } });
+      } catch (e) {
+        expect(devalueErrorPath(e)).toBe('.a.b');
+      }
+    }
+  });
+
+  test('reads it off a copy neither namespace here holds, which is what a compiled chunk carries', () => {
+    class DevalueError extends Error {
+      path = '.deep.inside';
+      constructor() {
+        super('Cannot stringify arbitrary non-POJOs');
+        this.name = 'DevalueError';
+      }
+    }
+    expect(devalueErrorPath(new DevalueError())).toBe('.deep.inside');
+  });
+
+  test('ignores anything that is not one', () => {
+    expect(devalueErrorPath(new Error('nope'))).toBeUndefined();
+    expect(devalueErrorPath({ name: 'DevalueError', path: '.a' })).toBeUndefined();
+    expect(devalueErrorPath(undefined)).toBeUndefined();
   });
 });

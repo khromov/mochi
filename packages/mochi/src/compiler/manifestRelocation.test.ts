@@ -14,7 +14,6 @@ import { build } from '../cli/build';
 import { Mochi } from '../Mochi';
 import { getLocalImageAsset } from '../image/localAssetRegistry';
 import { FRAMEWORK_PREFIX } from './manifestPaths';
-import { MANIFEST_VERSION } from './ComponentRegistry';
 import { toPosixPath } from '../utils';
 import type { MochiManifest } from '../types';
 
@@ -134,8 +133,10 @@ describe('manifest relocation (build → move → boot)', () => {
     rmSync(buildDir, RM_OPTS);
   });
 
-  test('manifest is versioned and contains no absolute artifact paths', () => {
-    expect(manifest.version).toBe(MANIFEST_VERSION);
+  // The version is spelled out rather than imported: bumping the schema should turn this red, so that dropping
+  // support for the old on-disk format is a decision someone makes rather than one that rides along.
+  test('manifest is v4 and contains no absolute artifact paths', () => {
+    expect(manifest.version).toBe(4);
     // Guard the categories that would otherwise pass this test vacuously — an
     // empty map has no absolute paths in it either.
     expect(Object.keys(manifest.components).length).toBeGreaterThan(0);
@@ -241,7 +242,7 @@ describe('manifest relocation (build → move → boot)', () => {
     writeFileSync(otherPath, JSON.stringify(other));
 
     const { ComponentRegistry } = await import('./ComponentRegistry');
-    await expect(ComponentRegistry.fromManifest(otherPath, false)).rejects.toThrow(`is version ${version}, but this mochi-framework runtime reads version ${MANIFEST_VERSION}`);
+    await expect(ComponentRegistry.fromManifest(otherPath, false)).rejects.toThrow(`is version ${version}, but this mochi-framework runtime reads version 4`);
   });
 });
 

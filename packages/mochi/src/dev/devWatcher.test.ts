@@ -1,6 +1,7 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import path from 'node:path';
-import { isServerEntryDep, isStructuralChange, reachedModuleChurnThreshold } from './devWatcher';
+import { isServerEntryDep, isStructuralChange, reachedModuleChurnThreshold, reconcileOptimizedDevalue } from './devWatcher';
+import { getUseOptimizedDevalue, setUseOptimizedDevalue } from '../utils/devalue';
 
 describe('isServerEntryDep', () => {
   const shared = path.resolve('/proj/src/plugin-list.ts');
@@ -67,5 +68,32 @@ describe('isStructuralChange', () => {
     expect(isStructuralChange('add', 'src/.DS_Store')).toBe(false);
     expect(isStructuralChange('addDir', 'src/new-folder')).toBe(false);
     expect(isStructuralChange('unlinkDir', 'src/old-folder')).toBe(false);
+  });
+});
+
+describe('reconcileOptimizedDevalue', () => {
+  afterEach(() => {
+    setUseOptimizedDevalue(true);
+  });
+
+  test('an unset option means the default, which is no change', () => {
+    expect(reconcileOptimizedDevalue(undefined)).toBe(false);
+    expect(getUseOptimizedDevalue()).toBe(true);
+  });
+
+  test('turning it off applies, and reports the change that forces a rebundle', () => {
+    expect(reconcileOptimizedDevalue(false)).toBe(true);
+    expect(getUseOptimizedDevalue()).toBe(false);
+  });
+
+  test('an unrelated entry edit re-reports the same value without churning every page', () => {
+    reconcileOptimizedDevalue(false);
+    expect(reconcileOptimizedDevalue(false)).toBe(false);
+  });
+
+  test('turning it back on applies too — the flag is not one-way', () => {
+    reconcileOptimizedDevalue(false);
+    expect(reconcileOptimizedDevalue(true)).toBe(true);
+    expect(getUseOptimizedDevalue()).toBe(true);
   });
 });

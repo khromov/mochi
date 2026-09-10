@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { toPosixPath } from '../utils';
-import { devalueModulePath } from '../utils/devalue';
+import { devalueModulePath } from './devaluePath';
 
 /** Directory containing this file (`src/compiler/`). */
 const FRAMEWORK_DIR = path.dirname(Bun.fileURLToPath(import.meta.url));

@@ -625,7 +625,10 @@ export class Mochi {
         liveReload: liveReloadEnabled,
         warmup: warmupEnabled,
         compressServerIslandProps: options.compressServerIslandProps ?? false,
-        useOptimizedDevalue: getUseOptimizedDevalue(),
+        // Read live, unlike its neighbours: a dev entry edit can flip this after the object is built.
+        get useOptimizedDevalue(): boolean {
+          return getUseOptimizedDevalue();
+        },
         trailingSlash: options.trailingSlash ?? 'never',
         assetPrefix: registry.assetPrefix || undefined,
         logLevel: resolvedLogLevel,

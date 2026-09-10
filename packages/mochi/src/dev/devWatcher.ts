@@ -10,6 +10,7 @@ import type { MochiFileChangeType } from '../events';
 import { logger } from '../utils/log';
 import { evictPreprocessCacheEntry } from '../compiler/preprocessCache';
 import { extractServeOptions } from '../cli/extractServeOptions';
+import { getUseOptimizedDevalue, setUseOptimizedDevalue } from '../utils/devalue';
 import { startCronRuntime, stopCronRuntime } from '../queue';
 import { cronSignature, type MochiCronJob } from '../cron';
 import type { MochiQueueStorage } from '../queue';
@@ -53,6 +54,19 @@ export function isStructuralChange(event: string, filePath: string): boolean {
   }
   const base = path.basename(filePath);
   return !base.startsWith('.') && STRUCTURAL_EXTENSIONS.has(path.extname(base));
+}
+
+/**
+ * Applies an entry edit's `useOptimizedDevalue` and reports whether it changed. Without this the flag keeps whatever
+ * `Mochi.serve()` read at boot, so editing it in dev would swap routes but not the thing the edit was about.
+ */
+export function reconcileOptimizedDevalue(next: boolean | undefined): boolean {
+  const optimized = next !== false;
+  if (optimized === getUseOptimizedDevalue()) {
+    return false;
+  }
+  setUseOptimizedDevalue(optimized);
+  return true;
 }
 
 // Chokidar reports a rename as unlink-old + add-new, so logging the verb per
@@ -304,6 +318,9 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
 
   let entryReloadCount = 0;
   let moduleStateWarned = false;
+  // Set by `buildEntry` when an entry edit flips `useOptimizedDevalue`: the choice is resolved into compiled output,
+  // so nothing already built reflects the edit until it is rebundled.
+  let devalueChanged = false;
 
   async function buildEntry(): Promise<Record<string, unknown> | null> {
     const result = await Bun.build({
@@ -334,6 +351,10 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     if (!serveOptions?.routes) {
       logger.warn('Entry rebuild produced no routes — skipping update');
       return null;
+    }
+    if (reconcileOptimizedDevalue(serveOptions.useOptimizedDevalue)) {
+      registry.compileCache.reset();
+      devalueChanged = true;
     }
     reloadSpeculationRules?.(serveOptions.speculationRules);
     await reconcileCron(serveOptions as { cron?: MochiCronJob[]; cronStorage?: MochiQueueStorage; queueShutdownTimeout?: number });
@@ -619,7 +640,13 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         // A server-entry module can also be inlined into page SSR bundles, so recompile any dependent page here —
         // before the reload below — so the browser fetches fresh HTML in one reload instead of a stale bundle then a
         // second reload. No-ops when no page depends on the file.
-        summary = await registry.recompileChanged(filename);
+        if (devalueChanged) {
+          devalueChanged = false;
+          logger.info(`useOptimizedDevalue is now ${getUseOptimizedDevalue()} — rebuilding every page`);
+          summary = await registry.recompileAll();
+        } else {
+          summary = await registry.recompileChanged(filename);
+        }
       } catch (e) {
         failed = true;
         logger.warn(`Entry rebuild failed: ${e instanceof Error ? e.message : e}`);
