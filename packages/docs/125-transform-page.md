@@ -6,6 +6,7 @@ description: 'Rewrite rendered HTML before it is sent to the client with the tra
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## `transformPage`
@@ -33,9 +34,37 @@ const greeting: Handle = async ({ event, resolve }) => {
 </body>
 ```
 
-The callback receives `{ html, done }` and returns `string | undefined | Promise<string | undefined>`. Returning `undefined` replaces the body with an empty string.
+The callback receives `{ html, done, kind }` and returns `string | undefined | Promise<string | undefined>`. Returning `undefined` replaces the body with an empty string.
 
-Use it for per-request mutations the shell template cannot express: a request-aware `<html lang>`, nonce injection, or A/B placeholder swaps.
+### `kind`
+
+<VersionNote since="0.10.0" message="`kind` is new. Earlier versions passed only `{ html, done }` and never ran `transformPage` on island fragments." />
+
+`kind` says which HTML surface you were handed:
+
+| Value              | What it is                                                                        |
+| ------------------ | --------------------------------------------------------------------------------- |
+| `'page'`           | A whole document: a `Mochi.page` render, the error page, or `fetch`-fallback HTML |
+| `'deferredIsland'` | The HTML fragment a `/_mochi/island/*` request returns                            |
+
+Files served straight from disk — `publicDir` and `Mochi.file()` — are your own bytes and never reach `transformPage`.
+
+Branch on it whenever the transform injects markup rather than filling a placeholder. A fragment is written into the page with `innerHTML`, so a `<script>` appended to one runs again for every deferred island on the page:
+
+```ts
+const analytics: Handle = async ({ event, resolve }) => {
+  return resolve(event, {
+    transformPage({ html, kind }) {
+      if (kind !== 'page') return html;
+      return html.replace('</body>', `${ANALYTICS_SCRIPT}</body>`);
+    },
+  });
+};
+```
+
+A placeholder swap needs no guard — the placeholder only exists in the shell, so the replace misses on a fragment.
+
+Use `transformPage` for per-request mutations the shell template cannot express: a request-aware `<html lang>`, nonce injection, or A/B placeholder swaps.
 
 ```ts
 const lang: Handle = async ({ event, resolve }) => {

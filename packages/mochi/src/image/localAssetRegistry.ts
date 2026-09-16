@@ -3,17 +3,17 @@
  * `compiler/imageAssetLoader.ts` records each emitted asset's served URL → on-disk path here, so two callers resolve it
  * at request time:
  *
- *   1. The static asset route (`${assetPrefix}/asset/:filename`) streams the bytes
- *      from disk.
+ *   1. The middleware chain resolves `${assetPrefix}/asset/…` against this map and
+ *      streams the bytes from disk.
  *   2. `fetchImageSource` reads them when `<Image>`/`getImageUrl` transform a local
  *      image, whose same-origin `/_mochi/asset/…` src the SSRF guard would reject.
+ *
+ * Since the URL only ever acts as a Map key, a traversal attempt matches nothing and reads nothing.
  *
  * Pinned on `globalThis` like `getImageRuntime`'s `__mochi_image_runtime__`, since compiled Svelte components each get
  * their own bundled copy of this module yet must share the one Map the loader and manifest populated. Only URLs the
  * build registered are readable: request input serves purely as a Map key, so no arbitrary file read is reachable.
  */
-
-import { serveDiskAsset } from '../utils/serveDiskAsset';
 
 export interface LocalImageAssetInfo {
   diskPath: string;
@@ -42,13 +42,4 @@ export function registerLocalImageAsset(url: string, info: LocalImageAssetInfo):
 
 export function getLocalImageAsset(url: string): LocalImageAssetInfo | undefined {
   return registry().get(url);
-}
-
-/**
- * Handler for the `${assetPrefix}/asset/:filename` route: reconstruct the registry key from the request pathname and
- * serve the bytes from disk on a hit. Since the filename only ever acts as a Map key, a traversal attempt matches
- * nothing and reads nothing; misses, missing files, and caching all follow {@link serveDiskAsset}'s shared policy.
- */
-export function createLocalAssetHandler(development: boolean): (req: Request) => Promise<Response> {
-  return (req: Request): Promise<Response> => serveDiskAsset(getLocalImageAsset(new URL(req.url).pathname), development);
 }

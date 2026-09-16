@@ -2,7 +2,7 @@
 // chain: publicDir files, `Mochi.file()` routes, and server-island fragments. Also covers the conditional-request and
 // range handling the disk-file server adds so compression doesn't cost caching, and the font content-type allowlist.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
@@ -10,9 +10,11 @@ import { compress } from './middleware/compress';
 import { sequence } from './runtime/hooks';
 import { mochiEvents } from './events';
 import type { MochiRequestEvent } from './events';
+import { registerLocalImageAsset } from './image/localAssetRegistry';
 
 const FIXTURE_PAGE = path.join(import.meta.dir, '__fixtures__', 'inline-islands', 'Page.svelte');
 const THEME_CSS = `:root{--x:1}\n${'.filler{color:red;background:blue;padding:1px}\n'.repeat(400)}`;
+const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg">${'<rect width="4" height="4" fill="#abc"/>'.repeat(200)}</svg>`;
 
 describe('compression reaches every static surface', () => {
   let server: Server<undefined>;
@@ -29,11 +31,18 @@ describe('compression reaches every static surface', () => {
   beforeAll(async () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-compress-cov-out-'));
     publicDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-compress-cov-pub-'));
-    fixturesDir = mkdtempSync(path.join(import.meta.dir, '..', 'mochi-compress-cov-fix-'));
+    // Undotted on purpose — `Mochi.file()` refuses any target under a dot-directory. `mochi-file-fixtures-*` is the
+    // prefix packages/mochi/.gitignore already covers.
+    fixturesDir = mkdtempSync(path.join(import.meta.dir, '..', 'mochi-file-fixtures-compress-cov-'));
     writeFileSync(path.join(publicDir, 'theme.css'), THEME_CSS);
     writeFileSync(path.join(publicDir, 'font.ttf'), Buffer.alloc(4096, 0x41));
     writeFileSync(path.join(publicDir, 'font.woff2'), Buffer.alloc(4096, 0x41));
-    mkdirSync(path.join(fixturesDir, 'sub'), { recursive: true });
+    writeFileSync(path.join(publicDir, 'photo.png'), Buffer.alloc(4096, 0x41));
+    writeFileSync(path.join(publicDir, 'clip.mp4'), Buffer.alloc(4096, 0x41));
+    // Registered the way the build's image loader does, so the asset endpoint has something to serve.
+    const logoPath = path.join(fixturesDir, 'logo.svg');
+    writeFileSync(logoPath, LOGO_SVG);
+    registerLocalImageAsset('/_mochi/asset/logo-abc123.svg', { diskPath: logoPath, contentType: 'image/svg+xml' });
     writeFileSync(path.join(fixturesDir, 'report.txt'), 'report line\n'.repeat(300));
 
     mochiEvents.on('request', onRequest);
@@ -92,7 +101,7 @@ describe('compression reaches every static surface', () => {
     expect(second.status).toBe(304);
   });
 
-  test('a client revalidating a compressed representation still gets a 304', async () => {
+  test('a client revalidating a compressed representation gets a 304 carrying its own validator', async () => {
     const first = await fetch(`${base}/theme.css`, { headers: { 'Accept-Encoding': 'br' } });
     const etag = first.headers.get('ETag');
     // compress() suffixed the validator with the encoding token.
@@ -100,6 +109,8 @@ describe('compression reaches every static surface', () => {
 
     const second = await fetch(`${base}/theme.css`, { headers: { 'Accept-Encoding': 'br', 'If-None-Match': etag! } });
     expect(second.status).toBe(304);
+    // RFC 9110 §15.4.5: the 304 identifies the representation the client holds, not the identity one.
+    expect(second.headers.get('ETag')).toBe(etag);
   });
 
   test('publicDir serves a range request uncompressed (206)', async () => {
@@ -137,5 +148,25 @@ describe('compression reaches every static surface', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Encoding')).toBe('gzip');
     expect((await res.text()).length).toBeGreaterThan(0);
+  });
+
+  test('locally-imported assets are compressed at /_mochi/asset/*', async () => {
+    const res = await fetch(`${base}/_mochi/asset/logo-abc123.svg`, { headers: { 'Accept-Encoding': 'br' } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('image/svg+xml');
+    expect(res.headers.get('Content-Encoding')).toBe('br');
+    expect(await res.text()).toBe(LOGO_SVG);
+    expect(seenKinds['/_mochi/asset/logo-abc123.svg']).toBe('asset');
+  });
+
+  test('already-compressed and binary media types are left alone', async () => {
+    for (const [file, contentType] of [
+      ['photo.png', 'image/png'],
+      ['clip.mp4', 'video/mp4'],
+    ] as const) {
+      const res = await fetch(`${base}/${file}`, { headers: { 'Accept-Encoding': 'br, gzip' } });
+      expect(res.headers.get('Content-Type')).toBe(contentType);
+      expect(res.headers.get('Content-Encoding')).toBeNull();
+    }
   });
 });

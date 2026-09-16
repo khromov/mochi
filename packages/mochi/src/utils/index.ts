@@ -256,15 +256,19 @@ export function toCompileErrorLogs(
 }
 
 /**
- * Body-less clone of a `Response` for answering HEAD. Finite bodies are buffered once so `Content-Length` matches what
- * the equivalent GET would have sent; a streaming body (`text/event-stream`) would never end, so its length is left unset.
+ * Body-less clone of a `Response` for answering HEAD. A body of unknown length is buffered once so `Content-Length`
+ * matches what the equivalent GET would have sent; a handler that already declared the length is taken at its word,
+ * which is what keeps HEAD on a large disk-backed file from reading the whole thing into memory. A streaming body
+ * (`text/event-stream`) would never end, so its length is left unset.
  */
 export async function headResponse(res: Response): Promise<Response> {
   const headers = new Headers(res.headers);
   const isStream = (headers.get('content-type') ?? '').includes('text/event-stream');
-  if (!isStream && res.body) {
+  if (!isStream && res.body && headers.get('Content-Length') === null) {
     const buf = await res.arrayBuffer();
     headers.set('Content-Length', String(buf.byteLength));
+  } else {
+    void res.body?.cancel();
   }
   return new Response(null, { status: res.status, statusText: res.statusText, headers });
 }

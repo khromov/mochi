@@ -2,9 +2,13 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { registerLocalImageAsset, getLocalImageAsset, createLocalAssetHandler } from './localAssetRegistry';
+import { registerLocalImageAsset, getLocalImageAsset } from './localAssetRegistry';
+import { serveDiskAsset } from '../utils/serveDiskAsset';
 
 const GLOBAL_KEY = '__mochi_local_image_assets__';
+
+// Mirrors how `composedFetch` resolves `/_mochi/asset/…`: registry lookup by pathname, then the shared disk server.
+const serveAsset = (url: string, development: boolean): Promise<Response> => serveDiskAsset(getLocalImageAsset(new URL(url).pathname), development);
 
 const dirs: string[] = [];
 
@@ -34,31 +38,29 @@ describe('local image asset registry', () => {
   });
 });
 
-describe('createLocalAssetHandler', () => {
+describe('serving a registered local asset', () => {
   test('serves the bytes with content-type + nosniff, immutable Cache-Control in prod', async () => {
     const diskPath = writeAsset('hero.png', PNG);
     registerLocalImageAsset('/_mochi/asset/hero-abc.png', { diskPath, contentType: 'image/png' });
-    const handler = createLocalAssetHandler(false);
-    const res = await handler(new Request('http://localhost/_mochi/asset/hero-abc.png'));
+    const res = await serveAsset('http://localhost/_mochi/asset/hero-abc.png', false);
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('image/png');
     expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(res.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable');
+    expect(res.headers.get('Content-Length')).toBe(String(PNG.byteLength));
     expect(new Uint8Array(await res.arrayBuffer())).toEqual(PNG);
   });
 
   test('omits Cache-Control in development', async () => {
     const diskPath = writeAsset('hero.png', PNG);
     registerLocalImageAsset('/_mochi/asset/hero-dev.png', { diskPath, contentType: 'image/png' });
-    const handler = createLocalAssetHandler(true);
-    const res = await handler(new Request('http://localhost/_mochi/asset/hero-dev.png'));
+    const res = await serveAsset('http://localhost/_mochi/asset/hero-dev.png', true);
     expect(res.status).toBe(200);
     expect(res.headers.get('Cache-Control')).toBeNull();
   });
 
   test('404s an unregistered filename (never reads outside the registry)', async () => {
-    const handler = createLocalAssetHandler(false);
-    const res = await handler(new Request('http://localhost/_mochi/asset/does-not-exist.png'));
+    const res = await serveAsset('http://localhost/_mochi/asset/does-not-exist.png', false);
     expect(res.status).toBe(404);
   });
 
@@ -66,15 +68,13 @@ describe('createLocalAssetHandler', () => {
     const diskPath = writeAsset('gone.png', PNG);
     rmSync(diskPath);
     registerLocalImageAsset('/_mochi/asset/gone-abc.png', { diskPath, contentType: 'image/png' });
-    const handler = createLocalAssetHandler(false);
-    const res = await handler(new Request('http://localhost/_mochi/asset/gone-abc.png'));
+    const res = await serveAsset('http://localhost/_mochi/asset/gone-abc.png', false);
     expect(res.status).toBe(404);
   });
 
   test('a path-traversal attempt just misses the map and 404s', async () => {
-    const handler = createLocalAssetHandler(false);
     // The pathname is only ever a map key, never joined to disk, so this can't escape.
-    const res = await handler(new Request('http://localhost/_mochi/asset/..%2f..%2fetc%2fpasswd'));
+    const res = await serveAsset('http://localhost/_mochi/asset/..%2f..%2fetc%2fpasswd', false);
     expect(res.status).toBe(404);
   });
 });

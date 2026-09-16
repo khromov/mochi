@@ -96,7 +96,7 @@ import type { MochiRateLimitOptions, MochiRateLimitStore, RouteLimiter } from '.
 import { decryptProps } from './islands/serverIslandCrypto';
 import { DEFAULT_INLINE_BUDGET } from './islands/inlineServerIslands';
 import { createImageHandler } from './image/imageEndpoint';
-import { createLocalAssetHandler } from './image/localAssetRegistry';
+import { getLocalImageAsset } from './image/localAssetRegistry';
 import { getImageRuntime } from './image/config';
 import { startImageCacheSweeper } from './image/sweeper';
 import { getEmailRuntime, closeEmailTransport } from './email/config';
@@ -802,7 +802,7 @@ export class Mochi {
               status: resolved.status,
               headers: { Location: resolved.location },
             });
-            return applyResolveOptions(redirectResponse, resolveOpts);
+            return applyResolveOptions(redirectResponse, resolveOpts, 'page');
           }
           if (isFormFail(resolved) || isFormSuccess(resolved)) {
             throw new Error(
@@ -851,7 +851,7 @@ export class Mochi {
             status: statusOverride,
             headers: { 'Content-Type': 'text/html; charset=utf-8' },
           });
-          return applyResolveOptions(response, resolveOpts);
+          return applyResolveOptions(response, resolveOpts, 'page');
         };
 
         const wrapRequest = async (
@@ -1023,7 +1023,7 @@ export class Mochi {
 
               if (result instanceof Response) {
                 emitActionComplete(actionName, 'success', result.status);
-                return applyResolveOptions(result, resolveOpts);
+                return applyResolveOptions(result, resolveOpts, 'page');
               }
               if (isRedirect(result)) {
                 emitActionComplete(actionName, 'redirect', result.status);
@@ -1034,7 +1034,7 @@ export class Mochi {
                   status: result.status,
                   headers: { Location: result.location },
                 });
-                return applyResolveOptions(redirectResponse, resolveOpts);
+                return applyResolveOptions(redirectResponse, resolveOpts, 'page');
               }
               try {
                 if (isFormFail(result)) {
@@ -1119,7 +1119,8 @@ export class Mochi {
               try {
                 const apiHandler = (apiHandlerMap ? apiHandlerMap.get(pattern) : undefined) ?? capturedApiHandler;
                 const response = await apiHandler(apiEvent);
-                return applyResolveOptions(response, resolveOpts);
+                // An api route answering with `text/html` is still a whole document, so it transforms like a page.
+                return applyResolveOptions(response, resolveOpts, 'page');
               } catch (err) {
                 if (err instanceof MochiHttpError) {
                   logger.error(`${event.request.method} ${event.url.pathname} → ${err.status}: ${err.message}`);
@@ -1338,8 +1339,8 @@ export class Mochi {
           return requestContext.run(ctx, async () => {
             runHook('route:matched', { pattern, request: req, url, params, kind: 'file' });
 
-            const finish = (response: Response): Response => {
-              const final = finalizeCookieHeaders(response, ctx.cookies);
+            const finish = async (response: Response): Promise<Response> => {
+              const final = finalizeCookieHeaders(req.method === 'HEAD' ? await headResponse(response) : response, ctx.cookies);
               mochiEvents.emit('request', {
                 requestId,
                 kind: 'file',
@@ -1398,20 +1399,15 @@ export class Mochi {
             };
 
             const target = await resolveTarget();
-            // Errors and HEAD bypass the middleware chain: compression would strip the HEAD's Content-Length, and error
-            // bodies aren't worth the round-trip.
+            // Error responses still bypass the middleware chain — those bodies aren't worth the round-trip.
             if (target instanceof Response) {
               return finish(target);
             }
-            const file = Bun.file(target.realPath);
-            const contentType = file.type || 'application/octet-stream';
-            if (req.method === 'HEAD') {
-              return finish(new Response(null, { status: 200, headers: { 'Content-Type': contentType, 'Content-Length': String(file.size) } }));
-            }
 
             const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'file', isWarmup: ctx.isWarmup };
+            // No transform kind: a `Mochi.file()` target is the user's own bytes, so `transformPage` never sees it.
             const innerResolve = async (_event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> =>
-              applyResolveOptions(await serveStaticFile({ diskPath: target.realPath, contentType }, { request: req }), resolveOpts);
+              applyResolveOptions(await serveStaticFile({ diskPath: target.realPath }, { request: req }), resolveOpts);
             const response = middleware ? await middleware({ event, resolve: innerResolve }) : await innerResolve(event);
             return finish(response);
           });
@@ -1507,97 +1503,98 @@ export class Mochi {
           ctx.islandInline = { budget: applyFilter('serverIsland:inlineBudget', DEFAULT_INLINE_BUDGET, { componentName, request: req }) };
         }
 
-        return requestContext.run(ctx, async () => {
-          // A miss here means the build's eager discovery (see build.ts) didn't
-          // find this island; `compileAll` warns about any manifest miss, so the
-          // request-path compile this endpoint is supposed to prevent is never
-          // silent.
-          await registry.compile(componentPath);
-          let result: RenderResult;
-          try {
-            // Namespacing via `idPrefix` keeps `$props.id()` values from this
-            // standalone render from colliding with ids the host page already
-            // emitted (both renders otherwise start their uid counter at `s1`).
-            // Svelte rejects prefixes containing `--`, so guard against tokens
-            // signed by an older deploy carrying an incompatible id.
-            result = await registry.renderComponent(componentPath, props as Record<string, unknown>, {
-              stripMarkers: false,
-              ...(islandId && !islandId.includes('--') ? { idPrefix: islandId } : {}),
-              // An also-hydrate island's standalone render seeds the
-              // `isHydratable()` context for its whole subtree — the same signal
-              // the in-page boundary component provides for `mochi:hydrate*`
-              // islands. Pure `mochi:defer` never hydrates, so no context.
-              ...(hydrateMode !== null ? { context: new Map<unknown, unknown>([[HYDRATABLE_CONTEXT_KEY, true]]) } : {}),
-              // Named-export islands render that export, not the module's default.
-              ...(registry.getServerIslandExport(componentName) ? { exportName: registry.getServerIslandExport(componentName) } : {}),
-            });
-          } catch (err) {
-            const e = err instanceof Error ? err : new Error(String(err));
-            logger.error(`Server island "${componentName}" failed: ${e.message}`);
-            mochiEvents.emit('island:error', {
-              componentName,
-              islandId,
-              kind: 'server',
-              message: e.message,
-              stack: registry.development ? e.stack : undefined,
-            });
-            // 200 + a known stub so `ServerIsland.ts` doesn't burn its retry budget
-            // on a deterministic failure. Visibility is CSS-controlled: dev shows
-            // the message, prod hides the element entirely.
-            const stub = islandFailureStub(componentName, registry.development ? e.message : undefined);
-            return new Response(stub, {
-              status: 200,
-              headers: {
-                'Content-Type': 'text/html; charset=utf-8',
-                'Cache-Control': 'private, no-store',
-              },
-            });
-          }
-
-          let body = result.body;
-
-          if (isAlsoHydrateMode(hydrateMode)) {
-            const componentUrl = registry.getComponentEntryUrl(componentName);
-            const serializedProps = devalueStringify(props);
-
-            let hydrateAttrs = `component-name="${componentName}"`;
-            if (Object.keys(props as Record<string, unknown>).length > 0) {
-              hydrateAttrs += ` props="${escapeHtmlAttr(serializedProps)}"`;
-            }
-            if (componentUrl) {
-              hydrateAttrs += ` component-url="${componentUrl}"`;
-            }
-
-            body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
-          }
-
-          // Appended whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain
-          // mochi:hydrate children, or inlined also-hydrate islands — so the fragment self-hydrates even on a page that
-          // shipped no bootstrap of its own; duplicate module scripts are no-ops by src.
-          const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
-          if (bootstrapUrl) {
-            body += `<script type="module" src="${bootstrapUrl}"></script>`;
-          }
-
-          // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`
-          // tags are prepended here along with side-effect CSS imports; browsers honour a `<link>` assigned via `innerHTML`.
-          // The island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
-          const ownCss = registry.getComponentCssUrl(componentPath);
-          const extraCss = result.cssUrls.filter((url) => url !== ownCss);
-          if (extraCss.length > 0) {
-            body = extraCss.map(cssLinkTag).join('') + body;
-          }
-
-          return new Response(body, {
+        // A miss here means the build's eager discovery (see build.ts) didn't
+        // find this island; `compileAll` warns about any manifest miss, so the
+        // request-path compile this endpoint is supposed to prevent is never
+        // silent.
+        await registry.compile(componentPath);
+        let result: RenderResult;
+        try {
+          // Namespacing via `idPrefix` keeps `$props.id()` values from this
+          // standalone render from colliding with ids the host page already
+          // emitted (both renders otherwise start their uid counter at `s1`).
+          // Svelte rejects prefixes containing `--`, so guard against tokens
+          // signed by an older deploy carrying an incompatible id.
+          result = await registry.renderComponent(componentPath, props as Record<string, unknown>, {
+            stripMarkers: false,
+            ...(islandId && !islandId.includes('--') ? { idPrefix: islandId } : {}),
+            // An also-hydrate island's standalone render seeds the
+            // `isHydratable()` context for its whole subtree — the same signal
+            // the in-page boundary component provides for `mochi:hydrate*`
+            // islands. Pure `mochi:defer` never hydrates, so no context.
+            ...(hydrateMode !== null ? { context: new Map<unknown, unknown>([[HYDRATABLE_CONTEXT_KEY, true]]) } : {}),
+            // Named-export islands render that export, not the module's default.
+            ...(registry.getServerIslandExport(componentName) ? { exportName: registry.getServerIslandExport(componentName) } : {}),
+          });
+        } catch (err) {
+          const e = err instanceof Error ? err : new Error(String(err));
+          logger.error(`Server island "${componentName}" failed: ${e.message}`);
+          mochiEvents.emit('island:error', {
+            componentName,
+            islandId,
+            kind: 'server',
+            message: e.message,
+            stack: registry.development ? e.stack : undefined,
+          });
+          // 200 + a known stub so `ServerIsland.ts` doesn't burn its retry budget
+          // on a deterministic failure. Visibility is CSS-controlled: dev shows
+          // the message, prod hides the element entirely.
+          const stub = islandFailureStub(componentName, registry.development ? e.message : undefined);
+          return new Response(stub, {
+            status: 200,
             headers: {
               'Content-Type': 'text/html; charset=utf-8',
               'Cache-Control': 'private, no-store',
             },
           });
+        }
+
+        let body = result.body;
+
+        if (isAlsoHydrateMode(hydrateMode)) {
+          const componentUrl = registry.getComponentEntryUrl(componentName);
+          const serializedProps = devalueStringify(props);
+
+          let hydrateAttrs = `component-name="${componentName}"`;
+          if (Object.keys(props as Record<string, unknown>).length > 0) {
+            hydrateAttrs += ` props="${escapeHtmlAttr(serializedProps)}"`;
+          }
+          if (componentUrl) {
+            hydrateAttrs += ` component-url="${componentUrl}"`;
+          }
+
+          body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
+        }
+
+        // Appended whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain
+        // mochi:hydrate children, or inlined also-hydrate islands — so the fragment self-hydrates even on a page that
+        // shipped no bootstrap of its own; duplicate module scripts are no-ops by src.
+        const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
+        if (bootstrapUrl) {
+          body += `<script type="module" src="${bootstrapUrl}"></script>`;
+        }
+
+        // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`
+        // tags are prepended here along with side-effect CSS imports; browsers honour a `<link>` assigned via `innerHTML`.
+        // The island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
+        const ownCss = registry.getComponentCssUrl(componentPath);
+        const extraCss = result.cssUrls.filter((url) => url !== ownCss);
+        if (extraCss.length > 0) {
+          body = extraCss.map(cssLinkTag).join('') + body;
+        }
+
+        return new Response(body, {
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'private, no-store',
+          },
         });
       };
-      const innerResolve = async (_event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => applyResolveOptions(await renderIsland(), resolveOpts);
-      return middleware ? middleware({ event: islandEvent, resolve: innerResolve }) : innerResolve(islandEvent);
+      const innerResolve = async (_event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> =>
+        applyResolveOptions(await renderIsland(), resolveOpts, 'deferredIsland');
+      // Middleware runs inside the island request's own context, matching page/api/file: `getRequestContext()` there sees
+      // this fetch's cookies and locals, not those of the page render that emitted the placeholder.
+      return requestContext.run(ctx, () => (middleware ? middleware({ event: islandEvent, resolve: innerResolve }) : innerResolve(islandEvent)));
     });
 
     // Gives `Mochi.email()` the live compile cache, so Svelte email templates render through the same registry as page routes.
@@ -1625,11 +1622,6 @@ export class Mochi {
       });
       stopImageSweeper = startImageCacheSweeper(imageRuntime.cache, imageRuntime.options.sweepIntervalMs);
     }
-
-    // Plain static serving of locally-imported image assets (`import x from './x.png'`), so it registers independently
-    // of `image.enabled`. The handler reads the global registry the build populated, letting new dev images appear
-    // without a route reload.
-    bunRoutes[`${registry.assetPrefix}/asset/:filename`] = withHead(createLocalAssetHandler(development));
 
     // The debug bar's Cache tab reads the entry count (GET) and empties the image cache (POST). It registers with the
     // debug bar rather than the image endpoint, since the tab always shows and acting on an empty cache is a no-op.
@@ -1706,7 +1698,18 @@ export class Mochi {
 
     const composedFetch = async (req: Request, server: Server<undefined>): Promise<Response> => {
       const url = buildPublicUrl(req, options.proxy);
-      if (trailingSlashPolicy) {
+
+      // Non-route requests run middleware too, so static-asset paths (`/_mochi/client/...` bundles) share the chain and a
+      // user `gzip()` compresses them like any other response. Kind is precomputed so middleware can branch on it.
+      const assetContent = registry.getClientFile(url.pathname);
+      const diskAsset =
+        assetContent === undefined ? (registry.getFontAsset(url.pathname) ?? registry.getImportedCssAsset(url.pathname) ?? getLocalImageAsset(url.pathname)) : undefined;
+      const publicDiskPath = assetContent === undefined && diskAsset === undefined ? publicFiles.get(url.pathname) : undefined;
+      const isStatic = assetContent !== undefined || diskAsset !== undefined || publicDiskPath !== undefined;
+
+      // Resolved before the redirect runs, or an extensionless static file (`/.well-known/acme-challenge/<token>`) is sent
+      // to a slashed URL that nothing serves.
+      if (trailingSlashPolicy && !isStatic) {
         const redirect = applyFilter('trailingSlash:redirect', trailingSlashRedirect(req.method, url, trailingSlashPolicy), { request: req, url, policy: trailingSlashPolicy });
         if (redirect) {
           return redirect;
@@ -1717,11 +1720,6 @@ export class Mochi {
         return csrfResponse;
       }
 
-      // Non-route requests run middleware too, so static-asset paths (`/_mochi/client/...` bundles) share the chain and a
-      // user `gzip()` compresses them like any other response. Kind is precomputed so middleware can branch on it.
-      const assetContent = registry.getClientFile(url.pathname);
-      const diskAsset = assetContent === undefined ? (registry.getFontAsset(url.pathname) ?? registry.getImportedCssAsset(url.pathname)) : undefined;
-      const publicDiskPath = assetContent === undefined && diskAsset === undefined ? publicFiles.get(url.pathname) : undefined;
       const kind: MochiEventKind = assetContent !== undefined || diskAsset !== undefined ? 'asset' : publicDiskPath !== undefined ? 'public' : userFetch ? 'fallback' : 'error';
 
       const event: MochiEvent = { request: req, url, server, locals: {}, kind, isWarmup: false };
@@ -1739,18 +1737,18 @@ export class Mochi {
           if (!development) {
             headers['Cache-Control'] = 'public, max-age=31536000, immutable';
           }
+          // Framework-owned bytes and user files alike skip `transformPage` — only documents are transformable.
           return applyResolveOptions(new Response(assetContent, { headers }), resolveOpts);
         }
         if (diskAsset !== undefined) {
           return applyResolveOptions(await serveDiskAsset(diskAsset, development), resolveOpts);
         }
         if (publicDiskPath !== undefined) {
-          const contentType = Bun.file(publicDiskPath).type || 'application/octet-stream';
-          return applyResolveOptions(await serveStaticFile({ diskPath: publicDiskPath, contentType }, { request: req }), resolveOpts);
+          return applyResolveOptions(await serveStaticFile({ diskPath: publicDiskPath }, { request: req }), resolveOpts);
         }
         if (userFetch) {
           const response = await userFetch(req, server);
-          return applyResolveOptions(response, resolveOpts);
+          return applyResolveOptions(response, resolveOpts, 'page');
         }
         return renderErrorResponse({
           req,

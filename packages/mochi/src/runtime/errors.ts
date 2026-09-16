@@ -72,7 +72,7 @@ export function createErrorResponder(deps: ErrorResponderDeps): {
         override = undefined;
       }
       if (override instanceof Response) {
-        return applyResolveOptions(override, resolveOpts);
+        return applyResolveOptions(override, resolveOpts, 'page');
       }
       if (override && typeof override === 'object') {
         if (typeof override.status === 'number' && typeof override.message === 'string') {
@@ -113,7 +113,7 @@ export function createErrorResponder(deps: ErrorResponderDeps): {
       status,
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     });
-    return applyResolveOptions(baseResponse, resolveOpts);
+    return applyResolveOptions(baseResponse, resolveOpts, 'page');
   };
 
   const routeErrorResponse: RouteErrorResponse = (req, event, resolveOpts, err) => {

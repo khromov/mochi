@@ -436,7 +436,7 @@ await Mochi.serve({ handle: sequence(auth), routes });
 
 ### `resolve` options
 
-SvelteKit's `resolve(event, { transformPageChunk, filterSerializedResponseHeaders })` maps to Mochi's `resolve(event, { transformPage, filterResponseHeaders })`. `transformPage({ html, done })` rewrites the HTML body. `filterResponseHeaders(name, value)` keeps or drops a header.
+SvelteKit's `resolve(event, { transformPageChunk, filterSerializedResponseHeaders })` maps to Mochi's `resolve(event, { transformPage, filterResponseHeaders })`. `transformPage({ html, done, kind })` rewrites the HTML body — unlike `transformPageChunk` it runs once with the whole document, and `kind` distinguishes a page from a [deferred-island fragment](/docs/transform-page/). `filterResponseHeaders(name, value)` keeps or drops a header.
 
 ```ts
 // file (SvelteKit): src/hooks.server.ts

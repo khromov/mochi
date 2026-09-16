@@ -32,6 +32,25 @@ export interface MochiEvent {
 }
 
 /**
+ * Which HTML surface `transformPage` was handed:
+ *
+ *  - `'page'`           — a whole document: a `Mochi.page` render, the error
+ *                         page, or HTML from the `fetch` fallback
+ *  - `'deferredIsland'` — the HTML *fragment* a `/_mochi/island/*` request
+ *                         returns, which the browser injects via `innerHTML`
+ *
+ * Files served straight from disk (`publicDir`, `Mochi.file()`) are the user's own bytes and never reach `transformPage`.
+ */
+export type MochiTransformKind = 'page' | 'deferredIsland';
+
+export interface MochiTransformPageInput {
+  html: string;
+  done: boolean;
+  /** Branch on this to leave island fragments alone — a `<script>` injected into one runs on every deferred island. */
+  kind: MochiTransformKind;
+}
+
+/**
  * Options passed to `resolve()` inside a Handle to customise how the response is produced.
  *
  * Merging behaviour under `sequence()`:
@@ -42,7 +61,7 @@ export interface MochiEvent {
  */
 export interface MochiResolveOptions {
   /** Transform the HTML body before it is sent; returning `undefined` replaces it with an empty string. */
-  transformPage?: (input: { html: string; done: boolean }) => string | undefined | Promise<string | undefined>;
+  transformPage?: (input: MochiTransformPageInput) => string | undefined | Promise<string | undefined>;
 
   /**
    * Return `true` to keep a header, `false` to drop it.
@@ -146,11 +165,11 @@ function mergeResolveOptions(parent: MochiResolveOptions, child?: MochiResolveOp
       let html = input.html;
 
       if (child.transformPage) {
-        html = (await child.transformPage({ html, done: input.done })) ?? '';
+        html = (await child.transformPage({ html, done: input.done, kind: input.kind })) ?? '';
       }
 
       if (parent.transformPage) {
-        html = (await parent.transformPage({ html, done: input.done })) ?? '';
+        html = (await parent.transformPage({ html, done: input.done, kind: input.kind })) ?? '';
       }
 
       return html;
@@ -162,21 +181,27 @@ function mergeResolveOptions(parent: MochiResolveOptions, child?: MochiResolveOp
   return merged;
 }
 
-/** Apply merged `MochiResolveOptions` to a Response: `transformPage` rewrites an HTML body, `filterResponseHeaders` drops the headers it rejects. */
-export async function applyResolveOptions(response: Response, opts: MochiResolveOptions | undefined): Promise<Response> {
+/**
+ * Apply merged `MochiResolveOptions` to a Response: `transformPage` rewrites an HTML body, `filterResponseHeaders` drops
+ * the headers it rejects. Omitting `transformKind` marks the response as one `transformPage` must not touch — files
+ * served verbatim from disk.
+ */
+export async function applyResolveOptions(response: Response, opts: MochiResolveOptions | undefined, transformKind?: MochiTransformKind): Promise<Response> {
   if (!opts) {
     return response;
   }
 
   let result = response;
 
-  if (opts.transformPage) {
+  if (opts.transformPage && transformKind) {
     const contentType = result.headers.get('Content-Type') ?? '';
     if (contentType.includes('text/html')) {
       const html = await result.text();
-      const transformed = (await opts.transformPage({ html, done: true })) ?? '';
+      const transformed = (await opts.transformPage({ html, done: true, kind: transformKind })) ?? '';
 
       const headers = new Headers(result.headers);
+      // The rewrite changed the byte count, so any length the handler declared is now a lie HEAD would repeat.
+      headers.delete('Content-Length');
       result = new Response(transformed, {
         status: result.status,
         statusText: result.statusText,

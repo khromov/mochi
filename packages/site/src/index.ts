@@ -103,7 +103,10 @@ const encodeDebugBarPaths: Handle = async ({ event, resolve }) => {
     return resolve(event);
   }
   return resolve(event, {
-    transformPage({ html }) {
+    transformPage({ html, kind }) {
+      if (kind !== 'page') {
+        return html;
+      }
       const { html: out, matched } = encodeDebugBarGlobals(html);
       // The match is coupled to the framework's exact `<script>window.X=…` emission. If a debug
       // global is present but nothing matched, the format drifted and phantom URLs are leaking
