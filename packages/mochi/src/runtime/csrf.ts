@@ -96,10 +96,8 @@ export function csrfBootWarning(options: {
 interface CsrfRejection {
   /** Cause fragment, reused when the filter substitutes a response of its own. */
   reason: string;
-  /** Emitted when the framework's own block survives the filter. */
-  blocked: string;
-  /** Emitted when development leniency lets the request through and nothing else rejected it. */
-  wouldBlock: string;
+  /** The line to log when this rejection is the effective outcome — the block in production, the forecast in development. */
+  warning: string;
 }
 
 interface CsrfOutcome {
@@ -107,6 +105,9 @@ interface CsrfOutcome {
   /** Null when the policy allowed the request outright — nothing to report either way. */
   rejection: CsrfRejection | null;
 }
+
+// Shared because the allow path runs on every request and nothing mutates the result.
+const ALLOW: CsrfOutcome = Object.freeze({ decision: null, rejection: null });
 
 /**
  * Resolve the framework's default CSRF decision and run it through the `csrf:check` filter, the single override point
@@ -123,27 +124,32 @@ export function csrfCheck(
   protectedMethods: ReadonlySet<string> = DEFAULT_PROTECTED_METHODS,
   trustedOrigins: ReadonlySet<string> = new Set(csrf?.trustedOrigins ?? []),
 ): Response | null {
-  const { decision, rejection } = csrfCheckDefault(request, url, csrf, proxy, development, formContentTypes, protectedMethods, trustedOrigins);
-  const filtered = applyFilter('csrf:check', decision, { request, url });
-  warnCsrfDecision(request, url, decision, filtered, rejection, development);
+  const outcome = csrfCheckDefault(request, url, csrf, proxy, development, formContentTypes, protectedMethods, trustedOrigins);
+  const filtered = applyFilter('csrf:check', outcome.decision, { request, url });
+  warnCsrfDecision(request, url, outcome, filtered, development);
   return filtered;
 }
 
 // Diagnostics run on the effective decision, never the default one, so an exemption is never announced as a block.
-function warnCsrfDecision(request: Request, url: URL, decision: Response | null, filtered: Response | null, rejection: CsrfRejection | null, development: boolean): void {
-  if (filtered) {
-    if (filtered === decision && rejection) {
-      logger.warn(rejection.blocked);
-      return;
-    }
+function warnCsrfDecision(request: Request, url: URL, { decision, rejection }: CsrfOutcome, filtered: Response | null, development: boolean): void {
+  // Only a registered filter can hand back something other than what it was given, so this line can never misattribute
+  // a framework block to a filter that isn't there.
+  if (filtered && filtered !== decision) {
     const because = rejection ? ` (${rejection.reason})` : '';
     logger.warn(`CSRF: blocking ${request.method} ${url.pathname} with the ${filtered.status} response returned by the csrf:check filter${because}.`);
     return;
   }
+  if (!rejection) {
+    return;
+  }
+  if (filtered) {
+    logger.warn(rejection.warning);
+    return;
+  }
   // A registered filter that returns null is byte-identical to one that delegates the development default of null, so
   // predicting production from here would be a guess — stay quiet and let the app own its own exemption.
-  if (development && rejection && !hasFilter('csrf:check')) {
-    logger.warn(rejection.wouldBlock);
+  if (development && !decision && !hasFilter('csrf:check')) {
+    logger.warn(rejection.warning);
   }
 }
 
@@ -157,30 +163,28 @@ function csrfCheckDefault(
   protectedMethods: ReadonlySet<string>,
   trustedOrigins: ReadonlySet<string>,
 ): CsrfOutcome {
-  const allow: CsrfOutcome = { decision: null, rejection: null };
   if (csrf?.checkOrigin === false) {
-    return allow;
+    return ALLOW;
   }
   if (!protectedMethods.has(request.method)) {
-    return allow;
+    return ALLOW;
   }
   if (!isFormContentType(request.headers.get('content-type'), formContentTypes)) {
-    return allow;
+    return ALLOW;
   }
 
   const message = `Cross-site ${request.method} form submissions are forbidden`;
   const expectedOriginConfigured = Boolean(proxy?.origin || proxy?.hostHeader);
   if (!expectedOriginConfigured) {
-    const rejection: CsrfRejection = {
-      reason: "no proxy.origin or proxy.hostHeader configured, so the expected origin can't be trusted",
-      blocked: `CSRF: blocking ${request.method} ${url.pathname} from origin ${request.headers.get('origin') ?? '<missing>'}: no proxy.origin or proxy.hostHeader configured, so the expected origin can't be trusted. Set Mochi.serve({ proxy: { origin: '...' } }).`,
-      wouldBlock: `CSRF: ${request.method} ${url.pathname} would be blocked in production: no proxy.origin or proxy.hostHeader configured, so the expected origin can't be trusted. Set Mochi.serve({ proxy: { origin: '...' } }) before deploying.`,
-    };
+    // Development never blocks here, so only one of the two lines is ever reachable per mode — build that one.
+    const reason = "no proxy.origin or proxy.hostHeader configured, so the expected origin can't be trusted";
     if (development) {
-      return { decision: null, rejection };
+      const warning = `CSRF: ${request.method} ${url.pathname} would be blocked in production: ${reason}. Set Mochi.serve({ proxy: { origin: '...' } }) before deploying.`;
+      return { decision: null, rejection: { reason, warning } };
     }
-    const reason = 'Mochi is running in production mode without proxy.origin or proxy.hostHeader configured.';
-    return { decision: csrfForbidden(request, message, reason), rejection };
+    const warning = `CSRF: blocking ${request.method} ${url.pathname} from origin ${request.headers.get('origin') ?? '<missing>'}: ${reason}. Set Mochi.serve({ proxy: { origin: '...' } }).`;
+    const detail = 'Mochi is running in production mode without proxy.origin or proxy.hostHeader configured.';
+    return { decision: csrfForbidden(request, message, detail), rejection: { reason, warning } };
   }
 
   const expectedOrigin = resolveExpectedOrigin(request, url, proxy);
@@ -188,19 +192,17 @@ function csrfCheckDefault(
   const expectedNormalized = normalizeOrigin(expectedOrigin);
   const originNormalized = origin ? normalizeOrigin(origin) : null;
   if (originNormalized && originNormalized === expectedNormalized) {
-    return allow;
+    return ALLOW;
   }
   if (originNormalized && [...trustedOrigins].some((t) => normalizeOrigin(t) === originNormalized)) {
-    return allow;
+    return ALLOW;
   }
 
-  const rejection: CsrfRejection = {
-    reason: `origin ${origin ?? '<missing>'} does not match expected ${expectedOrigin}`,
-    blocked: `CSRF: blocking ${request.method} ${url.pathname} — origin ${origin ?? '<missing>'} does not match expected ${expectedOrigin} (and is not in csrf.trustedOrigins=[${[...trustedOrigins].join(', ') || '<empty>'}]).`,
-    wouldBlock: `CSRF: cross-site ${request.method} ${url.pathname} from origin ${origin ?? '<missing>'} would be blocked in production (allowed: ${expectedOrigin}). Add it to csrf.trustedOrigins or set csrf.checkOrigin: false to allow.`,
-  };
+  const reason = `origin ${origin ?? '<missing>'} does not match expected ${expectedOrigin}`;
   if (development) {
-    return { decision: null, rejection };
+    const warning = `CSRF: cross-site ${request.method} ${url.pathname} from origin ${origin ?? '<missing>'} would be blocked in production (allowed: ${expectedOrigin}). Add it to csrf.trustedOrigins or set csrf.checkOrigin: false to allow.`;
+    return { decision: null, rejection: { reason, warning } };
   }
-  return { decision: csrfForbidden(request, message), rejection };
+  const warning = `CSRF: blocking ${request.method} ${url.pathname} — ${reason} (and is not in csrf.trustedOrigins=[${[...trustedOrigins].join(', ') || '<empty>'}]).`;
+  return { decision: csrfForbidden(request, message), rejection: { reason, warning } };
 }
