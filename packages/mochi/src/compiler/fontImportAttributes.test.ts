@@ -48,6 +48,27 @@ describe('scanImportAttributes', () => {
     ]);
   });
 
+  test('a regex literal holding a quote or backtick before an attributed import does not desync the scan', () => {
+    const IMPORT = `import './x.css' with { subset: 'ok' };`;
+    for (const regex of [`/'/`, `/"/`, '/`/', `/[/'"\`]+/g`, `/\\/'/`]) {
+      // Same line, next line, and every position a regex can take: after `=`, `(`, `[`, `return`, and as a statement.
+      expect(scanImportAttributes(`const re = ${regex}; ${IMPORT}`, 'script')).toEqual([{ specifier: './x.css', attributes: { subset: 'ok' }, line: 1 }]);
+      expect(scanImportAttributes(`const re = ${regex};\n${IMPORT}`, 'script')).toEqual([{ specifier: './x.css', attributes: { subset: 'ok' }, line: 2 }]);
+      const contexts = [`const a = ${regex}.test(s) ? f(${regex}, [${regex}]) : null;`, `if (x) return ${regex};`, `${regex}.lastIndex = 0;`, IMPORT].join('\n');
+      expect(scanImportAttributes(contexts, 'script')).toEqual([{ specifier: './x.css', attributes: { subset: 'ok' }, line: 4 }]);
+    }
+  });
+
+  test('division is not mistaken for a regex, so the import after it is still found', () => {
+    const source = [
+      `const half = total / 2;`,
+      `const ratio = (a) / b / c.length / 'x'.length;`,
+      `const perLine = list[0] / lines / (1 + n);`,
+      `import './x.css' with { subset: 'ok' };`,
+    ].join('\n');
+    expect(scanImportAttributes(source, 'script')).toEqual([{ specifier: './x.css', attributes: { subset: 'ok' }, line: 4 }]);
+  });
+
   test('decodes escapes in attribute values', () => {
     const source = `import './x.css' with { subset: "\\u00e9\\u{1F600}\\n\\t\\"" };`;
     expect(scanImportAttributes(source, 'script')[0]!.attributes.subset).toBe('é😀\n\t"');

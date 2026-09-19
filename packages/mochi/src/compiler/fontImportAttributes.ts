@@ -35,7 +35,7 @@ export const FONT_SUBSET_ATTRIBUTE_KEYS = ['subset', 'unicodeRange', 'weight', '
 /**
  * Bun's bundler accepts unknown import attributes but strips them before any plugin hook runs, so the only place they
  * can be read is the source text. `.svelte` files go through Svelte's own parser; scripts get a lexical scan that
- * skips strings and comments, since Bun's transpiler drops attributes from its output too.
+ * skips strings, comments and regex literals, since Bun's transpiler drops attributes from its output too.
  */
 export function scanImportAttributes(source: string, kind: 'svelte' | 'script'): ScannedImportAttributes[] {
   if (!/\bwith\s*\{/.test(source)) {
@@ -82,12 +82,18 @@ function scanSvelte(source: string): ScannedImportAttributes[] {
 
 const IMPORT_WITH = /import\s*(["'])((?:\\.|(?!\1)[^\\\n])*)\1\s*with\s*\{/y;
 const IDENT_CHAR = /[\w$]/;
+const WORD = /[\w$]+/y;
+// After these a `/` opens a regex literal (`return /x/`); after any other identifier or number it divides (`a / b`).
+const REGEX_AFTER_KEYWORDS = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'yield', 'await']);
 
 function scanScript(source: string): ScannedImportAttributes[] {
   const found: ScannedImportAttributes[] = [];
   const n = source.length;
   let i = 0;
   let line = 1;
+  // The previous significant token (a word, a punctuation character, or a quote standing for a literal) decides
+  // whether a `/` divides or opens a regex — the usual lexer heuristic, since a regex may hold any quote character.
+  let prev = '';
   while (i < n) {
     const ch = source[i]!;
     if (ch === '\n') {
@@ -105,11 +111,17 @@ function scanScript(source: string): ScannedImportAttributes[] {
       const stop = skipString(source, i);
       line += countNewlines(source, i, stop);
       i = stop;
+      prev = ch;
+    } else if (ch === '/' && regexCanFollow(prev)) {
+      const stop = skipRegex(source, i);
+      i = stop === -1 ? i + 1 : stop;
+      prev = '/';
     } else if (ch === 'i' && source.startsWith('import', i) && (i === 0 || !IDENT_CHAR.test(source[i - 1]!))) {
       IMPORT_WITH.lastIndex = i;
       const match = IMPORT_WITH.exec(source);
       if (!match) {
         i += 'import'.length;
+        prev = 'import';
         continue;
       }
       const parsed = readAttributeList(source, IMPORT_WITH.lastIndex);
@@ -120,11 +132,62 @@ function scanScript(source: string): ScannedImportAttributes[] {
       } else {
         i = IMPORT_WITH.lastIndex;
       }
+      prev = '}';
+    } else if (IDENT_CHAR.test(ch)) {
+      WORD.lastIndex = i;
+      prev = WORD.exec(source)![0];
+      i = WORD.lastIndex;
+    } else if (/\s/.test(ch)) {
+      i++;
     } else {
+      prev = ch;
       i++;
     }
   }
   return found;
+}
+
+function regexCanFollow(prev: string): boolean {
+  if (prev === '') {
+    return true;
+  }
+  // A closing paren/bracket or a literal is an operand, so the `/` divides; a closing brace ends a block.
+  if (prev === ')' || prev === ']' || prev === '"' || prev === "'" || prev === '`' || prev === '/') {
+    return false;
+  }
+  if (IDENT_CHAR.test(prev[0]!)) {
+    return REGEX_AFTER_KEYWORDS.has(prev);
+  }
+  return true;
+}
+
+/** Index just past a regex literal opening at `from`, flags included, or -1 when the line ends first (so the `/` divided after all). */
+function skipRegex(source: string, from: number): number {
+  let i = from + 1;
+  let inClass = false;
+  while (i < source.length) {
+    const ch = source[i]!;
+    if (ch === '\\') {
+      i += 2;
+    } else if (ch === '\n') {
+      return -1;
+    } else if (inClass) {
+      inClass = ch !== ']';
+      i++;
+    } else if (ch === '[') {
+      inClass = true;
+      i++;
+    } else if (ch === '/') {
+      i++;
+      while (i < source.length && IDENT_CHAR.test(source[i]!)) {
+        i++;
+      }
+      return i;
+    } else {
+      i++;
+    }
+  }
+  return -1;
 }
 
 const WHITESPACE_OR_COMMA = /[\s,]/;
