@@ -12,8 +12,8 @@ type SubsetFont = typeof import('subset-font').default;
 export class FontSubsetterUnavailableError extends Error {
   constructor(cause: unknown) {
     super(
-      'font subsetting needs the optional `subset-font` package (HarfBuzz compiled to WebAssembly): run `bun add -d subset-font`, ' +
-        'or remove the `subset` import attribute to ship the full font.',
+      'font subsetting could not load `subset-font` (HarfBuzz compiled to WebAssembly), a dependency of mochi-framework: ' +
+        `reinstall dependencies, or remove the \`subset\` import attribute to ship the full font. ${cause instanceof Error ? cause.message : String(cause)}`,
       { cause },
     );
     this.name = 'FontSubsetterUnavailableError';

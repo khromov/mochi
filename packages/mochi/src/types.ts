@@ -763,8 +763,8 @@ export interface MochiFontOptions {
   preload?: boolean;
   /**
    * Honour `import '…' with { subset: … }` attributes on CSS imports, subsetting each `@font-face` to the glyphs named
-   * there (needs the optional `subset-font` package). `false` ships the full fonts and ignores the attributes, which
-   * is the quick way to check whether a subset is what broke a glyph. Default: `true`.
+   * there. `false` ships the full fonts and ignores the attributes, which is the quick way to check whether a subset is
+   * what broke a glyph. Default: `true`.
    */
   subset?: boolean;
 }
