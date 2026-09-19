@@ -326,7 +326,7 @@ export interface MochiManifestComponent {
 
 export interface MochiManifest {
   /**
-   * Schema version of the on-disk build output; the runtime loads only the exact version it writes (currently 3)
+   * Schema version of the on-disk build output; the runtime loads only the exact version it writes (currently 4)
    * and throws on anything else, so build and serve must use the same `mochi-framework` version.
    *
    * Every manifest path is relative, in one of three families:
@@ -335,7 +335,7 @@ export interface MochiManifest {
    *   resolved against the manifest's own directory.
    * - **Sources** used as lookup keys (`components` keys, `hydratables[].resolvedPath`,
    *   `cssComponents`, `cssFileUrls` keys, `serverIslandPaths`, `importedCssUrls` keys,
-   *   `entryImportedCss` keys and values) — POSIX, project-root relative, with framework-owned
+   *   `entryImportedCss` keys and values, `trackedCss`, `islandCss` keys and values) — POSIX, project-root relative, with framework-owned
    *   sources under a `$mochi/` sentinel. Both ends take the root from `process.cwd()`, so
    *   `mochi-framework build` and the server must run from the same working directory.
    * - **`stats.outputs[].inputs[].path`** — build-cwd relative, as Bun's metafile emits it, and diagnostic only.
@@ -378,6 +378,10 @@ export interface MochiManifest {
   importedCssFontPreloads?: Record<string, string[]>;
   /** Maps encoded page entry path (see `version`) → the CSS-import paths reachable from it, likewise encoded. */
   entryImportedCss?: Record<string, string[]>;
+  /** Encoded source paths (see `version`) of components whose SSR output reports itself on render, so their stylesheets are linked only when they rendered. */
+  trackedCss?: string[];
+  /** Maps encoded island source path (see `version`) → every styled component in its static import graph, likewise encoded; all linked whenever that island renders. */
+  islandCss?: Record<string, string[]>;
   /** Prebuilt, minified ServerIsland inline web-component script, emitted by `build()` so production loads it from disk in place of a startup `Bun.build`. */
   serverIslandScript?: string;
   /**

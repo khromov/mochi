@@ -49,6 +49,16 @@ The Svelte compiler handles `<style>` inside a `.svelte` file. Mochi extracts th
 </style>
 ```
 
+<VersionNote since="0.10.0" message="Earlier versions link the stylesheet of every component in the page's import graph." />
+
+Only components that actually rendered get a `<link>`: a component behind an untaken `{#if}`, or one of several variants a parent picks between, ships no CSS on that response. The same applies to a `mochi:defer` fragment. Hydrated islands are the exception, as an island can render a component in the browser that never rendered on the server, so every styled component in an island's import graph stays linked whenever the island is on the page.
+
+<Callout type="info">
+
+A component whose `<style>` has `:global(...)` rules, or unscoped at-rules such as `@font-face`, is always linked, rendered or not: those rules apply to the whole page, so they keep the old behaviour. Move them to a side-effect CSS import if the component should be prunable.
+
+</Callout>
+
 ### Fonts
 
 <VersionNote since="0.10.0" message="Earlier versions inline every font into the bundled CSS as a base64 data: URI." />
