@@ -2,8 +2,8 @@
 /// <reference lib="dom.iterable" />
 
 import '../debug-bar/types';
+import { BOOTSTRAP_MARKER_ATTR } from '../islands/bootstrapMarker';
 import { isReloadableIslandName, notifyDeferredIslandChange, registerDeferredIsland, unregisterDeferredIsland } from '../islands/deferInvalidation';
-import { activateIslandScripts } from './activateIslandScripts';
 
 // Key must match sharedCssTracker.ts for cross-bundle dedup with HydratableIsland.
 const _css: Set<string> = ((globalThis as unknown as Record<string, unknown>).__mochi_loaded_css__ ??= new Set()) as Set<string>;
@@ -185,8 +185,23 @@ class ServerIsland extends HTMLElement {
         // SAFETY: HTML comes from our own same-origin server-island endpoint with encrypted props.
         // If the island endpoint ever returns user-controlled content, this must be sanitized.
         this.innerHTML = html;
-        activateIslandScripts(this);
         this._everLoaded = true;
+
+        // The endpoint leads a fragment that carries hydratables with a marker naming the bootstrap module (see
+        // bootstrapMarker.ts). Dynamic import goes through the module map, so a bootstrap the page already shipped is
+        // neither fetched nor evaluated again, and islands landing together share one load.
+        const marker = this.firstElementChild;
+        const bootstrapUrl = marker?.getAttribute(BOOTSTRAP_MARKER_ATTR);
+        if (marker && bootstrapUrl) {
+          marker.remove();
+          import(new URL(bootstrapUrl, document.baseURI).href).catch((err) => {
+            const msg = `${tag} failed to load the hydration bootstrap ${bootstrapUrl}: ${err}`;
+            if (ll !== 'silent') {
+              console.error(msg);
+            }
+            window.__mochi_warn?.(msg);
+          });
+        }
         return true;
       } catch (err) {
         lastErr = err;

@@ -22,6 +22,7 @@ import {
   FRAMEWORK_OWNED_BUN_KEYS,
 } from './types';
 import { HYDRATABLE_CONTEXT_KEY } from './islands/isHydratable';
+import { BOOTSTRAP_MARKER_ATTR } from './islands/bootstrapMarker';
 import type {
   BunRouteValue,
   HttpMethod,
@@ -1649,14 +1650,6 @@ export class Mochi {
           body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
         }
 
-        // Appended whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain
-        // mochi:hydrate children, or inlined also-hydrate islands — so the fragment self-hydrates even on a page that
-        // shipped no bootstrap of its own; duplicate module scripts are no-ops by src.
-        const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
-        if (bootstrapUrl) {
-          body += `<script type="module" src="${bootstrapUrl}"></script>`;
-        }
-
         // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`
         // tags are prepended here along with side-effect CSS imports; browsers honour a `<link>` assigned via `innerHTML`.
         // The island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
@@ -1664,6 +1657,14 @@ export class Mochi {
         const extraCss = result.cssUrls.filter((url) => url !== ownCss);
         if (extraCss.length > 0) {
           body = extraCss.map(cssLinkTag).join('') + body;
+        }
+
+        // Whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain mochi:hydrate
+        // children, or inlined also-hydrate islands — the fragment leads with a marker naming the bootstrap, since a
+        // page whose only hydratable is deferred ships none and a `<script>` in the fragment would stay inert.
+        const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
+        if (bootstrapUrl) {
+          body = `<template ${BOOTSTRAP_MARKER_ATTR}="${escapeHtmlAttr(bootstrapUrl)}"></template>` + body;
         }
 
         return new Response(body, {
