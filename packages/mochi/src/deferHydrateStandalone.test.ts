@@ -1,6 +1,7 @@
 // A page whose only hydratable island is deferred renders no island in its SSR output, so it ships no hydration
-// bootstrap — the deferred fragment has to carry one. Asserts both halves of that contract; the client half (running
-// a script that arrived through `innerHTML`) lives in web-components/ServerIslandScripts.client.test.ts.
+// bootstrap — the deferred fragment has to carry one, as its last tag, and the shell tells the client whether the page
+// already did. Asserts the server side of that contract; the client half (running a script that arrived through
+// `innerHTML`, only when needed) lives in web-components/ServerIslandScripts.client.test.ts.
 // Separate file because Mochi.serve() is one-per-process.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -10,6 +11,9 @@ import { Mochi } from './Mochi';
 
 const FIXTURES = path.join(import.meta.dir, '__fixtures__', 'defer-hydrate-standalone');
 const BOOTSTRAP = /<script type="module" src="\/_mochi\/client\/HydratableIsland-[^"]+\.js"><\/script>/;
+const BOOTSTRAP_LAST = /<script type="module" src="\/_mochi\/client\/HydratableIsland-[^"]+\.js"><\/script>$/;
+const SERVER_ISLAND_RUNTIME = '<script>(()=>{';
+const SERVER_ISLAND_RUNTIME_WITH_BOOTSTRAP = '<script>(()=>{window.__mochi_bootstrap=true;';
 
 describe("a deferred island is the page's only hydratable", () => {
   let server: Server<undefined>;
@@ -36,6 +40,7 @@ describe("a deferred island is the page's only hydratable", () => {
         '/': Mochi.page(path.join(FIXTURES, 'Page.svelte')),
         '/visible': Mochi.page(path.join(FIXTURES, 'VisiblePage.svelte')),
         '/nested': Mochi.page(path.join(FIXTURES, 'NestedPage.svelte')),
+        '/mixed': Mochi.page(path.join(FIXTURES, 'MixedPage.svelte')),
       },
     });
     base = `http://localhost:${server.port}`;
@@ -46,33 +51,49 @@ describe("a deferred island is the page's only hydratable", () => {
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  test('mochi:defer mochi:hydrate — the page ships no bootstrap and the fragment carries one', async () => {
+  test('mochi:defer mochi:hydrate — the page ships no bootstrap and the fragment ends with one', async () => {
     const page = await (await fetch(`${base}/`)).text();
     expect(page).not.toMatch(BOOTSTRAP);
+    expect(page).toContain(SERVER_ISLAND_RUNTIME);
+    expect(page).not.toContain(SERVER_ISLAND_RUNTIME_WITH_BOOTSTRAP);
 
     const { wrapper, body } = await islandHtml(page);
     expect(wrapper).toContain('also-hydrate="eager"');
     expect(body).toContain('<mochi-hydratable-island');
-    expect(body).toMatch(BOOTSTRAP);
+    expect(body).toMatch(BOOTSTRAP_LAST);
   });
 
   test('mochi:defer:visible mochi:hydrate — same, behind the observer', async () => {
     const page = await (await fetch(`${base}/visible`)).text();
     expect(page).not.toMatch(BOOTSTRAP);
+    expect(page).not.toContain(SERVER_ISLAND_RUNTIME_WITH_BOOTSTRAP);
 
     const { wrapper, body } = await islandHtml(page);
     expect(wrapper).toContain('defer-on="visible"');
     expect(body).toContain('<mochi-hydratable-island');
-    expect(body).toMatch(BOOTSTRAP);
+    expect(body).toMatch(BOOTSTRAP_LAST);
   });
 
   // A plain `mochi:defer` never hydrates itself, but a `mochi:hydrate` child rendered only inside the fragment does.
   test('a mochi:hydrate child inside a plain mochi:defer gets a bootstrap too', async () => {
     const page = await (await fetch(`${base}/nested`)).text();
     expect(page).not.toMatch(BOOTSTRAP);
+    expect(page).not.toContain(SERVER_ISLAND_RUNTIME_WITH_BOOTSTRAP);
 
     const { body } = await islandHtml(page);
     expect(body).toContain('<mochi-hydratable-island');
-    expect(body).toMatch(BOOTSTRAP);
+    expect(body).toMatch(BOOTSTRAP_LAST);
+  });
+
+  test('a page that ships the bootstrap says so ahead of the server-island runtime', async () => {
+    const page = await (await fetch(`${base}/mixed`)).text();
+    expect(page).toMatch(BOOTSTRAP);
+    expect(page).toContain(SERVER_ISLAND_RUNTIME_WITH_BOOTSTRAP);
+    // The tag itself comes first in the slot, so the flag never claims a bootstrap the parser has not seen yet.
+    expect(page.search(BOOTSTRAP)).toBeLessThan(page.indexOf(SERVER_ISLAND_RUNTIME_WITH_BOOTSTRAP));
+
+    // The fragment still carries its own copy, which the client now leaves alone.
+    const { body } = await islandHtml(page);
+    expect(body).toMatch(BOOTSTRAP_LAST);
   });
 });

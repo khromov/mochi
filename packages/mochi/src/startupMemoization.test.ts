@@ -15,6 +15,8 @@ describe('startup memoization', () => {
     // so their presence proves the element is actually defined, not just referenced.
     expect(script).toContain('customElements.define');
     expect(script).toContain('mochi-server-island');
+    // Inlined into a `<script>` by the shell: a closing-tag literal anywhere in the bundle ends the element early.
+    expect(script).not.toContain('</script');
   });
 
   // Relies on run-tests.ts per-file process isolation for fresh module-level

@@ -11,6 +11,8 @@ declare global {
     __mochi_live_reload_status?: 'connected' | 'reconnecting' | 'disconnected';
     __mochi_log_level?: LogLevel;
     __mochi_page_entry?: string;
+    /** The document holds a live hydration bootstrap script — shipped by the shell, or activated from a server island. */
+    __mochi_bootstrap?: true;
   }
 }
 

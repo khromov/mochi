@@ -318,6 +318,9 @@ export class Mochi {
       registry.development ? ISLAND_FAILURE_DEV_CSS : ''
     }</style>\n`;
     const serverIslandScript = `<script>(()=>{${serverIslandClientJs}})()</script>`;
+    // Seeded when the page carries the bootstrap tag (emitted just before this script in the same slot), so a
+    // server-island swap never has to look for one in its fragment; see `ServerIsland.ts`.
+    const serverIslandScriptWithBootstrap = `<script>(()=>{window.__mochi_bootstrap=true;${serverIslandClientJs}})()</script>`;
     const liveReloadTail = liveReloadClientJs ? `<script>${liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : '';
     const toolbarDiv = registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : '';
     const assetPrefixJson = JSON.stringify(registry.assetPrefix);
@@ -357,7 +360,7 @@ export class Mochi {
       const body = result.body + debugInfoScript + pageEntryScript + toolbarDiv;
       const script =
         (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
-        (result.hasServerIslands ? serverIslandScript : '') +
+        (result.hasServerIslands ? (bootstrapUrl ? serverIslandScriptWithBootstrap : serverIslandScript) : '') +
         (debugBarUrl ? `<script type="module" src="${debugBarUrl}"></script><script>window.__mochi_asset_prefix=${assetPrefixJson}</script>` : '') +
         liveReloadTail;
 
@@ -1651,7 +1654,8 @@ export class Mochi {
 
         // Appended whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain
         // mochi:hydrate children, or inlined also-hydrate islands — so the fragment self-hydrates even on a page that
-        // shipped no bootstrap of its own; duplicate module scripts are no-ops by src.
+        // shipped no bootstrap of its own. It must stay the fragment's last tag: `ServerIsland.ts` decides whether to
+        // activate it from the body's tail alone.
         const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
         if (bootstrapUrl) {
           body += `<script type="module" src="${bootstrapUrl}"></script>`;

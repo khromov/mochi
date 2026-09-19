@@ -185,7 +185,11 @@ class ServerIsland extends HTMLElement {
         // SAFETY: HTML comes from our own same-origin server-island endpoint with encrypted props.
         // If the island endpoint ever returns user-controlled content, this must be sanitized.
         this.innerHTML = html;
-        activateIslandScripts(this);
+        // Only until the document holds a live bootstrap (shipped by the shell or an earlier swap): the endpoint puts the
+        // innerHTML-inert one last, and the tail check omits the `<` because this bundle is inlined into a `<script>` tag.
+        if (!window.__mochi_bootstrap && html.endsWith('/script>') && activateIslandScripts(this)) {
+          window.__mochi_bootstrap = true;
+        }
         this._everLoaded = true;
         return true;
       } catch (err) {
