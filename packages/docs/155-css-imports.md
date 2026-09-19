@@ -84,7 +84,7 @@ await Mochi.serve({
 
 <VersionNote since="0.10.0" message="Earlier versions ignore import attributes on CSS imports and ship the full font." />
 
-A decorative font used for one line of text ships every glyph it has. Put the text on the import instead, and Mochi keeps only the glyphs that text needs:
+A font file carries every glyph, and a variable one every weight. When you know the text a font renders, put it on the import and Mochi strips the file down to those glyphs — a 75 kB file becomes a few kB, small enough to inline:
 
 ```svelte
 <!-- file: src/Hero.svelte -->
@@ -95,29 +95,23 @@ A decorative font used for one line of text ships every glyph it has. Put the te
 <p class="note">It's animated!</p>
 ```
 
-Attributes are strings, and all of them are optional apart from one of `subset` / `unicodeRange`:
+| Attribute       | Keeps                                                                                          |
+| --------------- | ---------------------------------------------------------------------------------------------- |
+| `subset`        | The characters of this text.                                                                   |
+| `unicodeRange`  | Codepoint ranges in CSS syntax: `'U+0020-007E, U+00A0-00FF'`.                                  |
+| `weight`        | Pins a variable font's `wght` axis to one value.                                               |
+| `axes`          | Pins other axes: `'wdth=87.5, slnt=-10'`.                                                      |
+| `layoutClosure` | `'full'` (default) keeps ligatures and alternates the text could trigger; `'none'` drops them. |
 
-| Attribute       | Keeps                                                                                                     |
-| --------------- | --------------------------------------------------------------------------------------------------------- |
-| `subset`        | The characters of this text.                                                                              |
-| `unicodeRange`  | Codepoint ranges in CSS syntax: `'U+0020-007E, U+00A0-00FF'`.                                             |
-| `weight`        | Pins the `wght` axis of a variable font to one value, instancing it to a static face.                     |
-| `axes`          | Pins other axes: `'wdth=87.5, slnt=-10'`.                                                                 |
-| `layoutClosure` | `'full'` (default) keeps ligatures and contextual alternates the text could trigger; `'none'` drops them. |
-
-Caveat's latin file is 75 kB. With the text alone it is 8 kB; pinned to weight 500, 5 kB; without layout closure, 2.4 kB — under `inlineThreshold`, so it lands in the stylesheet as a `data:` URI and the page makes no font request and needs no preload. Each `mochi-framework build` and dev rebundle logs the before/after size per font.
-
-To change which glyphs are kept, change the string. Sites that import the same stylesheet merge their requests: two components asking for `'Hello'` and `'World'` share one file holding both. A different `weight` (or `axes`, or `layoutClosure`) becomes a second `@font-face` for the same family, with its `font-weight` descriptor rewritten to the pinned value so the browser picks the right one. Faces whose `unicode-range` shares nothing with the request (the cyrillic file, for latin text) are dropped from the stylesheet.
-
-The attribute works from `.ts` and `.js` modules too. Subsetting runs where the font is extracted, so a subset above the threshold is served and preloaded like any other font, and its filename is a hash of the subset bytes.
+To change which glyphs are kept, change the string. Imports of the same stylesheet merge, so two components asking for different text share one file. The attribute works from `.ts` and `.js` modules too.
 
 <Callout type="warning">
 
-A character the subset lacks renders in the next font of the `font-family` stack, and nothing in the build can tell — only the cascade knows which text ends up in which family. In dev, Mochi checks the rendered page in the browser after fonts load and warns in the console (and the debug bar) with the missing characters. Pin `weight` only when every use of the family is that weight; text asking for another weight falls back to synthesis.
+The limitation is that you must know the text at build time. A character the subset lacks renders in the next font of the stack; in dev, Mochi checks the rendered page after fonts load and warns in the console with the missing characters.
 
 </Callout>
 
-Subsetting needs the optional [`subset-font`](https://www.npmjs.com/package/subset-font) package (HarfBuzz compiled to WebAssembly, loaded only when an import carries a `subset`): `bun add -d subset-font`. Without it a `subset` import is a build error. `fonts: { subset: false }` ignores the attributes everywhere and ships the full fonts, which is the quickest way to check whether a subset is what changed a glyph.
+`fonts: { subset: false }` ignores the attributes and ships the full fonts.
 
 ### Dev mode
 
