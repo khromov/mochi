@@ -125,6 +125,7 @@ import { installMemoryPressureHandler, removeMemoryPressureHandler } from './run
 import { registerStaticDirRoutes, resolveStaticDirs } from './runtime/staticDirs';
 import { createCronJob, cronSignature, type MochiCronHandler, type MochiCronJob, type MochiCronOptions } from './cron';
 import { startDevWatcher } from './dev/devWatcher';
+import { rangesByFamily } from './compiler/fontImportAttributes';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './dev/pageCacheAdminRoutes';
 import { liveReloadGreeting } from './dev/liveReloadGeneration';
 import { createProtectionRuntime } from './protection/gate';
@@ -299,6 +300,8 @@ export class Mochi {
     config: {
       serverIslandClientJs: string;
       liveReloadClientJs: string;
+      /** Dev-only missing-glyph check for subsetted fonts; empty in production. */
+      fontSubsetCheckClientJs: string;
       logLevel: LogLevel;
       /** Reads the current shell template (reassigned on dev shell edits). */
       getTemplate: () => string;
@@ -307,7 +310,7 @@ export class Mochi {
       fontPreload: boolean;
     },
   ): (result: RenderResult, opts?: { debugInfo?: DebugBarData; pageEntry?: string }) => string {
-    const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate, getSpeculationRules, fontPreload } = config;
+    const { serverIslandClientJs, liveReloadClientJs, fontSubsetCheckClientJs, logLevel, getTemplate, getSpeculationRules, fontPreload } = config;
 
     const logLevelScript = logLevel === DEFAULT_LOG_LEVEL ? '' : `<script>window.__mochi_log_level=${JSON.stringify(logLevel)}</script>`;
     // Feeds the debug bar's Warnings panel. When the debug bar is off the
@@ -356,10 +359,15 @@ export class Mochi {
       const head = logLevelScript + warnShim + speculationRulesScript + result.head;
       const css = cssStylePrefix + cssLinks;
       const body = result.body + debugInfoScript + pageEntryScript + toolbarDiv;
+      const fontSubsetCheck =
+        fontSubsetCheckClientJs && result.fontSubsetFaces
+          ? `<script>window.__mochi_font_subsets=${jsonForHtml(rangesByFamily(result.fontSubsetFaces))}</script><script>${fontSubsetCheckClientJs}</script>`
+          : '';
       const script =
         (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
         (result.hasServerIslands ? serverIslandScript : '') +
         (debugBarUrl ? `<script type="module" src="${debugBarUrl}"></script><script>window.__mochi_asset_prefix=${assetPrefixJson}</script>` : '') +
+        fontSubsetCheck +
         liveReloadTail;
 
       let out = '';
@@ -682,12 +690,14 @@ export class Mochi {
     // build it on demand. LiveReload is dev-only, so it's never prebuilt.
     const serverIslandClientJs = registry.serverIslandClientJs ?? (await buildInlineWebComponent('./web-components/ServerIsland.ts'));
     const liveReloadClientJs = liveReloadEnabled ? await buildInlineWebComponent('./web-components/LiveReload.ts') : '';
+    const fontSubsetCheckClientJs = registry.development ? await buildInlineWebComponent('./dev/FontSubsetCheck.ts') : '';
 
     // Precompute request-invariant shell fragments once; `getTemplate` reads the
     // live `shellTemplate` so dev shell edits (reloadShell) are picked up.
     const renderShell = Mochi.createShellRenderer(registry, {
       serverIslandClientJs,
       liveReloadClientJs,
+      fontSubsetCheckClientJs,
       logLevel: resolvedLogLevel,
       getTemplate: () => shellTemplate,
       getSpeculationRules: () => speculationRules,
