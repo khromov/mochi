@@ -3,9 +3,22 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'nod
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
+import { parseCss } from './compiler/cssAst';
 
 const FIXTURE = path.join(import.meta.dir, '__fixtures__', 'fonts', 'caveat-latin-wght-normal.woff2');
 const TEXT = "It's animated!";
+
+/** `href`s of the `<link>`s matching `selector`, read with Bun's HTML parser rather than by eye. */
+async function linkHrefs(html: string, selector: string): Promise<string[]> {
+  const hrefs: string[] = [];
+  const rewriter = new HTMLRewriter().on(selector, {
+    element(element) {
+      hrefs.push(element.getAttribute('href') ?? '');
+    },
+  });
+  await rewriter.transform(new Response(html)).text();
+  return hrefs;
+}
 
 // End to end through Mochi.serve in dev: what the browser receives for a subset that inlines, and for one that is served.
 describe('font subsetting through Mochi.serve', () => {
@@ -53,33 +66,37 @@ describe('font subsetting through Mochi.serve', () => {
   });
 
   async function stylesheet(html: string): Promise<string> {
-    const href = html.match(/<link rel="stylesheet" href="([^"]+import-css[^"]+)"/)?.[1];
+    const href = (await linkHrefs(html, 'link[rel="stylesheet"]')).find((url) => url.includes('/import-css/'));
     expect(href).toBeDefined();
     return (await fetch(`${base}${href}`)).text();
   }
 
   test('a subset under the inline threshold ships inside the stylesheet: no font request, no preload', async () => {
-    expect(inlinedHtml).not.toContain('rel="preload" as="font"');
+    expect(await linkHrefs(inlinedHtml, 'link[rel="preload"][as="font"]')).toEqual([]);
     const css = await stylesheet(inlinedHtml);
-    expect(css).toMatch(/url\(data:font\/woff2;base64,[A-Za-z0-9+/=]+\)/);
-    expect(css).not.toContain('/_mochi/fonts/');
+    const document = parseCss(css)!;
+    expect(document.fontFaces[0]!.sources[0]!.url!.value.startsWith('data:font/woff2;base64,')).toBe(true);
+    expect(document.urls.some((url) => url.value.startsWith('/_mochi/fonts/'))).toBe(false);
     expect(css).toContain('font-weight:500');
   });
 
   test('a larger subset is served as a content-hashed file and preloaded', async () => {
-    const preload = servedHtml.match(/<link rel="preload" as="font"[^>]*href="([^"]+)"/)?.[1];
-    expect(preload).toMatch(/^\/_mochi\/fonts\/caveat-latin-wght-normal-[0-9a-f]{8}\.woff2$/);
+    const [preload] = await linkHrefs(servedHtml, 'link[rel="preload"][as="font"]');
+    expect(preload).toBeDefined();
+    expect(preload!.startsWith('/_mochi/fonts/caveat-latin-wght-normal-')).toBe(true);
+    expect(preload!.endsWith('.woff2')).toBe(true);
     const css = await stylesheet(servedHtml);
-    expect(css).toContain(`url(${preload})`);
+    expect(parseCss(css)!.fontFaces[0]!.sources[0]!.url!.value).toBe(preload!);
     const font = await fetch(`${base}${preload}`);
     expect(font.status).toBe(200);
     expect(font.headers.get('content-type')).toContain('font/woff2');
     expect((await font.bytes()).length).toBe(8160);
   });
 
-  test('dev pages carry the browser-side missing-glyph check for the subsetted family', () => {
-    expect(inlinedHtml).toContain('font subset for');
-    expect(inlinedHtml).toContain('"caveat variable":[[');
-    expect(servedHtml).toContain('font subset for');
+  test('dev pages carry the browser-side missing-glyph check with the page family ranges', () => {
+    for (const html of [inlinedHtml, servedHtml]) {
+      expect(html).toContain('window.__mochi_font_subsets={"caveat variable":[[');
+      expect(html).toContain('font subset for');
+    }
   });
 });
