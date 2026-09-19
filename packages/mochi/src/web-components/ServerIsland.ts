@@ -2,6 +2,7 @@
 /// <reference lib="dom.iterable" />
 
 import '../debug-bar/types';
+import { BOOTSTRAP_MARKER_ATTR } from '../islands/bootstrapMarker';
 import { isReloadableIslandName, notifyDeferredIslandChange, registerDeferredIsland, unregisterDeferredIsland } from '../islands/deferInvalidation';
 
 // Key must match sharedCssTracker.ts for cross-bundle dedup with HydratableIsland.
@@ -185,6 +186,21 @@ class ServerIsland extends HTMLElement {
         // If the island endpoint ever returns user-controlled content, this must be sanitized.
         this.innerHTML = html;
         this._everLoaded = true;
+
+        // A `<script>` set via innerHTML never runs, so the endpoint names the bootstrap in a leading marker instead.
+        // The module map dedupes this import against a bootstrap the page already shipped.
+        const marker = this.firstElementChild;
+        const bootstrapUrl = marker?.getAttribute(BOOTSTRAP_MARKER_ATTR);
+        if (marker && bootstrapUrl) {
+          marker.remove();
+          import(new URL(bootstrapUrl, document.baseURI).href).catch((err) => {
+            const msg = `${tag} failed to load the hydration bootstrap ${bootstrapUrl}: ${err}`;
+            if (ll !== 'silent') {
+              console.error(msg);
+            }
+            window.__mochi_warn?.(msg);
+          });
+        }
         return true;
       } catch (err) {
         lastErr = err;
