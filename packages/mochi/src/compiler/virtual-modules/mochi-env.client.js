@@ -56,6 +56,8 @@ export { trailingSlashIt } from "__MOCHI_TRAILING_SLASH__";
 // into client bundles, but this stub keeps the module surface
 // symmetric and produces a clear error if anyone imports it.
 export function emitIslandProps() { __serverOnly("emitIslandProps()"); }
+// Only injected into server output; a no-op here keeps the module surface symmetric.
+export function markRenderedCss() {}
 // mochiEvents is a server-side bus. On the client we ship a stub so
 // bundles don't pull in mitt and accidental emits surface in the
 // console instead of silently misbehaving. Subscribers registered
