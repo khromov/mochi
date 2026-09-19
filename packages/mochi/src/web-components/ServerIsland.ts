@@ -187,9 +187,8 @@ class ServerIsland extends HTMLElement {
         this.innerHTML = html;
         this._everLoaded = true;
 
-        // The endpoint leads a fragment that carries hydratables with a marker naming the bootstrap module (see
-        // bootstrapMarker.ts). Dynamic import goes through the module map, so a bootstrap the page already shipped is
-        // neither fetched nor evaluated again, and islands landing together share one load.
+        // A `<script>` set via innerHTML never runs, so the endpoint names the bootstrap in a leading marker instead.
+        // The module map dedupes this import against a bootstrap the page already shipped.
         const marker = this.firstElementChild;
         const bootstrapUrl = marker?.getAttribute(BOOTSTRAP_MARKER_ATTR);
         if (marker && bootstrapUrl) {

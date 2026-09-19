@@ -1659,9 +1659,8 @@ export class Mochi {
           body = extraCss.map(cssLinkTag).join('') + body;
         }
 
-        // Whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain mochi:hydrate
-        // children, or inlined also-hydrate islands — the fragment leads with a marker naming the bootstrap, since a
-        // page whose only hydratable is deferred ships none and a `<script>` in the fragment would stay inert.
+        // A page whose only hydratables are deferred ships no bootstrap, and a `<script>` in the fragment would stay
+        // inert, so the fragment names it in a marker that the wrapper element imports (see ServerIsland.ts).
         const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
         if (bootstrapUrl) {
           body = `<template ${BOOTSTRAP_MARKER_ATTR}="${escapeHtmlAttr(bootstrapUrl)}"></template>` + body;
