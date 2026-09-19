@@ -3,6 +3,7 @@
 
 import '../debug-bar/types';
 import { isReloadableIslandName, notifyDeferredIslandChange, registerDeferredIsland, unregisterDeferredIsland } from '../islands/deferInvalidation';
+import { activateIslandScripts } from './activateIslandScripts';
 
 // Key must match sharedCssTracker.ts for cross-bundle dedup with HydratableIsland.
 const _css: Set<string> = ((globalThis as unknown as Record<string, unknown>).__mochi_loaded_css__ ??= new Set()) as Set<string>;
@@ -184,6 +185,7 @@ class ServerIsland extends HTMLElement {
         // SAFETY: HTML comes from our own same-origin server-island endpoint with encrypted props.
         // If the island endpoint ever returns user-controlled content, this must be sanitized.
         this.innerHTML = html;
+        activateIslandScripts(this);
         this._everLoaded = true;
         return true;
       } catch (err) {
