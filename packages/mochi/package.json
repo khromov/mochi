@@ -85,6 +85,7 @@
     "@mochi-framework/svelte-shaker": ">=0.0.1",
     "@tailwindcss/node": "^4.3.0",
     "@tailwindcss/oxide": "^4.3.0",
+    "subset-font": ">=2.7.0",
     "svelte": "^5.56.6"
   },
   "peerDependenciesMeta": {
@@ -98,6 +99,9 @@
       "optional": true
     },
     "@tailwindcss/oxide": {
+      "optional": true
+    },
+    "subset-font": {
       "optional": true
     }
   },
@@ -130,6 +134,7 @@
     "@types/smtp-server": "3.5.13",
     "fast-check": "4.9.0",
     "smtp-server": "3.19.2",
+    "subset-font": "^2.7.0",
     "svelte": "^5.56.8",
     "svelte-check": "4.7.4",
     "typescript": "^6.0.3"

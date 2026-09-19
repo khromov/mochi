@@ -25,6 +25,8 @@ export interface FontSource extends Span {
   url: UrlRef | null;
   /** Lowercased `format()` keyword. */
   format: string | null;
+  /** The `format()` argument token, quoted or bare, for rewriting a `-variations` hint once the face is instanced. */
+  formatArg: (Span & { quoted: boolean }) | null;
   commaBefore: Span | null;
   commaAfter: Span | null;
 }
@@ -34,6 +36,11 @@ export interface FontFace extends Span {
   sources: FontSource[];
   /** Null when the face declares no `unicode-range`, and so covers everything. */
   unicodeRanges: CodepointRange[] | null;
+  family: string | null;
+  /** Value span of the `font-weight` descriptor, rewritten when a subset pins `wght`. */
+  weight: Span | null;
+  /** Value span of the `font-stretch` descriptor, rewritten when a subset pins `wdth`. */
+  stretch: Span | null;
 }
 
 export interface CssDocument {
@@ -131,11 +138,31 @@ function spanOf(node: CssNode): Span {
 function readFontFace(face: Atrule, urlByOffset: Map<number, UrlRef>): FontFace {
   const src = findDescriptor(face, 'src');
   const range = findDescriptor(face, 'unicode-range');
+  const family = findDescriptor(face, 'font-family');
+  const weight = findDescriptor(face, 'font-weight');
+  const stretch = findDescriptor(face, 'font-stretch');
   return {
     ...spanOf(face),
     sources: src ? readSources(src, urlByOffset) : [],
     unicodeRanges: range ? readUnicodeRanges(range) : null,
+    family: family ? readFamily(family) : null,
+    weight: weight ? spanOf(weight) : null,
+    stretch: stretch ? spanOf(stretch) : null,
   };
+}
+
+// A family is one string or a run of identifiers (`Caveat Variable` unquoted), which the bundler may have unquoted.
+function readFamily(value: Value): string | null {
+  const parts: string[] = [];
+  for (const node of value.children) {
+    if (node.type === 'String') {
+      return node.value;
+    }
+    if (node.type === 'Identifier') {
+      parts.push(node.name);
+    }
+  }
+  return parts.length > 0 ? parts.join(' ') : null;
 }
 
 function readUnicodeRanges(value: Value): CodepointRange[] {
@@ -180,11 +207,13 @@ function readSources(value: Value, urlByOffset: Map<number, UrlRef>): FontSource
     .filter((group) => group.nodes.length > 0)
     .map((group) => {
       const url = group.nodes.find((node) => node.type === 'Url');
+      const formatArg = formatArgument(group.nodes);
       return {
         start: group.nodes[0]!.loc!.start.offset,
         end: group.nodes[group.nodes.length - 1]!.loc!.end.offset,
         url: url ? (urlByOffset.get(url.loc!.start.offset) ?? null) : null,
-        format: formatKeyword(group.nodes),
+        format: formatArg ? formatArg.keyword : null,
+        formatArg: formatArg ? { start: formatArg.start, end: formatArg.end, quoted: formatArg.quoted } : null,
         commaBefore: group.commaBefore,
         commaAfter: group.commaAfter,
       };
@@ -217,12 +246,12 @@ export function removalSpans(sources: FontSource[], dropped: Set<number>): Span[
   return spans;
 }
 
-function formatKeyword(nodes: CssNode[]): string | null {
+function formatArgument(nodes: CssNode[]): (Span & { keyword: string; quoted: boolean }) | null {
   const fn = nodes.find((n): n is FunctionNode => n.type === 'Function' && n.name.toLowerCase() === 'format');
   const arg = fn ? [...fn.children][0] : undefined;
   if (arg?.type === 'String') {
-    return arg.value.toLowerCase();
+    return { ...spanOf(arg), keyword: arg.value.toLowerCase(), quoted: true };
   }
   // Bun's bundler unquotes format() hints, so the keyword often arrives as a bare identifier.
-  return arg?.type === 'Identifier' ? arg.name.toLowerCase() : null;
+  return arg?.type === 'Identifier' ? { ...spanOf(arg), keyword: arg.name.toLowerCase(), quoted: false } : null;
 }

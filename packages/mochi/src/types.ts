@@ -370,8 +370,8 @@ export interface MochiManifest {
   localImageAssets?: Record<string, LocalImageAsset>;
   /** Maps encoded CSS-import source path (see `version`) → served URL (e.g. /import-css/inter-<hash>.css) */
   importedCssUrls?: Record<string, string>;
-  /** Maps served font URL → binary font extracted from imported CSS. `diskPath` is outDir-relative. */
-  fontAssets?: Record<string, { diskPath: string; contentType: string }>;
+  /** Maps served font URL → binary font extracted from imported CSS. `diskPath` is outDir-relative; `subsetOf` is the source font's byte size when the file is a subset. */
+  fontAssets?: Record<string, { diskPath: string; contentType: string; subsetOf?: number }>;
   /** Maps served URL → non-font asset the bundler emitted beside a stylesheet. `diskPath` is outDir-relative. */
   importCssAssets?: Record<string, { diskPath: string; contentType: string }>;
   /** Maps encoded CSS-import source path (see `version`) → served URLs of its preload-worthy extracted fonts. */
@@ -761,6 +761,12 @@ export interface MochiFontOptions {
    * covers latin, capped at 8 per page. Default: `true`.
    */
   preload?: boolean;
+  /**
+   * Honour `import '…' with { subset: … }` attributes on CSS imports, subsetting each `@font-face` to the glyphs named
+   * there (needs the optional `subset-font` package). `false` ships the full fonts and ignores the attributes, which
+   * is the quick way to check whether a subset is what broke a glyph. Default: `true`.
+   */
+  subset?: boolean;
 }
 
 /** Object form of `MochiServeOptions['build']`. See that field for semantics. */

@@ -17,6 +17,7 @@
     "clean": "rm -rf .mochi"
   },
   "dependencies": {
+    "@fontsource-variable/caveat": "^5.3.0",
     "@fontsource-variable/fraunces": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@fontsource/lobster-two": "^5.3.0",
@@ -46,6 +47,7 @@
     "mode-watcher": "1.1.0",
     "rehype-slug": "^6.0.0",
     "runed": "^0.37.1",
+    "subset-font": "^2.7.0",
     "svelte": "^5.56.8",
     "svelte-french-toast": "2.0.0-alpha.0",
     "svelte-meta-tags": "^5.0.2",

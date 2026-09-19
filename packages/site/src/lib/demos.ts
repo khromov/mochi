@@ -372,7 +372,7 @@ export const demos: Demo[] = [
     slug: 'font-loading',
     files: fontLoading,
     title: 'Font loading',
-    hook: 'How font loading works — ship fonts via @fontsource packages or standalone .woff2 files, automatically bundled and linked from the page head.',
+    hook: 'How font loading works — ship fonts via @fontsource packages or standalone .woff2 files, automatically bundled and linked from the page head, and subset a font to the text it renders with an import attribute.',
     category: 'hydration',
   },
   {

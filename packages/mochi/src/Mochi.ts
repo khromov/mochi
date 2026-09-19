@@ -125,6 +125,7 @@ import { installMemoryPressureHandler, removeMemoryPressureHandler } from './run
 import { registerStaticDirRoutes, resolveStaticDirs } from './runtime/staticDirs';
 import { createCronJob, cronSignature, type MochiCronHandler, type MochiCronJob, type MochiCronOptions } from './cron';
 import { startDevWatcher } from './dev/devWatcher';
+import { fontSubsetCheckScript } from './dev/fontSubsetCheck';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './dev/pageCacheAdminRoutes';
 import { liveReloadGreeting } from './dev/liveReloadGeneration';
 import { createProtectionRuntime } from './protection/gate';
@@ -356,10 +357,12 @@ export class Mochi {
       const head = logLevelScript + warnShim + speculationRulesScript + result.head;
       const css = cssStylePrefix + cssLinks;
       const body = result.body + debugInfoScript + pageEntryScript + toolbarDiv;
+      const fontSubsetCheck = registry.development && result.fontSubsetFaces ? `<script>${fontSubsetCheckScript(result.fontSubsetFaces)}</script>` : '';
       const script =
         (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
         (result.hasServerIslands ? serverIslandScript : '') +
         (debugBarUrl ? `<script type="module" src="${debugBarUrl}"></script><script>window.__mochi_asset_prefix=${assetPrefixJson}</script>` : '') +
+        fontSubsetCheck +
         liveReloadTail;
 
       let out = '';
