@@ -155,6 +155,7 @@ export { enhance, deserialize } from './runtime/enhance.ssr';
 export { isFormContentType, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
 export { DEFAULT_COMPRESS_MIN_BYTES, encryptPayload, decryptPayload } from './islands/payloadCrypto';
 export { DEFAULT_INLINE_BUDGET } from './islands/inlineServerIslands';
+export { DEFAULT_GROUP_URL_BUDGET } from './islands/islandGroups';
 export type { EncryptOptions } from './islands/payloadCrypto';
 export type { MochiCsrfOptions } from './runtime/csrf';
 export type {

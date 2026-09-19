@@ -104,6 +104,8 @@ import { makeRequestContextBuilder, mirrorsSlashForm } from './runtime/requestSe
 import { createRouteLimiter, applyRateLimitHeaders } from './runtime/rateLimit';
 import type { MochiRateLimitOptions, MochiRateLimitStore, RouteLimiter } from './runtime/rateLimit';
 import { decryptProps } from './islands/serverIslandCrypto';
+import { decryptPayload } from './islands/payloadCrypto';
+import { groupAad, parseGroupPayload } from './islands/islandGroups';
 import { DEFAULT_INLINE_BUDGET } from './islands/inlineServerIslands';
 import { createImageHandler } from './image/imageEndpoint';
 import { createLocalAssetHandler } from './image/localAssetRegistry';
@@ -318,7 +320,7 @@ export class Mochi {
     const warnShim = registry.debugBarEnabled
       ? `<script>window.__mochi_warnings=[];window.__mochi_warn=function(m){console.warn("[mochi] "+m);window.__mochi_warnings.push(m)}</script>`
       : '';
-    const cssStylePrefix = `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty, mochi-hydratable-island[hydrate-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
+    const cssStylePrefix = `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-island-group { display: none; } mochi-server-island[defer-on="visible"]:empty, mochi-hydratable-island[hydrate-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
       registry.development ? ISLAND_FAILURE_DEV_CSS : ''
     }</style>\n`;
     const serverIslandScript = `<script>${serverIslandClientJs}</script>`;
@@ -1555,36 +1557,23 @@ export class Mochi {
     // After the mirroring pass on purpose: a `/*` pattern must not be mirrored to `/*\/`.
     registerStaticDirRoutes(bunRoutes, staticDirMounts);
 
-    // Register server island endpoint
-    bunRoutes[`${registry.assetPrefix}/island/:componentName`] = withHead(async (req: Request, server: Server<undefined>): Promise<Response> => {
-      const setup = await buildRequestContext(req, server, {
-        kind: 'island',
-        pattern: `${registry.assetPrefix}/island/:componentName`,
-        paramsOverride: {},
-      });
-      if ('earlyResponse' in setup) {
-        return setup.earlyResponse;
-      }
-      const { ctx, url, params } = setup;
-      const componentName = params.componentName;
-      if (!componentName) {
-        return new Response('Missing component name', { status: 400 });
-      }
+    const islandHeaders = {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'private, no-store',
+    };
 
-      const signedProps = url.searchParams.get('props') ?? '';
-
-      // Decrypt props (empty means no props)
-      let decodedProps: Record<string, unknown>;
-      if (signedProps) {
-        const propsJson = decryptProps(signedProps, componentName);
-        if (propsJson === null) {
-          return new Response('Invalid props', { status: 403 });
-        }
-        decodedProps = devalueParse(propsJson) as Record<string, unknown>;
-      } else {
-        decodedProps = {};
-      }
-
+    /**
+     * Render one server island's fragment: the same bytes whether it was fetched on its own or as one member of a
+     * group. `ctx` must already be the context the render runs under — the group endpoint hands each member its own
+     * shallow clone so the per-member inline budget and props registry don't collide across a parallel render.
+     */
+    const renderIslandFragment = async (
+      componentName: string,
+      decodedProps: Record<string, unknown>,
+      req: Request,
+      ctx: MochiRequestContext,
+      emittedCss?: Set<string>,
+    ): Promise<{ html: string } | { status: number; message: string }> => {
       // `islandId` and `__mochi_ah` ride inside the signed envelope as transport only, and are split into a fresh object
       // so neither reaches the component as a prop. The hydrate mode comes from the decrypted payload: trusting a
       // `?hydrate=` query param would let anyone append it to a sealed token and get the props echoed back in plaintext.
@@ -1592,10 +1581,9 @@ export class Mochi {
       const islandId = typeof rawIslandId === 'string' ? rawIslandId : undefined;
       const hydrateMode = isAlsoHydrateMode(rawHydrateMode) ? rawHydrateMode : null;
 
-      // Look up the component path
       const componentPath = registry.getServerIslandPath(componentName);
       if (!componentPath) {
-        return new Response('Unknown server island component', { status: 404 });
+        return { status: 404, message: 'Unknown server island component' };
       }
 
       // Arm nested-island inlining for this render. Also-hydrate renders are excluded: their subtree re-renders on the
@@ -1640,15 +1628,9 @@ export class Mochi {
           });
           // 200 + a known stub so `ServerIsland.ts` doesn't burn its retry budget
           // on a deterministic failure. Visibility is CSS-controlled: dev shows
-          // the message, prod hides the element entirely.
-          const stub = islandFailureStub(componentName, registry.development ? e.message : undefined);
-          return new Response(stub, {
-            status: 200,
-            headers: {
-              'Content-Type': 'text/html; charset=utf-8',
-              'Cache-Control': 'private, no-store',
-            },
-          });
+          // the message, prod hides the element entirely. In a group this is also
+          // what isolates one failing member from its siblings.
+          return { html: islandFailureStub(componentName, registry.development ? e.message : undefined) };
         }
 
         let body = result.body;
@@ -1674,25 +1656,119 @@ export class Mochi {
         // A font-subset stylesheet is left to the host page, whose variant holds this island's glyphs because its import
         // graph includes the island; a second variant of the family would hide the page's text at a weight this one pins.
         const ownCss = registry.getComponentCssUrl(componentPath);
-        const extraCss = result.cssUrls.filter((url) => url !== ownCss && !registry.isFontSubsetStylesheet(url));
+        const extraCss = result.cssUrls.filter((url) => url !== ownCss && !registry.isFontSubsetStylesheet(url) && !emittedCss?.has(url));
         if (extraCss.length > 0) {
+          for (const url of extraCss) {
+            emittedCss?.add(url);
+          }
           body = extraCss.map(cssLinkTag).join('') + body;
         }
 
         // A page whose only hydratables are deferred ships no bootstrap, and a `<script>` in the fragment would stay
-        // inert, so the fragment names it in a marker that the wrapper element imports (see ServerIsland.ts).
+        // inert, so the fragment names it in a marker that the wrapper element imports (see ServerIsland.ts). Per
+        // member in a group: each one is swapped into its own wrapper, so each needs its own marker.
         const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
         if (bootstrapUrl) {
           body = `<template ${BOOTSTRAP_MARKER_ATTR}="${escapeHtmlAttr(bootstrapUrl)}"></template>` + body;
         }
 
-        return new Response(body, {
-          headers: {
-            'Content-Type': 'text/html; charset=utf-8',
-            'Cache-Control': 'private, no-store',
-          },
-        });
+        return { html: body };
       });
+    };
+
+    // Register server island endpoint
+    bunRoutes[`${registry.assetPrefix}/island/:componentName`] = withHead(async (req: Request, server: Server<undefined>): Promise<Response> => {
+      const setup = await buildRequestContext(req, server, {
+        kind: 'island',
+        pattern: `${registry.assetPrefix}/island/:componentName`,
+        paramsOverride: {},
+      });
+      if ('earlyResponse' in setup) {
+        return setup.earlyResponse;
+      }
+      const { ctx, url, params } = setup;
+      const componentName = params.componentName;
+      if (!componentName) {
+        return new Response('Missing component name', { status: 400 });
+      }
+
+      const signedProps = url.searchParams.get('props') ?? '';
+
+      // Decrypt props (empty means no props)
+      let decodedProps: Record<string, unknown>;
+      if (signedProps) {
+        const propsJson = decryptProps(signedProps, componentName);
+        if (propsJson === null) {
+          return new Response('Invalid props', { status: 403 });
+        }
+        decodedProps = devalueParse(propsJson) as Record<string, unknown>;
+      } else {
+        decodedProps = {};
+      }
+
+      const rendered = await renderIslandFragment(componentName, decodedProps, req, ctx);
+      if ('status' in rendered) {
+        return new Response(rendered.message, { status: rendered.status });
+      }
+      return new Response(rendered.html, { headers: islandHeaders });
+    });
+
+    // Register the grouped server island endpoint: one sealed token carrying every `mochi:defer={{ group }}` member
+    // collected during a render, answered as a JSON map of wrapper id to the same fragment the single endpoint returns.
+    bunRoutes[`${registry.assetPrefix}/island-group/:group`] = withHead(async (req: Request, server: Server<undefined>): Promise<Response> => {
+      const setup = await buildRequestContext(req, server, {
+        kind: 'island',
+        pattern: `${registry.assetPrefix}/island-group/:group`,
+        paramsOverride: {},
+      });
+      if ('earlyResponse' in setup) {
+        return setup.earlyResponse;
+      }
+      const { ctx, url, params } = setup;
+      const group = params.group;
+      if (!group) {
+        return new Response('Missing group name', { status: 400 });
+      }
+
+      const token = url.searchParams.get('g') ?? '';
+      const payloadJson = token ? decryptPayload(token, { aad: groupAad(group) }) : null;
+      if (payloadJson === null) {
+        return new Response('Invalid group token', { status: 403 });
+      }
+      let payload: ReturnType<typeof parseGroupPayload>;
+      try {
+        payload = parseGroupPayload(devalueParse(payloadJson));
+      } catch {
+        payload = null;
+      }
+      if (!payload) {
+        return new Response('Invalid group token', { status: 403 });
+      }
+
+      // Rendered in parallel because the group's latency is its slowest member's; each gets a shallow ctx clone so the
+      // per-member inline budget and props registry stay separate while cookies, locals and debug data stay shared.
+      const emittedCss = new Set<string>();
+      const members = await Promise.all(
+        payload.e.map(async ([nameIndex, iid, propsJson]) => {
+          const componentName = payload.n[nameIndex]!;
+          let decodedProps: Record<string, unknown>;
+          try {
+            decodedProps = devalueParse(propsJson) as Record<string, unknown>;
+          } catch {
+            return null;
+          }
+          const memberCtx: MochiRequestContext = { ...ctx, islandProps: new Map(), islandInline: undefined };
+          const rendered = await renderIslandFragment(componentName, decodedProps, req, memberCtx, emittedCss);
+          if ('status' in rendered) {
+            // An island the manifest no longer knows fails alone; its siblings still answer.
+            logger.error(`Island group "${group}": ${rendered.message} "${componentName}"`);
+            return [iid, islandFailureStub(componentName, registry.development ? rendered.message : undefined)] as const;
+          }
+          return [iid, rendered.html] as const;
+        }),
+      );
+
+      return Response.json({ m: Object.fromEntries(members.filter((m): m is readonly [string, string] => m !== null)) }, { headers: { 'Cache-Control': 'private, no-store' } });
     });
 
     // Gives `Mochi.email()` the live compile cache, so Svelte email templates render through the same registry as page routes.

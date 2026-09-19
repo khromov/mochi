@@ -482,9 +482,12 @@ describe('preprocessHydratable', () => {
 
     expect(serverIslands).toHaveLength(1);
     expect(transformed).toContain('<mochi-server-island');
-    // The options expression binds once and feeds both the inline decision and the placeholder attribute.
+    // The options expression binds once and feeds the inline decision, the grouping helper, and the wrapper attributes.
     expect(transformed).toContain('{@const __mochi_sopts__ = ({retries: 10})}');
-    expect(transformed).toContain('server-options={JSON.stringify(__mochi_sopts__)}');
+    expect(transformed).toContain('__mochi_island_attrs__(__mochi_sopts__,');
+    expect(transformed).toContain('server-options={__mochi_gi__.options}');
+    expect(transformed).toContain('signed-props={__mochi_gi__.token}');
+    expect(transformed).toContain('server-group={__mochi_gi__.groupId}');
     expect(transformed).toContain('__mochi_inline_island__(__mochi_sopts__)');
   });
 
@@ -493,7 +496,20 @@ describe('preprocessHydratable', () => {
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(transformed).toContain(`{@const __mochi_sopts__ = ({ name: 'clock' })}`);
-    expect(transformed).toContain('server-options={JSON.stringify(__mochi_sopts__)}');
+    expect(transformed).toContain('server-options={__mochi_gi__.options}');
+  });
+
+  test('a grouping-capable call site registers inside each branch, never alongside the eager consts', () => {
+    const source = `${SCRIPT('import Srv from "./Srv.svelte";')}<Srv mochi:defer={{ group: 'stars' }} />`;
+    const { transformed } = preprocessHydratable(source, '/test/File.svelte');
+
+    // Registering the island is what the helper does, so it must run only where the placeholder actually renders —
+    // once in the non-inline branch, once in the boundary's failed snippet.
+    expect(transformed.match(/__mochi_island_attrs__\(/g)).toHaveLength(2);
+    for (const marker of ['{:else}{@const __mochi_gi__', '{#snippet failed()}{@const __mochi_gi__']) {
+      expect(transformed).toContain(marker);
+    }
+    expect(transformed).not.toContain('__mochi_encrypt_props__(');
   });
 
   test('mochi:defer without options omits server-options attribute', () => {
@@ -507,7 +523,9 @@ describe('preprocessHydratable', () => {
     const source = `<script lang="ts">\nimport Srv from "./Srv.svelte";\n</script>\n<Srv mochi:defer />`;
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
-    expect(transformed).toContain('import { encryptProps as __mochi_encrypt_props__, shouldInlineIsland as __mochi_inline_island__ } from "mochi-server-island-runtime"');
+    expect(transformed).toContain(
+      'import { encryptProps as __mochi_encrypt_props__, shouldInlineIsland as __mochi_inline_island__, serverIslandAttrs as __mochi_island_attrs__ } from "mochi-server-island-runtime"',
+    );
     expect(transformed).toContain('import { stringify as __mochi_stringify__ } from "mochi-framework"');
   });
 
@@ -543,7 +561,8 @@ describe('preprocessHydratable', () => {
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(transformed).toContain('defer-on="visible"');
-    expect(transformed).toContain('server-options={JSON.stringify({rootMargin: "200px"})}');
+    expect(transformed).toContain('{@const __mochi_sopts__ = ({rootMargin: "200px"})}');
+    expect(transformed).toContain('server-options={__mochi_gi__.options}');
   });
 
   test('mochi:defer:visible with combined options', () => {
@@ -551,7 +570,8 @@ describe('preprocessHydratable', () => {
     const { transformed } = preprocessHydratable(source, '/test/File.svelte');
 
     expect(transformed).toContain('defer-on="visible"');
-    expect(transformed).toContain('server-options={JSON.stringify({rootMargin: "100px", retries: 10})}');
+    expect(transformed).toContain('{@const __mochi_sopts__ = ({rootMargin: "100px", retries: 10})}');
+    expect(transformed).toContain('server-options={__mochi_gi__.options}');
   });
 
   test('mochi:defer:visible + mochi:hydrate combination', () => {

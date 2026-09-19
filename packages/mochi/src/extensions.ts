@@ -108,6 +108,7 @@ export interface MochiFilterValue {
   'html:shell': string;
   'serverIsland:secretKey': Buffer;
   'serverIsland:inlineBudget': number;
+  'serverIsland:groupUrlBudget': number;
   'payload:compressMinBytes': number;
   'compile:preprocessors': PreprocessorGroup[];
   'publicDir:scan': Map<string, string>;
@@ -150,6 +151,8 @@ export interface MochiFilterContext {
     componentName: string;
     request: Request;
   };
+  /** Resolved once per render that collected at least one grouped `mochi:defer` island, capping the `?g=` URL length before a group splits into several requests. */
+  'serverIsland:groupUrlBudget': { assetPrefix: string };
   'payload:compressMinBytes': { options: MochiServeOptions; payload: Uint8Array };
   'compile:preprocessors': {
     filename: string;
@@ -218,6 +221,7 @@ export interface MochiFilterKindMap {
   'html:shell': 'sync';
   'serverIsland:secretKey': 'async';
   'serverIsland:inlineBudget': 'sync';
+  'serverIsland:groupUrlBudget': 'sync';
   'payload:compressMinBytes': 'sync';
   'compile:preprocessors': 'sync';
   'publicDir:scan': 'async';
@@ -268,6 +272,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'html:shell': 'sync',
   'serverIsland:secretKey': 'async',
   'serverIsland:inlineBudget': 'sync',
+  'serverIsland:groupUrlBudget': 'sync',
   'payload:compressMinBytes': 'sync',
   'compile:preprocessors': 'sync',
   'publicDir:scan': 'async',

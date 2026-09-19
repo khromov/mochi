@@ -30,6 +30,8 @@ export interface IslandInfo {
   rawProps: string | null;
   /** Server islands: the HMAC-signed props token, decoded client-side on demand. */
   signedProps: string | null;
+  /** Server islands: the key the SSR snapshot was recorded under — the token, or the `group-member` id for a grouped island. */
+  propsKey: string | null;
   /** If set, props live in a <script type="application/json" id="<propsRef>"> block. */
   propsRef: string | null;
   /** True when that block is reused by >=2 islands (server-stamped `data-shared`). */
