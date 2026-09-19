@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from './ComponentRegistry';
+import { parseCss, type CssDocument } from './cssAst';
 import { MochiCookieJar } from '../runtime/cookies';
 import { requestContext } from '../runtime/requestContext';
 
@@ -53,13 +54,15 @@ describe('CSS imports — font subsetting via import attributes', () => {
   let registry: ComponentRegistry;
   const pages = { svelte: '', script: '', noClosure: '', invalid: '' };
 
-  function bundledCss(): string {
+  function bundledCss(): { css: string; document: CssDocument } {
     const urls = registry.toManifest().importedCssUrls ?? {};
     const key = Object.keys(urls).find((k) => k.endsWith('caveat.css'));
     expect(key).toBeDefined();
     const css = registry.getClientFile(urls[key!]!);
     expect(css).toBeDefined();
-    return css!;
+    const document = parseCss(css!);
+    expect(document).not.toBeNull();
+    return { css: css!, document: document! };
   }
 
   beforeAll(async () => {
@@ -92,17 +95,18 @@ describe('CSS imports — font subsetting via import attributes', () => {
   });
 
   test('a .svelte import attribute subsets the latin face, pins the weight, and drops the face the text never touches', () => {
-    const css = bundledCss();
-    expect(css.match(/@font-face/g)).toHaveLength(1);
+    const { css, document } = bundledCss();
+    expect(document.fontFaces).toHaveLength(1);
     expect(css).not.toContain('U+0400-045F');
     expect(css).toContain('font-weight:500');
-    expect(css).toMatch(/format\(["']?woff2["']?\)/);
-    expect(css).not.toContain('woff2-variations');
+    const [source] = document.fontFaces[0]!.sources;
+    expect(source!.format).toBe('woff2');
     const [url, asset] = [...registry.getFontAssets()][0]!;
-    expect(url).toMatch(/^\/_mochi\/fonts\/caveat-latin-wght-normal-[0-9a-f]{8}\.woff2$/);
+    expect(url.startsWith('/_mochi/fonts/caveat-latin-wght-normal-')).toBe(true);
+    expect(url.endsWith('.woff2')).toBe(true);
     expect(asset.subsetOf).toBe(SOURCE_SIZE);
     expect(readFileSync(asset.diskPath).length).toBe(5388);
-    expect(css).toContain(`url(${url})`);
+    expect(source!.url!.value).toBe(url);
   });
 
   test('the served subset is preloaded and the dev-check faces name the family with the kept codepoints', async () => {
@@ -135,10 +139,10 @@ describe('CSS imports — font subsetting via import attributes', () => {
 
   test('a site dropping layout closure gets its own face, small enough to inline, beside the shared one', async () => {
     await registry.compile(pages.noClosure);
-    const css = bundledCss();
-    expect(css.match(/@font-face/g)).toHaveLength(2);
-    expect(css.match(/url\(data:font\/woff2;base64,[A-Za-z0-9+/=]+\)/g)).toHaveLength(1);
-    expect(css.match(/url\(\/_mochi\/fonts\//g)).toHaveLength(1);
+    const { document } = bundledCss();
+    expect(document.fontFaces).toHaveLength(2);
+    expect(document.urls.filter((url) => url.value.startsWith('data:font/woff2;base64,'))).toHaveLength(1);
+    expect(document.urls.filter((url) => url.value.startsWith('/_mochi/fonts/'))).toHaveLength(1);
     const result = await render(registry, pages.noClosure);
     expect(result.fontPreloadUrls).toHaveLength(1);
   });

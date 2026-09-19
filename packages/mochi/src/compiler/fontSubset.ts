@@ -153,7 +153,11 @@ function pinDescriptor(
     const { start, end } = local(span);
     block.overwrite(start, end, value);
   } else {
-    block.appendLeft(face.end - face.start - 1, `${property}:${value};`);
+    // Minified output drops the `;` after the last declaration, so the new one supplies its own separator.
+    const closing = face.end - face.start - 1;
+    const before = block.original.slice(0, closing).trimEnd();
+    const separator = before.endsWith(';') || before.endsWith('{') ? '' : ';';
+    block.appendLeft(closing, `${separator}${property}:${value};`);
   }
 }
 

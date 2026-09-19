@@ -6,9 +6,14 @@ import {
   mergeFontSubsetSpecs,
   normalizeRanges,
   parseFontSubsetSpec,
+  rangesByFamily,
   rangesToText,
   scanImportAttributes,
+  scriptKindOf,
 } from './fontImportAttributes';
+
+const IMPORT = `import './x.css' with { subset: 'ok' };`;
+const found = (line: number) => [{ specifier: './x.css', attributes: { subset: 'ok' }, line }];
 
 describe('scanImportAttributes', () => {
   test('reads attributes off instance and module script imports in a .svelte file', () => {
@@ -22,60 +27,86 @@ describe('scanImportAttributes', () => {
     ]);
   });
 
-  test('skips files without a with-clause without parsing them', () => {
-    expect(scanImportAttributes(`<script>\n  import './x.css';\n<` + `/script>\n<p>with {</p>`, 'svelte')).toEqual([]);
-    expect(scanImportAttributes(`import './x.css';\nconst s = 'with { subset';`, 'script')).toEqual([]);
+  test('skips files that never mention `with` without parsing them', () => {
+    expect(scanImportAttributes(`<script>\n  import './x.css';\n<` + `/script>\n<p>{</p>`, 'svelte')).toEqual([]);
+    expect(scanImportAttributes(`import './x.css';\nconst s = 'subset';`, 'ts')).toEqual([]);
   });
 
-  test('a .svelte file that fails to parse yields nothing rather than throwing', () => {
-    expect(scanImportAttributes(`<script>\n  import './x.css' with { subset: 'a' };\n  const = ;\n<` + `/script>`, 'svelte')).toEqual([]);
+  test('a file that fails to parse yields nothing rather than throwing', () => {
+    expect(scanImportAttributes(`<script>\n  ${IMPORT}\n  const = ;\n<` + `/script>`, 'svelte')).toEqual([]);
+    expect(scanImportAttributes(`${IMPORT}\nconst = ;`, 'ts')).toEqual([]);
   });
 
-  test('scans script sources lexically, skipping strings and comments', () => {
+  test('imports inside strings, comments and templates are not imports', () => {
     const source = [
-      `// import './no.css' with { subset: 'commented' };`,
-      `/* import './no.css' with { subset: 'block' } */`,
+      `// ${IMPORT}`,
+      `/* ${IMPORT} */`,
       `const s = "import './no.css' with { subset: 'string' }";`,
       `const t = \`multi`,
-      `line import './no.css' with { subset: 'template' }\`;`,
+      `line ${IMPORT}\`;`,
       `import "./yes.css" with { subset: 'It\\'s', "weight": "700" };`,
       `import '@fontsource-variable/caveat'with{subset:"x",layoutClosure:'none'}`,
       `export const done = true;`,
     ].join('\n');
-    expect(scanImportAttributes(source, 'script')).toEqual([
+    expect(scanImportAttributes(source, 'ts')).toEqual([
       { specifier: './yes.css', attributes: { subset: "It's", weight: '700' }, line: 6 },
       { specifier: '@fontsource-variable/caveat', attributes: { subset: 'x', layoutClosure: 'none' }, line: 7 },
     ]);
   });
 
-  test('a regex literal holding a quote or backtick before an attributed import does not desync the scan', () => {
-    const IMPORT = `import './x.css' with { subset: 'ok' };`;
+  test('a regex literal holding a quote or backtick before an attributed import does not confuse the parser', () => {
     for (const regex of [`/'/`, `/"/`, '/`/', `/[/'"\`]+/g`, `/\\/'/`]) {
-      // Same line, next line, and every position a regex can take: after `=`, `(`, `[`, `return`, and as a statement.
-      expect(scanImportAttributes(`const re = ${regex}; ${IMPORT}`, 'script')).toEqual([{ specifier: './x.css', attributes: { subset: 'ok' }, line: 1 }]);
-      expect(scanImportAttributes(`const re = ${regex};\n${IMPORT}`, 'script')).toEqual([{ specifier: './x.css', attributes: { subset: 'ok' }, line: 2 }]);
-      const contexts = [`const a = ${regex}.test(s) ? f(${regex}, [${regex}]) : null;`, `if (x) return ${regex};`, `${regex}.lastIndex = 0;`, IMPORT].join('\n');
-      expect(scanImportAttributes(contexts, 'script')).toEqual([{ specifier: './x.css', attributes: { subset: 'ok' }, line: 4 }]);
+      expect(scanImportAttributes(`const re = ${regex}; ${IMPORT}`, 'ts')).toEqual(found(1));
+      expect(scanImportAttributes(`const re = ${regex};\n${IMPORT}`, 'js')).toEqual(found(2));
+      const contexts = [`const a = ${regex}.test(s) ? f(${regex}, [${regex}]) : null;`, `function g() { return ${regex}; }`, `${regex}.lastIndex = 0;`, IMPORT].join('\n');
+      expect(scanImportAttributes(contexts, 'ts')).toEqual(found(4));
     }
   });
 
-  test('division is not mistaken for a regex, so the import after it is still found', () => {
-    const source = [
-      `const half = total / 2;`,
-      `const ratio = (a) / b / c.length / 'x'.length;`,
-      `const perLine = list[0] / lines / (1 + n);`,
-      `import './x.css' with { subset: 'ok' };`,
+  test('division is division', () => {
+    const source = [`const half = total / 2;`, `const ratio = (a) / b / c.length / 'x'.length;`, `const perLine = list[0] / lines / (1 + n);`, IMPORT].join('\n');
+    expect(scanImportAttributes(source, 'js')).toEqual(found(4));
+  });
+
+  test('TypeScript-only syntax parses under the ts kind, and JSX under tsx/jsx', () => {
+    const ts = [
+      `import type { A } from './a';`,
+      `export type B = A;`,
+      `enum E { X = 1 }`,
+      `declare module 'foo' {}`,
+      `const v = 1 satisfies number;`,
+      `class C { #p = 1; @dec() m(): void {} }`,
+      `export default function f<T>(x: T): T { return x; }`,
+      `namespace NS { export const y = 1 }`,
+      `await Promise.resolve();`,
+      IMPORT,
     ].join('\n');
-    expect(scanImportAttributes(source, 'script')).toEqual([{ specifier: './x.css', attributes: { subset: 'ok' }, line: 4 }]);
+    expect(scanImportAttributes(ts, 'ts')).toEqual(found(10));
+    expect(scanImportAttributes(`const el = <p className="x">It's "quoted"</p>;\n${IMPORT}`, 'tsx')).toEqual(found(2));
+    expect(scanImportAttributes(`const el = <p>Don't</p>;\n${IMPORT}`, 'jsx')).toEqual(found(2));
   });
 
-  test('decodes escapes in attribute values', () => {
+  test('string escapes arrive decoded', () => {
     const source = `import './x.css' with { subset: "\\u00e9\\u{1F600}\\n\\t\\"" };`;
-    expect(scanImportAttributes(source, 'script')[0]!.attributes.subset).toBe('é😀\n\t"');
+    expect(scanImportAttributes(source, 'ts')[0]!.attributes.subset).toBe('é😀\n\t"');
   });
 
-  test('a with-clause that is not literal key/value pairs is left alone', () => {
-    expect(scanImportAttributes(`const w = '500';\nimport './x.css' with { weight: w };`, 'script')).toEqual([]);
+  test('scriptKindOf maps extensions and rejects non-scripts', () => {
+    expect(['a.svelte', 'a.ts', 'a.mts', 'a.cts', 'a.tsx', 'a.js', 'a.mjs', 'a.cjs', 'a.jsx', 'a.svelte.ts', 'a.css', 'a.md', 'a.png'].map(scriptKindOf)).toEqual([
+      'svelte',
+      'ts',
+      'ts',
+      'ts',
+      'tsx',
+      'js',
+      'js',
+      'js',
+      'jsx',
+      'ts',
+      null,
+      null,
+      null,
+    ]);
   });
 });
 
@@ -104,8 +135,12 @@ describe('parseFontSubsetSpec', () => {
     expect(parseFontSubsetSpec({ subset: 'a', wieght: '500' }).error).toContain('unknown import attribute "wieght"');
     expect(parseFontSubsetSpec({ weight: '500' }).error).toContain('nothing to keep');
     expect(parseFontSubsetSpec({ subset: 'a', weight: 'bold' }).error).toContain('weight "bold"');
-    expect(parseFontSubsetSpec({ subset: 'a', unicodeRange: '0020-007E' }).error).toContain('unicodeRange entry "0020-007E"');
+    expect(parseFontSubsetSpec({ subset: 'a', weight: '' }).error).toContain('weight ""');
+    expect(parseFontSubsetSpec({ subset: 'a', unicodeRange: '0020-007E' }).error).toContain('unicodeRange "0020-007E"');
+    expect(parseFontSubsetSpec({ subset: 'a', unicodeRange: 'U+0020; color: red' }).error).toContain('unicodeRange');
     expect(parseFontSubsetSpec({ subset: 'a', axes: 'wdth' }).error).toContain('axes entry "wdth"');
+    expect(parseFontSubsetSpec({ subset: 'a', axes: 'toolong=1' }).error).toContain('axes entry "toolong=1"');
+    expect(parseFontSubsetSpec({ subset: 'a', axes: 'wdth=' }).error).toContain('axes entry "wdth="');
     expect(parseFontSubsetSpec({ subset: 'a', layoutClosure: 'off' }).error).toContain('layoutClosure "off"');
   });
 });
@@ -150,6 +185,16 @@ describe('range helpers', () => {
         { lo: 0x1f600, hi: 0x1f600 },
       ]),
     ).toBe('U+0061-0063, U+1F600');
+  });
+
+  test('rangesByFamily merges faces of one family under its lowercased name', () => {
+    expect(
+      rangesByFamily([
+        { family: 'Caveat Variable', ranges: [{ lo: 0x61, hi: 0x63 }] },
+        { family: 'caveat variable', ranges: [{ lo: 0x62, hi: 0x64 }] },
+        { family: 'Other', ranges: [{ lo: 0x30, hi: 0x30 }] },
+      ]),
+    ).toEqual({ 'caveat variable': [[0x61, 0x64]], other: [[0x30, 0x30]] });
   });
 });
 

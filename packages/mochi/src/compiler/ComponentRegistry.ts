@@ -61,6 +61,7 @@ import {
   mergeFontSubsetSpecs,
   parseFontSubsetSpec,
   scanImportAttributes,
+  scriptKindOf,
   type FontSubsetGroup,
   type FontSubsetSpec,
 } from './fontImportAttributes';
@@ -464,6 +465,8 @@ export class ComponentRegistry {
   private readonly devStaleFontAssets: Map<string, FontAsset> = new Map();
   /** Maps importer source path → resolved CSS-import path → the subset its `with { subset: … }` attributes asked for. Replaced whole per importer on each scan, so an edited attribute never leaves its old request behind. */
   private readonly fontSubsetsByImporter: Map<string, Map<string, FontSubsetSpec[]>> = new Map();
+  /** Maps importer source path → its last scan, keyed on the exact source text, so only edited files are re-parsed. */
+  private readonly fontScanCache: Map<string, { source: string; specs: Map<string, FontSubsetSpec[]>; errors: MochiCompileError[] }> = new Map();
   /** Maps resolved CSS-import path → fingerprint of the merged subset request its current bundle was built with. */
   private readonly importedCssSubsetFingerprints: Map<string, string> = new Map();
   /** Dev only: maps resolved CSS-import path → the subsetted faces it declares, for the browser-side missing-glyph check. */
@@ -687,6 +690,7 @@ export class ComponentRegistry {
     this.entryDeps.delete(key);
     this.entryImportedCss.delete(key);
     this.fontSubsetsByImporter.delete(key);
+    this.fontScanCache.delete(key);
   }
 
   isCompiled(componentPath: string): boolean {
@@ -754,8 +758,8 @@ export class ComponentRegistry {
 
     // Import attributes never reach a bundler hook, so every user module the SSR build loads is scanned at source.
     const fontAttributeErrors = new Map<string, MochiCompileError[]>();
-    const scanFontAttributes = (importer: string, source: string, kind: 'svelte' | 'script'): void => {
-      fontAttributeErrors.set(importer, this.recordFontImportAttributes(importer, source, kind));
+    const scanFontAttributes = (importer: string, source: string): void => {
+      fontAttributeErrors.set(importer, this.recordFontImportAttributes(importer, source));
     };
 
     const sveltePlugin: BunPlugin = {
@@ -798,7 +802,7 @@ export class ComponentRegistry {
         }));
         build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
           let source = await Bun.file(args.path).text();
-          scanFontAttributes(args.path, source, 'script');
+          scanFontAttributes(args.path, source);
           if (args.path.endsWith('.ts')) {
             const transpiler = new Bun.Transpiler({ loader: 'ts' });
             source = transpiler.transformSync(source);
@@ -819,12 +823,12 @@ export class ComponentRegistry {
             return undefined;
           }
           const source = await Bun.file(args.path).text();
-          scanFontAttributes(args.path, source, 'script');
+          scanFontAttributes(args.path, source);
           return undefined;
         });
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
           const raw = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
-          scanFontAttributes(args.path, raw, 'svelte');
+          scanFontAttributes(args.path, raw);
           const cached = compileCache.get('server', args.path, raw, serverFingerprint, compileCacheStats);
           if (cached) {
             fileHydratables.set(args.path, cached.hydratables);
@@ -2081,6 +2085,7 @@ export class ComponentRegistry {
     this.retireFontAssets();
     this.importedCssFontPreloads.clear();
     this.fontSubsetsByImporter.clear();
+    this.fontScanCache.clear();
     this.importedCssSubsetFingerprints.clear();
     this.importedCssSubsetFaces.clear();
   }
@@ -2346,7 +2351,17 @@ export class ComponentRegistry {
    * Scan one user module for CSS imports carrying `with { subset: … }` and record what they ask for, keyed by importer
    * so a rescan of the same file replaces its earlier request. Returns the attribute errors the file carries.
    */
-  private recordFontImportAttributes(importer: string, source: string, kind: 'svelte' | 'script'): MochiCompileError[] {
+  private recordFontImportAttributes(importer: string, source: string): MochiCompileError[] {
+    const kind = scriptKindOf(importer);
+    if (!kind) {
+      return [];
+    }
+    // Every SSR build re-loads every module in the entry graph, so an unchanged file reuses its last scan instead of re-parsing.
+    const cached = this.fontScanCache.get(importer);
+    if (cached && cached.source === source) {
+      this.recordFontSubsetSpecs(importer, cached.specs);
+      return cached.errors;
+    }
     const errors: MochiCompileError[] = [];
     const specs = new Map<string, FontSubsetSpec[]>();
     for (const found of scanImportAttributes(source, kind)) {
@@ -2377,12 +2392,17 @@ export class ComponentRegistry {
       }
       specs.set(cssPath, [...(specs.get(cssPath) ?? []), spec]);
     }
+    this.fontScanCache.set(importer, { source, specs, errors });
+    this.recordFontSubsetSpecs(importer, specs);
+    return errors;
+  }
+
+  private recordFontSubsetSpecs(importer: string, specs: Map<string, FontSubsetSpec[]>): void {
     if (specs.size > 0) {
       this.fontSubsetsByImporter.set(importer, specs);
     } else {
       this.fontSubsetsByImporter.delete(importer);
     }
-    return errors;
   }
 
   /** Every importer's request for one stylesheet, merged: the app ships one subset per (axes, closure), not one per page. */

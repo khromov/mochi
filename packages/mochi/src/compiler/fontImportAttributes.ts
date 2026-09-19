@@ -1,5 +1,8 @@
-import { parse } from 'svelte/compiler';
-import { parseUnicodeRange, type CodepointRange } from './cssAst';
+import path from 'node:path';
+import * as acorn from 'acorn';
+import { tsPlugin } from '@sveltejs/acorn-typescript';
+import { parse as parseSvelte } from 'svelte/compiler';
+import { parseUnicodeRangeList, type CodepointRange } from './cssAst';
 
 /**
  * What one `import '…' with { subset: … }` asks the font pipeline to keep. Every field is a union-friendly shape: two
@@ -15,7 +18,7 @@ export interface FontSubsetSpec {
   layoutClosure: boolean;
 }
 
-/** One side-effect import statement that carried import attributes. */
+/** One import statement that carried import attributes. */
 export interface ScannedImportAttributes {
   specifier: string;
   attributes: Record<string, string>;
@@ -32,264 +35,97 @@ export interface FontSubsetGroup {
 
 export const FONT_SUBSET_ATTRIBUTE_KEYS = ['subset', 'unicodeRange', 'weight', 'axes', 'layoutClosure'] as const;
 
+export type ScriptKind = 'svelte' | 'js' | 'jsx' | 'ts' | 'tsx';
+
+/** Which parser a source file needs, or null for a file that holds no script (CSS, images, markdown). */
+export function scriptKindOf(filePath: string): ScriptKind | null {
+  switch (path.extname(filePath).toLowerCase()) {
+    case '.svelte':
+      return 'svelte';
+    case '.ts':
+    case '.mts':
+    case '.cts':
+      return 'ts';
+    case '.tsx':
+      return 'tsx';
+    case '.js':
+    case '.mjs':
+    case '.cjs':
+      return 'js';
+    case '.jsx':
+      return 'jsx';
+    default:
+      return null;
+  }
+}
+
+// The parsers Svelte itself builds for `<script>` blocks (svelte/src/compiler/phases/1-parse/acorn.js), so a module and
+// a component script read identically; ecmaVersion 16 is where acorn admits import attributes.
+const JS_PARSER = acorn.Parser;
+const TS_PARSER = JS_PARSER.extend(tsPlugin());
+const JSX_PARSER = JS_PARSER.extend(tsPlugin({ jsx: true }));
+const PARSE_OPTIONS: acorn.Options = {
+  sourceType: 'module',
+  ecmaVersion: 16,
+  locations: true,
+  allowAwaitOutsideFunction: true,
+  allowReturnOutsideFunction: true,
+  allowHashBang: true,
+};
+
 /**
- * Bun's bundler accepts unknown import attributes but strips them before any plugin hook runs, so the only place they
- * can be read is the source text. `.svelte` files go through Svelte's own parser; scripts get a lexical scan that
- * skips strings, comments and regex literals, since Bun's transpiler drops attributes from its output too.
+ * Bun's bundler accepts unknown import attributes but strips them before any plugin hook runs, and its transpiler's
+ * `scanImports()` drops them too, so the only place they can be read is the source: `.svelte` files through Svelte's
+ * parser, scripts through the same acorn it uses. A file that can't parse yields nothing — the syntax error is the
+ * compiler's to report.
  */
-export function scanImportAttributes(source: string, kind: 'svelte' | 'script'): ScannedImportAttributes[] {
-  if (!/\bwith\s*\{/.test(source)) {
+export function scanImportAttributes(source: string, kind: ScriptKind): ScannedImportAttributes[] {
+  // An attribute list needs the `with` keyword, so the many files without the word skip the parse.
+  if (!source.includes('with')) {
     return [];
   }
-  return kind === 'svelte' ? scanSvelte(source) : scanScript(source);
-}
-
-interface EstreeImportAttribute {
-  key: { type: string; name?: string; value?: unknown };
-  value: { value?: unknown };
-}
-
-function scanSvelte(source: string): ScannedImportAttributes[] {
-  let ast: ReturnType<typeof parse>;
+  let bodies: acorn.Program['body'][];
   try {
-    ast = parse(source, { modern: true });
+    bodies = kind === 'svelte' ? svelteScriptBodies(source) : [parserFor(kind).parse(source, PARSE_OPTIONS).body];
   } catch {
-    // A syntax error is the compiler's to report; there is nothing to subset until it does.
     return [];
   }
   const found: ScannedImportAttributes[] = [];
-  for (const script of [ast.module, ast.instance]) {
-    for (const node of script?.content.body ?? []) {
-      if (node.type !== 'ImportDeclaration' || typeof node.source.value !== 'string') {
-        continue;
-      }
-      const raw = (node as { attributes?: EstreeImportAttribute[] }).attributes ?? [];
-      if (raw.length === 0) {
+  for (const body of bodies) {
+    for (const node of body) {
+      // acorn leaves `attributes` off an import that has no `with` clause (and off TypeScript's `import type`).
+      if (node.type !== 'ImportDeclaration' || typeof node.source.value !== 'string' || !node.attributes?.length) {
         continue;
       }
       const attributes: Record<string, string> = {};
-      for (const attribute of raw) {
+      for (const attribute of node.attributes) {
         const key = attribute.key.type === 'Identifier' ? attribute.key.name : attribute.key.value;
         if (typeof key === 'string' && typeof attribute.value.value === 'string') {
           attributes[key] = attribute.value.value;
         }
       }
-      found.push({ specifier: node.source.value, attributes, line: lineAt(source, (node as { start: number }).start) });
+      found.push({ specifier: node.source.value, attributes, line: node.loc!.start.line });
     }
   }
   return found;
 }
 
-const IMPORT_WITH = /import\s*(["'])((?:\\.|(?!\1)[^\\\n])*)\1\s*with\s*\{/y;
-const IDENT_CHAR = /[\w$]/;
-const WORD = /[\w$]+/y;
-// After these a `/` opens a regex literal (`return /x/`); after any other identifier or number it divides (`a / b`).
-const REGEX_AFTER_KEYWORDS = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'yield', 'await']);
-
-function scanScript(source: string): ScannedImportAttributes[] {
-  const found: ScannedImportAttributes[] = [];
-  const n = source.length;
-  let i = 0;
-  let line = 1;
-  // The previous significant token (a word, a punctuation character, or a quote standing for a literal) decides
-  // whether a `/` divides or opens a regex — the usual lexer heuristic, since a regex may hold any quote character.
-  let prev = '';
-  while (i < n) {
-    const ch = source[i]!;
-    if (ch === '\n') {
-      line++;
-      i++;
-    } else if (ch === '/' && source[i + 1] === '/') {
-      const end = source.indexOf('\n', i);
-      i = end === -1 ? n : end;
-    } else if (ch === '/' && source[i + 1] === '*') {
-      const end = source.indexOf('*/', i + 2);
-      const stop = end === -1 ? n : end + 2;
-      line += countNewlines(source, i, stop);
-      i = stop;
-    } else if (ch === '"' || ch === "'" || ch === '`') {
-      const stop = skipString(source, i);
-      line += countNewlines(source, i, stop);
-      i = stop;
-      prev = ch;
-    } else if (ch === '/' && regexCanFollow(prev)) {
-      const stop = skipRegex(source, i);
-      i = stop === -1 ? i + 1 : stop;
-      prev = '/';
-    } else if (ch === 'i' && source.startsWith('import', i) && (i === 0 || !IDENT_CHAR.test(source[i - 1]!))) {
-      IMPORT_WITH.lastIndex = i;
-      const match = IMPORT_WITH.exec(source);
-      if (!match) {
-        i += 'import'.length;
-        prev = 'import';
-        continue;
-      }
-      const parsed = readAttributeList(source, IMPORT_WITH.lastIndex);
-      if (parsed) {
-        found.push({ specifier: decodeStringLiteral(match[2]!), attributes: parsed.attributes, line });
-        line += countNewlines(source, i, parsed.end);
-        i = parsed.end;
-      } else {
-        i = IMPORT_WITH.lastIndex;
-      }
-      prev = '}';
-    } else if (IDENT_CHAR.test(ch)) {
-      WORD.lastIndex = i;
-      prev = WORD.exec(source)![0];
-      i = WORD.lastIndex;
-    } else if (/\s/.test(ch)) {
-      i++;
-    } else {
-      prev = ch;
-      i++;
-    }
+function parserFor(kind: Exclude<ScriptKind, 'svelte'>): typeof acorn.Parser {
+  switch (kind) {
+    case 'ts':
+      return TS_PARSER;
+    case 'tsx':
+    case 'jsx':
+      return JSX_PARSER;
+    case 'js':
+      return JS_PARSER;
   }
-  return found;
 }
 
-function regexCanFollow(prev: string): boolean {
-  if (prev === '') {
-    return true;
-  }
-  // A closing paren/bracket or a literal is an operand, so the `/` divides; a closing brace ends a block.
-  if (prev === ')' || prev === ']' || prev === '"' || prev === "'" || prev === '`' || prev === '/') {
-    return false;
-  }
-  if (IDENT_CHAR.test(prev[0]!)) {
-    return REGEX_AFTER_KEYWORDS.has(prev);
-  }
-  return true;
-}
-
-/** Index just past a regex literal opening at `from`, flags included, or -1 when the line ends first (so the `/` divided after all). */
-function skipRegex(source: string, from: number): number {
-  let i = from + 1;
-  let inClass = false;
-  while (i < source.length) {
-    const ch = source[i]!;
-    if (ch === '\\') {
-      i += 2;
-    } else if (ch === '\n') {
-      return -1;
-    } else if (inClass) {
-      inClass = ch !== ']';
-      i++;
-    } else if (ch === '[') {
-      inClass = true;
-      i++;
-    } else if (ch === '/') {
-      i++;
-      while (i < source.length && IDENT_CHAR.test(source[i]!)) {
-        i++;
-      }
-      return i;
-    } else {
-      i++;
-    }
-  }
-  return -1;
-}
-
-const WHITESPACE_OR_COMMA = /[\s,]/;
-const IDENT = /[A-Za-z_$][\w$]*/y;
-
-// Attribute values are string literals by the language grammar (TS enforces it as TS2858), so a list that fails to
-// parse as `key: 'string'` pairs is malformed rather than dynamic, and is left for the compiler to reject.
-function readAttributeList(source: string, from: number): { attributes: Record<string, string>; end: number } | null {
-  const attributes: Record<string, string> = {};
-  let i = from;
-  while (i < source.length) {
-    while (i < source.length && WHITESPACE_OR_COMMA.test(source[i]!)) {
-      i++;
-    }
-    if (source[i] === '}') {
-      return { attributes, end: i + 1 };
-    }
-    let key: string;
-    if (source[i] === '"' || source[i] === "'") {
-      const end = skipString(source, i);
-      key = decodeStringLiteral(source.slice(i + 1, end - 1));
-      i = end;
-    } else {
-      IDENT.lastIndex = i;
-      const match = IDENT.exec(source);
-      if (!match) {
-        return null;
-      }
-      key = match[0];
-      i = IDENT.lastIndex;
-    }
-    while (i < source.length && /\s/.test(source[i]!)) {
-      i++;
-    }
-    if (source[i] !== ':') {
-      return null;
-    }
-    i++;
-    while (i < source.length && /\s/.test(source[i]!)) {
-      i++;
-    }
-    if (source[i] !== '"' && source[i] !== "'") {
-      return null;
-    }
-    const end = skipString(source, i);
-    attributes[key] = decodeStringLiteral(source.slice(i + 1, end - 1));
-    i = end;
-  }
-  return null;
-}
-
-/** Index just past the closing quote of the string literal opening at `from`, or the end of input when unterminated. */
-function skipString(source: string, from: number): number {
-  const quote = source[from]!;
-  let i = from + 1;
-  while (i < source.length) {
-    const ch = source[i]!;
-    if (ch === '\\') {
-      i += 2;
-    } else if (ch === quote) {
-      return i + 1;
-    } else if (ch === '\n' && quote !== '`') {
-      return i;
-    } else {
-      i++;
-    }
-  }
-  return source.length;
-}
-
-const SIMPLE_ESCAPES: Record<string, string> = { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f', v: '\v', '0': '\0' };
-
-function decodeStringLiteral(body: string): string {
-  return body.replace(/\\(u\{([0-9a-fA-F]+)\}|u([0-9a-fA-F]{4})|x([0-9a-fA-F]{2})|\r?\n|(.))/g, (_, _whole, braced, u4, x2, other) => {
-    if (braced) {
-      return String.fromCodePoint(parseInt(braced, 16));
-    }
-    if (u4) {
-      return String.fromCharCode(parseInt(u4, 16));
-    }
-    if (x2) {
-      return String.fromCharCode(parseInt(x2, 16));
-    }
-    if (other === undefined) {
-      return '';
-    }
-    return SIMPLE_ESCAPES[other] ?? other;
-  });
-}
-
-function countNewlines(source: string, from: number, to: number): number {
-  let count = 0;
-  for (let i = from; i < to; i++) {
-    if (source.charCodeAt(i) === 10) {
-      count++;
-    }
-  }
-  return count;
-}
-
-function lineAt(source: string, offset: number): number {
-  return 1 + countNewlines(source, 0, offset);
+// Svelte parses its scripts with acorn too, so the bodies are the same node shapes with file-relative locations.
+function svelteScriptBodies(source: string): acorn.Program['body'][] {
+  const ast = parseSvelte(source, { modern: true });
+  return [ast.module, ast.instance].flatMap((script) => (script ? [(script.content as unknown as acorn.Program).body] : []));
 }
 
 /**
@@ -311,15 +147,13 @@ export function parseFontSubsetSpec(attributes: Record<string, string>): { spec:
     return { spec: null, error: null };
   }
   const text = attributes.subset ?? '';
-  const unicodeRanges: CodepointRange[] = [];
+  let unicodeRanges: CodepointRange[] = [];
   if (attributes.unicodeRange !== undefined) {
-    for (const token of attributes.unicodeRange.split(/[\s,]+/).filter(Boolean)) {
-      const range = parseUnicodeRange(token);
-      if (!range) {
-        return { spec: null, error: `unicodeRange entry "${token}" is not a CSS unicode-range like U+0020-007E.` };
-      }
-      unicodeRanges.push(range);
+    const ranges = parseUnicodeRangeList(attributes.unicodeRange);
+    if (!ranges) {
+      return { spec: null, error: `unicodeRange "${attributes.unicodeRange}" is not a list of CSS unicode-range values like U+0020-007E.` };
     }
+    unicodeRanges = ranges;
   }
   if (text.length === 0 && unicodeRanges.length === 0) {
     return { spec: null, error: 'nothing to keep — give the text in `subset` and/or codepoints in `unicodeRange`.' };
@@ -327,20 +161,23 @@ export function parseFontSubsetSpec(attributes: Record<string, string>): { spec:
   const axes: Record<string, number> = {};
   if (attributes.weight !== undefined) {
     const weight = Number(attributes.weight);
-    if (!Number.isFinite(weight) || weight <= 0) {
+    if (attributes.weight.trim() === '' || !Number.isFinite(weight) || weight <= 0) {
       return { spec: null, error: `weight "${attributes.weight}" is not a number.` };
     }
     axes.wght = weight;
   }
   if (attributes.axes !== undefined) {
-    for (const entry of attributes.axes
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)) {
-      const [tag, valueText, ...rest] = entry.split('=').map((s) => s.trim());
+    for (const entry of attributes.axes.split(',')) {
+      const pair = entry.trim();
+      if (pair === '') {
+        continue;
+      }
+      const equals = pair.indexOf('=');
+      const tag = equals === -1 ? '' : pair.slice(0, equals).trim();
+      const valueText = equals === -1 ? '' : pair.slice(equals + 1).trim();
       const value = Number(valueText);
-      if (!tag || !/^[\w]{1,4}$/.test(tag) || valueText === undefined || rest.length > 0 || !Number.isFinite(value)) {
-        return { spec: null, error: `axes entry "${entry}" is not tag=value (e.g. "wdth=100, slnt=-10").` };
+      if (!isAxisTag(tag) || valueText === '' || !Number.isFinite(value)) {
+        return { spec: null, error: `axes entry "${pair}" is not tag=value (e.g. "wdth=100, slnt=-10").` };
       }
       axes[tag] = value;
     }
@@ -353,6 +190,20 @@ export function parseFontSubsetSpec(attributes: Record<string, string>): { spec:
     layoutClosure = attributes.layoutClosure === 'full';
   }
   return { spec: { text, unicodeRanges, axes, layoutClosure }, error: null };
+}
+
+// An OpenType axis tag: one to four printable ASCII characters.
+function isAxisTag(tag: string): boolean {
+  if (tag.length === 0 || tag.length > 4) {
+    return false;
+  }
+  for (const ch of tag) {
+    const code = ch.charCodeAt(0);
+    if (code < 0x21 || code > 0x7e) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** Sorted, disjoint ranges covering every codepoint in `text` and `ranges`. */
@@ -440,4 +291,18 @@ export function mergeFontSubsetSpecs(specs: Iterable<FontSubsetSpec>): FontSubse
 /** Stable identity of a stylesheet's merged subset request, so a changed attribute re-bundles and an unchanged one doesn't. */
 export function fontSubsetFingerprint(groups: FontSubsetGroup[]): string {
   return JSON.stringify(groups.map((group) => [axesKey(group.axes), group.layoutClosure, group.ranges.map((range) => [range.lo, range.hi])]));
+}
+
+/** The kept codepoints of every subsetted face on a page, by lowercased family, in the shape the dev-mode browser check reads. */
+export function rangesByFamily(faces: { family: string; ranges: CodepointRange[] }[]): Record<string, [number, number][]> {
+  const collected = new Map<string, CodepointRange[]>();
+  for (const face of faces) {
+    const key = face.family.toLowerCase();
+    collected.set(key, [...(collected.get(key) ?? []), ...face.ranges]);
+  }
+  const out: Record<string, [number, number][]> = {};
+  for (const [family, ranges] of collected) {
+    out[family] = normalizeRanges('', ranges).map((range) => [range.lo, range.hi]);
+  }
+  return out;
 }
