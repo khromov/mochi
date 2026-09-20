@@ -5,6 +5,7 @@ import path from 'node:path';
 import { ComponentRegistry, formatCompileErrors } from './compiler/ComponentRegistry';
 import type { RenderResult } from './compiler/ComponentRegistry';
 import { loadSvelteConfig } from './compiler/svelteConfig';
+import { resolveOutDir } from './compiler/resolveOutDir';
 import { buildInlineWebComponent } from './compiler/buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './dev/clientStatsRoutes';
 import { buildEmailViewerRoutes, EMAIL_VIEWER_COMPONENT } from './dev/emailViewerRoutes';
@@ -22,6 +23,7 @@ import {
   FRAMEWORK_OWNED_BUN_KEYS,
 } from './types';
 import { HYDRATABLE_CONTEXT_KEY } from './islands/isHydratable';
+import { BOOTSTRAP_MARKER_ATTR } from './islands/bootstrapMarker';
 import type {
   BunRouteValue,
   HttpMethod,
@@ -495,7 +497,7 @@ export class Mochi {
     const liveReloadEnabled = options.liveReload ?? development;
     const middleware = options.handle;
     const protectionEnabled = options.protection?.enabled === true;
-    const baseOutDir = options.outDir ?? './.mochi';
+    const baseOutDir = resolveOutDir(options.outDir ?? './.mochi');
     // Nesting dev artifacts keeps a stale prod manifest and dev chunks apart across a later `start`, while prod stays at
     // the root so Docker and deploys are unaffected.
     const outDir = development ? path.join(baseOutDir, 'dev') : baseOutDir;
@@ -553,7 +555,7 @@ export class Mochi {
 
     let registry: ComponentRegistry;
     if (!development && existsSync(manifestPath)) {
-      logger.info(`Loading prebuilt manifest from ${manifestPath}`);
+      logger.info(`Loading prebuilt manifest from ${relForDisplay(manifestPath)}`);
       // The registry takes its outDir from the manifest's own directory, so an explicit `manifest` pointing elsewhere
       // relocates on-demand island compiles along with it.
       registry = await ComponentRegistry.fromManifest(manifestPath, development, { fonts: options.fonts });
@@ -600,7 +602,7 @@ export class Mochi {
         // Production without a prebuilt manifest is valid but much slower, compiling components at boot and server islands
         // on the request path; the error level keeps a forgotten build from masquerading as a healthy deploy.
         logger.error(
-          `Running in production without a prebuilt manifest (${manifestPath} not found). ` +
+          `Running in production without a prebuilt manifest (${relForDisplay(manifestPath)} not found). ` +
             `This is an unsupported configuration and is not recommended: components compile at startup ` +
             `and server islands compile on the first request, making cold starts and initial responses ` +
             `much slower. Run \`mochi-framework build\` before \`start\` to precompile and bake the manifest.`,
@@ -1667,14 +1669,6 @@ export class Mochi {
           body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
         }
 
-        // Appended whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain
-        // mochi:hydrate children, or inlined also-hydrate islands — so the fragment self-hydrates even on a page that
-        // shipped no bootstrap of its own; duplicate module scripts are no-ops by src.
-        const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
-        if (bootstrapUrl) {
-          body += `<script type="module" src="${bootstrapUrl}"></script>`;
-        }
-
         // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`
         // tags are prepended here along with side-effect CSS imports; browsers honour a `<link>` assigned via `innerHTML`.
         // The island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
@@ -1682,6 +1676,13 @@ export class Mochi {
         const extraCss = result.cssUrls.filter((url) => url !== ownCss);
         if (extraCss.length > 0) {
           body = extraCss.map(cssLinkTag).join('') + body;
+        }
+
+        // A page whose only hydratables are deferred ships no bootstrap, and a `<script>` in the fragment would stay
+        // inert, so the fragment names it in a marker that the wrapper element imports (see ServerIsland.ts).
+        const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
+        if (bootstrapUrl) {
+          body = `<template ${BOOTSTRAP_MARKER_ATTR}="${escapeHtmlAttr(bootstrapUrl)}"></template>` + body;
         }
 
         return new Response(body, {

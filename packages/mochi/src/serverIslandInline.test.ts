@@ -123,7 +123,8 @@ describe('nested server island inlining', () => {
     expect(wrapper).toContain('props="');
     expect(wrapper).toContain('component-url="');
     expect(wrapper).not.toContain('__MOCHI_COMPONENT_URL__');
-    expect(body).toMatch(/<script type="module" src="[^"]+"><\/script>/);
+    expect(body).toMatch(/^<template data-mochi-bootstrap="[^"]+"><\/template>/);
+    expect(body).not.toContain('<script');
   });
 
   test('inline: false keeps the placeholder and its token fetches end-to-end', async () => {

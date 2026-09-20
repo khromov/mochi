@@ -13,6 +13,7 @@ import path from 'node:path';
 import { scanPublicDir, publicRouteKey } from '../runtime/publicDir';
 import { scanEmailTemplates } from '../email/templates';
 import { encodeSourcePath } from '../compiler/manifestPaths';
+import { resolveOutDir } from '../compiler/resolveOutDir';
 import { loadSvelteConfig } from '../compiler/svelteConfig';
 import { logger, setLogLevel } from '../utils/log';
 import { relForDisplay } from '../utils/index';
@@ -102,7 +103,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     const development = options.development ?? false;
     // Set before anything compiles: the alias plugin and the `mochi-env` templates both read it at resolve time.
     setUseOptimizedDevalue(options.useOptimizedDevalue !== false);
-    const baseOutDir = options.outDir ?? './.mochi';
+    const baseOutDir = resolveOutDir(options.outDir ?? './.mochi');
     // Mirror the dev/prod split in Mochi.serve(): a `--dev` build nests under
     // `dev/` so it can't clobber the production manifest at the root.
     const outDir = development ? path.join(baseOutDir, 'dev') : baseOutDir;
@@ -305,7 +306,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     const emailSummary = emailTemplates.length > 0 ? `, ${emailTemplates.length} email template(s)` : '';
     const fontSummary = fontAssets.size > 0 ? `, ${fontAssets.size} font(s)` : '';
     logger.info(
-      `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s), ${imageAssets.size} image asset(s)${fontSummary}${emailSummary}. Manifest written to ${manifestPath}`,
+      `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s), ${imageAssets.size} image asset(s)${fontSummary}${emailSummary}. Manifest written to ${relForDisplay(manifestPath)}`,
     );
   } finally {
     mochiEvents.off('client-bundle:complete', onClientBundle);

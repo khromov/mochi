@@ -37,6 +37,7 @@ import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { backendId, resolveSvelteCompiler, type MochiSvelteCompiler, type SvelteCompilerBackend } from './svelteCompilerBackend';
 import { applyFilter } from '../extensions';
 import { decodeSourcePath, encodeSourcePath } from './manifestPaths';
+import { resolveOutDir } from './resolveOutDir';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
 import { serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { registerServerOnlyComponentStubs, SSR_ONLY_COMPONENT_NAMESPACE } from './serverOnlyComponents';
@@ -491,7 +492,7 @@ export class ComponentRegistry {
     // A relative outDir resolves against whoever's cwd asks, and compile and `toManifest()` ask at different moments, so
     // a `process.chdir()` in between would make every artifact look like it escaped the out-dir and bake absolute paths
     // into an otherwise relocatable build.
-    this.outDir = path.resolve(opts.outDir ?? './.mochi');
+    this.outDir = resolveOutDir(opts.outDir ?? './.mochi');
     this.assetPrefix = normalizeAssetPrefix(opts.assetPrefix);
     this.svelteConfig = opts.svelteConfig ?? {};
     this.svelteCompiler = opts.svelteCompiler;
@@ -2470,7 +2471,7 @@ export class ComponentRegistry {
     // own directory *is* the build out-dir. Deriving the artifact root from the
     // manifest's own location makes the pairing intrinsic — there's no caller-
     // supplied out-dir that could desync from where the artifacts actually live.
-    const artifactRoot = path.dirname(path.resolve(manifestPath));
+    const artifactRoot = resolveOutDir(path.dirname(manifestPath));
     // Absolute entries are the escape hatch for artifacts that landed outside
     // the out-dir (toManifest() warns when it bakes one) — pass them through.
     const resolveManifestPath = (p: string): string => (path.isAbsolute(p) ? p : path.resolve(artifactRoot, p));
