@@ -30,6 +30,22 @@ describe('hasGlobalCss', () => {
     expect(globalOf('@media print { :global(body) { margin: 0 } }')).toBe(true);
   });
 
+  test('selectors Svelte leaves unscoped (:root, :host, ::view-transition*) are global', () => {
+    expect(globalOf(':root { --brand: red }')).toBe(true);
+    expect(globalOf(':root:not(.x) { --brand: red }')).toBe(true);
+    expect(globalOf(':host { display: block }')).toBe(true);
+    expect(globalOf('::view-transition-old(root) { animation: none }')).toBe(true);
+    expect(globalOf('@layer base { :root { --brand: red } }')).toBe(true);
+    expect(globalOf(':host(.x) { display: block }')).toBe(true);
+  });
+
+  test('selectors Svelte still scopes despite a global-like part are not global', () => {
+    expect(globalOf(':root[data-theme=dark] .a { color: red }')).toBe(false);
+    expect(globalOf(':root:has(.x) .a { color: red }')).toBe(false);
+    expect(globalOf(':host .a { color: red }')).toBe(false);
+    expect(globalOf('.a:not(:root) { color: red }')).toBe(false);
+  });
+
   test('unscoped at-rules are global', () => {
     expect(globalOf('@keyframes -global-spin { to { rotate: 1turn } }')).toBe(true);
     expect(globalOf("@font-face { font-family: X; src: url('/x.woff2') }")).toBe(true);

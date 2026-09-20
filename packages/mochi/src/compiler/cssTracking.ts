@@ -6,16 +6,36 @@ import { encodeSourcePath } from './manifestPaths';
 // At-rules whose nested rules Svelte still scopes; every other at-rule (`@font-face`, `@import`, `@property`, a bare
 // `@layer` statement, …) is emitted unscoped and so can affect the page without its component rendering.
 const SCOPED_ATRULES = new Set(['media', 'supports', 'container', 'layer', 'scope', 'starting-style', 'keyframes']);
+const GLOBAL_PSEUDO_ELEMENTS = new Set(['view-transition', 'view-transition-group', 'view-transition-old', 'view-transition-new', 'view-transition-image-pair']);
+
+// Mirrors Svelte's `is_global_like`: `:root` without `:has`, or an all-pseudo compound led by `:host` or a
+// `::view-transition*` pseudo-element, is left unscoped.
+function isGlobalLike(rel: AST.CSS.RelativeSelector): boolean {
+  const has = (name: string) => rel.selectors.some((s) => s.type === 'PseudoClassSelector' && s.name === name);
+  if (has('root') && !has('has')) {
+    return true;
+  }
+  const first = rel.selectors[0];
+  if (first === undefined || !rel.selectors.every((s) => s.type === 'PseudoClassSelector' || s.type === 'PseudoElementSelector')) {
+    return false;
+  }
+  return (first.type === 'PseudoClassSelector' && first.name === 'host') || (first.type === 'PseudoElementSelector' && GLOBAL_PSEUDO_ELEMENTS.has(first.name));
+}
 
 /** True when the stylesheet has rules that apply regardless of whether the component renders. */
 export function hasGlobalCss(css: AST.CSS.StyleSheet): boolean {
   let global = false;
   walk(css as AST.CSS.Node, null, {
-    _(node, { next }) {
+    _(node, { next, path }) {
       if (global) {
         return;
       }
       if (node.type === 'PseudoClassSelector' && node.name === 'global') {
+        global = true;
+        return;
+      }
+      // Svelte scopes a selector unless every relative selector is global-like, so `:root[data-theme] .a` stays prunable.
+      if (node.type === 'ComplexSelector' && path.at(-2)?.type === 'Rule' && node.children.every(isGlobalLike)) {
         global = true;
         return;
       }

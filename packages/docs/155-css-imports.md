@@ -55,7 +55,7 @@ Only components that actually rendered get a `<link>`: a component behind an unt
 
 <Callout type="info">
 
-A component whose `<style>` has `:global(...)` rules, or unscoped at-rules such as `@font-face`, is always linked, rendered or not: those rules apply to the whole page, so they keep the old behaviour. Move them to a side-effect CSS import if the component should be prunable.
+A component whose `<style>` has `:global(...)` rules, selectors Svelte leaves entirely unscoped (a bare `:root`, `:host` or `::view-transition*`), or unscoped at-rules such as `@font-face`, is always linked, rendered or not: those rules apply to the whole page, so they keep the old behaviour. Move them to a side-effect CSS import if the component should be prunable.
 
 </Callout>
 
