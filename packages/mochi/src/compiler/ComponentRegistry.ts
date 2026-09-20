@@ -32,11 +32,13 @@ import {
 } from './cssFontAssets';
 import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
+import { isCssTracked } from './cssTracking';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { backendId, resolveSvelteCompiler, type MochiSvelteCompiler, type SvelteCompilerBackend } from './svelteCompilerBackend';
 import { applyFilter } from '../extensions';
 import { decodeSourcePath, encodeSourcePath } from './manifestPaths';
+import { HYDRATABLE_CONTEXT_KEY } from '../islands/isHydratable';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
 import { serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { registerServerOnlyComponentStubs, SSR_ONLY_COMPONENT_NAMESPACE } from './serverOnlyComponents';
@@ -96,7 +98,7 @@ const builtinTsPreprocessor: PreprocessorGroup = {
 const SRC_DIR = path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..');
 
 /** Manifest schema version this runtime writes; see `MochiManifest.version` for the path families it implies. */
-const MANIFEST_VERSION = 3;
+const MANIFEST_VERSION = 4;
 
 const MARKDOWN_EXTENSIONS = ['.md', '.svx'];
 const MARKDOWN_FILE_FILTER = /\.(md|svx)$/;
@@ -116,6 +118,7 @@ function createMarkdownLoader(opts: {
     allServerIslands: ServerIslandComponent[];
     filePreprocessErrors: Map<string, PreprocessIslandError[]>;
     preprocessCacheStats: ReturnType<typeof createPreprocessCacheStats>;
+    recordCssTracking: (filePath: string, tracked: boolean) => void;
   };
 }) {
   const highlight = opts.markdown.highlight;
@@ -133,6 +136,7 @@ function createMarkdownLoader(opts: {
         opts.hydration.allHydratables.push(...cached.hydratables);
         opts.hydration.allServerIslands.push(...cached.serverIslands);
         opts.hydration.filePreprocessErrors.set(args.path, cached.preprocessErrors);
+        opts.hydration.recordCssTracking(args.path, cached.cssTracked);
       }
       if (opts.target === 'server' && cached.css && opts.cssMap) {
         opts.cssMap.set(args.path, cached.css);
@@ -158,11 +162,13 @@ function createMarkdownLoader(opts: {
     let hydratables: HydratableComponent[] = [];
     let serverIslands: ServerIslandComponent[] = [];
     let preprocessErrors: PreprocessIslandError[] = [];
+    let cssMarked = false;
     if (opts.hydration) {
       const preprocessed = cachedPreprocessHydratable(svelteSource, args.path, opts.hydration.preprocessCacheStats);
       hydratables = preprocessed.hydratables;
       serverIslands = preprocessed.serverIslands;
       preprocessErrors = preprocessed.errors;
+      cssMarked = preprocessed.cssMarked;
       opts.hydration.fileHydratables.set(args.path, hydratables);
       opts.hydration.allHydratables.push(...hydratables);
       opts.hydration.allServerIslands.push(...serverIslands);
@@ -177,11 +183,13 @@ function createMarkdownLoader(opts: {
         ...(opts.target === 'client' ? { dev: opts.development } : {}),
       }),
     );
+    const cssTracked = isCssTracked(cssMarked, css);
+    opts.hydration?.recordCssTracking(args.path, cssTracked);
     const cssCode = opts.target === 'server' ? (css?.code ?? null) : null;
     if (cssCode && opts.cssMap) {
       opts.cssMap.set(args.path, cssCode);
     }
-    opts.compileCache.set(opts.target, args.path, raw, fingerprint, { js: js.code, css: cssCode, hydratables, serverIslands, preprocessErrors });
+    opts.compileCache.set(opts.target, args.path, raw, fingerprint, { js: js.code, css: cssCode, hydratables, serverIslands, preprocessErrors, cssTracked });
     return { contents: js.code, loader: 'js' as const };
   };
 }
@@ -381,6 +389,10 @@ export class ComponentRegistry {
   private clientFiles: Map<string, string> = new Map();
   /** Maps component file path → CSS URL */
   private cssFileUrls: Map<string, string> = new Map();
+  /** Component path → the key its SSR output reports through `markRenderedCss`; absent for components whose CSS is never pruned (global rules, no styles). */
+  private trackedCss: Map<string, string> = new Map();
+  /** Island component path → every styled component in its static import graph, all linked whenever the island renders so a client-only branch stays styled. */
+  private islandCss: Map<string, Set<string>> = new Map();
   /**
    * Last-extracted raw CSS per component path, letting `compileAll`'s write-CSS-files loop decide on content equality
    * rather than mere presence in `cssFileUrls` — otherwise an HMR recompile of a child short-circuits and leaves the stale hashed URL.
@@ -694,6 +706,14 @@ export class ComponentRegistry {
     const compileCache = this.compileCache;
     const markdown = this.markdown;
     const shakenSources = this.shakenSources;
+    const trackedCss = this.trackedCss;
+    const recordCssTracking = (filePath: string, tracked: boolean): void => {
+      if (tracked) {
+        trackedCss.set(filePath, encodeSourcePath(filePath));
+      } else {
+        trackedCss.delete(filePath);
+      }
+    };
     const imageAssetLoader = createImageAssetLoader({
       outDir: this.outDir,
       assetPrefix: this.assetPrefix,
@@ -765,24 +785,22 @@ export class ComponentRegistry {
             filePreprocessErrors.set(args.path, cached.preprocessErrors);
             allHydratables.push(...cached.hydratables);
             allServerIslands.push(...cached.serverIslands);
+            recordCssTracking(args.path, cached.cssTracked);
             if (cached.css) {
               cssMap.set(args.path, cached.css);
             }
             return { contents: cached.js, loader: 'js' };
           }
           const preprocessed = await applyUserPreprocessors(raw, args.path, 'server', development);
-          // Vendored .svelte from node_modules can never carry `mochi:*` directives
-          const isVendored = args.path.includes(`${path.sep}node_modules${path.sep}`);
-          const preprocessResult = isVendored
-            ? { transformed: preprocessed, hydratables: [] as HydratableComponent[], serverIslands: [] as ServerIslandComponent[], errors: [] as PreprocessIslandError[] }
-            : cachedPreprocessHydratable(preprocessed, args.path, preprocessCacheStats);
-          const { hydratables, serverIslands, errors } = preprocessResult;
+          // Vendored components from node_modules run through the same pass: they carry no `mochi:*` directives, but their
+          // scoped CSS is tracked like any other.
+          const preprocessResult = cachedPreprocessHydratable(preprocessed, args.path, preprocessCacheStats);
+          const { hydratables, serverIslands, errors, cssMarked } = preprocessResult;
           fileHydratables.set(args.path, hydratables);
           fileServerIslands.set(args.path, serverIslands);
           filePreprocessErrors.set(args.path, errors);
           allHydratables.push(...hydratables);
           allServerIslands.push(...serverIslands);
-
           const { js, css } = backend.compile(
             preprocessResult.transformed,
             mergeCompilerOptions(userCompilerOptions, {
@@ -790,6 +808,8 @@ export class ComponentRegistry {
               filename: args.path,
             }),
           );
+          const cssTracked = isCssTracked(cssMarked, css);
+          recordCssTracking(args.path, cssTracked);
           const cssCode = css?.code ?? null;
           if (cssCode) {
             cssMap.set(args.path, cssCode);
@@ -800,6 +820,7 @@ export class ComponentRegistry {
             hydratables,
             serverIslands,
             preprocessErrors: errors,
+            cssTracked,
           });
           return { contents: js.code, loader: 'js' };
         });
@@ -815,7 +836,7 @@ export class ComponentRegistry {
               backend,
               compileCache,
               compileCacheStats,
-              hydration: { fileHydratables, allHydratables, allServerIslands, filePreprocessErrors, preprocessCacheStats },
+              hydration: { fileHydratables, allHydratables, allServerIslands, filePreprocessErrors, preprocessCacheStats, recordCssTracking },
             }),
           );
         }
@@ -1072,6 +1093,27 @@ export class ComponentRegistry {
       });
     }
 
+    // An island can render, in the browser, components its SSR pass never reached, so its CSS need is the whole static
+    // graph below it. Walked on the pre-chunking input graph like side-effect CSS, keyed by island file since several
+    // entries can share one.
+    const inputKeyByPath = new Map<string, string>();
+    for (const key of Object.keys(inputsMeta)) {
+      inputKeyByPath.set(path.resolve(key), key);
+    }
+    for (const islandPath of new Set(allHydratables.map((h) => h.resolvedPath))) {
+      const css = new Set<string>();
+      const rootKey = inputKeyByPath.get(islandPath);
+      if (rootKey) {
+        for (const key of transitiveSourceInputs(rootKey)) {
+          const abs = path.resolve(key);
+          if (cssMap.has(abs)) {
+            css.add(abs);
+          }
+        }
+      }
+      this.islandCss.set(islandPath, css);
+    }
+
     // The build's entrypoints are exactly `todo`, so every stylesheet the plugin loaded must belong to at least one of
     // them; one that belongs to none is bundled and served but linked by nothing, which only shows up as an unstyled page.
     const unattributedCss = [...importedCssPaths].filter((p) => !todo.some((f) => this.entryImportedCss.get(f)?.has(p)));
@@ -1310,6 +1352,7 @@ export class ComponentRegistry {
             hydratables: [],
             serverIslands: [],
             preprocessErrors: [],
+            cssTracked: false,
           });
           return { contents: js.code, loader: 'js' };
         });
@@ -1596,6 +1639,13 @@ export class ComponentRegistry {
     // error page after a failed render, an action's POST re-render.
     const ctx = requestContext.getStore();
     ctx?.islandProps.clear();
+    // Filled by `markRenderedCss` as styled components initialise. A render whose whole tree hydrates (an also-hydrate
+    // island's standalone render) keeps every stylesheet, since any component in it may render client-side.
+    let renderedCss: Set<string> | undefined;
+    if (ctx && opts?.context?.get(HYDRATABLE_CONTEXT_KEY) !== true) {
+      renderedCss = ctx.renderedCss ??= new Set();
+      renderedCss.clear();
+    }
 
     const component = opts?.exportName && opts.exportName !== 'default' ? mod[opts.exportName] : mod.default;
     if (!component) {
@@ -1760,6 +1810,21 @@ export class ComponentRegistry {
       }
     }
 
+    // Every styled component below a rendered island stays linked whether or not SSR reached it.
+    let islandCssNeeds: Set<string> | undefined;
+    if (renderedCss) {
+      for (const name of renderedIslandNames) {
+        const h = hydratablesByName.get(name);
+        const needs = h && this.islandCss.get(h.resolvedPath);
+        if (needs) {
+          islandCssNeeds ??= new Set();
+          for (const p of needs) {
+            islandCssNeeds.add(p);
+          }
+        }
+      }
+    }
+
     const cssUrls: string[] = [];
     for (const componentPath of cssComponents) {
       const cssUrl = this.cssFileUrls.get(componentPath);
@@ -1772,6 +1837,12 @@ export class ComponentRegistry {
       if (islandPaths.has(componentPath)) {
         const hs = hydratablesByPath.get(componentPath);
         if (hs && hs.every((h) => !renderedIslandNames.has(h.name))) {
+          continue;
+        }
+      }
+      if (renderedCss) {
+        const key = this.trackedCss.get(componentPath);
+        if (key !== undefined && !renderedCss.has(key) && !islandCssNeeds?.has(componentPath)) {
           continue;
         }
       }
@@ -1989,6 +2060,8 @@ export class ComponentRegistry {
     this.clientFiles.clear();
     this.cssFileUrls.clear();
     this.cssRawByPath.clear();
+    this.trackedCss.clear();
+    this.islandCss.clear();
     this.importedCssUrls.clear();
     this.entryImportedCss.clear();
     this.entryDeps.clear();
@@ -2440,6 +2513,12 @@ export class ComponentRegistry {
     if (this.entryImportedCss.size > 0) {
       manifest.entryImportedCss = Object.fromEntries([...this.entryImportedCss].map(([k, v]) => [encodeSourcePath(k), [...v].map((p) => encodeSourcePath(p))]));
     }
+    if (this.trackedCss.size > 0) {
+      manifest.trackedCss = [...this.trackedCss.values()];
+    }
+    if (this.islandCss.size > 0) {
+      manifest.islandCss = Object.fromEntries([...this.islandCss].map(([islandPath, paths]) => [encodeSourcePath(islandPath), [...paths].map((p) => encodeSourcePath(p))]));
+    }
     if (this.serverIslandScriptFile) {
       manifest.serverIslandScript = relToOutDir(this.serverIslandScriptFile);
     }
@@ -2524,6 +2603,13 @@ export class ComponentRegistry {
       for (const [entryPath, cssPaths] of Object.entries(manifest.entryImportedCss)) {
         registry.entryImportedCss.set(decodeSourcePath(entryPath), new Set(cssPaths.map((p) => decodeSourcePath(p))));
       }
+    }
+    // The encoded key is what the built SSR module reports verbatim, so it is kept as written rather than re-encoded.
+    for (const key of manifest.trackedCss ?? []) {
+      registry.trackedCss.set(decodeSourcePath(key), key);
+    }
+    for (const [islandPath, paths] of Object.entries(manifest.islandCss ?? {})) {
+      registry.islandCss.set(decodeSourcePath(islandPath), new Set(paths.map((p) => decodeSourcePath(p))));
     }
 
     // Load SSR modules and populate compiledComponents
