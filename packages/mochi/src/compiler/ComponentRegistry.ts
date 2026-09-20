@@ -32,6 +32,7 @@ import {
 } from './cssFontAssets';
 import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
+import { isCssTracked } from './cssTracking';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { backendId, resolveSvelteCompiler, type MochiSvelteCompiler, type SvelteCompilerBackend } from './svelteCompilerBackend';
@@ -161,18 +162,17 @@ function createMarkdownLoader(opts: {
     let hydratables: HydratableComponent[] = [];
     let serverIslands: ServerIslandComponent[] = [];
     let preprocessErrors: PreprocessIslandError[] = [];
-    let cssTracked = false;
+    let cssMarked = false;
     if (opts.hydration) {
       const preprocessed = cachedPreprocessHydratable(svelteSource, args.path, opts.hydration.preprocessCacheStats);
       hydratables = preprocessed.hydratables;
       serverIslands = preprocessed.serverIslands;
       preprocessErrors = preprocessed.errors;
-      cssTracked = preprocessed.cssTracked;
+      cssMarked = preprocessed.cssMarked;
       opts.hydration.fileHydratables.set(args.path, hydratables);
       opts.hydration.allHydratables.push(...hydratables);
       opts.hydration.allServerIslands.push(...serverIslands);
       opts.hydration.filePreprocessErrors.set(args.path, preprocessErrors);
-      opts.hydration.recordCssTracking(args.path, cssTracked);
       svelteSource = preprocessed.transformed;
     }
     const { js, css } = opts.backend.compile(
@@ -183,6 +183,8 @@ function createMarkdownLoader(opts: {
         ...(opts.target === 'client' ? { dev: opts.development } : {}),
       }),
     );
+    const cssTracked = isCssTracked(cssMarked, css);
+    opts.hydration?.recordCssTracking(args.path, cssTracked);
     const cssCode = opts.target === 'server' ? (css?.code ?? null) : null;
     if (cssCode && opts.cssMap) {
       opts.cssMap.set(args.path, cssCode);
@@ -793,14 +795,12 @@ export class ComponentRegistry {
           // Vendored components from node_modules run through the same pass: they carry no `mochi:*` directives, but their
           // scoped CSS is tracked like any other.
           const preprocessResult = cachedPreprocessHydratable(preprocessed, args.path, preprocessCacheStats);
-          const { hydratables, serverIslands, errors } = preprocessResult;
+          const { hydratables, serverIslands, errors, cssMarked } = preprocessResult;
           fileHydratables.set(args.path, hydratables);
           fileServerIslands.set(args.path, serverIslands);
           filePreprocessErrors.set(args.path, errors);
           allHydratables.push(...hydratables);
           allServerIslands.push(...serverIslands);
-          recordCssTracking(args.path, preprocessResult.cssTracked);
-
           const { js, css } = backend.compile(
             preprocessResult.transformed,
             mergeCompilerOptions(userCompilerOptions, {
@@ -808,6 +808,8 @@ export class ComponentRegistry {
               filename: args.path,
             }),
           );
+          const cssTracked = isCssTracked(cssMarked, css);
+          recordCssTracking(args.path, cssTracked);
           const cssCode = css?.code ?? null;
           if (cssCode) {
             cssMap.set(args.path, cssCode);
@@ -818,7 +820,7 @@ export class ComponentRegistry {
             hydratables,
             serverIslands,
             preprocessErrors: errors,
-            cssTracked: preprocessResult.cssTracked,
+            cssTracked,
           });
           return { contents: js.code, loader: 'js' };
         });

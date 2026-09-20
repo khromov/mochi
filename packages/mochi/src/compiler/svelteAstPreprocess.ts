@@ -81,8 +81,8 @@ export interface PreprocessResult {
   hydratables: HydratableComponent[];
   serverIslands: ServerIslandComponent[];
   errors: PreprocessIslandError[];
-  /** Whether the output reports itself via `markRenderedCss` (see `instrumentCssTracking`). */
-  cssTracked: boolean;
+  /** Whether the output got the `markRenderedCss` prologue (see `instrumentCssTracking`); `isCssTracked` decides after compile. */
+  cssMarked: boolean;
 }
 
 /**
@@ -105,13 +105,13 @@ export interface PreprocessResult {
 export function preprocessHydratable(source: string, filePath: string): PreprocessResult {
   const hasDirectives = source.includes('mochi:hydrate') || source.includes('mochi:defer') || source.includes('mochi:clientOnly');
   if (!hasDirectives && !source.includes('<style')) {
-    return { transformed: source, hydratables: [], serverIslands: [], errors: [], cssTracked: false };
+    return { transformed: source, hydratables: [], serverIslands: [], errors: [], cssMarked: false };
   }
   const ast = parse(source, { modern: true });
   const s = new MagicString(source);
   if (!hasDirectives) {
-    const cssTracked = instrumentCssTracking(ast, s, filePath);
-    return { transformed: cssTracked ? s.toString() : source, hydratables: [], serverIslands: [], errors: [], cssTracked };
+    const cssMarked = instrumentCssTracking(ast, s, filePath);
+    return { transformed: cssMarked ? s.toString() : source, hydratables: [], serverIslands: [], errors: [], cssMarked };
   }
 
   // Svelte allows one `$props.id()` per component (`props_duplicate`), so an author's existing declaration has to be
@@ -478,9 +478,9 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
     }
     s.appendRight(contentStart, imports);
   }
-  const cssTracked = instrumentCssTracking(ast, s, filePath);
+  const cssMarked = instrumentCssTracking(ast, s, filePath);
 
-  return { transformed: s.toString(), hydratables, serverIslands, errors, cssTracked };
+  return { transformed: s.toString(), hydratables, serverIslands, errors, cssMarked };
 }
 
 /**
