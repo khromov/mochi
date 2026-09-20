@@ -14,7 +14,11 @@ export function resolveOutDir(outDir: string): string {
   for (;;) {
     try {
       return path.join(realpathSync(existing), ...missing);
-    } catch {
+    } catch (err) {
+      // Walking past anything but a missing segment (EACCES, ELOOP) returns an uncanonicalised path, silently.
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw err;
+      }
       const parent = path.dirname(existing);
       if (parent === existing) {
         return abs;
