@@ -5,6 +5,7 @@ import path from 'node:path';
 import { ComponentRegistry, formatCompileErrors } from './compiler/ComponentRegistry';
 import type { RenderResult } from './compiler/ComponentRegistry';
 import { loadSvelteConfig } from './compiler/svelteConfig';
+import { resolveOutDir } from './compiler/resolveOutDir';
 import { buildInlineWebComponent } from './compiler/buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './dev/clientStatsRoutes';
 import { buildEmailViewerRoutes, EMAIL_VIEWER_COMPONENT } from './dev/emailViewerRoutes';
@@ -496,7 +497,7 @@ export class Mochi {
     const liveReloadEnabled = options.liveReload ?? development;
     const middleware = options.handle;
     const protectionEnabled = options.protection?.enabled === true;
-    const baseOutDir = options.outDir ?? './.mochi';
+    const baseOutDir = resolveOutDir(options.outDir ?? './.mochi');
     // Nesting dev artifacts keeps a stale prod manifest and dev chunks apart across a later `start`, while prod stays at
     // the root so Docker and deploys are unaffected.
     const outDir = development ? path.join(baseOutDir, 'dev') : baseOutDir;
@@ -550,7 +551,7 @@ export class Mochi {
     const manifestPath = options.manifest ?? `${outDir}/manifest.json`;
     let registry: ComponentRegistry;
     if (!development && existsSync(manifestPath)) {
-      logger.info(`Loading prebuilt manifest from ${manifestPath}`);
+      logger.info(`Loading prebuilt manifest from ${relForDisplay(manifestPath)}`);
       // The registry takes its outDir from the manifest's own directory, so an explicit `manifest` pointing elsewhere
       // relocates on-demand island compiles along with it.
       registry = await ComponentRegistry.fromManifest(manifestPath, development, { fonts: options.fonts });
@@ -587,7 +588,7 @@ export class Mochi {
         // Production without a prebuilt manifest is valid but much slower, compiling components at boot and server islands
         // on the request path; the error level keeps a forgotten build from masquerading as a healthy deploy.
         logger.error(
-          `Running in production without a prebuilt manifest (${manifestPath} not found). ` +
+          `Running in production without a prebuilt manifest (${relForDisplay(manifestPath)} not found). ` +
             `This is an unsupported configuration and is not recommended: components compile at startup ` +
             `and server islands compile on the first request, making cold starts and initial responses ` +
             `much slower. Run \`mochi-framework build\` before \`start\` to precompile and bake the manifest.`,
