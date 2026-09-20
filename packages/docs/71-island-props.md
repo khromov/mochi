@@ -7,11 +7,12 @@ description: 'How Mochi serializes props for hydratable islands, the supported t
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Passing props to islands
 
-Pass props to a component marked `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer` as you would to any Svelte component. Mochi serializes them with [`devalue`](https://github.com/Rich-Harris/devalue) so the same values reach the hydrating client.
+Pass props to a component marked `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer` as you would to any Svelte component. Mochi serializes them with [`devalue`](https://github.com/sveltejs/devalue) so the same values reach the hydrating client.
 
 ```svelte
 <!-- file: src/routes/Page.svelte -->
@@ -23,6 +24,12 @@ Pass props to a component marked `mochi:hydrate`, `mochi:hydrate:visible`, or `m
 
 <UserCard mochi:hydrate {user} {visitedAt} {tags} />
 ```
+
+### Serialization speed
+
+<VersionNote since="0.10.0" message="The vendored devalue build ships in 0.10.0. Earlier versions always use the npm package." />
+
+Mochi ships its own build of `devalue` and uses it by default. It emits the same bytes as the npm package and serializes props substantially faster — the win scales with payload size, and island props are often the largest thing on the page. Opt out with the [`useOptimizedDevalue`](/docs/serve-options/#optimized-devalue) serve option.
 
 ### Typing props
 

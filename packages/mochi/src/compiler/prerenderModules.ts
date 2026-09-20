@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { DevalueError } from 'devalue';
+import { devalueErrorPath } from '../utils/devalue';
 import { prerenderEvaluation, createPrerenderRefScope, serializePrerenderValue } from './prerenderSerialize';
 import { relForDisplay, toPosixPath } from '../utils/index';
 
@@ -172,7 +172,8 @@ export function emitPrerenderModule(ns: Namespace, filePath: string): string {
     try {
       expression = serializePrerenderValue(ns[name], scope).expression;
     } catch (e) {
-      const where = e instanceof DevalueError ? `${name}${e.path}` : name;
+      const errorPath = devalueErrorPath(e);
+      const where = errorPath === undefined ? name : `${name}${errorPath}`;
       throw new PrerenderModuleError(
         `${relForDisplay(filePath)} exports ${JSON.stringify(name)}, which cannot be inlined: ${e instanceof Error ? e.message : e} at ${where}. ` +
           'A *.prerender.ts module may export only data (anything devalue can serialize) or moduleRef() markers.',

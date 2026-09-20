@@ -7,6 +7,7 @@
 import path from 'node:path';
 import type { BunPlugin } from 'bun';
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
+import { devalueAliasPlugin } from './devalueAlias';
 import { registerServerOnlyComponentStubs } from './serverOnlyComponents';
 import { registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
 import { mergeCompilerOptions } from './svelteConfig';
@@ -51,7 +52,7 @@ export async function buildDebugBarBundle(opts: { development: boolean; backend:
   const result = await Bun.build({
     entrypoints: [path.join(SRC_DIR, 'debug-bar', 'debugbar-entry.ts')],
     // The guard goes first so its `onResolve` sees a server-only specifier before the debug-bar plugin's own handlers.
-    plugins: [serverOnlyModuleGuard, debugBarPlugin],
+    plugins: [serverOnlyModuleGuard, devalueAliasPlugin, debugBarPlugin],
     target: 'browser',
     // The `development` esm-env condition flips Svelte's runtime `DEV` on so `each_key_duplicate` reports the key.
     conditions: ['svelte', diagnostic ? 'development' : 'production'],
