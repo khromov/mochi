@@ -13,7 +13,6 @@ import {
   getDocNeighbors,
   getPostLlmsTxt,
   internalDemoLlmsRoutes,
-  loadDocs,
 } from './lib/docs';
 import { loadPosts, getPost } from './lib/blog';
 import { buildFeedXml, FEED_CONTENT_TYPE } from './lib/feed';
@@ -172,15 +171,7 @@ export const routes: Record<string, MochiRouteValue> = {
     : {}),
   '/discord': discordRoute,
   '/discord/': discordRoute,
-  '/': Mochi.page('./src/Site.svelte', {
-    serverProps: async () => {
-      const docs = await loadDocs();
-      return {
-        docsNav: await buildDocsNav(),
-        firstDocSlug: docs[0]?.slug ?? 'intro',
-      };
-    },
-  }),
+  '/': Mochi.page('./src/Site.svelte'),
   // Static, so it outranks /docs/:slug below. The changelog is a synthetic doc rendered
   // from markdown fetched at runtime — it can't ride the build-time docComponents barrel,
   // so it hands Docs.svelte pre-rendered HTML instead of a component.
