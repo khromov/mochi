@@ -28,6 +28,7 @@ import { routes as captchaStylingRoutes } from './demos/captcha-styling/routes';
 import { routes as chartsRoutes } from './demos/charts/routes';
 import { routes as chatRoutes } from './demos/chat/routes';
 import { routes as ciRoutes } from './ci/routes';
+import { routes as frontRoutes } from './front/routes';
 import { routes as clientOnlyRoutes } from './demos/client-only/routes';
 import { routes as cookieVaryTestRoutes } from './demos/cookie-vary-test/routes';
 import { routes as cookiesRoutes } from './demos/cookies/routes';
@@ -349,6 +350,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...chartsRoutes,
   ...chatRoutes,
   ...ciRoutes,
+  ...frontRoutes,
   ...ogRoutes,
   ...clientOnlyRoutes,
   ...cookieVaryTestRoutes,
