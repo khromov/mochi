@@ -2,6 +2,10 @@
   import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
   import BookOpen from '@lucide/svelte/icons/book-open';
+  import Blocks from '@lucide/svelte/icons/blocks';
+  import Bot from '@lucide/svelte/icons/bot';
+  import Container from '@lucide/svelte/icons/container';
+  import Wrench from '@lucide/svelte/icons/wrench';
   import BatteriesDiagram from './components/BatteriesDiagram.svelte';
   import HeroHeadline from './components/HeroHeadline.svelte';
   import HydrateDemo from './components/HydrateDemo.svelte';
@@ -12,6 +16,7 @@
   import DemoCard from './components/DemoCard.svelte';
   import IslandCounter from './components/IslandCounter.svelte';
   import QuickStart from './components/QuickStart.svelte';
+  import RunsOnMochi from './components/RunsOnMochi.svelte';
   import { highlightCode } from './lib/highlight.server';
   import { demos } from './lib/demos';
   import { demoIconFor } from './lib/demoIcons';
@@ -73,6 +78,37 @@ Mochi.serve({
     const meta = demoIconFor[title];
     return demo && meta ? [{ ...demo, icon: meta.icon, label: meta.label }] : [];
   });
+
+  const moreCards = [
+    {
+      icon: Container,
+      title: 'Deploy anywhere',
+      body: 'One build command and one Docker image. Runs on any host that runs Bun: PaaS, VPS, or the big clouds.',
+      href: '/docs/deployment-options/',
+      cta: 'Deployment guide',
+    },
+    {
+      icon: Blocks,
+      title: 'Your Svelte libraries just work',
+      body: 'Mochi compiles standard Svelte 5. LayerChart, Runed, Portable Text, and your own components drop in unchanged.',
+      href: '/docs/coming-from-sveltekit/',
+      cta: 'Coming from SvelteKit',
+    },
+    {
+      icon: Wrench,
+      title: 'Developer experience',
+      body: 'Debug bar, error overlay, and live reload in development. Testing helpers, svelte-check, and schema-validated env for the rest.',
+      href: '/docs/development-mode/',
+      cta: 'Development mode',
+    },
+    {
+      icon: Bot,
+      title: 'Agent-ready',
+      body: 'A remote MCP server, an agent skill, and llms.txt bundles keep coding assistants on current docs.',
+      href: '/docs/docs-for-llms/',
+      cta: 'Docs for LLMs',
+    },
+  ];
 </script>
 
 <LandingShell
@@ -86,7 +122,8 @@ Mochi.serve({
     <div class="wrap hero-grid">
       <div class="hero-copy">
         <HeroHeadline mochi:hydrate />
-        <p class="lede">Give your users the fastest possible experience with Svelte and islands-based rendering.</p>
+        <p class="lede">Server-rendered Svelte on Bun. Pages ship as HTML, and only the components you mark interactive ship JavaScript.</p>
+        <p class="uses">Built for marketing sites, docs, blogs, and full-stack apps that need forms, background jobs, and real-time updates.</p>
         <div class="ctas">
           <a class="btn btn-primary" href="/docs/intro/">
             <BookOpen size={17} strokeWidth={1.9} />
@@ -113,7 +150,7 @@ Mochi.serve({
     <div class="wrap">
       <header class="section-head">
         <h2 id="how-title">How Mochi works</h2>
-        <p>Write normal Svelte components and decide on a component by component basis what needs to be dynamic in the browser.</p>
+        <p>Write normal Svelte components and decide per component what runs in the browser.</p>
       </header>
 
       <ol class="steps">
@@ -137,7 +174,7 @@ Mochi.serve({
           <div class="step-copy">
             <h3>Mark the interactive bit</h3>
             <p>
-              Add <code>mochi:hydrate</code> to the components that needs to be interactive in the browser.
+              Add <code>mochi:hydrate</code> to the components that need to be interactive in the browser.
             </p>
           </div>
           <div class="step-pair">
@@ -158,7 +195,7 @@ Mochi.serve({
           </div>
           <div class="step-pair">
             <CodeFigure caption="src/index.ts" html={serveHtml} copyable={false} />
-            <BrowserFrame size="sm" url="DevTools · Network">
+            <BrowserFrame size="sm" url="devtools · network">
               <ul class="payload">
                 <li>
                   <span class="payload-kind">HTML</span>
@@ -179,8 +216,8 @@ Mochi.serve({
   <section class="perf" aria-labelledby="perf-title">
     <div class="wrap perf-grid">
       <div class="section-head perf-copy">
-        <h2 id="perf-title">Real performance gains</h2>
-        <p>Pages render to HTML on the server and only islands ship JavaScript, so Mochi sends up to 5× less code than a fully hydrated SvelteKit app.</p>
+        <h2 id="perf-title">Less JavaScript, by construction</h2>
+        <p>Pages render to HTML on the server. Only islands ship JavaScript, so the same app sends a fraction of the code a fully hydrated SvelteKit build does.</p>
         <a class="all-demos" href={comparisonProjectUrl}>See the comparison project <ArrowRight size={15} strokeWidth={2} /></a>
       </div>
       <JsShippedChart />
@@ -190,11 +227,31 @@ Mochi.serve({
   <section class="features" aria-labelledby="features-title">
     <div class="wrap">
       <header class="section-head">
-        <h2 id="features-title">A full-stack framework for building real sites</h2>
-        <p>Everything below ships with Mochi. Switch to SvelteKit to see what you'd bring yourself.</p>
+        <h2 id="features-title">Everything a real site needs, built in</h2>
+        <p>Forget about looking for third party services or packages. Databases, caching, email and real-time are built in. That's what we call "batteries included"</p>
       </header>
 
       <BatteriesDiagram />
+    </div>
+  </section>
+
+  <section class="more" aria-labelledby="more-title">
+    <div class="wrap">
+      <header class="section-head">
+        <h2 id="more-title">From first commit to production</h2>
+        <p>The parts of a project that aren't the page.</p>
+      </header>
+
+      <ul class="more-grid">
+        {#each moreCards as card (card.href)}
+          <li class="more-card">
+            <span class="more-icon"><card.icon size={20} strokeWidth={1.8} /></span>
+            <h3>{card.title}</h3>
+            <p>{card.body}</p>
+            <a class="all-demos" href={card.href}>{card.cta} <ArrowRight size={15} strokeWidth={2} /></a>
+          </li>
+        {/each}
+      </ul>
     </div>
   </section>
 
@@ -216,11 +273,24 @@ Mochi.serve({
     </div>
   </section>
 
+  <section class="runs" aria-labelledby="runs-title">
+    <div class="wrap">
+      <header class="section-head section-head-row">
+        <div>
+          <h2 id="runs-title">Runs on Mochi</h2>
+          <p>Sites built on the framework.</p>
+        </div>
+        <p class="runs-share">Built something with Mochi? <a href="/discord/">Tell us on Discord</a>.</p>
+      </header>
+      <RunsOnMochi mochi:hydrate />
+    </div>
+  </section>
+
   <section class="closing" aria-labelledby="closing-title">
     <div class="wrap closing-inner">
       <div class="closing-copy">
-        <h2 id="closing-title">Start with HTML. Add islands where they earn it.</h2>
-        <p>One command scaffolds a working app. The docs take it from there.</p>
+        <h2 id="closing-title">Ship HTML by default. Hydrate only what needs it.</h2>
+        <p>One command scaffolds a working app. The tutorial takes it from there.</p>
       </div>
       <div class="closing-actions">
         <CodeFigure html={createHtml} class="code-command" />
@@ -333,6 +403,15 @@ Mochi.serve({
     text-wrap: pretty;
   }
 
+  .uses {
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: var(--text-subtle);
+    max-width: 40ch;
+    margin: -0.9rem 0 1.75rem;
+    text-wrap: pretty;
+  }
+
   .ctas {
     display: flex;
     flex-wrap: wrap;
@@ -412,9 +491,64 @@ Mochi.serve({
   section.how,
   section.perf,
   section.features,
-  section.demos {
+  section.more,
+  section.demos,
+  section.runs {
     padding: 5rem 0;
     border-top: 1px solid var(--border);
+  }
+
+  .runs-share {
+    font-size: 0.92rem;
+    color: var(--text-subtle);
+  }
+
+  .runs-share a {
+    color: var(--accent);
+  }
+
+  .more-grid {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+  }
+
+  .more-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: 1.35rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+  }
+
+  .more-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: var(--radius-sm);
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    color: var(--accent);
+  }
+
+  .more-card h3 {
+    font-size: 1.2rem;
+    line-height: 1.2;
+    margin-top: 0.3rem;
+  }
+
+  .more-card p {
+    flex: 1;
+    font-size: 0.95rem;
+    line-height: 1.55;
+    color: var(--text-muted);
   }
 
   .perf-grid {
@@ -434,7 +568,12 @@ Mochi.serve({
     text-wrap: pretty;
   }
 
-  section.features {
+  section.how {
+    background: var(--surface);
+  }
+
+  section.features,
+  section.demos {
     background: var(--surface-muted);
   }
 
@@ -506,7 +645,7 @@ Mochi.serve({
 
   .step-pair :global(.code-marked .hydrate-mark) {
     padding-bottom: 0.45em;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 14' preserveAspectRatio='none'%3E%3Cpath d='M3 8.5C38 4.5 74 5.8 110 6.2c31 .4 58-.6 87-2.4' fill='none' stroke='%23ff5a1f' stroke-width='2.6' stroke-linecap='round' vector-effect='non-scaling-stroke'/%3E%3Cpath d='M16 11.2c42-2.6 94-3.1 150-1.9' fill='none' stroke='%23ff5a1f' stroke-width='1.6' stroke-linecap='round' vector-effect='non-scaling-stroke' opacity='.75'/%3E%3C/svg%3E")
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 14' preserveAspectRatio='none'%3E%3Cpath d='M3 8.5C38 4.5 74 5.8 110 6.2c31 .4 58-.6 87-2.4' fill='none' stroke='%238ab79a' stroke-width='2.6' stroke-linecap='round' vector-effect='non-scaling-stroke'/%3E%3Cpath d='M16 11.2c42-2.6 94-3.1 150-1.9' fill='none' stroke='%238ab79a' stroke-width='1.6' stroke-linecap='round' vector-effect='non-scaling-stroke' opacity='.75'/%3E%3C/svg%3E")
       no-repeat left bottom / 100% 0.6em;
   }
 
@@ -662,7 +801,8 @@ Mochi.serve({
       max-width: 44ch;
     }
 
-    .demo-grid {
+    .demo-grid,
+    .more-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
@@ -693,7 +833,9 @@ Mochi.serve({
     section.how,
     section.perf,
     section.features,
-    section.demos {
+    section.more,
+    section.demos,
+    section.runs {
       padding: 3.5rem 0;
     }
 
@@ -701,7 +843,8 @@ Mochi.serve({
       grid-template-columns: minmax(0, 1fr);
     }
 
-    .demo-grid {
+    .demo-grid,
+    .more-grid {
       grid-template-columns: minmax(0, 1fr);
     }
 

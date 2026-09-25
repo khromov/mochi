@@ -9,6 +9,21 @@
       <span class="footer-mark-word">mochi</span>
     </a>
 
+    <nav class="footer-links" aria-label="Footer">
+      <ul>
+        <li><a href="/docs/intro/">Docs</a></li>
+        <li><a href="/demos/">Demos</a></li>
+        <li><a href="/blog/">Blog</a></li>
+        <li><a href="/docs/changelog/">Changelog</a></li>
+      </ul>
+      <ul>
+        <li><a href="https://github.com/khromov/mochi" target="_blank" rel="noopener noreferrer">GitHub</a></li>
+        <li><a href="/discord/">Discord</a></li>
+        <li><a href="https://www.npmjs.com/package/mochi-framework" target="_blank" rel="noopener noreferrer">npm</a></li>
+        <li><a href="/blog/#newsletter">Newsletter</a></li>
+      </ul>
+    </nav>
+
     <p class="footer-colophon">
       <span class="colophon-label">Colophon</span>
       <span class="colophon-body">
@@ -59,6 +74,34 @@
     font-size: 1.1em;
   }
 
+  .footer-links {
+    display: flex;
+    gap: 2.5rem;
+  }
+
+  .footer-links ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.35rem;
+    font-size: 0.85rem;
+  }
+
+  .footer-links a {
+    color: var(--text-muted);
+    text-decoration: none;
+  }
+
+  .footer-links a:hover {
+    color: var(--text);
+  }
+
+  .footer-links a:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+
   .footer-colophon {
     display: flex;
     flex-direction: column;
@@ -99,6 +142,10 @@
     .footer-inner {
       flex-direction: column;
       align-items: flex-start;
+    }
+
+    .footer-links {
+      gap: 2rem;
     }
 
     .footer-colophon {

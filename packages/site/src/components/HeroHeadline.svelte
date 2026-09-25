@@ -4,13 +4,11 @@
     'zero JS by default',
     'full-stack Svelte on Bun',
     'islands architecture',
-    'database-ready',
-    'HTML-first',
     'real-time ready',
-    'progressively enhanced',
     'agent-ready',
     'fast by default',
     'open source',
+    'batteries included',
   ].map((phrase) =>
     // A word joiner on each side of the hyphen stops wrapping from splitting "meta-framework".
     phrase.replaceAll('-', '\u2060-\u2060'),

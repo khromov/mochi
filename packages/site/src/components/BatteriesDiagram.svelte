@@ -1,9 +1,7 @@
 <script lang="ts">
   import ArrowRight from '@lucide/svelte/icons/arrow-right';
-  import { branches, kitCell, kitNote, mochiNote } from '../lib/batteries';
-
-  const nodes = branches.flatMap((branch) => branch.nodes);
-  const kitCount = (status: string) => nodes.filter((node) => kitCell(node).status === status).length;
+  import { branches, kitCell, kitNote } from '../lib/batteries';
+  import SvelteKitLogo from './SvelteKitLogo.svelte';
 </script>
 
 <div class="batteries">
@@ -16,7 +14,7 @@
   <div class="tree">
     <div class="root">
       <span class="root-mochi"><span aria-hidden="true">🍡</span> mochi</span>
-      <span class="root-kit">SvelteKit</span>
+      <span class="root-kit"><SvelteKitLogo /></span>
     </div>
 
     <ul class="branches">
@@ -31,13 +29,11 @@
                   <span class="card-icon"><node.icon size={18} strokeWidth={1.8} /></span>
                   <span class="card-text">
                     <span class="card-label">{node.label}</span>
-                    <span class="notes">
-                      <span class="note note-mochi">{mochiNote(node)}</span>
-                      <span class="note note-kit">
-                        {#if kit.status === 'partial'}<span class="sr-only">Partial:</span>{/if}
-                        {kitNote(node)}
-                      </span>
-                    </span>
+                    {#if kit.status === 'partial'}
+                      <span class="note"><span class="sr-only">Partial:</span> {kitNote(node)}</span>
+                    {:else}
+                      <span class="note sr-only">{kit.status === 'yes' ? 'Built in' : 'Not built in'}</span>
+                    {/if}
                   </span>
                 </a>
               </li>
@@ -48,17 +44,15 @@
     </ul>
   </div>
 
-  <p class="tally" aria-live="polite">
-    <span class="tally-mochi">All {nodes.length} built in, no extra packages.</span>
-    <span class="tally-kit">SvelteKit: {kitCount('yes')} built in · {kitCount('partial')} partial · {kitCount('no')} bring your own.</span>
-    <a class="tally-link" href="/docs/mochi-vs-sveltekit/">Full comparison <ArrowRight size={14} strokeWidth={2} /></a>
-  </p>
+  <a class="comparison-btn" href="/docs/mochi-vs-sveltekit/">
+    Full comparison
+    <ArrowRight size={16} strokeWidth={1.9} />
+  </a>
 </div>
 
 <style>
   .batteries {
     --line: var(--border-strong);
-    --kit-orange: #ff3e00;
     --partial-bg: #f7ecc4;
     --partial-fg: #9a7100;
     display: grid;
@@ -149,6 +143,7 @@
     font-family: var(--font-serif);
     font-size: 1.3rem;
     font-weight: 500;
+    line-height: 1.5;
     letter-spacing: -0.01em;
     box-shadow: var(--shadow-md);
   }
@@ -258,7 +253,7 @@
 
   .card {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 0.7rem;
     padding: 0.7rem 0.8rem;
     background: var(--surface);
@@ -293,8 +288,10 @@
 
   .card-text {
     display: grid;
+    align-content: center;
     gap: 0.1rem;
     min-width: 0;
+    min-height: 2.5rem;
   }
 
   .card-label {
@@ -303,80 +300,65 @@
     line-height: 1.3;
   }
 
-  .notes {
-    display: grid;
-  }
-
   .note {
-    grid-area: 1 / 1;
-    font-family: var(--font-mono);
-    font-size: 0.74rem;
+    display: none;
+    font-size: 0.8rem;
     line-height: 1.45;
     color: var(--text-subtle);
   }
 
-  .note-kit {
-    visibility: hidden;
-    font-family: var(--font-sans);
-    font-size: 0.8rem;
-  }
-
-  .tally {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
-    gap: 0.4rem 1rem;
-    margin-top: 2rem;
-    text-align: center;
-    font-size: 0.95rem;
-    color: var(--text-muted);
-  }
-
-  .tally-kit {
-    display: none;
-  }
-
-  .tally-link {
+  .comparison-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: 0.5rem;
+    margin-top: 2rem;
+    padding: 0.75rem 1.2rem;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 0.98rem;
     font-weight: 600;
-    color: var(--accent);
     text-decoration: none;
+    transition:
+      border-color 0.15s ease,
+      color 0.15s ease;
   }
 
-  .tally-link:hover {
-    color: var(--accent-hover);
+  .comparison-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
   }
 
-  .tally-link:focus-visible {
+  .comparison-btn:focus-visible {
     outline: none;
-    border-radius: var(--radius-sm);
     box-shadow: var(--focus-ring);
   }
 
   .batteries:has(input[value='kit']:checked) .root {
-    background: var(--kit-orange);
-    color: #fff;
+    background: var(--surface);
+    color: var(--text);
+    box-shadow:
+      var(--shadow-md),
+      inset 0 0 0 1px var(--border-strong);
   }
 
-  .batteries:has(input[value='kit']:checked) .root-mochi,
-  .batteries:has(input[value='kit']:checked) .tally-mochi {
+  .batteries:has(input[value='kit']:checked) .root-mochi {
     display: none;
   }
 
-  .batteries:has(input[value='kit']:checked) .root-kit,
-  .batteries:has(input[value='kit']:checked) .tally-kit {
-    display: inline;
+  .batteries:has(input[value='kit']:checked) .root-kit {
+    display: flex;
+    align-items: center;
+    height: 1.5em;
   }
 
-  .batteries:has(input[value='kit']:checked) .note-mochi {
-    visibility: hidden;
+  .root-kit :global(.sveltekit-logo) {
+    height: 1.15em;
   }
 
-  .batteries:has(input[value='kit']:checked) .note-kit {
-    visibility: visible;
+  .batteries:has(input[value='kit']:checked) .note {
+    display: block;
   }
 
   .batteries:has(input[value='kit']:checked) .leaf[data-kit='partial'] .card,

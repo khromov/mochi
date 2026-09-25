@@ -23,8 +23,7 @@ export interface BatteryNode {
   /** Exact `feature` names of the comparison-table rows this node summarises. */
   features: string[];
   href: string;
-  note?: string;
-  /** Shorter stand-in for the table's SvelteKit note, which is written for a wide column. */
+  /** Shorter stand-in for the table's SvelteKit note, which is written for a wide column. Shown only for partial support. */
   kitNote?: string;
 }
 
@@ -42,26 +41,19 @@ export const branches: BatteryBranch[] = [
         icon: Database,
         features: ['Built-in SQLite database', 'Built-in Postgres & MySQL support'],
         href: '/docs/persistence/',
-        note: 'bun:sqlite & Bun.sql()',
         kitNote: 'third party or sqlite with Node.js',
       },
       { label: 'Job queues', icon: ListChecks, features: ['Background job queues'], href: '/docs/queues/' },
       { label: 'Caching', icon: Zap, features: ['Built-in caching library'], href: '/docs/cache/' },
-      {
-        label: 'Logging',
-        icon: ScrollText,
-        features: ['Centralized logging system'],
-        href: '/docs/logging/',
-        kitNote: 'experimental OTel',
-      },
+      { label: 'Logging', icon: ScrollText, features: ['Centralized logging system'], href: '/docs/logging/' },
     ],
   },
   {
     title: 'Server',
     nodes: [
-      { label: 'WebSockets', icon: Radio, features: ['Real-time WebSockets'], href: '/docs/websocket-routes/', kitNote: 'custom server + package' },
-      { label: 'Server-Sent Events', icon: Rss, features: ['Server-Sent Events'], href: '/docs/server-sent-events/', kitNote: 'manual setup' },
-      { label: 'Middleware', icon: Layers, features: ['Middleware'], href: '/docs/middleware/', note: 'handle & sequence()' },
+      { label: 'WebSockets', icon: Radio, features: ['Real-time WebSockets'], href: '/docs/websocket-routes/' },
+      { label: 'Server-Sent Events', icon: Rss, features: ['Server-Sent Events'], href: '/docs/server-sent-events/' },
+      { label: 'Middleware', icon: Layers, features: ['Middleware'], href: '/docs/middleware/' },
       { label: 'Hooks & filters', icon: Puzzle, features: ['Hooks & extension filters'], href: '/docs/extensions/' },
     ],
   },
@@ -73,11 +65,10 @@ export const branches: BatteryBranch[] = [
         icon: ClipboardCheck,
         features: ['Form actions + progressively enhanced forms'],
         href: '/docs/progressively-enhancing-forms-with-enhance/',
-        note: 'use:enhance',
       },
       { label: 'Captcha', icon: ShieldCheck, features: ['Form captcha'], href: '/docs/captcha/' },
-      { label: 'Rate limiting', icon: Gauge, features: ['Rate limiting'], href: '/docs/rate-limiting/', note: 'per-route rateLimit' },
-      { label: 'Cookies', icon: Cookie, features: ['Cookie helpers'], href: '/docs/request-context/#cookies', note: 'cookies.get() & set()' },
+      { label: 'Rate limiting', icon: Gauge, features: ['Rate limiting'], href: '/docs/rate-limiting/' },
+      { label: 'Cookies', icon: Cookie, features: ['Cookie helpers'], href: '/docs/request-context/#cookies' },
     ],
   },
   {
@@ -90,10 +81,9 @@ export const branches: BatteryBranch[] = [
         icon: Image,
         features: ['Image resizing'],
         href: '/docs/images/',
-        note: 'runtime transforms',
         kitNote: 'build-time only',
       },
-      { label: 'Markdown', icon: FileText, features: ['Built-in Markdown (mdsvex)'], href: '/docs/mdsvex/', kitNote: 'via sv add mdsvex' },
+      { label: 'Markdown', icon: FileText, features: ['Built-in Markdown (mdsvex)'], href: '/docs/mdsvex/' },
     ],
   },
 ];
@@ -109,11 +99,6 @@ export function kitCell(node: BatteryNode): Cell {
     .reduce<Cell>((best, cell) => (rank[cell.status] >= rank[best.status] ? cell : best), { status: 'no' });
 }
 
-export function mochiNote(node: BatteryNode): string | undefined {
-  return node.note ?? rowsFor(node)[0]?.mochi.note;
-}
-
-export function kitNote(node: BatteryNode): string {
-  const cell = kitCell(node);
-  return node.kitNote ?? cell.note ?? (cell.status === 'yes' ? 'Built in' : 'Not built in');
+export function kitNote(node: BatteryNode): string | undefined {
+  return node.kitNote ?? kitCell(node).note;
 }

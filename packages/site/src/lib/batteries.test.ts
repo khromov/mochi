@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 import { rows } from '../../../docs/_components/comparisonRows';
-import { branches, kitCell, mochiNote, rowsFor } from './batteries';
+import { branches, kitCell, kitNote, rowsFor } from './batteries';
 
 const nodes = branches.flatMap((branch) => branch.nodes);
 
@@ -18,8 +18,9 @@ describe('batteries diagram', () => {
     expect(unsupported.map((node) => node.label)).toEqual([]);
   });
 
-  it('gives every node a Mochi note', () => {
-    expect(nodes.filter((node) => !mochiNote(node)).map((node) => node.label)).toEqual([]);
+  it('gives every partially supported node a SvelteKit note', () => {
+    const partial = nodes.filter((node) => kitCell(node).status === 'partial');
+    expect(partial.filter((node) => !kitNote(node)).map((node) => node.label)).toEqual([]);
   });
 
   it('rates a multi-row node by its best-supported row', () => {

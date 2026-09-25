@@ -14,6 +14,7 @@
       <a href="/demos/">Demos</a>
       <a href="/blog/">Blog</a>
       <a class="hide-sm" href="/docs/changelog/">Changelog</a>
+      <a class="hide-sm" href="/discord/">Discord</a>
     </nav>
     <div class="actions">
       <ThemeToggle mochi:hydrate compact />

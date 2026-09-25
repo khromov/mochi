@@ -107,30 +107,55 @@
     display: inline-flex;
     align-items: center;
     gap: 0.6rem;
-    padding: var(--btn-pad-y) 1.2rem var(--btn-pad-y) var(--btn-pad-y);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-md);
+    padding: var(--btn-pad-y) 1.25rem var(--btn-pad-y) var(--btn-pad-y);
+    border: 2px solid var(--text);
+    border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
     background: var(--surface);
     color: var(--text);
-    font: inherit;
-    font-size: 0.98rem;
+    font-family: var(--font-serif);
+    font-variation-settings:
+      'opsz' 20,
+      'SOFT' 100;
+    font-size: 1.05rem;
     font-weight: 600;
     cursor: pointer;
     user-select: none;
+    box-shadow: 3px 3px 0 var(--text);
     transition:
+      transform 0.1s ease,
+      box-shadow 0.1s ease,
       border-color 0.15s ease,
+      background-color 0.15s ease,
       color 0.15s ease;
   }
 
   .hydrate-btn:hover {
-    border-color: var(--accent);
-    color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .hydrate-btn:active {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0 var(--text);
   }
 
   .hydrate-btn:focus-visible {
     outline: none;
-    border-color: var(--accent);
-    box-shadow: var(--focus-ring);
+    box-shadow:
+      3px 3px 0 var(--text),
+      var(--focus-ring);
+  }
+
+  .hydrated .hydrate-btn {
+    --island-ink: color-mix(in srgb, var(--island) 45%, var(--surface));
+    border-color: var(--island-ink);
+    background: color-mix(in srgb, var(--island-soft) 50%, var(--surface));
+    color: var(--island-text);
+    box-shadow: 3px 3px 0 var(--island-ink);
+    opacity: 0.85;
+  }
+
+  .hydrated .hydrate-btn:active {
+    box-shadow: 1px 1px 0 var(--island-ink);
   }
 
   .btn-chip {
@@ -139,7 +164,7 @@
     justify-content: center;
     width: var(--btn-chip);
     height: var(--btn-chip);
-    border-radius: var(--radius-sm);
+    border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
     background: var(--accent-soft);
     font-size: 1rem;
     line-height: 1;
