@@ -53,6 +53,14 @@ function mount(options: Record<string, unknown> | null = null): HTMLElement {
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
+// An `import()` settling can outlast a fixed tick count on a loaded CI runner (the first one reads and transpiles the
+// stub from disk), so tests that wait on one poll for its outcome instead.
+async function until(condition: () => boolean, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition() && Date.now() < deadline) {
+    await settle();
+  }
+}
 const runs = () => globalThis.__mochi_bootstrap_stub_runs ?? 0;
 const marker = (url: string) => `<template ${BOOTSTRAP_MARKER_ATTR}="${url}"></template>`;
 const fragment = (url: string) => `${marker(url)}<mochi-hydratable-island component-name="Counter_abc"><button>count 0</button></mochi-hydratable-island>`;
@@ -65,7 +73,7 @@ describe('<mochi-server-island> bootstrap marker', () => {
     bodies = [fragment(STUB), fragment(STUB)];
     const a = mount();
     const b = mount();
-    await settle();
+    await until(() => runs() > 0);
     await settle();
 
     expect(runs()).toBe(1);
@@ -104,8 +112,7 @@ describe('<mochi-server-island> bootstrap marker', () => {
   test('a bootstrap that fails to load is reported and leaves the content in place', async () => {
     bodies = [fragment('/_mochi/client/HydratableIsland-missing.js')];
     const el = mount();
-    await settle();
-    await settle();
+    await until(() => warnings.length > 0);
 
     expect(el.querySelector(`[${BOOTSTRAP_MARKER_ATTR}]`)).toBeNull();
     expect(el.querySelector('mochi-hydratable-island')).not.toBeNull();
