@@ -1,4 +1,8 @@
-<footer class="footer">
+<script lang="ts">
+  let { wide = false }: { wide?: boolean } = $props();
+</script>
+
+<footer class="footer" class:wide>
   <div class="footer-inner">
     <a class="footer-mark" href="/">
       <span class="footer-mark-glyph" aria-hidden="true">🍡</span>
@@ -30,6 +34,10 @@
     justify-content: space-between;
     gap: 1.5rem;
     flex-wrap: wrap;
+  }
+
+  .wide .footer-inner {
+    max-width: calc(1200px - 3rem);
   }
 
   .footer-mark {
@@ -79,6 +87,12 @@
 
   .footer-heart {
     color: #c94f4f;
+  }
+
+  @media (max-width: 720px) {
+    .footer.wide {
+      padding-inline: 1rem;
+    }
   }
 
   @media (max-width: 640px) {

@@ -35,7 +35,7 @@
   <main class="landing-main">
     {@render children()}
   </main>
-  <Footer />
+  <Footer wide />
 </div>
 
 <CodeBlockCopy mochi:hydrate />

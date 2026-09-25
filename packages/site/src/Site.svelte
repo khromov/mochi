@@ -1,16 +1,8 @@
 <script lang="ts">
-  import type { Component } from 'svelte';
   import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
   import BookOpen from '@lucide/svelte/icons/book-open';
-  import Leaf from '@lucide/svelte/icons/leaf';
-  import Timer from '@lucide/svelte/icons/timer';
-  import ArrowRightLeft from '@lucide/svelte/icons/arrow-right-left';
-  import Zap from '@lucide/svelte/icons/zap';
-  import Radio from '@lucide/svelte/icons/radio';
-  import ClipboardCheck from '@lucide/svelte/icons/clipboard-check';
-  import Database from '@lucide/svelte/icons/database';
-  import Bot from '@lucide/svelte/icons/bot';
+  import BatteriesDiagram from './components/BatteriesDiagram.svelte';
   import LandingShell from './components/LandingShell.svelte';
   import BrowserFrame from './components/BrowserFrame.svelte';
   import IslandCounter from './components/IslandCounter.svelte';
@@ -55,56 +47,11 @@ Mochi.serve({
     highlightCode('bun create mochi@latest', 'bash'),
   ]);
 
-  const features: { icon: Component; title: string; body: string; href: string }[] = [
-    {
-      icon: Leaf,
-      title: 'Zero JS by default',
-      body: 'Every component renders to HTML. Only what you mark with mochi:hydrate ships a bundle.',
-      href: '/docs/selective-hydration/',
-    },
-    {
-      icon: Timer,
-      title: 'Lazy and server islands',
-      body: 'Hydrate on scroll with mochi:hydrate:visible, or stream slow parts in later with mochi:defer.',
-      href: '/docs/server-islands/',
-    },
-    {
-      icon: ArrowRightLeft,
-      title: 'View Transitions',
-      body: 'Animated navigations between real documents. No client router to ship or maintain.',
-      href: '/docs/view-transitions/',
-    },
-    {
-      icon: Zap,
-      title: 'Built on Bun',
-      body: 'Bun’s bundler instead of Vite. Hundreds of routes build in seconds.',
-      href: '/docs/why-bun/',
-    },
-    {
-      icon: Radio,
-      title: 'WebSockets and SSE',
-      body: 'Real-time endpoints are route types, declared next to your pages.',
-      href: '/docs/websocket-routes/',
-    },
-    {
-      icon: ClipboardCheck,
-      title: 'Form actions',
-      body: 'Forms work without JavaScript, then get progressively enhanced when it loads.',
-      href: '/docs/progressively-enhancing-forms-with-enhance/',
-    },
-    {
-      icon: Database,
-      title: 'Data and jobs built in',
-      body: 'SQLite, Postgres or MySQL, background queues, cron, cache, images and rate limiting.',
-      href: '/docs/persistence/',
-    },
-    {
-      icon: Bot,
-      title: 'Ready for AI tools',
-      body: 'Docs as llms.txt and an MCP server, so your assistant knows the framework.',
-      href: '/docs/docs-for-llms/',
-    },
-  ];
+  // The rotator's keyframe percentages assume exactly five phrases, 3s each, and the brush is sized to the first (widest) one.
+  const phrases = ['a Svelte meta-framework', 'full-stack Svelte on Bun', 'zero JS by default', 'server-first', 'batteries included'].map((phrase) =>
+    // A word joiner on each side of the hyphen stops wrapping from splitting "meta-framework".
+    phrase.replaceAll('-', '\u2060-\u2060'),
+  );
 
   const featuredTitles = [
     'Hello World',
@@ -135,8 +82,17 @@ Mochi.serve({
   <section class="hero">
     <div class="wrap hero-grid">
       <div class="hero-copy">
-        <h1>The light-weight, full-stack Svelte meta-framework.</h1>
-        <p class="lede">Mochi is a full-stack meta-framework on Bun. Everything renders on the server; only the parts you mark ship JavaScript.</p>
+        <h1 class="headline">
+          <span class="headline-lead">Mochi is</span>
+          <span class="sr-only">{phrases[0]}</span>
+          <span class="rotator" aria-hidden="true">
+            <span class="brush-slot"><span class="brush">{phrases[0]}</span></span>
+            {#each phrases as phrase, i (phrase)}
+              <span class="phrase-slot" style:--i={i}>{phrase}</span>
+            {/each}
+          </span>
+        </h1>
+        <p class="lede">Built on Bun. Everything renders on the server; only the parts you mark ship JavaScript.</p>
         <div class="ctas">
           <a class="btn btn-primary" href="/docs/intro/">
             <BookOpen size={17} strokeWidth={1.9} />
@@ -250,21 +206,10 @@ Mochi.serve({
     <div class="wrap">
       <header class="section-head">
         <h2 id="features-title">A full-stack framework, not just a renderer</h2>
-        <p>The server does the work, so the server gets the features.</p>
+        <p>Everything below ships with Mochi. Switch to SvelteKit to see what you'd bring yourself.</p>
       </header>
 
-      <ul class="feature-grid">
-        {#each features as feature (feature.title)}
-          <li>
-            <a class="feature" href={feature.href}>
-              <span class="feature-icon"><feature.icon size={20} strokeWidth={1.8} /></span>
-              <h3>{feature.title}</h3>
-              <p>{feature.body}</p>
-              <span class="feature-link">Docs <ArrowRight size={14} strokeWidth={2} /></span>
-            </a>
-          </li>
-        {/each}
-      </ul>
+      <BatteriesDiagram />
     </div>
   </section>
 
@@ -349,18 +294,107 @@ Mochi.serve({
 
   .hero-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
     gap: 4rem;
     align-items: center;
   }
 
-  .hero-copy h1 {
-    font-size: clamp(2.4rem, 5vw, 3.9rem);
-    line-height: 1.04;
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .headline {
+    --brush: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 60' preserveAspectRatio='none'%3E%3Cpath fill='%23b9dbbf' d='M8 16 L20 11 C80 7 150 10 220 7 C290 4 350 8 386 8 L395 15 L389 21 L397 29 L390 36 L396 45 C350 51 290 48 225 52 C160 56 90 51 36 54 L14 50 L21 43 L5 37 L15 29 L3 22 Z'/%3E%3Cpath fill='%23b9dbbf' fill-opacity='.55' d='M40 3 C140 0 280 -1 372 3 L376 7 C280 6 150 8 40 8 Z M60 55 C160 58 270 57 350 55 L346 59 C260 60 150 60 64 59 Z'/%3E%3C/svg%3E");
+    font-size: clamp(2.4rem, 5vw, 3.6rem);
+    line-height: 1.08;
     letter-spacing: -0.025em;
     font-weight: 400;
-    text-wrap: balance;
     margin-bottom: 1.25rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme='light'])) .headline {
+      --brush: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 60' preserveAspectRatio='none'%3E%3Cpath fill='%2336613f' d='M8 16 L20 11 C80 7 150 10 220 7 C290 4 350 8 386 8 L395 15 L389 21 L397 29 L390 36 L396 45 C350 51 290 48 225 52 C160 56 90 51 36 54 L14 50 L21 43 L5 37 L15 29 L3 22 Z'/%3E%3Cpath fill='%2336613f' fill-opacity='.55' d='M40 3 C140 0 280 -1 372 3 L376 7 C280 6 150 8 40 8 Z M60 55 C160 58 270 57 350 55 L346 59 C260 60 150 60 64 59 Z'/%3E%3C/svg%3E");
+    }
+  }
+
+  :global(:root[data-theme='dark']) .headline {
+    --brush: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 60' preserveAspectRatio='none'%3E%3Cpath fill='%2336613f' d='M8 16 L20 11 C80 7 150 10 220 7 C290 4 350 8 386 8 L395 15 L389 21 L397 29 L390 36 L396 45 C350 51 290 48 225 52 C160 56 90 51 36 54 L14 50 L21 43 L5 37 L15 29 L3 22 Z'/%3E%3Cpath fill='%2336613f' fill-opacity='.55' d='M40 3 C140 0 280 -1 372 3 L376 7 C280 6 150 8 40 8 Z M60 55 C160 58 270 57 350 55 L346 59 C260 60 150 60 64 59 Z'/%3E%3C/svg%3E");
+  }
+
+  .headline-lead {
+    display: block;
+  }
+
+  .rotator {
+    display: grid;
+  }
+
+  .brush-slot,
+  .phrase-slot {
+    grid-area: 1 / 1;
+    text-wrap: balance;
+  }
+
+  .brush-slot {
+    color: transparent;
+    user-select: none;
+  }
+
+  .brush {
+    padding: 0 0.12em;
+    margin: 0 -0.12em;
+    background: var(--brush) no-repeat 0 80% / 100% 62%;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+    animation: brush-sweep 0.8s 0.3s cubic-bezier(0.6, 0, 0.3, 1) backwards;
+  }
+
+  .phrase-slot {
+    position: relative;
+    animation: phrase-cycle 15s calc(var(--i) * 3s) infinite backwards;
+  }
+
+  @keyframes phrase-cycle {
+    0% {
+      opacity: 0;
+      transform: translateY(0.2em);
+    }
+    3%,
+    17% {
+      opacity: 1;
+      transform: none;
+    }
+    20%,
+    100% {
+      opacity: 0;
+      transform: translateY(-0.2em);
+    }
+  }
+
+  @keyframes brush-sweep {
+    from {
+      background-size: 0% 62%;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .brush,
+    .phrase-slot {
+      animation: none;
+    }
+
+    .phrase-slot:not(.brush-slot + .phrase-slot) {
+      display: none;
+    }
   }
 
   .lede {
@@ -393,6 +427,13 @@ Mochi.serve({
       background 0.15s ease,
       border-color 0.15s ease,
       color 0.15s ease;
+  }
+
+  .btn:focus-visible,
+  .demo:focus-visible,
+  .all-demos:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
   }
 
   .btn-primary {
@@ -632,79 +673,14 @@ Mochi.serve({
     color: var(--text-subtle);
   }
 
-  .feature-grid {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 1rem;
-  }
-
-  .feature-grid li {
-    display: flex;
-  }
-
-  .feature {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 0.55rem;
-    padding: 1.4rem 1.3rem 1.25rem;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    text-decoration: none;
-    color: inherit;
-    transition:
-      border-color 0.15s ease,
-      box-shadow 0.15s ease,
-      transform 0.15s ease;
-  }
-
-  .feature:hover {
-    border-color: var(--accent);
-    box-shadow: var(--shadow-md);
-    transform: translateY(-2px);
-  }
-
-  .feature-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.4rem;
-    height: 2.4rem;
-    margin-bottom: 0.35rem;
-    border-radius: var(--radius-md);
-    background: var(--accent-soft);
-    color: var(--accent-soft-text);
-  }
-
-  .feature h3 {
-    font-size: 1.15rem;
-    line-height: 1.25;
-  }
-
-  .feature p {
-    flex: 1;
-    font-size: 0.92rem;
-    line-height: 1.55;
-    color: var(--text-muted);
-  }
-
-  .feature-link,
   .all-demos {
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    font-size: 0.88rem;
+    font-size: 0.95rem;
     font-weight: 600;
     color: var(--accent);
-  }
-
-  .all-demos {
     text-decoration: none;
-    font-size: 0.95rem;
   }
 
   .all-demos:hover {
@@ -720,7 +696,12 @@ Mochi.serve({
     gap: 0.75rem;
   }
 
+  .demo-grid li {
+    display: flex;
+  }
+
   .demo {
+    flex: 1;
     display: flex;
     align-items: center;
     gap: 0.85rem;
@@ -765,10 +746,8 @@ Mochi.serve({
 
   .demo-label {
     font-size: 0.84rem;
+    line-height: 1.4;
     color: var(--text-subtle);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .closing {
@@ -822,17 +801,12 @@ Mochi.serve({
       gap: 3rem;
     }
 
-    .hero-copy h1,
-    .lede {
+    .headline {
       max-width: 22ch;
     }
 
     .lede {
       max-width: 44ch;
-    }
-
-    .feature-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .demo-grid {
@@ -872,16 +846,16 @@ Mochi.serve({
       grid-template-columns: minmax(0, 1fr);
     }
 
+    .headline {
+      font-size: min(2.4rem, 9.4vw);
+    }
+
     .lede {
       font-size: 1.08rem;
     }
   }
 
   @media (max-width: 560px) {
-    .feature-grid {
-      grid-template-columns: minmax(0, 1fr);
-    }
-
     .code-command {
       width: 100%;
     }
