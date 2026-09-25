@@ -135,7 +135,7 @@ Mochi.serve({
   <section class="hero">
     <div class="wrap hero-grid">
       <div class="hero-copy">
-        <h1>Light-weight, full-stack Svelte.</h1>
+        <h1>The light-weight, full-stack Svelte meta-framework.</h1>
         <p class="lede">Mochi is a full-stack meta-framework on Bun. Everything renders on the server; only the parts you mark ship JavaScript.</p>
         <div class="ctas">
           <a class="btn btn-primary" href="/docs/intro/">
