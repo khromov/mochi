@@ -30,7 +30,7 @@
                   <span class="card-text">
                     <span class="card-label">{node.label}</span>
                     {#if kit.status === 'partial'}
-                      <span class="note"><span class="sr-only">Partial:</span> {kitNote(node)}</span>
+                      <span class="note-wrap"><span class="note"><span class="sr-only">Partial:</span> {kitNote(node)}</span></span>
                     {:else}
                       <span class="note sr-only">{kit.status === 'yes' ? 'Built in' : 'Not built in'}</span>
                     {/if}
@@ -307,6 +307,25 @@
     color: var(--text-subtle);
   }
 
+  .note-wrap {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: hidden;
+  }
+
+  .note-wrap .note {
+    display: block;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .batteries:has(input[value='kit']:checked) .note-wrap {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+  }
+
   .comparison-btn {
     display: inline-flex;
     align-items: center;
@@ -387,10 +406,23 @@
     .card,
     .root {
       transition:
-        opacity 0.2s ease,
-        background 0.2s ease,
-        border-color 0.15s ease,
+        opacity 0.35s ease,
+        background 0.35s ease,
+        border-color 0.35s ease,
         box-shadow 0.15s ease;
+    }
+
+    .note-wrap {
+      transition:
+        grid-template-rows 0.35s ease,
+        opacity 0.35s ease,
+        visibility 0.35s;
+    }
+
+    .card-icon {
+      transition:
+        background 0.35s ease,
+        color 0.35s ease;
     }
   }
 

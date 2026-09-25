@@ -108,9 +108,9 @@
     align-items: center;
     gap: 0.6rem;
     padding: var(--btn-pad-y) 1.25rem var(--btn-pad-y) var(--btn-pad-y);
-    border: 2px solid var(--text);
+    border: 2px solid var(--border-strong);
     border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
-    background: var(--surface);
+    background: var(--surface-muted);
     color: var(--text);
     font-family: var(--font-serif);
     font-variation-settings:
@@ -120,7 +120,7 @@
     font-weight: 600;
     cursor: pointer;
     user-select: none;
-    box-shadow: 3px 3px 0 var(--text);
+    box-shadow: 3px 3px 0 var(--border-strong);
     transition:
       transform 0.1s ease,
       box-shadow 0.1s ease,
@@ -130,18 +130,19 @@
   }
 
   .hydrate-btn:hover {
-    background: var(--accent-soft);
+    background: var(--surface);
+    border-color: var(--text-muted);
   }
 
   .hydrate-btn:active {
     transform: translate(2px, 2px);
-    box-shadow: 1px 1px 0 var(--text);
+    box-shadow: 1px 1px 0 var(--border-strong);
   }
 
   .hydrate-btn:focus-visible {
     outline: none;
     box-shadow:
-      3px 3px 0 var(--text),
+      3px 3px 0 var(--border-strong),
       var(--focus-ring);
   }
 
