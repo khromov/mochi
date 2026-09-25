@@ -2,7 +2,7 @@
   import type { Snippet } from 'svelte';
 
   let {
-    url = 'localhost:3000',
+    url = 'localhost:3333',
     size = 'md',
     children,
   }: {

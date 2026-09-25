@@ -30,10 +30,7 @@
                 <a class="card" href={node.href}>
                   <span class="card-icon"><node.icon size={18} strokeWidth={1.8} /></span>
                   <span class="card-text">
-                    <span class="card-label">
-                      {node.label}
-                      {#if kit.status === 'partial'}<span class="tilde" aria-hidden="true">~</span>{/if}
-                    </span>
+                    <span class="card-label">{node.label}</span>
                     <span class="notes">
                       <span class="note note-mochi">{mochiNote(node)}</span>
                       <span class="note note-kit">
@@ -62,8 +59,22 @@
   .batteries {
     --line: var(--border-strong);
     --kit-orange: #ff3e00;
+    --partial-bg: #f7ecc4;
+    --partial-fg: #9a7100;
     display: grid;
     justify-items: center;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme='light'])) .batteries {
+      --partial-bg: #3a3318;
+      --partial-fg: #e2bd52;
+    }
+  }
+
+  :global(:root[data-theme='dark']) .batteries {
+    --partial-bg: #3a3318;
+    --partial-fg: #e2bd52;
   }
 
   .sr-only {
@@ -287,9 +298,6 @@
   }
 
   .card-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
     font-weight: 600;
     font-size: 0.95rem;
     line-height: 1.3;
@@ -311,20 +319,6 @@
     visibility: hidden;
     font-family: var(--font-sans);
     font-size: 0.8rem;
-  }
-
-  .tilde {
-    display: none;
-    align-items: center;
-    justify-content: center;
-    width: 1.1rem;
-    height: 1.1rem;
-    border-radius: 50%;
-    background: #e07b2c;
-    color: #fff;
-    font-weight: 700;
-    font-size: 1.05rem;
-    line-height: 1;
   }
 
   .tally {
@@ -385,10 +379,6 @@
     visibility: visible;
   }
 
-  .batteries:has(input[value='kit']:checked) .leaf[data-kit='partial'] .tilde {
-    display: inline-flex;
-  }
-
   .batteries:has(input[value='kit']:checked) .leaf[data-kit='partial'] .card,
   .batteries:has(input[value='kit']:checked) .leaf[data-kit='no'] .card {
     border-style: dashed;
@@ -396,7 +386,9 @@
     box-shadow: none;
   }
 
-  .batteries:has(input[value='kit']:checked) .leaf[data-kit='partial'] .card {
+  .batteries:has(input[value='kit']:checked) .leaf[data-kit='partial'] .card-icon {
+    background: var(--partial-bg);
+    color: var(--partial-fg);
     opacity: 0.75;
   }
 

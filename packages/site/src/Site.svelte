@@ -3,11 +3,12 @@
   import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
   import BookOpen from '@lucide/svelte/icons/book-open';
   import BatteriesDiagram from './components/BatteriesDiagram.svelte';
+  import HeroHeadline from './components/HeroHeadline.svelte';
+  import HydrateDemo from './components/HydrateDemo.svelte';
   import LandingShell from './components/LandingShell.svelte';
   import BrowserFrame from './components/BrowserFrame.svelte';
   import IslandCounter from './components/IslandCounter.svelte';
   import QuickStart from './components/QuickStart.svelte';
-  import IslandsDemo from '../../docs/_components/IslandsDemo.svelte';
   import { highlightCode } from './lib/highlight.server';
   import { demos } from './lib/demos';
   import { demoIconFor } from './lib/demoIcons';
@@ -47,12 +48,6 @@ Mochi.serve({
     highlightCode('bun create mochi@latest', 'bash'),
   ]);
 
-  // The rotator's keyframe percentages assume exactly five phrases, 3s each, and the brush is sized to the first (widest) one.
-  const phrases = ['a Svelte meta-framework', 'full-stack Svelte on Bun', 'zero JS by default', 'server-first', 'batteries included'].map((phrase) =>
-    // A word joiner on each side of the hyphen stops wrapping from splitting "meta-framework".
-    phrase.replaceAll('-', '\u2060-\u2060'),
-  );
-
   const featuredTitles = [
     'Hello World',
     'Hydration Modes',
@@ -82,17 +77,8 @@ Mochi.serve({
   <section class="hero">
     <div class="wrap hero-grid">
       <div class="hero-copy">
-        <h1 class="headline">
-          <span class="headline-lead">Mochi is</span>
-          <span class="sr-only">{phrases[0]}</span>
-          <span class="rotator" aria-hidden="true">
-            <span class="brush-slot"><span class="brush">{phrases[0]}</span></span>
-            {#each phrases as phrase, i (phrase)}
-              <span class="phrase-slot" style:--i={i}>{phrase}</span>
-            {/each}
-          </span>
-        </h1>
-        <p class="lede">Built on Bun. Everything renders on the server; only the parts you mark ship JavaScript.</p>
+        <HeroHeadline mochi:hydrate />
+        <p class="lede">Give your users the fastest possible web experience. Everything renders on the server; only the parts you mark ship JavaScript.</p>
         <div class="ctas">
           <a class="btn btn-primary" href="/docs/intro/">
             <BookOpen size={17} strokeWidth={1.9} />
@@ -109,12 +95,10 @@ Mochi.serve({
       </div>
 
       <div class="hero-visual">
-        <BrowserFrame url="localhost:3000/">
-          <div class="islands-wrap">
-            <IslandsDemo mochi:hydrate />
-          </div>
-        </BrowserFrame>
-        <p class="caption">A page in Mochi: grey boxes are plain HTML, orange boxes are islands. This diagram is itself an island, so the button works.</p>
+        <HydrateDemo mochi:hydrate />
+        <p class="caption">
+          A page in Mochi: every box is a Svelte component rendered to HTML on the server. Only the islands hydrate. This diagram is itself an island, so the button works.
+        </p>
       </div>
     </div>
   </section>
@@ -205,7 +189,7 @@ Mochi.serve({
   <section class="features" aria-labelledby="features-title">
     <div class="wrap">
       <header class="section-head">
-        <h2 id="features-title">A full-stack framework, not just a renderer</h2>
+        <h2 id="features-title">A full-stack framework for building real sites</h2>
         <p>Everything below ships with Mochi. Switch to SvelteKit to see what you'd bring yourself.</p>
       </header>
 
@@ -266,7 +250,6 @@ Mochi.serve({
     padding: 0 1.5rem;
   }
 
-  h1,
   h2,
   h3 {
     font-family: var(--font-serif);
@@ -288,113 +271,67 @@ Mochi.serve({
   }
 
   .hero {
-    padding: 4.5rem 0 5rem;
-    background: radial-gradient(ellipse 70% 60% at 85% 20%, color-mix(in srgb, var(--accent-soft) 70%, transparent), transparent 70%);
-  }
-
-  .hero-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-    gap: 4rem;
-    align-items: center;
-  }
-
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
+    --hero-bg: color-mix(in srgb, var(--surface) 65%, var(--bg));
+    --paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.33 0 0 0 0 0.29 0 0 0 0 0.2 0 0 0 0.11 0'/%3E%3C/filter%3E%3Crect width='100%' height='100%' filter='url(%23g)'/%3E%3C/svg%3E");
+    --angle: var(--border-strong);
     overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
-
-  .headline {
-    --brush: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 60' preserveAspectRatio='none'%3E%3Cpath fill='%23b9dbbf' d='M8 16 L20 11 C80 7 150 10 220 7 C290 4 350 8 386 8 L395 15 L389 21 L397 29 L390 36 L396 45 C350 51 290 48 225 52 C160 56 90 51 36 54 L14 50 L21 43 L5 37 L15 29 L3 22 Z'/%3E%3Cpath fill='%23b9dbbf' fill-opacity='.55' d='M40 3 C140 0 280 -1 372 3 L376 7 C280 6 150 8 40 8 Z M60 55 C160 58 270 57 350 55 L346 59 C260 60 150 60 64 59 Z'/%3E%3C/svg%3E");
-    font-size: clamp(2.4rem, 5vw, 3.6rem);
-    line-height: 1.08;
-    letter-spacing: -0.025em;
-    font-weight: 400;
-    margin-bottom: 1.25rem;
+    padding: 4.5rem 0 5rem;
+    background: var(--paper), var(--hero-bg);
   }
 
   @media (prefers-color-scheme: dark) {
-    :global(:root:not([data-theme='light'])) .headline {
-      --brush: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 60' preserveAspectRatio='none'%3E%3Cpath fill='%2336613f' d='M8 16 L20 11 C80 7 150 10 220 7 C290 4 350 8 386 8 L395 15 L389 21 L397 29 L390 36 L396 45 C350 51 290 48 225 52 C160 56 90 51 36 54 L14 50 L21 43 L5 37 L15 29 L3 22 Z'/%3E%3Cpath fill='%2336613f' fill-opacity='.55' d='M40 3 C140 0 280 -1 372 3 L376 7 C280 6 150 8 40 8 Z M60 55 C160 58 270 57 350 55 L346 59 C260 60 150 60 64 59 Z'/%3E%3C/svg%3E");
+    :global(:root:not([data-theme='light'])) .hero {
+      --hero-bg: var(--bg);
+      --paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 0.98 0 0 0 0 0.9 0 0 0 0.07 0'/%3E%3C/filter%3E%3Crect width='100%' height='100%' filter='url(%23g)'/%3E%3C/svg%3E");
     }
   }
 
-  :global(:root[data-theme='dark']) .headline {
-    --brush: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 60' preserveAspectRatio='none'%3E%3Cpath fill='%2336613f' d='M8 16 L20 11 C80 7 150 10 220 7 C290 4 350 8 386 8 L395 15 L389 21 L397 29 L390 36 L396 45 C350 51 290 48 225 52 C160 56 90 51 36 54 L14 50 L21 43 L5 37 L15 29 L3 22 Z'/%3E%3Cpath fill='%2336613f' fill-opacity='.55' d='M40 3 C140 0 280 -1 372 3 L376 7 C280 6 150 8 40 8 Z M60 55 C160 58 270 57 350 55 L346 59 C260 60 150 60 64 59 Z'/%3E%3C/svg%3E");
+  :global(:root[data-theme='dark']) .hero {
+    --hero-bg: var(--bg);
+    --paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 0.98 0 0 0 0 0.9 0 0 0 0.07 0'/%3E%3C/filter%3E%3Crect width='100%' height='100%' filter='url(%23g)'/%3E%3C/svg%3E");
   }
 
-  .headline-lead {
-    display: block;
-  }
-
-  .rotator {
-    display: grid;
-  }
-
-  .brush-slot,
-  .phrase-slot {
-    grid-area: 1 / 1;
-    text-wrap: balance;
-  }
-
-  .brush-slot {
-    color: transparent;
-    user-select: none;
-  }
-
-  .brush {
-    padding: 0 0.12em;
-    margin: 0 -0.12em;
-    background: var(--brush) no-repeat 0 80% / 100% 62%;
-    -webkit-box-decoration-break: clone;
-    box-decoration-break: clone;
-    animation: brush-sweep 0.8s 0.3s cubic-bezier(0.6, 0, 0.3, 1) backwards;
-  }
-
-  .phrase-slot {
+  .hero-grid {
     position: relative;
-    animation: phrase-cycle 15s calc(var(--i) * 3s) infinite backwards;
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: 5rem;
+    align-items: center;
   }
 
-  @keyframes phrase-cycle {
-    0% {
-      opacity: 0;
-      transform: translateY(0.2em);
-    }
-    3%,
-    17% {
-      opacity: 1;
-      transform: none;
-    }
-    20%,
-    100% {
-      opacity: 0;
-      transform: translateY(-0.2em);
-    }
+  .hero-grid::before,
+  .hero-grid::after {
+    --echo: 10px;
+    --angle-out: clamp(0px, (100vw - 1200px) / 2 - 2.5rem, 2rem);
+    content: '';
+    position: absolute;
+    width: calc(4rem + 2 * var(--echo));
+    height: calc(4rem + 2 * var(--echo));
+    pointer-events: none;
   }
 
-  @keyframes brush-sweep {
-    from {
-      background-size: 0% 62%;
-    }
+  .hero-grid::before {
+    top: calc(-3rem - 2 * var(--echo));
+    right: calc(-1 * var(--angle-out) - 2 * var(--echo));
+    background:
+      linear-gradient(var(--angle) 0 0) right calc(2 * var(--echo)) top calc(2 * var(--echo)) / 4rem 1px no-repeat,
+      linear-gradient(var(--angle) 0 0) right calc(2 * var(--echo)) top calc(2 * var(--echo)) / 1px 4rem no-repeat,
+      linear-gradient(color-mix(in srgb, var(--angle) 55%, transparent) 0 0) right var(--echo) top var(--echo) / 3.25rem 1px no-repeat,
+      linear-gradient(color-mix(in srgb, var(--angle) 55%, transparent) 0 0) right var(--echo) top var(--echo) / 1px 3.25rem no-repeat,
+      linear-gradient(color-mix(in srgb, var(--angle) 25%, transparent) 0 0) right 0px top 0px / 2.5rem 1px no-repeat,
+      linear-gradient(color-mix(in srgb, var(--angle) 25%, transparent) 0 0) right 0px top 0px / 1px 2.5rem no-repeat;
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .brush,
-    .phrase-slot {
-      animation: none;
-    }
-
-    .phrase-slot:not(.brush-slot + .phrase-slot) {
-      display: none;
-    }
+  .hero-grid::after {
+    bottom: calc(-3rem - 2 * var(--echo));
+    left: calc(-1 * var(--angle-out) - 2 * var(--echo));
+    background:
+      linear-gradient(var(--angle) 0 0) left calc(2 * var(--echo)) bottom calc(2 * var(--echo)) / 4rem 1px no-repeat,
+      linear-gradient(var(--angle) 0 0) left calc(2 * var(--echo)) bottom calc(2 * var(--echo)) / 1px 4rem no-repeat,
+      linear-gradient(color-mix(in srgb, var(--angle) 55%, transparent) 0 0) left var(--echo) bottom var(--echo) / 3.25rem 1px no-repeat,
+      linear-gradient(color-mix(in srgb, var(--angle) 55%, transparent) 0 0) left var(--echo) bottom var(--echo) / 1px 3.25rem no-repeat,
+      linear-gradient(color-mix(in srgb, var(--angle) 25%, transparent) 0 0) left 0px bottom 0px / 2.5rem 1px no-repeat,
+      linear-gradient(color-mix(in srgb, var(--angle) 25%, transparent) 0 0) left 0px bottom 0px / 1px 2.5rem no-repeat;
   }
 
   .lede {
@@ -473,18 +410,6 @@ Mochi.serve({
 
   .hero-visual {
     min-width: 0;
-  }
-
-  .islands-wrap {
-    font-size: 1.05rem;
-  }
-
-  .islands-wrap :global(.islands-demo) {
-    margin: 0;
-  }
-
-  .islands-wrap :global(.page) {
-    min-height: 19rem;
   }
 
   .caption {
@@ -798,11 +723,7 @@ Mochi.serve({
   @media (max-width: 1024px) {
     .hero-grid {
       grid-template-columns: minmax(0, 1fr);
-      gap: 3rem;
-    }
-
-    .headline {
-      max-width: 22ch;
+      gap: 3.5rem;
     }
 
     .lede {
@@ -828,6 +749,11 @@ Mochi.serve({
       padding: 0 1rem;
     }
 
+    .hero-grid::before,
+    .hero-grid::after {
+      display: none;
+    }
+
     .hero {
       padding: 2.75rem 0 3.5rem;
     }
@@ -844,10 +770,6 @@ Mochi.serve({
 
     .demo-grid {
       grid-template-columns: minmax(0, 1fr);
-    }
-
-    .headline {
-      font-size: min(2.4rem, 9.4vw);
     }
 
     .lede {

@@ -43,7 +43,7 @@ export const branches: BatteryBranch[] = [
         features: ['Built-in SQLite database', 'Built-in Postgres & MySQL support'],
         href: '/docs/persistence/',
         note: 'bun:sqlite & Bun.sql()',
-        kitNote: 'node:sqlite via adapter',
+        kitNote: 'third party or sqlite with Node.js',
       },
       { label: 'Job queues', icon: ListChecks, features: ['Background job queues'], href: '/docs/queues/' },
       { label: 'Caching', icon: Zap, features: ['Built-in caching library'], href: '/docs/cache/' },
