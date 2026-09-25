@@ -11,7 +11,7 @@
     </a>
     <nav class="links" aria-label="Primary">
       <a href="/docs/intro/">Docs</a>
-      <a href="#demos">Demos</a>
+      <a href="/demos/">Demos</a>
       <a href="/blog/">Blog</a>
       <a class="hide-sm" href="/docs/changelog/">Changelog</a>
     </nav>

@@ -8,6 +8,8 @@
   import JsShippedChart from './components/JsShippedChart.svelte';
   import LandingShell from './components/LandingShell.svelte';
   import BrowserFrame from './components/BrowserFrame.svelte';
+  import CodeFigure from './components/CodeFigure.svelte';
+  import DemoCard from './components/DemoCard.svelte';
   import IslandCounter from './components/IslandCounter.svelte';
   import QuickStart from './components/QuickStart.svelte';
   import { highlightCode } from './lib/highlight.server';
@@ -42,12 +44,14 @@ Mochi.serve({
   },
 });`;
 
-  const [componentHtml, islandHtml, serveHtml, createHtml] = await Promise.all([
+  const [componentHtml, rawIslandHtml, serveHtml, createHtml] = await Promise.all([
     highlightCode(componentCode, 'svelte'),
     highlightCode(islandCode, 'svelte'),
     highlightCode(serveCode, 'ts'),
     highlightCode('bun create mochi@latest', 'bash'),
   ]);
+
+  const islandHtml = rawIslandHtml.replace('<span class="tok attr_name">mochi</span>:<span class="tok attr_name">hydrate</span>', '<span class="hydrate-mark">$&</span>');
 
   // TODO: point at the Mochi vs SvelteKit comparison project.
   const comparisonProjectUrl = '#';
@@ -109,7 +113,7 @@ Mochi.serve({
     <div class="wrap">
       <header class="section-head">
         <h2 id="how-title">How Mochi works</h2>
-        <p>Write ordinary Svelte components. Decide on a component by component basis what needs to be dynamic in the browser.</p>
+        <p>Write normal Svelte components and decide on a component by component basis what needs to be dynamic in the browser.</p>
       </header>
 
       <ol class="steps">
@@ -119,11 +123,7 @@ Mochi.serve({
             <p>The Svelte you know and love, rendered with fast, progressively enhanced HTML.</p>
           </div>
           <div class="step-pair">
-            <figure class="code">
-              <figcaption>src/Home.svelte</figcaption>
-              <!-- eslint-disable-next-line svelte/no-at-html-tags -- trusted server-side highlighter output -->
-              {@html componentHtml}
-            </figure>
+            <CodeFigure caption="src/Home.svelte" html={componentHtml} copyable={false} />
             <BrowserFrame size="sm">
               <div class="rendered">
                 <p class="rendered-h1">Hello, Ada</p>
@@ -137,15 +137,11 @@ Mochi.serve({
           <div class="step-copy">
             <h3>Mark the interactive bit</h3>
             <p>
-              Add <code>mochi:hydrate</code> to the one component that needs state in the browser. The counter on the right is a real island.
+              Add <code>mochi:hydrate</code> to the components that needs to be interactive in the browser.
             </p>
           </div>
           <div class="step-pair">
-            <figure class="code">
-              <figcaption>src/Home.svelte</figcaption>
-              <!-- eslint-disable-next-line svelte/no-at-html-tags -- trusted server-side highlighter output -->
-              {@html islandHtml}
-            </figure>
+            <CodeFigure caption="src/Home.svelte" html={islandHtml} copyable={false} class="code-marked" />
             <BrowserFrame size="sm">
               <div class="rendered">
                 <p class="rendered-h1">Hello, Ada</p>
@@ -157,28 +153,20 @@ Mochi.serve({
 
         <li class="step">
           <div class="step-copy">
-            <h3>Ship HTML and one small island</h3>
+            <h3>Ship HTML and nimble islands</h3>
             <p>Declare the route and serve it. The browser gets the whole page as HTML, plus a script for the counter.</p>
           </div>
           <div class="step-pair">
-            <figure class="code">
-              <figcaption>src/index.ts</figcaption>
-              <!-- eslint-disable-next-line svelte/no-at-html-tags -- trusted server-side highlighter output -->
-              {@html serveHtml}
-            </figure>
+            <CodeFigure caption="src/index.ts" html={serveHtml} copyable={false} />
             <BrowserFrame size="sm" url="DevTools · Network">
               <ul class="payload">
                 <li>
                   <span class="payload-kind">HTML</span>
-                  <span class="payload-name">Home, with every component rendered</span>
+                  <span class="payload-name">Lightweight HTML shell with all non-hydrated components</span>
                 </li>
                 <li class="payload-island">
                   <span class="payload-kind">JS</span>
                   <span class="payload-name">Counter island</span>
-                </li>
-                <li class="payload-none">
-                  <span class="payload-kind">JS</span>
-                  <span class="payload-name">Everything else: nothing</span>
                 </li>
               </ul>
             </BrowserFrame>
@@ -217,20 +205,12 @@ Mochi.serve({
           <h2 id="demos-title">See it running</h2>
           <p>Each demo is a real Mochi page with its source alongside.</p>
         </div>
-        <a class="all-demos" href="/docs/demos/">All demos <ArrowRight size={15} strokeWidth={2} /></a>
+        <a class="all-demos" href="/demos/">All demos <ArrowRight size={15} strokeWidth={2} /></a>
       </header>
 
       <ul class="demo-grid">
         {#each featuredDemos as demo (demo.href)}
-          <li>
-            <a class="demo" href={demo.href}>
-              <span class="demo-icon"><demo.icon size={18} strokeWidth={1.8} /></span>
-              <span class="demo-text">
-                <span class="demo-title">{demo.title}</span>
-                <span class="demo-label">{demo.label}</span>
-              </span>
-            </a>
-          </li>
+          <li><DemoCard href={demo.href} title={demo.title} label={demo.label} icon={demo.icon} /></li>
         {/each}
       </ul>
     </div>
@@ -243,10 +223,7 @@ Mochi.serve({
         <p>One command scaffolds a working app. The docs take it from there.</p>
       </div>
       <div class="closing-actions">
-        <figure class="code code-command">
-          <!-- eslint-disable-next-line svelte/no-at-html-tags -- trusted server-side highlighter output -->
-          {@html createHtml}
-        </figure>
+        <CodeFigure html={createHtml} class="code-command" />
         <a class="btn btn-primary" href="/docs/your-first-mochi-app/">
           Build your first app
           <ArrowUpRight size={16} strokeWidth={1.9} />
@@ -285,7 +262,7 @@ Mochi.serve({
 
   .hero {
     --hero-bg: color-mix(in srgb, var(--surface) 65%, var(--bg));
-    --paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.33 0 0 0 0 0.29 0 0 0 0 0.2 0 0 0 0.11 0'/%3E%3C/filter%3E%3Crect width='100%' height='100%' filter='url(%23g)'/%3E%3C/svg%3E");
+    --paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.33 0 0 0 0 0.29 0 0 0 0 0.2 0 0 0 0.16 0'/%3E%3C/filter%3E%3Crect width='100%' height='100%' filter='url(%23g)'/%3E%3C/svg%3E");
     --angle: var(--border-strong);
     overflow: hidden;
     padding: 4.5rem 0 5rem;
@@ -380,7 +357,6 @@ Mochi.serve({
   }
 
   .btn:focus-visible,
-  .demo:focus-visible,
   .all-demos:focus-visible {
     outline: none;
     box-shadow: var(--focus-ring);
@@ -528,35 +504,14 @@ Mochi.serve({
     align-items: stretch;
   }
 
-  .code {
-    margin: 0;
-    min-width: 0;
-    background: var(--code-bg);
-    border: 1px solid var(--code-chrome-border);
-    border-radius: var(--radius-md);
-    overflow: hidden;
+  .step-pair :global(.code-marked .hydrate-mark) {
+    padding-bottom: 0.45em;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 14' preserveAspectRatio='none'%3E%3Cpath d='M3 8.5C38 4.5 74 5.8 110 6.2c31 .4 58-.6 87-2.4' fill='none' stroke='%23ff5a1f' stroke-width='2.6' stroke-linecap='round' vector-effect='non-scaling-stroke'/%3E%3Cpath d='M16 11.2c42-2.6 94-3.1 150-1.9' fill='none' stroke='%23ff5a1f' stroke-width='1.6' stroke-linecap='round' vector-effect='non-scaling-stroke' opacity='.75'/%3E%3C/svg%3E")
+      no-repeat left bottom / 100% 0.6em;
   }
 
-  .code figcaption {
-    padding: 0.45rem 0.9rem;
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
-    color: var(--code-muted);
-    background: var(--code-chrome-bg);
-    border-bottom: 1px solid var(--code-chrome-border);
-  }
-
-  .code :global(pre) {
-    margin: 0;
-    padding: 1rem 1.1rem;
-    background: transparent;
-    color: var(--code-text);
-    font-family: var(--font-mono);
-    font-size: 0.82rem;
-    line-height: 1.6;
-    overflow-x: auto;
-    border: 0;
-    border-radius: 0;
+  .step-pair :global(.code-marked pre) {
+    padding-bottom: 1.5rem;
   }
 
   .rendered {
@@ -620,15 +575,6 @@ Mochi.serve({
     color: var(--accent-soft-text);
   }
 
-  .payload li.payload-none {
-    border-style: dashed;
-    background: transparent;
-  }
-
-  .payload-none .payload-name {
-    color: var(--text-subtle);
-  }
-
   .all-demos {
     display: inline-flex;
     align-items: center;
@@ -654,56 +600,6 @@ Mochi.serve({
 
   .demo-grid li {
     display: flex;
-  }
-
-  .demo {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 0.85rem;
-    padding: 0.85rem 1rem;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    text-decoration: none;
-    color: inherit;
-    transition: border-color 0.15s ease;
-  }
-
-  .demo:hover {
-    border-color: var(--accent);
-  }
-
-  .demo-icon {
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.2rem;
-    height: 2.2rem;
-    border-radius: var(--radius-sm);
-    background: var(--surface-muted);
-    border: 1px solid var(--border);
-    color: var(--accent);
-  }
-
-  .demo-text {
-    display: grid;
-    min-width: 0;
-  }
-
-  .demo-title {
-    font-weight: 600;
-    color: var(--text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .demo-label {
-    font-size: 0.84rem;
-    line-height: 1.4;
-    color: var(--text-subtle);
   }
 
   .closing {
@@ -741,12 +637,12 @@ Mochi.serve({
     min-width: 0;
   }
 
-  .code-command {
+  .closing-actions :global(.code-command) {
     flex-shrink: 0;
     max-width: 100%;
   }
 
-  .code-command :global(pre) {
+  .closing-actions :global(.code-command pre) {
     padding: 0.75rem 3rem 0.75rem 1.1rem;
     font-size: 0.92rem;
   }
@@ -815,7 +711,7 @@ Mochi.serve({
   }
 
   @media (max-width: 560px) {
-    .code-command {
+    .closing-actions :global(.code-command) {
       width: 100%;
     }
   }

@@ -17,8 +17,9 @@
         </span>
       </button>
       <svg class="arrow" viewBox="0 0 200 72" aria-hidden="true">
-        <path d="M4 28C48 10 116 2 154 18c18 8 27 24 29 42" />
-        <path d="M175.1 51c3 2.9 5.7 5.8 7.9 9 1.5-3.4 3.3-6.9 5.8-10.5" />
+        <path d="M5 30C18 23 33 17 52 13c28-6 60-9 87-2 21 6 35 19 41 35 2 5 3.5 9 4 13" />
+        <path class="retrace" d="M58 14.5c30-6 60-7.5 83-1 14 4.5 25 12.5 32 22.5" />
+        <path d="M172.5 49.5c3.5 3 8 7 11.7 10.7M184.2 60.2c.8-4.7 2.6-9.7 6.3-14" />
       </svg>
     </div>
   </div>
@@ -38,7 +39,7 @@
 
     <ul class="legend">
       <li class="legend-ssr"><SvelteLogo size={15} /> SSR</li>
-      <li><SvelteLogo size={15} /> Island</li>
+      <li><SvelteLogo size={15} /> Client island</li>
     </ul>
   </BrowserFrame>
 </div>
@@ -92,9 +93,14 @@
     height: auto;
     fill: none;
     stroke: var(--text-muted);
-    stroke-width: 1.6;
+    stroke-width: 2.1;
     stroke-linecap: round;
     stroke-linejoin: round;
+  }
+
+  .arrow .retrace {
+    stroke-width: 1.1;
+    opacity: 0.5;
   }
 
   .hydrate-btn {
