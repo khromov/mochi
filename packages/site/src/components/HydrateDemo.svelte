@@ -45,6 +45,8 @@
 
 <style>
   .hydrate-demo {
+    --btn-pad-y: 0.6rem;
+    --btn-chip: 1.85rem;
     --line: var(--border-strong);
     --soft: var(--surface-muted);
     --logo-gray: #b9bdb4;
@@ -84,7 +86,7 @@
   .arrow {
     --arrow-width: 7.5rem;
     position: absolute;
-    top: calc(1.5625rem - 0.14 * var(--arrow-width));
+    top: calc(var(--btn-pad-y) + var(--btn-chip) / 2 + 1px - 0.14 * var(--arrow-width));
     left: calc(100% + 0.4rem);
     width: var(--arrow-width);
     height: auto;
@@ -98,41 +100,42 @@
   .hydrate-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.65rem;
-    padding: 0.45rem 1.2rem 0.45rem 0.45rem;
-    border: 1px solid transparent;
-    border-radius: 999px;
-    background: var(--accent);
-    color: var(--accent-text);
+    gap: 0.6rem;
+    padding: var(--btn-pad-y) 1.2rem var(--btn-pad-y) var(--btn-pad-y);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    color: var(--text);
     font: inherit;
-    font-size: 1rem;
+    font-size: 0.98rem;
     font-weight: 600;
     cursor: pointer;
     user-select: none;
-    box-shadow: var(--shadow-md);
-    transition: background-color 150ms ease;
+    transition:
+      border-color 0.15s ease,
+      color 0.15s ease;
   }
 
   .hydrate-btn:hover {
-    background: var(--accent-hover);
+    border-color: var(--accent);
+    color: var(--accent);
   }
 
   .hydrate-btn:focus-visible {
     outline: none;
-    box-shadow:
-      var(--shadow-md),
-      0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+    border-color: var(--accent);
+    box-shadow: var(--focus-ring);
   }
 
   .btn-chip {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2.1rem;
-    height: 2.1rem;
-    border-radius: 50%;
-    background: color-mix(in srgb, var(--surface) 88%, transparent);
-    font-size: 1.1rem;
+    width: var(--btn-chip);
+    height: var(--btn-chip);
+    border-radius: var(--radius-sm);
+    background: var(--accent-soft);
+    font-size: 1rem;
     line-height: 1;
   }
 

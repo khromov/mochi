@@ -5,6 +5,7 @@
   import BatteriesDiagram from './components/BatteriesDiagram.svelte';
   import HeroHeadline from './components/HeroHeadline.svelte';
   import HydrateDemo from './components/HydrateDemo.svelte';
+  import JsShippedChart from './components/JsShippedChart.svelte';
   import LandingShell from './components/LandingShell.svelte';
   import BrowserFrame from './components/BrowserFrame.svelte';
   import IslandCounter from './components/IslandCounter.svelte';
@@ -48,6 +49,9 @@ Mochi.serve({
     highlightCode('bun create mochi@latest', 'bash'),
   ]);
 
+  // TODO: point at the Mochi vs SvelteKit comparison project.
+  const comparisonProjectUrl = '#';
+
   const featuredTitles = [
     'Hello World',
     'Hydration Modes',
@@ -78,7 +82,7 @@ Mochi.serve({
     <div class="wrap hero-grid">
       <div class="hero-copy">
         <HeroHeadline mochi:hydrate />
-        <p class="lede">Give your users the fastest possible web experience. Everything renders on the server; only the parts you mark ship JavaScript.</p>
+        <p class="lede">Give your users the fastest possible experience with Svelte and islands-based rendering.</p>
         <div class="ctas">
           <a class="btn btn-primary" href="/docs/intro/">
             <BookOpen size={17} strokeWidth={1.9} />
@@ -96,9 +100,7 @@ Mochi.serve({
 
       <div class="hero-visual">
         <HydrateDemo mochi:hydrate />
-        <p class="caption">
-          A page in Mochi: every box is a Svelte component rendered to HTML on the server. Only the islands hydrate. This diagram is itself an island, so the button works.
-        </p>
+        <p class="caption">Mochi lets you mark interactive components where needed. The rest ship as lightweight HTML.</p>
       </div>
     </div>
   </section>
@@ -106,15 +108,15 @@ Mochi.serve({
   <section class="how" aria-labelledby="how-title">
     <div class="wrap">
       <header class="section-head">
-        <h2 id="how-title">How it works</h2>
-        <p>Write ordinary Svelte. Decide, component by component, what the browser needs to run.</p>
+        <h2 id="how-title">How Mochi works</h2>
+        <p>Write ordinary Svelte components. Decide on a component by component basis what needs to be dynamic in the browser.</p>
       </header>
 
       <ol class="steps">
         <li class="step">
           <div class="step-copy">
             <h3>Write a Svelte component</h3>
-            <p>Plain Svelte 5 with runes. It renders on the server on every request, and ships as HTML.</p>
+            <p>The Svelte you know and love, rendered with fast, progressively enhanced HTML.</p>
           </div>
           <div class="step-pair">
             <figure class="code">
@@ -183,6 +185,17 @@ Mochi.serve({
           </div>
         </li>
       </ol>
+    </div>
+  </section>
+
+  <section class="perf" aria-labelledby="perf-title">
+    <div class="wrap perf-grid">
+      <div class="section-head perf-copy">
+        <h2 id="perf-title">Real performance gains</h2>
+        <p>Pages render to HTML on the server and only islands ship JavaScript, so Mochi sends up to 5× less code than a fully hydrated SvelteKit app.</p>
+        <a class="all-demos" href={comparisonProjectUrl}>See the comparison project <ArrowRight size={15} strokeWidth={2} /></a>
+      </div>
+      <JsShippedChart />
     </div>
   </section>
 
@@ -311,7 +324,7 @@ Mochi.serve({
   }
 
   .hero-grid::before {
-    top: calc(-3rem - 2 * var(--echo));
+    top: calc(-2rem - 2 * var(--echo));
     right: calc(-1 * var(--angle-out) - 2 * var(--echo));
     background:
       linear-gradient(var(--angle) 0 0) right calc(2 * var(--echo)) top calc(2 * var(--echo)) / 4rem 1px no-repeat,
@@ -323,7 +336,7 @@ Mochi.serve({
   }
 
   .hero-grid::after {
-    bottom: calc(-3rem - 2 * var(--echo));
+    bottom: calc(-2rem - 2 * var(--echo));
     left: calc(-1 * var(--angle-out) - 2 * var(--echo));
     background:
       linear-gradient(var(--angle) 0 0) left calc(2 * var(--echo)) bottom calc(2 * var(--echo)) / 4rem 1px no-repeat,
@@ -421,10 +434,28 @@ Mochi.serve({
   }
 
   section.how,
+  section.perf,
   section.features,
   section.demos {
     padding: 5rem 0;
     border-top: 1px solid var(--border);
+  }
+
+  .perf-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    gap: 4rem;
+    align-items: center;
+  }
+
+  .section-head.perf-copy {
+    margin-bottom: 0;
+  }
+
+  .perf-copy p {
+    max-width: 40ch;
+    margin-bottom: 1.25rem;
+    text-wrap: pretty;
   }
 
   section.features {
@@ -726,6 +757,11 @@ Mochi.serve({
       gap: 3.5rem;
     }
 
+    .perf-grid {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 2rem;
+    }
+
     .lede {
       max-width: 44ch;
     }
@@ -759,6 +795,7 @@ Mochi.serve({
     }
 
     section.how,
+    section.perf,
     section.features,
     section.demos {
       padding: 3.5rem 0;
