@@ -74,11 +74,6 @@
       return;
     }
     drag = { pointerId: e.pointerId, x: e.clientX, scrollLeft: track.scrollLeft, fromIndex: index, moved: false };
-    try {
-      track.setPointerCapture(e.pointerId);
-    } catch {
-      // Without capture the drag still works while the cursor stays over the track.
-    }
   }
 
   function onPointerMove(e: PointerEvent) {
@@ -88,6 +83,14 @@
     const dx = e.clientX - drag.x;
     if (!drag.moved && Math.abs(dx) < 4) {
       return;
+    }
+    if (!drag.moved) {
+      // Capturing on pointerdown would retarget the pointerup, and with it the click, away from the link.
+      try {
+        track.setPointerCapture(drag.pointerId);
+      } catch {
+        // Without capture the drag still works while the cursor stays over the track.
+      }
     }
     drag.moved = true;
     dragging = true;
