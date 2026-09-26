@@ -61,6 +61,10 @@
   }
 
   function onScroll() {
+    if (track.scrollLeft + track.clientWidth >= track.scrollWidth - 1) {
+      index = sites.length - 1;
+      return;
+    }
     let nearest = 0;
     let nearestDistance = Infinity;
     for (const [i, slide] of Array.from(track.children as HTMLCollectionOf<HTMLElement>).entries()) {
@@ -216,6 +220,11 @@
 
   .track::-webkit-scrollbar {
     display: none;
+  }
+
+  .track::after {
+    content: '';
+    flex: 0 0 calc(100% - var(--slide));
   }
 
   .slide {

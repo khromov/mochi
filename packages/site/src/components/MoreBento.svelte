@@ -306,11 +306,10 @@
   }
 
   .debugbar {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: 0.55em;
-    width: fit-content;
-    max-width: 100%;
+    width: 100%;
     margin: 0;
     padding: 0.4em 0.55em;
     height: 3em;
@@ -336,8 +335,10 @@
   }
 
   .tab {
+    flex: 1 1 auto;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 0.4em;
     padding: 0.3em 0.55em;
     border-radius: 6px;
