@@ -141,6 +141,8 @@ Every encoding streams through one `CompressionStream`, so a chunked SSR respons
 
 `compress()` is a no-op in development, because the debug bar must inject itself into the HTML after the response is built. In production it adds `Vary: Accept-Encoding` and compresses compressible content types (`text/*`, `application/json`, `application/javascript`, `application/xml`, and others). A response that already declares `Content-Encoding` passes through untouched. Static framework assets also flow through `handle`, so `compress()` covers them. Other body-touching middleware must branch on `event.kind === 'asset'` when it needs to skip framework bundles.
 
+HTML pages can additionally be delta-compressed against a site dictionary for returning visitors — see [Compression Dictionaries](/docs/compression-dictionaries/). It composes with `compress()`: dictionary-compressed responses pass through untouched, everything else negotiates as usual.
+
 ### `noCache`
 
 Built-in middleware that defaults `Cache-Control: no-cache` on `page` and `api` responses. A route that sets its own `Cache-Control` is left untouched, so opt-in caching works per route.
