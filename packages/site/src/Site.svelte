@@ -481,10 +481,7 @@ Mochi.serve({
     text-wrap: pretty;
   }
 
-  section.how {
-    background: var(--surface);
-  }
-
+  section.how,
   section.features,
   section.demos {
     background: var(--surface-muted);
