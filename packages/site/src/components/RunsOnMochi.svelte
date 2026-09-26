@@ -2,41 +2,47 @@
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
+  import { Image } from 'mochi-framework/image';
+  import codebayShot from './runs-on/codebay.webp';
+  import gardenShot from './runs-on/garden.webp';
+  import hnShot from './runs-on/hn.webp';
+  import adminShot from './runs-on/admin.webp';
+  import todoShot from './runs-on/todo.webp';
 
   const sites = [
     {
       href: 'https://codebay.stanislav.garden/',
       title: 'Codebay',
       hook: 'Devcontainer manager: isolated workspaces for coding agents, with a Mochi front end.',
-      image: '/runs-on/codebay.webp',
+      image: codebayShot,
       external: true,
     },
     {
       href: 'https://stanislav.garden/',
       title: 'stanislav.garden',
       hook: 'A personal site with an interactive header, server-rendered by Mochi.',
-      image: '/runs-on/garden.webp',
+      image: gardenShot,
       external: true,
     },
     {
       href: 'https://demos.mochi.fast/hn',
       title: 'Hacker News Clone',
       hook: 'A full Hacker News reader: SSR pages, hydrated islands, real API.',
-      image: '/runs-on/hn.webp',
+      image: hnShot,
       external: true,
     },
     {
       href: 'https://demos.mochi.fast/admin',
       title: 'Realtime Admin Panel',
       hook: 'Live dashboard with WebSocket updates and server-driven state.',
-      image: '/runs-on/admin.webp',
+      image: adminShot,
       external: true,
     },
     {
       href: 'https://demos.mochi.fast/todo',
       title: 'Tailwind Todo App',
       hook: 'Classic todo app styled with Tailwind CSS.',
-      image: '/runs-on/todo.webp',
+      image: todoShot,
       external: true,
     },
   ];
@@ -142,7 +148,7 @@
             <span class="dots"><span></span><span></span><span></span></span>
             <span class="url">{site.title}</span>
           </span>
-          <img src={site.image} alt="Screenshot of {site.title}" width="1280" height="800" loading="lazy" decoding="async" draggable="false" />
+          <Image src={site.image} size="site-shot" alt="Screenshot of {site.title}" placeholder class="shot-img" />
         </a>
         <p class="caption">
           <a class="caption-title" href={site.href} target={site.external ? '_blank' : undefined} rel={site.external ? 'noopener noreferrer' : undefined}>
@@ -279,13 +285,15 @@
     text-overflow: ellipsis;
   }
 
-  img {
+  .shot :global(.shot-img) {
     display: block;
     width: 100%;
     height: auto;
     aspect-ratio: 1280 / 800;
     object-fit: cover;
     object-position: top;
+    -webkit-user-drag: none;
+    user-select: none;
   }
 
   .caption {
