@@ -53,6 +53,12 @@ describe('collectImageResources', () => {
 });
 
 describe('collectFontResources', () => {
+  test('a subset font names its source size in the dimensions column', () => {
+    const { diskPath } = asset('caveat-latin-wght-normal-ab12cd34.woff2', 2464);
+    const rows = collectFontResources([{ diskPath, subsetOf: 74932 }]);
+    expect(rows[0]).toMatchObject({ name: 'caveat-latin-wght-normal-ab12cd34.woff2', dimensions: 'subset of 74.9 kB', bytes: 2464 });
+  });
+
   test('reports the emitted filename and size, with a font symbol and no dimensions', () => {
     const { diskPath } = asset('inter-latin-400-normal-ab12cd34.woff2', 9000);
     const rows = collectFontResources([{ diskPath }]);

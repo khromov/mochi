@@ -106,6 +106,8 @@
     "@joint-ops/hitlimit-bun": "1.5.0",
     "@noble/ciphers": "2.2.0",
     "@noble/hashes": "2.2.0",
+    "@sveltejs/acorn-typescript": "^1.0.13",
+    "acorn": "^8.18.0",
     "bun-boss": "^0.5.1",
     "chokidar": "^5.0.0",
     "css-tree": "^3.2.1",
@@ -118,6 +120,7 @@
     "mitt": "^3.0.1",
     "negotiator": "^1.0.0",
     "nodemailer": "^9.0.3",
+    "subset-font": "^2.7.0",
     "zimmerframe": "^1.1.4"
   },
   "devDependencies": {
