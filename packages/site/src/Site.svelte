@@ -2,10 +2,6 @@
   import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
   import BookOpen from '@lucide/svelte/icons/book-open';
-  import Blocks from '@lucide/svelte/icons/blocks';
-  import Bot from '@lucide/svelte/icons/bot';
-  import Container from '@lucide/svelte/icons/container';
-  import Wrench from '@lucide/svelte/icons/wrench';
   import BatteriesDiagram from './components/BatteriesDiagram.svelte';
   import HeroHeadline from './components/HeroHeadline.svelte';
   import HydrateDemo from './components/HydrateDemo.svelte';
@@ -20,6 +16,7 @@
   import { highlightCode } from './lib/highlight.server';
   import { demos } from './lib/demos';
   import { demoIconFor } from './lib/demoIcons';
+  import { moreCards } from './lib/moreCards';
 
   // Split so the literal never closes this component's own script block.
   const endScript = '<' + '/script>';
@@ -73,42 +70,14 @@ Mochi.serve({
     'Charts with LayerChart',
   ];
 
+  // The live grid is four wide; the fifth card only appears in the bento draft.
+  const liveCards = moreCards.filter((card) => card.id !== 'testing');
+
   const featuredDemos = featuredTitles.flatMap((title) => {
     const demo = demos.find((d) => d.title === title);
     const meta = demoIconFor[title];
     return demo && meta ? [{ ...demo, icon: meta.icon, label: meta.label }] : [];
   });
-
-  const moreCards = [
-    {
-      icon: Container,
-      title: 'Deploy anywhere',
-      body: 'One build command and one Docker image. Runs on any host that runs Bun: PaaS, VPS, or the big clouds.',
-      href: '/docs/deployment-options/',
-      cta: 'Deployment guide',
-    },
-    {
-      icon: Blocks,
-      title: 'Your Svelte libraries just work',
-      body: 'Mochi compiles standard Svelte 5. LayerChart, Runed, Portable Text, and your own components drop in unchanged.',
-      href: '/docs/coming-from-sveltekit/',
-      cta: 'Coming from SvelteKit',
-    },
-    {
-      icon: Wrench,
-      title: 'Developer experience',
-      body: 'Debug bar, error overlay, and live reload in development. Testing helpers, svelte-check, and schema-validated env for the rest.',
-      href: '/docs/development-mode/',
-      cta: 'Development mode',
-    },
-    {
-      icon: Bot,
-      title: 'Agent-ready',
-      body: 'A remote MCP server, an agent skill, and llms.txt bundles keep coding assistants on current docs.',
-      href: '/docs/docs-for-llms/',
-      cta: 'Docs for LLMs',
-    },
-  ];
 </script>
 
 <LandingShell
@@ -243,7 +212,7 @@ Mochi.serve({
       </header>
 
       <ul class="more-grid">
-        {#each moreCards as card (card.href)}
+        {#each liveCards as card (card.href)}
           <li class="more-card">
             <span class="more-icon"><card.icon size={20} strokeWidth={1.8} /></span>
             <h3>{card.title}</h3>
