@@ -3,8 +3,8 @@
   import FileText from '@lucide/svelte/icons/file-text';
   import Puzzle from '@lucide/svelte/icons/puzzle';
   import ScrollText from '@lucide/svelte/icons/scroll-text';
-  import { libraryLogos } from '../../lib/libraryLogos';
-  import { moreCards, type MoreCard } from '../../lib/moreCards';
+  import { libraryLogos } from '../lib/libraryLogos';
+  import { moreCards, type MoreCard } from '../lib/moreCards';
 
   const byId = Object.fromEntries(moreCards.map((card) => [card.id, card])) as Record<MoreCard['id'], MoreCard>;
   const deploy = byId.deploy;
@@ -107,10 +107,48 @@
 
 <style>
   .bento {
+    --tint-deploy: #e3ebf1;
+    --ink-deploy: #2b4a63;
+    --tint-dx: #e2ece3;
+    --ink-dx: #2f5b3f;
+    --tint-libraries: #f5ecd3;
+    --ink-libraries: #6d5200;
+    --tint-agent: #ebe5f2;
+    --ink-agent: #4d3a6a;
+    --tint-testing: #f2e4ea;
+    --ink-testing: #6a3652;
     display: grid;
     grid-template-columns: repeat(12, minmax(0, 1fr));
     grid-auto-rows: auto;
     gap: 1rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme='light'])) .bento {
+      --tint-deploy: #1e272e;
+      --ink-deploy: #a9c6dd;
+      --tint-dx: #22302a;
+      --ink-dx: #c7e0cd;
+      --tint-libraries: #302c1c;
+      --ink-libraries: #e2bd52;
+      --tint-agent: #29232f;
+      --ink-agent: #cbb8e3;
+      --tint-testing: #2f2329;
+      --ink-testing: #dcb4c8;
+    }
+  }
+
+  :global(:root[data-theme='dark']) .bento {
+    --tint-deploy: #1e272e;
+    --ink-deploy: #a9c6dd;
+    --tint-dx: #22302a;
+    --ink-dx: #c7e0cd;
+    --tint-libraries: #302c1c;
+    --ink-libraries: #e2bd52;
+    --tint-agent: #29232f;
+    --ink-agent: #cbb8e3;
+    --tint-testing: #2f2329;
+    --ink-testing: #dcb4c8;
   }
 
   .cell {
@@ -118,10 +156,35 @@
     flex-direction: column;
     gap: 1.25rem;
     padding: 1.5rem;
-    background: var(--surface);
-    border: 1px solid var(--border);
+    background: linear-gradient(180deg, var(--tint) 0%, color-mix(in srgb, var(--tint) 45%, var(--surface)) 100%);
+    border: 1px solid color-mix(in srgb, var(--ink) 16%, var(--border));
     border-radius: var(--radius-lg);
     min-width: 0;
+  }
+
+  .cell-deploy {
+    --tint: var(--tint-deploy);
+    --ink: var(--ink-deploy);
+  }
+
+  .cell-dx {
+    --tint: var(--tint-dx);
+    --ink: var(--ink-dx);
+  }
+
+  .cell-libraries {
+    --tint: var(--tint-libraries);
+    --ink: var(--ink-libraries);
+  }
+
+  .cell-agent {
+    --tint: var(--tint-agent);
+    --ink: var(--ink-agent);
+  }
+
+  .cell-testing {
+    --tint: var(--tint-testing);
+    --ink: var(--ink-testing);
   }
 
   .cell-deploy {
@@ -182,12 +245,13 @@
     margin-top: 0.3rem;
     font-size: 0.92rem;
     font-weight: 600;
-    color: var(--accent);
+    color: var(--ink);
     text-decoration: none;
   }
 
   a:hover {
-    color: var(--accent-hover);
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
 
   a:focus-visible {
@@ -318,8 +382,8 @@
     width: 2.75rem;
     height: 2.75rem;
     border-radius: var(--radius-md);
-    background: var(--surface-muted);
-    border: 1px solid var(--border);
+    background: var(--surface);
+    border: 1px solid color-mix(in srgb, var(--ink) 16%, var(--border));
     color: var(--brand);
   }
 
@@ -343,7 +407,7 @@
     height: 11rem;
     margin: 0;
     border-radius: var(--radius-md);
-    background: radial-gradient(circle at 50% 50%, var(--accent-soft) 0, transparent 62%);
+    background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--ink) 14%, transparent) 0, transparent 62%);
     overflow: hidden;
   }
 
@@ -351,7 +415,7 @@
     position: absolute;
     top: 50%;
     left: 50%;
-    border: 1.5px dashed var(--border-strong);
+    border: 1.5px dashed color-mix(in srgb, var(--ink) 40%, var(--border-strong));
     border-radius: 50%;
     transform: translate(-50%, -50%);
   }
@@ -399,8 +463,8 @@
   .sat {
     padding: 0.25rem 0.6rem;
     border-radius: 999px;
-    background: var(--accent);
-    color: var(--accent-text);
+    background: var(--ink);
+    color: var(--tint);
     font-size: 0.72rem;
     font-weight: 600;
   }

@@ -7,6 +7,7 @@
   import HydrateDemo from './components/HydrateDemo.svelte';
   import JsShippedChart from './components/JsShippedChart.svelte';
   import LandingShell from './components/LandingShell.svelte';
+  import MoreBento from './components/MoreBento.svelte';
   import BrowserFrame from './components/BrowserFrame.svelte';
   import CodeFigure from './components/CodeFigure.svelte';
   import DemoCard from './components/DemoCard.svelte';
@@ -16,7 +17,6 @@
   import { highlightCode } from './lib/highlight.server';
   import { demos } from './lib/demos';
   import { demoIconFor } from './lib/demoIcons';
-  import { moreCards } from './lib/moreCards';
 
   // Split so the literal never closes this component's own script block.
   const endScript = '<' + '/script>';
@@ -69,9 +69,6 @@ Mochi.serve({
     'View Transitions',
     'Charts with LayerChart',
   ];
-
-  // The live grid is four wide; the fifth card only appears in the bento draft.
-  const liveCards = moreCards.filter((card) => card.id !== 'testing');
 
   const featuredDemos = featuredTitles.flatMap((title) => {
     const demo = demos.find((d) => d.title === title);
@@ -211,16 +208,7 @@ Mochi.serve({
         <p>The parts of a project that aren't the page.</p>
       </header>
 
-      <ul class="more-grid">
-        {#each liveCards as card (card.href)}
-          <li class="more-card">
-            <span class="more-icon"><card.icon size={20} strokeWidth={1.8} /></span>
-            <h3>{card.title}</h3>
-            <p>{card.body}</p>
-            <a class="all-demos" href={card.href}>{card.cta} <ArrowRight size={15} strokeWidth={2} /></a>
-          </li>
-        {/each}
-      </ul>
+      <MoreBento />
     </div>
   </section>
 
@@ -476,50 +464,6 @@ Mochi.serve({
     color: var(--accent);
   }
 
-  .more-grid {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 1rem;
-  }
-
-  .more-card {
-    display: flex;
-    flex-direction: column;
-    gap: 0.6rem;
-    padding: 1.35rem;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-  }
-
-  .more-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.4rem;
-    height: 2.4rem;
-    border-radius: var(--radius-sm);
-    background: var(--surface-muted);
-    border: 1px solid var(--border);
-    color: var(--accent);
-  }
-
-  .more-card h3 {
-    font-size: 1.2rem;
-    line-height: 1.2;
-    margin-top: 0.3rem;
-  }
-
-  .more-card p {
-    flex: 1;
-    font-size: 0.95rem;
-    line-height: 1.55;
-    color: var(--text-muted);
-  }
-
   .perf-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
@@ -770,8 +714,7 @@ Mochi.serve({
       max-width: 44ch;
     }
 
-    .demo-grid,
-    .more-grid {
+    .demo-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
@@ -812,8 +755,7 @@ Mochi.serve({
       grid-template-columns: minmax(0, 1fr);
     }
 
-    .demo-grid,
-    .more-grid {
+    .demo-grid {
       grid-template-columns: minmax(0, 1fr);
     }
 

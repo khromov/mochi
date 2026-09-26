@@ -175,7 +175,6 @@ export const routes: Record<string, MochiRouteValue> = {
   '/discord/': discordRoute,
   '/': Mochi.page('./src/Site.svelte'),
   '/demos': Mochi.page('./src/Demos.svelte'),
-  '/draft': Mochi.page('./src/Draft.svelte'),
   '/docs/demos': oldDemosDocRoute,
   '/docs/demos/': oldDemosDocRoute,
   // Static, so it outranks /docs/:slug below. The changelog is a synthetic doc rendered
