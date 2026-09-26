@@ -13,7 +13,6 @@ import {
   getDocNeighbors,
   getPostLlmsTxt,
   internalDemoLlmsRoutes,
-  loadDocs,
 } from './lib/docs';
 import { loadPosts, getPost } from './lib/blog';
 import { buildFeedXml, FEED_CONTENT_TYPE } from './lib/feed';
@@ -135,6 +134,8 @@ const supportRoute = vanityRedirect(SUPPORT_ORIGIN);
 // Same reasoning for the MCP endpoint: /mcp is what we advertise, but clients that
 // normalise the configured URL to /mcp/ would otherwise hit an unregistered path.
 const mcpRoute = Mochi.api(({ request }) => respondMcp(request));
+// The demos index moved from a docs page to /demos/; old links land on the section that page used to hold.
+const oldDemosDocRoute = Mochi.api(() => new Response(null, { status: 301, headers: { Location: '/demos/#full-stack-demos' } }));
 
 export const routes: Record<string, MochiRouteValue> = {
   // Gating on the mode would put these out of reach of their only caller, which profiles the production build.
@@ -172,15 +173,10 @@ export const routes: Record<string, MochiRouteValue> = {
     : {}),
   '/discord': discordRoute,
   '/discord/': discordRoute,
-  '/': Mochi.page('./src/Site.svelte', {
-    serverProps: async () => {
-      const docs = await loadDocs();
-      return {
-        docsNav: await buildDocsNav(),
-        firstDocSlug: docs[0]?.slug ?? 'intro',
-      };
-    },
-  }),
+  '/': Mochi.page('./src/Site.svelte'),
+  '/demos': Mochi.page('./src/Demos.svelte'),
+  '/docs/demos': oldDemosDocRoute,
+  '/docs/demos/': oldDemosDocRoute,
   // Static, so it outranks /docs/:slug below. The changelog is a synthetic doc rendered
   // from markdown fetched at runtime — it can't ride the build-time docComponents barrel,
   // so it hands Docs.svelte pre-rendered HTML instead of a component.

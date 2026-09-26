@@ -115,11 +115,16 @@
     color: var(--text-subtle);
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
     gap: 0.5rem 0.75rem;
   }
 
+  .quickstart-note-text {
+    flex: 1;
+    min-width: 0;
+  }
+
   .os-icons {
+    flex-shrink: 0;
     margin-left: auto;
     margin-right: 0.85rem;
     display: inline-flex;
@@ -332,16 +337,6 @@
     }
     .terminal-copy {
       padding: 0.4rem 0.5rem;
-    }
-  }
-
-  @media (max-width: 400px) {
-    .quickstart-note {
-      flex-direction: column;
-      align-items: flex-start;
-    }
-    .os-icons {
-      margin-left: 0;
     }
   }
 </style>
