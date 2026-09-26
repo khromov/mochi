@@ -24,11 +24,11 @@
     <figure class="terminal" aria-label="Build and run commands">
       <div class="terminal-bar"><span></span><span></span><span></span></div>
       <pre><span class="prompt">$</span> bun run build
-<span class="dim">✓ 14 islands · 3 server islands · 212 kB</span>
+<span class="dim">✓ 14 islands · 3 server islands · 0.323 s</span>
 <span class="prompt">$</span> docker build -t my-site .
-<span class="dim">✓ oven/bun:1 · 294 MB</span>
-<span class="prompt">$</span> docker run -p 3000:3000 my-site
-<span class="ok">BOOT</span> <span class="dim">listening on http://0.0.0.0:3000</span></pre>
+<span class="dim">✓ oven/bun:1-alpine · 43 MB base</span>
+<span class="prompt">$</span> docker run -p 3333:3333 my-site
+<span class="ok">BOOT</span> <span class="dim">listening on http://0.0.0.0:3333</span></pre>
     </figure>
   </article>
 
