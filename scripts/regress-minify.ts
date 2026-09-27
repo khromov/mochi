@@ -267,6 +267,11 @@ function emptyObservation(route: string, status: number): RouteObservation {
 /** Routes that blew the whole-route budget. A sweep must never be wedgeable by one page. */
 const budgetExceeded = new Set<string>();
 
+// Mochi's own logger colours its browser-side messages, and the escape has to come out before two runs can be
+// compared as text. Written from a char code so the source carries no literal control character.
+// eslint-disable-next-line no-control-regex
+const ANSI_COLOUR = new RegExp(`${String.fromCharCode(27)}\\[\\d+m`, 'g');
+
 /**
  * Hard wall-clock cap around a route. Playwright's own timeouts cover navigation and actions individually, but not
  * every await in between — a document Chromium renders through an internal viewer, or a WebSocket upgrade endpoint
@@ -299,7 +304,7 @@ async function observe(browser: Browser, origin: string, route: string): Promise
   const consoleWarnings: string[] = [];
   const pageErrors: string[] = [];
   const failedRequests: string[] = [];
-  const clean = (s: string) => s.replace(/https?:\/\/localhost:\d+/g, 'http://host').replace(/[\u001b]\[\d+m/g, '');
+  const clean = (s: string) => s.replace(/https?:\/\/localhost:\d+/g, 'http://host').replace(ANSI_COLOUR, '');
 
   // Cross-origin subresources are cut off at the browser. There is no outbound network here, so a page embedding one
   // — `packages/site`'s blog iframes the newsletter widget — would otherwise sit waiting for it to time out, and
@@ -320,7 +325,9 @@ async function observe(browser: Browser, origin: string, route: string): Promise
     if (m.type() === 'error' && !(blocked.size > 0 && m.text().includes('net::ERR_FAILED'))) {
       consoleErrors.push(clean(m.text()));
     }
-    if (m.type() === 'warning') consoleWarnings.push(clean(m.text()));
+    if (m.type() === 'warning') {
+      consoleWarnings.push(clean(m.text()));
+    }
   });
   page.on('pageerror', (e) => pageErrors.push(clean(e.message)));
   page.on('requestfailed', (r) => !blocked.has(r.url()) && failedRequests.push(clean(`${r.url()} ${r.failure()?.errorText ?? ''}`)));
@@ -372,7 +379,9 @@ async function observe(browser: Browser, origin: string, route: string): Promise
       for (let i = 0; i < Math.max(ssrSkeleton.length, liveSkeleton.length); i++) {
         if (ssrSkeleton[i] !== liveSkeleton[i]) {
           hydrationDamage.push(`@${i} ssr=${ssrSkeleton[i] ?? '<none>'} dom=${liveSkeleton[i] ?? '<none>'}`);
-          if (hydrationDamage.length >= 5) break;
+          if (hydrationDamage.length >= 5) {
+            break;
+          }
         }
       }
     }
@@ -628,7 +637,9 @@ for (const app of apps) {
             const a = paired.domAfterHydration === o.domAfterHydration ? paired.domAfterInteraction : paired.domAfterHydration;
             const b = paired.domAfterHydration === o.domAfterHydration ? o.domAfterInteraction : o.domAfterHydration;
             let at = 0;
-            while (at < a.length && a[at] === b[at]) at++;
+            while (at < a.length && a[at] === b[at]) {
+              at++;
+            }
             cell.details.push(
               `${app}/${mode} ${route} [dom-diff] at ${at}\n      bun: …${a.slice(Math.max(0, at - 60), at + 120)}…\n      oxc: …${b.slice(Math.max(0, at - 60), at + 120)}…`,
             );
@@ -702,11 +713,15 @@ if (streamingRoutes.size > 0) {
 }
 if (hydrationTimedOut.length > 0) {
   console.error(`\n--- ${hydrationTimedOut.length} route(s) where hydration did not settle in 10s ---`);
-  for (const r of [...new Set(hydrationTimedOut)]) console.error(`  ${r}`);
+  for (const r of new Set(hydrationTimedOut)) {
+    console.error(`  ${r}`);
+  }
 }
 if (harnessFailures.length > 0) {
   console.error(`\n--- ${harnessFailures.length} harness/route failure(s) ---`);
-  for (const f of harnessFailures) console.error(`  ${f}`);
+  for (const f of harnessFailures) {
+    console.error(`  ${f}`);
+  }
 }
 const fatal = cells.reduce((n, c) => n + c.pageErrors + c.domDiffs + c.screenshotDiffs, 0);
 process.exit(fatal > 0 ? 1 : 0);

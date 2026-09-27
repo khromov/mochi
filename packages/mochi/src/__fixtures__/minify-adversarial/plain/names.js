@@ -14,8 +14,11 @@ export const nameFacts = () => ({
 });
 
 export const dynamicEval = () => {
+  // Read only from inside the `eval` below, which is exactly the point: a direct eval sees the enclosing scope, so a
+  // minifier that renames `local` has to bail out of renaming in this function. Static analysis cannot see the use.
+  // eslint-disable-next-line no-unused-vars
   const local = 7;
-  // Direct eval sees the enclosing scope, so a minifier that renames `local` must bail out of renaming here.
+  // eslint-disable-next-line no-eval -- exercising direct eval is the whole point of this fixture
   const direct = eval('local + 1');
   const constructed = new Function('a', 'b', 'return a * b')(6, 7);
   return { direct, constructed };
