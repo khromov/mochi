@@ -188,8 +188,16 @@ describe('mochi-framework build --minifier (subprocess)', () => {
     const { exitCode, stderr } = await runCli('build', '--minifier', 'terser');
 
     expect(exitCode).toBe(1);
-    expect(stderr).toContain('Unknown --minifier: terser');
-    expect(stderr).toContain('`bun` or `oxc`');
+    expect(stderr).toContain('Unknown minifier "terser" from --minifier');
+    expect(stderr).toContain("Expected 'bun' or 'oxc'");
+  });
+
+  it('rejects a mistyped MOCHI_MINIFIER even when a valid flag overrides it', async () => {
+    const proc = Bun.spawn([process.execPath, CLI, 'build', '--minifier', 'oxc'], { env: { ...process.env, MOCHI_MINIFIER: 'OXC' }, stdout: 'pipe', stderr: 'pipe' });
+    const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain('Unknown minifier "OXC" from MOCHI_MINIFIER');
   });
 
   it('documents the flag in --help', async () => {

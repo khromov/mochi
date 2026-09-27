@@ -18,28 +18,38 @@ export type MochiJsMinifier = 'bun' | 'oxc';
 
 export const DEFAULT_JS_MINIFIER: MochiJsMinifier = 'bun';
 
+export const MINIFIER_ENV_VAR = 'MOCHI_MINIFIER';
+
 export function isJsMinifier(value: unknown): value is MochiJsMinifier {
   return value === 'bun' || value === 'oxc';
 }
 
-const MINIFIER_ENV_VAR = 'MOCHI_MINIFIER';
-const envWarned = new Set<string>();
+/** Validate one source of the setting; `source` names it in the error, since a typo must not silently mean `'bun'`. */
+export function parseJsMinifier(value: unknown, source: string): MochiJsMinifier {
+  if (!isJsMinifier(value)) {
+    throw new Error(`Unknown minifier ${JSON.stringify(value)} from ${source}. Expected 'bun' or 'oxc'.`);
+  }
+  return value;
+}
+
+export interface JsMinifierSources {
+  /** `mochi-framework build --minifier`. */
+  flag?: unknown;
+  /** `Mochi.serve({ minifier })` in the entry. */
+  configured?: unknown;
+  /** Defaults to `process.env.MOCHI_MINIFIER`; an empty string counts as unset. */
+  env?: string;
+}
 
 /**
- * `MOCHI_MINIFIER` wins over the configured value, mirroring `MOCHI_SVELTE_COMPILER`, so the two modes can be A/B'd
- * without editing code — including in dev, which has no build CLI to pass a flag to. An unrecognised value is treated
- * as a typo: warn once (a dev server resolves this on every rebuild) and keep the configured choice.
+ * The single place the setting is resolved: `--minifier` > `MOCHI_MINIFIER` > the entry's `minifier` > `'bun'`. Every
+ * source that is set is validated, including ones a higher-precedence source overrides.
  */
-export function resolveMinifierChoice(configured: MochiJsMinifier | undefined): MochiJsMinifier {
-  const env = process.env[MINIFIER_ENV_VAR];
-  if (isJsMinifier(env)) {
-    return env;
-  }
-  if (env && !envWarned.has(env)) {
-    envWarned.add(env);
-    logger.warn(`${MINIFIER_ENV_VAR}=${JSON.stringify(env)} is not a known minifier ('bun' | 'oxc') — ignoring.`);
-  }
-  return configured ?? DEFAULT_JS_MINIFIER;
+export function resolveJsMinifier({ flag, configured, env = process.env[MINIFIER_ENV_VAR] }: JsMinifierSources = {}): MochiJsMinifier {
+  const fromFlag = flag === undefined ? undefined : parseJsMinifier(flag, '--minifier');
+  const fromEnv = env === undefined || env === '' ? undefined : parseJsMinifier(env, MINIFIER_ENV_VAR);
+  const fromConfig = configured === undefined ? undefined : parseJsMinifier(configured, 'Mochi.serve({ minifier })');
+  return fromFlag ?? fromEnv ?? fromConfig ?? DEFAULT_JS_MINIFIER;
 }
 
 interface OxcError {

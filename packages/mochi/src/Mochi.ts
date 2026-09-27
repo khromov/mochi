@@ -5,6 +5,7 @@ import path from 'node:path';
 import { ComponentRegistry, formatCompileErrors } from './compiler/ComponentRegistry';
 import type { RenderResult } from './compiler/ComponentRegistry';
 import { loadSvelteConfig } from './compiler/svelteConfig';
+import { resolveJsMinifier } from './compiler/jsMinifier';
 import { resolveOutDir } from './compiler/resolveOutDir';
 import { buildInlineWebComponent } from './compiler/buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './dev/clientStatsRoutes';
@@ -547,6 +548,8 @@ export class Mochi {
 
     logger.info(`Starting in ${development ? 'development' : 'production'} mode`);
 
+    const minifier = resolveJsMinifier({ configured: options.minifier });
+
     // In production, load prebuilt assets from manifest if available
     const manifestPath = options.manifest ?? `${outDir}/manifest.json`;
     let registry: ComponentRegistry;
@@ -554,7 +557,7 @@ export class Mochi {
       logger.info(`Loading prebuilt manifest from ${relForDisplay(manifestPath)}`);
       // The registry takes its outDir from the manifest's own directory, so an explicit `manifest` pointing elsewhere
       // relocates on-demand island compiles along with it.
-      registry = await ComponentRegistry.fromManifest(manifestPath, development, { fonts: options.fonts, minifier: options.minifier });
+      registry = await ComponentRegistry.fromManifest(manifestPath, development, { fonts: options.fonts, minifier });
       if (options.assetPrefix !== undefined && options.assetPrefix !== registry.assetPrefix) {
         logger.warn(
           `assetPrefix in Mochi.serve() (${JSON.stringify(options.assetPrefix)}) differs from the manifest (${JSON.stringify(registry.assetPrefix)}). Using the manifest value — URLs are baked in at build time.`,
@@ -571,7 +574,7 @@ export class Mochi {
         svelteCompiler: options.svelteCompiler,
         markdown: options.markdown,
         optimize: options.optimize,
-        minifier: options.minifier,
+        minifier,
         barrelWarnings: options.barrelWarnings,
         fonts: options.fonts,
       });

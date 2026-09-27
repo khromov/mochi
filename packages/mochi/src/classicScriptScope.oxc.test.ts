@@ -1,6 +1,5 @@
-// The `minifier: 'oxc'` half of `classicScriptScope.test.ts`. oxc is the reason these checks exist: in module mode it
-// renames top-level bindings to one-letter names, which is exactly what turns a classic script's global lexical
-// declaration into a likely collision, so the inline scripts are minified in script mode instead.
+// The `minifier: 'oxc'` half of `classicScriptScope.test.ts`, in its own file because `Mochi.serve()` is a one-per-process
+// singleton and the minifier is fixed at boot.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
@@ -36,12 +35,9 @@ describe("inline classic scripts (minifier: 'oxc')", () => {
   });
 
   test('oxc really did run, so the checks below are not testing the bun path', async () => {
-    // Guards the rest of this file against passing vacuously: rebuild the same entry with the env override lifted and
-    // assert the page is not serving that. The env var wins over the argument, so it has to be cleared, not overridden.
+    // Guards the rest of this file against passing vacuously: the page must not be serving the bun build.
     const { buildInlineWebComponent } = await import('./compiler/buildInlineWebComponent');
-    delete process.env.MOCHI_MINIFIER;
     const bunJs = await buildInlineWebComponent('./web-components/LiveReload.ts', 'bun');
-    process.env.MOCHI_MINIFIER = 'oxc';
 
     const inlineLiveReload = classicScripts(html).find((s) => s.includes('mochi-live-reload'))!;
 

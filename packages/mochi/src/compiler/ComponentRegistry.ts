@@ -53,7 +53,7 @@ import { registerLocalImageAsset } from '../image/localAssetRegistry';
 import type { LocalImageAsset } from '../image/types';
 import { freshImport } from './freshImport';
 import { resolveSvelteShaker } from './svelteShaker';
-import { minifyBuildOutputs, resolveMinifierChoice, type MochiJsMinifier } from './jsMinifier';
+import { minifyBuildOutputs, parseJsMinifier, resolveJsMinifier, type MochiJsMinifier } from './jsMinifier';
 import prettyBytes from '../vendor/pretty-bytes';
 
 // The `compile:preprocessors` filter is sync; only applying its preprocessors through Svelte's `preprocess()` is async.
@@ -498,7 +498,7 @@ export class ComponentRegistry {
     this.svelteCompiler = opts.svelteCompiler;
     this.markdown = opts.markdown;
     this.optimize = opts.optimize ?? false;
-    this.minifier = resolveMinifierChoice(opts.minifier);
+    this.minifier = opts.minifier === undefined ? resolveJsMinifier() : parseJsMinifier(opts.minifier, 'ComponentRegistry({ minifier })');
     this.fontInlineThreshold = opts.fonts?.inlineThreshold ?? 4096;
     this.fontDropLegacyWoff = opts.fonts?.dropLegacyWoff ?? true;
     const bw = opts.barrelWarnings;

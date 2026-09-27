@@ -6,7 +6,7 @@
  */
 import path from 'node:path';
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
-import { minifyBuildOutputs, resolveMinifierChoice, type MochiJsMinifier } from './jsMinifier';
+import { minifyBuildOutputs, type MochiJsMinifier } from './jsMinifier';
 
 // This file lives in `src/compiler/`, so climb one level: resolving `relPath`
 // against `import.meta.url` would anchor callers' paths to `src/compiler/`.
@@ -27,7 +27,7 @@ export function assertNoModuleSyntax(fileName: string, code: string): void {
   }
 }
 
-export async function buildInlineWebComponent(relPath: string, minifier?: MochiJsMinifier): Promise<string> {
+export async function buildInlineWebComponent(relPath: string, minifier: MochiJsMinifier = 'bun'): Promise<string> {
   const entry = Bun.fileURLToPath(new URL(relPath, SRC_URL));
   const result = await Bun.build({
     entrypoints: [entry],
@@ -52,7 +52,7 @@ export async function buildInlineWebComponent(relPath: string, minifier?: MochiJ
   }
   const output = result.outputs[0]!;
   // Script mode is the goal the browser actually parses this with: sloppy, `this` is `window` at top level.
-  const reminified = await minifyBuildOutputs([output], resolveMinifierChoice(minifier), { module: false });
+  const reminified = await minifyBuildOutputs([output], minifier, { module: false });
   const js = reminified?.get(output.path) ?? (await output.text());
   assertNoModuleSyntax(path.basename(entry), js);
   return js;

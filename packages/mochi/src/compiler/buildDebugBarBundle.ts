@@ -12,7 +12,7 @@ import { registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader
 import { mergeCompilerOptions } from './svelteConfig';
 import { formatBuildMessages } from './formatBuildMessages';
 import type { SvelteCompilerBackend } from './svelteCompilerBackend';
-import { minifyBuildOutputs, resolveMinifierChoice, type MochiJsMinifier } from './jsMinifier';
+import { minifyBuildOutputs, type MochiJsMinifier } from './jsMinifier';
 
 const SRC_DIR = path.resolve(import.meta.dir, '..');
 
@@ -22,12 +22,14 @@ export interface DebugBarBundle {
 }
 
 export async function buildDebugBarBundle(opts: { development: boolean; backend: SvelteCompilerBackend; minifier?: MochiJsMinifier }): Promise<DebugBarBundle> {
-  const { development, backend, minifier } = opts;
+  const { development, backend } = opts;
 
   // Diagnostic escape hatch: prod-Svelte's `each_key_duplicate` throws with no key and a minified stack, so a panel
   // fault is unidentifiable. Set MOCHI_DEBUGBAR_DIAGNOSTIC=1 to build the bar dev-Svelte + un-minified — the runtime
   // then names the offending key and the stack names the component. Larger output; for temporary debugging only.
   const diagnostic = process.env.MOCHI_DEBUGBAR_DIAGNOSTIC === '1';
+  // Diagnostic builds skip Bun's minifier, so they skip oxc's too — the point of the escape hatch is readable output.
+  const minifier = diagnostic ? 'bun' : (opts.minifier ?? 'bun');
 
   const debugBarPlugin: BunPlugin = {
     name: 'mochi-debug-bar',
@@ -76,7 +78,6 @@ export async function buildDebugBarBundle(opts: { development: boolean; backend:
   if (!entry) {
     throw new Error('Debug bar client build produced no entry-point output');
   }
-  // Diagnostic builds skip Bun's minifier, so they skip oxc's too — the point of the escape hatch is readable output.
-  const reminified = diagnostic ? null : await minifyBuildOutputs([entry], resolveMinifierChoice(minifier));
+  const reminified = await minifyBuildOutputs([entry], minifier);
   return { fileName: path.basename(entry.path), contents: reminified?.get(entry.path) ?? (await entry.text()) };
 }

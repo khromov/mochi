@@ -8,7 +8,7 @@ import {
   minifyBuildOutputs,
   minifyJsChunks,
   resetOxcMinifyCache,
-  resolveMinifierChoice,
+  resolveJsMinifier,
   resolveOxcMinify,
 } from './jsMinifier';
 
@@ -53,7 +53,7 @@ describe('resolveOxcMinify', () => {
     expect(await resolveOxcMinify(() => Promise.resolve({ module: { minify: fn }, version: '0.151.0' }))).toEqual({ minify: fn, version: '0.151.0' });
   });
 
-  test('throws when the version cannot be read', async () => {
+  test('throws when the version cannot be read, since it is part of every oxc file name', async () => {
     const minify = () => Promise.resolve({ code: '', errors: [] });
 
     await expect(resolveOxcMinify(() => Promise.resolve({ module: { minify }, version: undefined }))).rejects.toThrow(/could not read the installed oxc-minify version/);
@@ -206,46 +206,37 @@ describe('classic-script mode', () => {
 
 });
 
-describe('resolveMinifierChoice', () => {
-  const saved = process.env.MOCHI_MINIFIER;
-  afterEach(() => {
-    if (saved === undefined) {
-      delete process.env.MOCHI_MINIFIER;
-    } else {
-      process.env.MOCHI_MINIFIER = saved;
+describe('resolveJsMinifier', () => {
+  test('precedence is flag, then env, then the entry, then the default', () => {
+    expect(resolveJsMinifier({ env: '' })).toBe('bun');
+    expect(resolveJsMinifier({ configured: 'oxc', env: '' })).toBe('oxc');
+    expect(resolveJsMinifier({ configured: 'bun', env: 'oxc' })).toBe('oxc');
+    expect(resolveJsMinifier({ flag: 'oxc', configured: 'bun', env: 'bun' })).toBe('oxc');
+    expect(resolveJsMinifier({ flag: 'bun', env: 'oxc' })).toBe('bun');
+  });
+
+  test('reads MOCHI_MINIFIER when no env is passed', () => {
+    const saved = process.env.MOCHI_MINIFIER;
+    process.env.MOCHI_MINIFIER = 'oxc';
+    try {
+      expect(resolveJsMinifier({ configured: 'bun' })).toBe('oxc');
+    } finally {
+      if (saved === undefined) {
+        delete process.env.MOCHI_MINIFIER;
+      } else {
+        process.env.MOCHI_MINIFIER = saved;
+      }
     }
   });
 
-  test('falls back to the configured value, then the default', () => {
-    delete process.env.MOCHI_MINIFIER;
-    expect(resolveMinifierChoice(undefined)).toBe('bun');
-    expect(resolveMinifierChoice('oxc')).toBe('oxc');
-  });
-
-  test('the env var wins, so dev — which has no build flag — can be A/B’d', () => {
-    process.env.MOCHI_MINIFIER = 'oxc';
-    expect(resolveMinifierChoice(undefined)).toBe('oxc');
-    expect(resolveMinifierChoice('bun')).toBe('oxc');
-  });
-
-  test('an unrecognised value is ignored rather than guessed at', () => {
-    process.env.MOCHI_MINIFIER = 'terser';
-    expect(resolveMinifierChoice('oxc')).toBe('oxc');
-    expect(resolveMinifierChoice(undefined)).toBe('bun');
-  });
-});
-
-// The pinned options only help if they actually reach oxc. This asserts the one that matters most is load-bearing:
-// with the opposite setting the read is deleted, which is exactly how a Svelte $effect would lose its dependency.
-describe('pinned options reach oxc', () => {
-  test('a bare property read survives here but not under the opposite treeshake setting', async () => {
-    const source = 'export function track(obj) { obj.prop; return 1; }';
-    const { minify } = await resolveOxcMinify();
-
-    const [pinned] = await minifyJsChunks([{ fileName: 'a.js', code: source }]);
-    const loose = await minify('a.js', source, { module: true, compress: { treeshake: { propertyReadSideEffects: false } } });
-
-    expect(pinned!).toContain('.prop');
-    expect(loose.code).not.toContain('.prop');
+  test.each([
+    [{ flag: 'terser' }, /from --minifier/],
+    [{ env: 'OXC' }, /from MOCHI_MINIFIER/],
+    [{ configured: 'OXC', env: '' }, /from Mochi\.serve\(\{ minifier \}\)/],
+    // Overridden sources are still validated, so a typo can't hide behind a flag.
+    [{ flag: 'oxc', env: 'terser' }, /from MOCHI_MINIFIER/],
+    [{ flag: 'bun', configured: 1, env: '' }, /Unknown minifier 1/],
+  ])('throws on an unknown value: %p', (sources, message) => {
+    expect(() => resolveJsMinifier(sources)).toThrow(message);
   });
 });
