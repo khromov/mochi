@@ -6,6 +6,7 @@ description: 'How a Mochi build behaves in production: relocatable output and a 
 
 <script>
 import Callout from './_components/Callout.svelte';
+import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 # Production builds
@@ -72,5 +73,45 @@ A plain `docker run -v image-cache:/data/image-cache your-app` mounts the same v
 <Callout type="info">
 
 Keep `MOCHI_KEY` stable across restarts. Image URLs are signed with a key derived from it, so a changed key invalidates already-minted links even though the cached bytes are still on disk.
+
+</Callout>
+
+## JavaScript minifier
+
+<VersionNote since="0.10.0" message="The minifier option was added in 0.10.0. Earlier versions always use Bun's minifier." />
+
+Client JavaScript is minified by Bun's bundler. Set `minifier: 'oxc'` to run a second [oxc](https://oxc.rs/docs/guide/usage/minifier) pass over the chunks Bun emitted, which takes roughly another **3–4%** off the bundle:
+
+```sh
+bun add -d oxc-minify
+```
+
+```ts
+// src/index.ts
+await Mochi.serve({
+  minifier: 'oxc',
+  routes: {
+    '/': Mochi.page('./src/Home.svelte'),
+  },
+});
+```
+
+`mochi-framework build` reads the option from your entry. Override it per build with `--minifier <bun|oxc>`:
+
+```sh
+mochi-framework build --minifier oxc
+```
+
+The pass covers the hydration bundle and the inline web-component scripts. CSS, static assets and the SSR build are untouched. Bun's own minifier keeps running first — it mangles identifiers across the whole split graph, which oxc cannot redo one chunk at a time — so oxc is purely additive.
+
+<Callout type="warning">
+
+Chunk file names are content-hashed from Bun's output, before oxc runs. Switching `minifier` therefore changes a chunk's bytes without changing its name. Purge your CDN cache when you switch.
+
+</Callout>
+
+<Callout type="info">
+
+`oxc-minify` is an optional peer dependency. With `minifier: 'oxc'` set and the package missing, the build fails with install instructions rather than quietly falling back, so deployed bundle sizes always match the mode you asked for.
 
 </Callout>

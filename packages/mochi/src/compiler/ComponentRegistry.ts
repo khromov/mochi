@@ -53,6 +53,7 @@ import { registerLocalImageAsset } from '../image/localAssetRegistry';
 import type { LocalImageAsset } from '../image/types';
 import { freshImport } from './freshImport';
 import { resolveSvelteShaker } from './svelteShaker';
+import { DEFAULT_JS_MINIFIER, minifyBuildOutputs, type MochiJsMinifier } from './jsMinifier';
 import prettyBytes from '../vendor/pretty-bytes';
 
 // The `compile:preprocessors` filter is sync; only applying its preprocessors through Svelte's `preprocess()` is async.
@@ -309,6 +310,8 @@ export interface ComponentRegistryOptions {
   markdown?: MarkdownConfig;
   /** Run the whole-program svelte-shaker pass before compiling. Production only — `prepareShake()` is a no-op in dev. */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /** Which minifier prints the client bundle. `'oxc'` needs the optional `oxc-minify` package. Default: `'bun'`. */
+  minifier?: MochiJsMinifier;
   /** See `MochiServeOptions.barrelWarnings`. */
   barrelWarnings?: boolean | MochiBarrelWarningOptions;
   /** See `MochiServeOptions.fonts`. */
@@ -441,6 +444,7 @@ export class ComponentRegistry {
   private readonly svelteCompiler: MochiSvelteCompiler | undefined;
   readonly markdown: MarkdownConfig | undefined;
   readonly optimize: boolean | MochiSvelteShakerOptions;
+  readonly minifier: MochiJsMinifier;
   private readonly fontInlineThreshold: number;
   private readonly fontDropLegacyWoff: boolean;
   private readonly barrelWarningsEnabled: boolean;
@@ -494,6 +498,7 @@ export class ComponentRegistry {
     this.svelteCompiler = opts.svelteCompiler;
     this.markdown = opts.markdown;
     this.optimize = opts.optimize ?? false;
+    this.minifier = opts.minifier ?? DEFAULT_JS_MINIFIER;
     this.fontInlineThreshold = opts.fonts?.inlineThreshold ?? 4096;
     this.fontDropLegacyWoff = opts.fonts?.dropLegacyWoff ?? true;
     const bw = opts.barrelWarnings;
@@ -1345,9 +1350,19 @@ export class ComponentRegistry {
       throw new Error(`Svelte client build failed:\n${formatBuildMessages(result.logs)}`);
     }
 
+    // Post-bundle, because a plugin can't reach the printed chunks: `onLoad` only sees pre-bundle modules Bun then
+    // re-prints, and `onEnd` returns `void` after `outdir` is already written. Every chunk is minified before any is
+    // swapped in, so a failure can't leave half the bundle re-minified.
+    const reminified = await minifyBuildOutputs(result.outputs, this.minifier);
+
     for (const output of result.outputs) {
       const filename = path.basename(output.path);
-      newClientFiles.set(`${this.assetPrefix}/client/${filename}`, await output.text());
+      const replacement = reminified?.get(output.path);
+      if (replacement !== undefined) {
+        // `outdir` above already wrote Bun's version; the manifest boot reads these files back off disk.
+        await Bun.write(output.path, replacement);
+      }
+      newClientFiles.set(`${this.assetPrefix}/client/${filename}`, replacement ?? (await output.text()));
     }
 
     // Map entry-point outputs back to components using metafile.entryPoint
@@ -1383,9 +1398,13 @@ export class ComponentRegistry {
         }));
         inputs.sort((a, b) => b.size - a.size);
         const imports = (outMeta.imports ?? []).filter((i) => i.kind === 'import-statement').map((i) => path.basename(i.path));
+        const name = path.basename(outPath);
+        // Bun's metafile counts what Bun printed, so an oxc pass leaves it stale — the chunk total is corrected from
+        // the bytes actually written, while the per-input attribution stays Bun's and no longer sums to it.
+        const emitted = newClientFiles.get(`${this.assetPrefix}/client/${name}`);
         return {
-          name: path.basename(outPath),
-          size: outMeta.bytes,
+          name,
+          size: reminified && emitted !== undefined ? Buffer.byteLength(emitted) : outMeta.bytes,
           inputs,
           imports,
         };
@@ -2448,7 +2467,7 @@ export class ComponentRegistry {
   }
 
   /** Load a registry from a prebuilt manifest (production mode). `options` carries serve-time config a manifest can't: on-demand compiles (manifest misses) must honor it or they diverge from the build output. */
-  static async fromManifest(manifestPath: string, development: boolean = false, options: Pick<ComponentRegistryOptions, 'fonts'> = {}): Promise<ComponentRegistry> {
+  static async fromManifest(manifestPath: string, development: boolean = false, options: Pick<ComponentRegistryOptions, 'fonts' | 'minifier'> = {}): Promise<ComponentRegistry> {
     const raw = await Bun.file(manifestPath).text();
     const manifest: MochiManifest = JSON.parse(raw);
 
@@ -2476,6 +2495,7 @@ export class ComponentRegistry {
       outDir: artifactRoot,
       assetPrefix: manifest.assetPrefix,
       fonts: options.fonts,
+      minifier: options.minifier,
     });
     registry.loadedFromManifest = true;
     registry.publicFileCountAtBuild = manifest.publicFileCount ?? 0;

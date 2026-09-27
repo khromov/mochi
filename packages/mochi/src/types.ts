@@ -12,6 +12,7 @@ import type { MochiCronHandler, MochiCronRuntimeOptions } from './cron';
 import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions, MochiQueueStorage } from './queue';
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
+import type { MochiJsMinifier } from './compiler/jsMinifier';
 import type { SpeculationRules } from './runtime/speculationRules';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | MochiRedirect | Promise<Record<string, unknown> | MochiRedirect>;
@@ -719,6 +720,20 @@ export interface MochiServeOptions {
    * it Mochi warns once at boot and compiles from the original sources.
    */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /**
+   * Which minifier prints the browser-facing JS: Bun's built-in one, or a second
+   * [oxc](https://oxc.rs/docs/guide/usage/minifier) pass over the chunks Bun emitted.
+   *
+   * `'oxc'` takes roughly another 3–4% off the island bundle for a few tens of milliseconds of build time. It covers
+   * the hydration bundle and the inline web-component scripts; CSS, static assets and the SSR build are untouched
+   * either way. `mochi-framework build` reads this straight from your entry's `Mochi.serve()` call.
+   *
+   * Requires the optional `oxc-minify` package (`bun add -d oxc-minify`); the build fails with install instructions
+   * rather than falling back, so a deploy's bundle sizes always match the mode you asked for.
+   *
+   * Default: `'bun'`.
+   */
+  minifier?: MochiJsMinifier;
   /**
    * Warning when a dependency drags a large module into the build graph that is then almost entirely tree-shaken away — the
    * "barrel import" smell, e.g. `import { Sun } from '@lucide/svelte'` in place of `@lucide/svelte/icons/sun`. Bun re-parses

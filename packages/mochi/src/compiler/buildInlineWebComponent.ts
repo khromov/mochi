@@ -5,12 +5,13 @@
  * `./web-components/ServerIsland.ts`.
  */
 import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
+import { DEFAULT_JS_MINIFIER, minifyBuildOutputs, type MochiJsMinifier } from './jsMinifier';
 
 // This file lives in `src/compiler/`, so climb one level: resolving `relPath`
 // against `import.meta.url` would anchor callers' paths to `src/compiler/`.
 const SRC_URL = new URL('../', import.meta.url);
 
-export async function buildInlineWebComponent(relPath: string): Promise<string> {
+export async function buildInlineWebComponent(relPath: string, minifier: MochiJsMinifier = DEFAULT_JS_MINIFIER): Promise<string> {
   const entry = Bun.fileURLToPath(new URL(relPath, SRC_URL));
   const result = await Bun.build({
     entrypoints: [entry],
@@ -30,5 +31,7 @@ export async function buildInlineWebComponent(relPath: string): Promise<string> 
       .join('\n');
     throw new Error(`buildInlineWebComponent failed for ${entry}:\n${lines}`);
   }
-  return result.outputs[0]!.text();
+  const output = result.outputs[0]!;
+  const reminified = await minifyBuildOutputs([output], minifier);
+  return reminified?.get(output.path) ?? output.text();
 }

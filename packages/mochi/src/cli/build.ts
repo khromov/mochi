@@ -8,6 +8,7 @@ import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from '../types';
 import type { MarkdownConfig, MochiBarrelWarningOptions, MochiFontOptions, MochiRouteValue, MochiSvelteShakerOptions } from '../types';
 import type { MochiProtectionOptions } from '../protection/types';
 import type { MochiSvelteCompiler } from '../compiler/svelteCompilerBackend';
+import type { MochiJsMinifier } from '../compiler/jsMinifier';
 import { rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { scanPublicDir, publicRouteKey } from '../runtime/publicDir';
@@ -42,6 +43,8 @@ export interface MochiBuildOptions {
   markdown?: MarkdownConfig;
   /** Mirror the value passed to `Mochi.serve({ optimize })` so the prebuilt manifest and the runtime agree. Default: `false`. See `MochiServeOptions['optimize']`. */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /** Mirror the value passed to `Mochi.serve({ minifier })`; `--minifier` on the CLI overrides it. Default: `'bun'`. See `MochiServeOptions['minifier']`. */
+  minifier?: MochiJsMinifier;
   /** Mirror the value passed to `Mochi.serve({ barrelWarnings })`; a build collapses offenders into one grouped summary line. Default: enabled. See `MochiServeOptions['barrelWarnings']`. */
   barrelWarnings?: boolean | MochiBarrelWarningOptions;
   /** Mirror the value passed to `Mochi.serve({ fonts })` so the prebuilt CSS and extracted font files match the runtime. See `MochiServeOptions['fonts']`. */
@@ -113,7 +116,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     // Started now so it overlaps the compile phases, and awaited before the manifest. The `.catch(() => {})` guard only
     // marks a rejection handled in case compileAll throws first; the real error still surfaces at the trailing `await`.
     // `timed` wraps the work rather than that await, so the phase line reports real duration, not residual wait.
-    const serverIslandScriptPromise = timed('island-script', () => buildInlineWebComponent('./web-components/ServerIsland.ts'));
+    const serverIslandScriptPromise = timed('island-script', () => buildInlineWebComponent('./web-components/ServerIsland.ts', options.minifier));
     serverIslandScriptPromise.catch(() => {});
     // The runtime serves static files straight from publicDir in every mode, so all the build adds is proof that no
     // public file shadows a declared route and a deploy silently drops an asset. The runtime's own
@@ -148,6 +151,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       svelteCompiler: options.svelteCompiler,
       markdown: options.markdown,
       optimize: options.optimize,
+      minifier: options.minifier,
       barrelWarnings: options.barrelWarnings,
       fonts: options.fonts,
       // Group offenders into one summary for the one-shot production build; a

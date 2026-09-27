@@ -182,3 +182,20 @@ describe('mochi-framework generate-key (subprocess)', () => {
     expect(stdout).toContain('generate-key');
   });
 });
+
+describe('mochi-framework build --minifier (subprocess)', () => {
+  it('rejects an unknown value before doing any work', async () => {
+    const { exitCode, stderr } = await runCli('build', '--minifier', 'terser');
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain('Unknown --minifier: terser');
+    expect(stderr).toContain('`bun` or `oxc`');
+  });
+
+  it('documents the flag in --help', async () => {
+    const { exitCode, stdout } = await runCli('--help');
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain('--minifier <bun|oxc>');
+  });
+});

@@ -554,7 +554,7 @@ export class Mochi {
       logger.info(`Loading prebuilt manifest from ${relForDisplay(manifestPath)}`);
       // The registry takes its outDir from the manifest's own directory, so an explicit `manifest` pointing elsewhere
       // relocates on-demand island compiles along with it.
-      registry = await ComponentRegistry.fromManifest(manifestPath, development, { fonts: options.fonts });
+      registry = await ComponentRegistry.fromManifest(manifestPath, development, { fonts: options.fonts, minifier: options.minifier });
       if (options.assetPrefix !== undefined && options.assetPrefix !== registry.assetPrefix) {
         logger.warn(
           `assetPrefix in Mochi.serve() (${JSON.stringify(options.assetPrefix)}) differs from the manifest (${JSON.stringify(registry.assetPrefix)}). Using the manifest value — URLs are baked in at build time.`,
@@ -571,6 +571,7 @@ export class Mochi {
         svelteCompiler: options.svelteCompiler,
         markdown: options.markdown,
         optimize: options.optimize,
+        minifier: options.minifier,
         barrelWarnings: options.barrelWarnings,
         fonts: options.fonts,
       });
@@ -681,8 +682,8 @@ export class Mochi {
 
     // Prod-with-manifest restores this from disk (baked by `build()`); otherwise
     // build it on demand. LiveReload is dev-only, so it's never prebuilt.
-    const serverIslandClientJs = registry.serverIslandClientJs ?? (await buildInlineWebComponent('./web-components/ServerIsland.ts'));
-    const liveReloadClientJs = liveReloadEnabled ? await buildInlineWebComponent('./web-components/LiveReload.ts') : '';
+    const serverIslandClientJs = registry.serverIslandClientJs ?? (await buildInlineWebComponent('./web-components/ServerIsland.ts', registry.minifier));
+    const liveReloadClientJs = liveReloadEnabled ? await buildInlineWebComponent('./web-components/LiveReload.ts', registry.minifier) : '';
 
     // Precompute request-invariant shell fragments once; `getTemplate` reads the
     // live `shellTemplate` so dev shell edits (reloadShell) are picked up.

@@ -81,13 +81,18 @@
     "deps:report": "bun scripts/dep-report.ts"
   },
   "peerDependencies": {
+    "@jridgewell/remapping": "^2.3.5",
     "@mochi-framework/rsvelte": ">=0.0.1",
     "@mochi-framework/svelte-shaker": ">=0.0.1",
     "@tailwindcss/node": "^4.3.0",
     "@tailwindcss/oxide": "^4.3.0",
+    "oxc-minify": "^0.151.0",
     "svelte": "^5.56.6"
   },
   "peerDependenciesMeta": {
+    "@jridgewell/remapping": {
+      "optional": true
+    },
     "@mochi-framework/rsvelte": {
       "optional": true
     },
@@ -98,6 +103,9 @@
       "optional": true
     },
     "@tailwindcss/oxide": {
+      "optional": true
+    },
+    "oxc-minify": {
       "optional": true
     }
   },
@@ -124,11 +132,13 @@
     "@electric-sql/pglite": "0.5.4",
     "@electric-sql/pglite-socket": "0.2.7",
     "@happy-dom/global-registrator": "^20.11.1",
+    "@jridgewell/remapping": "2.3.5",
     "@tailwindcss/node": "^4.3.3",
     "@tailwindcss/oxide": "^4.3.3",
     "@types/bun": "1.4.1",
     "@types/smtp-server": "3.5.13",
     "fast-check": "4.9.0",
+    "oxc-minify": "0.151.0",
     "smtp-server": "3.19.2",
     "svelte": "^5.56.8",
     "svelte-check": "4.7.4",
