@@ -808,7 +808,7 @@ Bun loads `.env` for you. To send an environment variable to the client, pass it
 
 ### `$app/paths` (`asset`, `base`, `resolve`)
 
-No equivalent for app links: write them as absolute paths (`/about`) and prefix them yourself when hosting under a sub-path. Framework assets are prefixed for you by `assetPrefix` (default `/_mochi`) — see [Sub-path and static hosting](/docs/deployment-options/#sub-path-and-static-hosting).
+No equivalent for app links: write them as absolute paths (`/about`) and prefix them yourself when hosting under a sub-path. Framework assets are prefixed for you by `assetPrefix` (default `/_mochi`) — see [Sub-path and static hosting](/docs/production-builds/#sub-path-and-static-hosting).
 
 ```svelte
 <!-- SvelteKit -->
