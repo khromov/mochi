@@ -10,6 +10,7 @@
  * *worse* on gzip than Bun-then-oxc, because Bun mangles identifiers across the whole split graph while oxc only sees
  * one already-split chunk at a time and must preserve its import/export names.
  */
+import path from 'node:path';
 import type { BuildArtifact } from 'bun';
 import { logger } from '../utils/log';
 
@@ -41,16 +42,6 @@ export function resolveMinifierChoice(configured: MochiJsMinifier | undefined): 
   return configured ?? DEFAULT_JS_MINIFIER;
 }
 
-interface OxcSourceMap {
-  file?: string;
-  mappings: string;
-  names: string[];
-  sourceRoot?: string;
-  sources: string[];
-  sourcesContent?: string[];
-  version: number;
-}
-
 interface OxcError {
   severity: 'Error' | 'Warning' | 'Advice';
   message: string;
@@ -59,13 +50,11 @@ interface OxcError {
 
 interface OxcMinifyResult {
   code: string;
-  map?: OxcSourceMap;
   errors: OxcError[];
 }
 
 interface OxcMinifyOptions {
   module?: boolean;
-  sourcemap?: boolean;
   compress?: { target?: string; dropDebugger?: boolean; dropConsole?: boolean; treeshake?: { propertyReadSideEffects?: boolean | 'always' } };
   codegen?: { legalComments?: 'none' | 'inline' | 'eof' };
 }
@@ -90,10 +79,9 @@ const OXC_OPTIONS = {
   codegen: { legalComments: 'inline' as const },
 };
 
-// Held in variables so the `import()`s below stay statically unanalysable: an absent optional peer must surface as a
+// Held in a variable so the `import()` below stays statically unanalysable: an absent optional peer must surface as a
 // caught runtime rejection rather than a load-time resolution failure.
 const OXC_SPECIFIER = 'oxc-minify';
-const REMAPPING_SPECIFIER = '@jridgewell/remapping';
 
 const INSTALL_HINT = `Install it with \`bun add -d ${OXC_SPECIFIER}\`, or drop \`minifier: 'oxc'\` to stay on Bun's minifier.`;
 
@@ -132,43 +120,17 @@ export function resetOxcMinifyCache(): void {
 }
 
 export interface MinifiableChunk {
-  /** Output file name, used for oxc diagnostics and as the sourcemap's `file`. */
+  /** Output file name, used for oxc diagnostics. */
   fileName: string;
   code: string;
-  /** Bun's own map for this chunk, as raw JSON, when the build emitted one. */
-  map?: string;
-}
-
-export interface MinifiedChunk {
-  code: string;
-  /** Present only when the input carried a map; already remapped onto the original sources. */
-  map?: string;
 }
 
 export interface MinifyChunkOptions {
   /**
-   * Parse and optimise as an ES module. Pass `false` for output injected as a **classic** `<script>`: in script mode
-   * oxc leaves top-level bindings un-mangled and un-dropped, which a classic script needs because its top-level
-   * declarations are observable globals — renaming them to one-letter names invites a `SyntaxError` against another
-   * classic script's bindings, and dropping an "unused" one deletes a global. Default: `true`.
+   * Parse and optimise as an ES module. Pass `false` for output injected as a **classic** `<script>`, which the browser
+   * parses with the script goal — sloppy mode, top-level `this` is `window`. Default: `true`.
    */
   module?: boolean;
-}
-
-/**
- * A classic `<script>` cannot run `import`/`export`, and oxc's script mode parses them anyway rather than rejecting
- * them, so the guard has to be explicit: anything module-shaped reaching this path would be a `SyntaxError` on every
- * page load, which is worth failing the build over.
- */
-export function assertNoModuleSyntax(fileName: string, code: string): void {
-  const { imports, exports } = new Bun.Transpiler({ loader: 'js' }).scan(code);
-  const statics = imports.filter((i) => i.kind !== 'dynamic-import');
-  if (statics.length > 0 || exports.length > 0) {
-    throw new Error(
-      `${fileName} is injected as a classic <script> but still contains module syntax ` +
-        `(${statics.length} import(s), ${exports.length} export(s)) — it would be a SyntaxError in the browser.`,
-    );
-  }
 }
 
 function formatOxcErrors(fileName: string, errors: OxcError[]): string {
@@ -179,19 +141,13 @@ function formatOxcErrors(fileName: string, errors: OxcError[]): string {
  * Run oxc over every chunk, then return them all at once. Nothing is returned until the whole batch succeeds, so a
  * failure on one chunk can't leave the caller writing a bundle where some files went through oxc and some didn't.
  */
-export async function minifyJsChunks(chunks: MinifiableChunk[], opts: MinifyChunkOptions = {}): Promise<MinifiedChunk[]> {
+export async function minifyJsChunks(chunks: MinifiableChunk[], opts: MinifyChunkOptions = {}): Promise<string[]> {
   if (chunks.length === 0) {
     return [];
   }
   const module = opts.module ?? true;
   const minify = await resolveOxcMinify();
-  const results = await Promise.all(
-    chunks.map(async (chunk) => {
-      const wantsMap = chunk.map !== undefined;
-      const result = await minify(chunk.fileName, chunk.code, { ...OXC_OPTIONS, module, sourcemap: wantsMap });
-      return { chunk, result };
-    }),
-  );
+  const results = await Promise.all(chunks.map(async (chunk) => ({ chunk, result: await minify(chunk.fileName, chunk.code, { ...OXC_OPTIONS, module }) })));
 
   const failures = results.filter(({ result }) => result.errors.some((e) => e.severity === 'Error'));
   if (failures.length > 0) {
@@ -199,83 +155,28 @@ export async function minifyJsChunks(chunks: MinifiableChunk[], opts: MinifyChun
   }
   for (const { chunk, result } of results) {
     for (const warning of result.errors) {
-      logger.warn(`[mochi] oxc-minify ${chunk.fileName}: ${warning.message}`);
+      logger.warn(`oxc-minify ${chunk.fileName}: ${warning.message}`);
     }
   }
-
-  return Promise.all(
-    results.map(async ({ chunk, result }): Promise<MinifiedChunk> => {
-      if (chunk.map === undefined) {
-        return { code: result.code };
-      }
-      if (!result.map) {
-        return { code: result.code, map: chunk.map };
-      }
-      return { code: result.code, map: await chainSourceMap(chunk.fileName, chunk.map, result.map) };
-    }),
-  );
+  return results.map(({ result }) => result.code);
 }
 
 /**
  * Re-minify a finished `Bun.build`'s JS chunks with oxc, keyed by artifact path so the caller can swap each one into
- * whatever it already keeps them in. Returns `null` for the default `'bun'` mode, and leaves CSS, assets and any
- * non-JS output alone. A chunk's sourcemap artifact appears in the map too, remapped onto the original sources.
+ * whatever it already keeps them in. Returns `null` for the default `'bun'` mode, and leaves CSS and assets alone.
  */
 export async function minifyBuildOutputs(outputs: BuildArtifact[], minifier: MochiJsMinifier, opts: MinifyChunkOptions = {}): Promise<Map<string, string> | null> {
   if (minifier !== 'oxc') {
     return null;
   }
+  // oxc strips Bun's `//# sourceMappingURL` and its map would point at Bun's output rather than the sources, so a
+  // sourcemap here would ship broken; no browser build asks for one today.
+  const mapped = outputs.find((o) => o.kind === 'sourcemap' || o.sourcemap);
+  if (mapped) {
+    throw new Error(`minifier: 'oxc' does not support source maps, but the build emitted one for ${path.basename(mapped.path)}.`);
+  }
   const targets = outputs.filter((o) => (o.kind === 'entry-point' || o.kind === 'chunk') && o.path.endsWith('.js'));
-  const chunks: MinifiableChunk[] = await Promise.all(
-    targets.map(async (o) => ({
-      fileName: basename(o.path),
-      code: await o.text(),
-      ...(o.sourcemap ? { map: await o.sourcemap.text() } : {}),
-    })),
-  );
+  const chunks = await Promise.all(targets.map(async (o) => ({ fileName: path.basename(o.path), code: await o.text() })));
   const minified = await minifyJsChunks(chunks, opts);
-  const byPath = new Map<string, string>();
-  for (const [i, artifact] of targets.entries()) {
-    const result = minified[i]!;
-    byPath.set(artifact.path, result.code);
-    if (artifact.sourcemap && result.map !== undefined) {
-      byPath.set(artifact.sourcemap.path, result.map);
-    }
-  }
-  return byPath;
-}
-
-// Bun artifact paths are always `/`-joined regardless of platform, so a POSIX basename is enough and avoids importing
-// `node:path` into a module the browser-facing build graph can reach.
-function basename(p: string): string {
-  return p.slice(p.lastIndexOf('/') + 1);
-}
-
-/**
- * oxc's map goes minified → bundler output; chaining it through the bundler's own map is what keeps the result
- * pointing at the original `.svelte`/`.ts` sources rather than at Bun's intermediate chunk.
- */
-async function chainSourceMap(fileName: string, bundlerMapJson: string, oxcMap: OxcSourceMap): Promise<string> {
-  let remapping: (map: unknown, loader: (file: string) => unknown) => unknown;
-  try {
-    const mod = (await import(REMAPPING_SPECIFIER)) as { default?: unknown; remapping?: unknown };
-    remapping = (mod.default ?? mod.remapping) as typeof remapping;
-  } catch (err) {
-    throw new Error(
-      `minifier: 'oxc' needs the optional ${REMAPPING_SPECIFIER} package to keep source maps pointing at the original sources. ` +
-        `Install it with \`bun add -d ${REMAPPING_SPECIFIER}\`, or turn source maps off. (${err instanceof Error ? err.message : String(err)})`,
-    );
-  }
-  const bundlerMap = JSON.parse(bundlerMapJson) as OxcSourceMap;
-  let served = false;
-  const chained = remapping({ ...oxcMap, file: fileName }, () => {
-    // The loader is asked for every source the outer map names; only oxc's single synthetic source — the bundler's own
-    // output — has a map to descend into, and it is offered exactly once.
-    if (served) {
-      return null;
-    }
-    served = true;
-    return bundlerMap;
-  });
-  return JSON.stringify(chained);
+  return new Map(targets.map((artifact, i) => [artifact.path, minified[i]!]));
 }

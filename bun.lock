@@ -129,7 +129,6 @@
         "@electric-sql/pglite": "0.5.4",
         "@electric-sql/pglite-socket": "0.2.7",
         "@happy-dom/global-registrator": "^20.11.1",
-        "@jridgewell/remapping": "2.3.5",
         "@tailwindcss/node": "^4.3.3",
         "@tailwindcss/oxide": "^4.3.3",
         "@types/bun": "1.4.1",
@@ -143,7 +142,6 @@
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
-        "@jridgewell/remapping": "^2.3.5",
         "@mochi-framework/rsvelte": ">=0.0.1",
         "@mochi-framework/svelte-shaker": ">=0.0.1",
         "@tailwindcss/node": "^4.3.0",
@@ -152,7 +150,6 @@
         "svelte": "^5.56.6",
       },
       "optionalPeers": [
-        "@jridgewell/remapping",
         "@mochi-framework/rsvelte",
         "@mochi-framework/svelte-shaker",
         "@tailwindcss/node",

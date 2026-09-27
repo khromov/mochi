@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { assertNoModuleSyntax } from './buildInlineWebComponent';
 import {
-  assertNoModuleSyntax,
   DEFAULT_JS_MINIFIER,
   isJsMinifier,
   minifyBuildOutputs,
@@ -64,9 +64,8 @@ describe('minifyJsChunks', () => {
 
     const [out] = await minifyJsChunks([{ fileName: 'a.js', code: source }]);
 
-    expect(out!.code.length).toBeLessThan(source.length);
-    expect(out!.code).not.toContain('firstNumber');
-    expect(out!.map).toBeUndefined();
+    expect(out!.length).toBeLessThan(source.length);
+    expect(out!).not.toContain('firstNumber');
   });
 
   test('an empty batch never loads the minifier', async () => {
@@ -125,15 +124,10 @@ describe('minifyBuildOutputs', () => {
     expect(scope.result).toBe(3);
   });
 
-  test('chains the sourcemap so it still points at the original sources', async () => {
+  test('refuses a build that emitted a sourcemap rather than shipping one oxc has invalidated', async () => {
     const result = await buildFixture({ sourcemap: 'linked' });
-    const js = result.outputs.find((o) => o.kind === 'entry-point')!;
 
-    const out = (await minifyBuildOutputs(result.outputs, 'oxc'))!;
-
-    const chained = JSON.parse(out.get(js.sourcemap!.path)!) as { sources: string[]; mappings: string };
-    expect(chained.sources.some((s) => s.endsWith('lib.ts'))).toBe(true);
-    expect(chained.mappings.length).toBeGreaterThan(0);
+    await expect(minifyBuildOutputs(result.outputs, 'oxc')).rejects.toThrow(/does not support source maps/);
   });
 });
 
@@ -145,7 +139,7 @@ describe('oxc option parity with Bun', () => {
 
     const [out] = await minifyJsChunks([{ fileName: 'legal.js', code: source }]);
 
-    expect(out!.code).toContain('@license MIT');
+    expect(out!).toContain('@license MIT');
   });
 
   test('keeps `debugger`, which oxc drops by default and Bun preserves', async () => {
@@ -153,13 +147,13 @@ describe('oxc option parity with Bun', () => {
 
     const [out] = await minifyJsChunks([{ fileName: 'dbg.js', code: source }]);
 
-    expect(out!.code).toContain('debugger');
+    expect(out!).toContain('debugger');
   });
 
   test('keeps `console.*`, since dropping it would silence a running app', async () => {
     const [out] = await minifyJsChunks([{ fileName: 'log.js', code: 'export const f = () => console.log("kept");' }]);
 
-    expect(out!.code).toContain('console.log');
+    expect(out!).toContain('console.log');
   });
 
   test('keeps a bare property read, which is how Svelte tracks an $effect dependency', async () => {
@@ -168,8 +162,8 @@ describe('oxc option parity with Bun', () => {
 
     const [out] = await minifyJsChunks([{ fileName: 'reactive.js', code: source }]);
 
-    expect(out!.code).toContain('.prop');
-    expect(out!.code).toContain('.deep');
+    expect(out!).toContain('.prop');
+    expect(out!).toContain('.deep');
   });
 });
 
@@ -179,8 +173,8 @@ describe('classic-script mode', () => {
   test('module mode mangles and drops top-level bindings', async () => {
     const [out] = await minifyJsChunks([{ fileName: 'm.js', code: source }], { module: true });
 
-    expect(out!.code).not.toContain('unusedTopLevelGlobal');
-    expect(out!.code).not.toContain('SomeWidget');
+    expect(out!).not.toContain('unusedTopLevelGlobal');
+    expect(out!).not.toContain('SomeWidget');
   });
 
   test('script mode keeps them, because a classic script’s top level is the global scope', async () => {
@@ -188,8 +182,8 @@ describe('classic-script mode', () => {
     // `let`/`const`/`class` likely; dropping them would delete a global the page can observe.
     const [out] = await minifyJsChunks([{ fileName: 's.js', code: source }], { module: false });
 
-    expect(out!.code).toContain('unusedTopLevelGlobal');
-    expect(out!.code).toContain('SomeWidget');
+    expect(out!).toContain('unusedTopLevelGlobal');
+    expect(out!).toContain('SomeWidget');
   });
 
   test('script mode does NOT itself reject module syntax, so the classic-script guard has to be explicit', async () => {
@@ -197,17 +191,10 @@ describe('classic-script mode', () => {
     // between an ESM-shaped bundle and a SyntaxError inside `<script>`.
     const [out] = await minifyJsChunks([{ fileName: 'esm.js', code: 'export const a = 1;' }], { module: false });
 
-    expect(out!.code).toContain('export');
-    expect(() => assertNoModuleSyntax('esm.js', out!.code)).toThrow(/classic <script>/);
+    expect(out!).toContain('export');
+    expect(() => assertNoModuleSyntax('esm.js', out!)).toThrow(/classic <script>/);
   });
 
-  test('the guard passes a self-contained classic script', () => {
-    expect(() => assertNoModuleSyntax('ok.js', 'var a=1;customElements.define("x-y",class extends HTMLElement{});')).not.toThrow();
-  });
-
-  test('the guard allows a dynamic import, which a classic script can run', () => {
-    expect(() => assertNoModuleSyntax('ok.js', 'import("./x.js").then(m=>m.go());')).not.toThrow();
-  });
 });
 
 describe('resolveMinifierChoice', () => {
@@ -249,7 +236,7 @@ describe('pinned options reach oxc', () => {
     const [pinned] = await minifyJsChunks([{ fileName: 'a.js', code: source }]);
     const loose = await minify('a.js', source, { module: true, compress: { treeshake: { propertyReadSideEffects: false } } });
 
-    expect(pinned!.code).toContain('.prop');
+    expect(pinned!).toContain('.prop');
     expect(loose.code).not.toContain('.prop');
   });
 });

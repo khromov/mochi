@@ -81,7 +81,6 @@
     "deps:report": "bun scripts/dep-report.ts"
   },
   "peerDependencies": {
-    "@jridgewell/remapping": "^2.3.5",
     "@mochi-framework/rsvelte": ">=0.0.1",
     "@mochi-framework/svelte-shaker": ">=0.0.1",
     "@tailwindcss/node": "^4.3.0",
@@ -90,9 +89,6 @@
     "svelte": "^5.56.6"
   },
   "peerDependenciesMeta": {
-    "@jridgewell/remapping": {
-      "optional": true
-    },
     "@mochi-framework/rsvelte": {
       "optional": true
     },
@@ -132,7 +128,6 @@
     "@electric-sql/pglite": "0.5.4",
     "@electric-sql/pglite-socket": "0.2.7",
     "@happy-dom/global-registrator": "^20.11.1",
-    "@jridgewell/remapping": "2.3.5",
     "@tailwindcss/node": "^4.3.3",
     "@tailwindcss/oxide": "^4.3.3",
     "@types/bun": "1.4.1",
