@@ -319,11 +319,8 @@ export class Mochi {
     const cssStylePrefix = `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty, mochi-hydratable-island[hydrate-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
       registry.development ? ISLAND_FAILURE_DEV_CSS : ''
     }</style>\n`;
-    const serverIslandScript = `<script>(()=>{${serverIslandClientJs}})()</script>`;
-    // IIFE-wrapped like the island script above: classic scripts share one global lexical scope, so a bare top-level
-    // `class`/`let` here would `SyntaxError` against a same-named binding in any other classic script on the page —
-    // including one in the user's own shell template.
-    const liveReloadTail = liveReloadClientJs ? `<script>(()=>{${liveReloadClientJs}})()</script><mochi-live-reload></mochi-live-reload>` : '';
+    const serverIslandScript = `<script>${serverIslandClientJs}</script>`;
+    const liveReloadTail = liveReloadClientJs ? `<script>${liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : '';
     const toolbarDiv = registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : '';
     const assetPrefixJson = JSON.stringify(registry.assetPrefix);
 

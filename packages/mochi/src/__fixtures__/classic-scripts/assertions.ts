@@ -1,8 +1,4 @@
-/**
- * Shared by the two `classicScriptScope*.test.ts` files, which run the same checks against the two minifiers. They
- * have to be separate files because `Mochi.serve()` is a one-per-process singleton and the minifier is chosen before
- * the server boots.
- */
+/** Helpers for `classicScriptScope*.test.ts`, which inspect the inline classic scripts Mochi injects into a page. */
 import { parseSync } from 'oxc-parser';
 
 /** Every `<script>` on the page the browser runs as a classic script — i.e. not `type="module"` and not `src`. */

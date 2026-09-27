@@ -42,8 +42,6 @@ describe('Cache-Control on prebuilt framework assets (dev mode)', () => {
     }
     const res = await fetch(`${base}${match[0]}`);
     expect(res.status).toBe(200);
-    // Charset is explicit: both minifiers emit raw UTF-8, and a stylesheet with no charset is decoded as the
-    // document's encoding rather than UTF-8.
     expect(res.headers.get('content-type')).toBe('text/css; charset=utf-8');
     expect(res.headers.get('cache-control')).toBeNull();
   });

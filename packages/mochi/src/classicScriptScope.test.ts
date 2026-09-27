@@ -1,10 +1,5 @@
-// Classic scripts on one page share a single global lexical scope, so a top-level `let`/`const`/`class` in any of
-// them collides — as a hard SyntaxError — with a same-named binding in any other. Mochi injects several inline
-// classic scripts into every dev page and their bodies are minified to one-letter names, so the only durable
-// protection is that none of them declares anything at top level.
-//
-// The `minifier: 'oxc'` half of this lives in `classicScriptScope.oxc.test.ts`: the minifier is chosen before the
-// server boots and `Mochi.serve()` is a one-per-process singleton, so the two cannot share a file.
+// Classic scripts on one page share one global lexical scope, so a top-level `let`/`const`/`class` in any of Mochi's
+// inline scripts would be a SyntaxError against a same-named binding in any other.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
@@ -18,7 +13,7 @@ let server: Server<undefined>;
 let outDir: string;
 let html: string;
 
-describe("inline classic scripts (minifier: 'bun')", () => {
+describe('inline classic scripts', () => {
   beforeAll(async () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-classic-scope-'));
     server = await Mochi.serve({
@@ -68,7 +63,7 @@ describe("inline classic scripts (minifier: 'bun')", () => {
   });
 
   test('client JS is served with an explicit UTF-8 charset', async () => {
-    // Both minifiers emit raw UTF-8: emoji and accented characters survive unescaped in string literals. Without a
+    // Bun emits raw UTF-8: emoji and accented characters survive unescaped in string literals. Without a
     // charset the browser falls back to the document's encoding instead of decoding the script as UTF-8.
     const js = html.match(/\/_mochi\/[^"'\s]+\.js/);
     expect(js).not.toBeNull();
