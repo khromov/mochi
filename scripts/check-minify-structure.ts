@@ -44,17 +44,26 @@ function shapeOf(fileName: string, code: string, sourceType: 'module' | 'script'
     throw new Error(`${fileName}: parse failed as ${sourceType} — ${fatal[0]!.message}`);
   }
   const mod = parsed.module;
+  // A shared `chunk-<hash>.js` has no stable identity: two builds of `packages/site` with the *same* minifier
+  // disagree on most of these hashes. What is comparable is how many distinct chunks a file imports and in what
+  // order, so each one is renumbered by first appearance.
+  const chunkAlias = new Map<string, string>();
+  const source = (raw: string): string =>
+    /\/chunk-[a-z0-9]+\.js$/.test(raw) ? (chunkAlias.get(raw) ?? (chunkAlias.set(raw, `<chunk#${chunkAlias.size}>`), chunkAlias.get(raw)!)) : raw;
+
   const staticImports: Shape['staticImports'] = [];
   const sideEffectImports: string[] = [];
   for (const imp of mod.staticImports) {
     if (imp.entries.length === 0) {
-      sideEffectImports.push(imp.moduleRequest.value);
+      sideEffectImports.push(source(imp.moduleRequest.value));
       continue;
     }
     // The imported name, not the local one: the local binding is exactly what a minifier is allowed to rename.
+    // Sorted, because the order of specifiers *within* one import statement is not observable — only the order of
+    // the import statements themselves is, and that is preserved by pushing in source order.
     staticImports.push({
-      source: imp.moduleRequest.value,
-      names: imp.entries.map((e) => (e.importName.kind === 'Name' ? `name:${e.importName.name}` : e.importName.kind)),
+      source: source(imp.moduleRequest.value),
+      names: imp.entries.map((e) => (e.importName.kind === 'Name' ? `name:${e.importName.name}` : e.importName.kind)).sort(),
     });
   }
 
@@ -63,10 +72,10 @@ function shapeOf(fileName: string, code: string, sourceType: 'module' | 'script'
   for (const exp of mod.staticExports) {
     for (const entry of exp.entries) {
       if (entry.importName.kind === 'AllButDefault' || entry.importName.kind === 'All') {
-        starReexports.push(`${entry.importName.kind}:${entry.moduleRequest?.value ?? ''}`);
+        starReexports.push(`${entry.importName.kind}:${entry.moduleRequest ? source(entry.moduleRequest.value) : ''}`);
         continue;
       }
-      const from = entry.moduleRequest ? `<-${entry.moduleRequest.value}` : '';
+      const from = entry.moduleRequest ? `<-${source(entry.moduleRequest.value)}` : '';
       exportNames.push(`${entry.exportName.kind === 'None' ? 'default' : (entry.exportName.name ?? 'default')}${from}`);
     }
   }
@@ -75,7 +84,7 @@ function shapeOf(fileName: string, code: string, sourceType: 'module' | 'script'
   // no literal to read and is recorded as `<expr>` — still comparable, since both builds must agree on the count.
   const dynamicImports = mod.dynamicImports.map((d) => {
     const raw = code.slice(d.moduleRequest.start, d.moduleRequest.end);
-    return /^["'`]/.test(raw) ? raw.slice(1, -1) : '<expr>';
+    return /^["'`]/.test(raw) ? source(raw.slice(1, -1)) : '<expr>';
   });
 
   const directives: string[] = [];
@@ -168,25 +177,67 @@ let checked = 0;
 
 for (const app of apps) {
   const appDir = path.join(ROOT, 'packages', app);
+  // Bun twice before oxc, for the same reason the browser sweep does it: `packages/site` does not build
+  // reproducibly. Two consecutive `bun run build` runs with the *same* minifier disagree on 94 of 131 chunk hashes,
+  // and the cross-chunk import names are Bun-mangled, so they move too. Anything the control run already changed
+  // cannot be attributed to oxc, and is excluded and reported instead.
   await buildApp(appDir, 'bun');
   const bunChunks = readChunks(appDir);
+  await buildApp(appDir, 'bun');
+  const controlChunks = readChunks(appDir);
   await buildApp(appDir, 'oxc');
   const oxcChunks = readChunks(appDir);
 
-  const onlyBun = [...bunChunks.keys()].filter((k) => !oxcChunks.has(k));
-  const onlyOxc = [...oxcChunks.keys()].filter((k) => !bunChunks.has(k));
+  // Named entries pair on the part before the hash; anonymous `chunk-*.js` files have no stable identity at all and
+  // are compared as a multiset of shapes instead.
+  const named = (files: Map<string, string>) => new Map([...files].filter(([n]) => !n.startsWith('chunk-')).map(([n, c]) => [n.replace(/-[a-z0-9]+\.js$/, ''), { n, c }]));
+  const anonymous = (files: Map<string, string>) => [...files].filter(([n]) => n.startsWith('chunk-'));
+
+  const bunNamed = named(bunChunks);
+  const controlNamed = named(controlChunks);
+  const oxcNamed = named(oxcChunks);
+  const onlyBun = [...bunNamed.keys()].filter((k) => !oxcNamed.has(k));
+  const onlyOxc = [...oxcNamed.keys()].filter((k) => !bunNamed.has(k));
   if (onlyBun.length || onlyOxc.length) {
-    differences.push(`${app}: chunk set differs\n      only in bun: ${onlyBun.join(', ')}\n      only in oxc: ${onlyOxc.join(', ')}`);
+    differences.push(`${app}: entry set differs\n      only in bun: ${onlyBun.join(', ')}\n      only in oxc: ${onlyOxc.join(', ')}`);
   }
-  for (const [name, bunCode] of bunChunks) {
-    const oxcCode = oxcChunks.get(name);
-    if (oxcCode === undefined) {
+  let unstableEntries = 0;
+  const checkedBefore = checked;
+  for (const [key, bun] of bunNamed) {
+    const oxc = oxcNamed.get(key);
+    const control = controlNamed.get(key);
+    if (oxc === undefined || control === undefined) {
       continue;
     }
-    compare(`${app} :: ${name}`, shapeOf(name, bunCode, 'module'), shapeOf(name, oxcCode, 'module'));
+    const bunShape = shapeOf(bun.n, bun.c, 'module');
+    if (JSON.stringify(bunShape) !== JSON.stringify(shapeOf(control.n, control.c, 'module'))) {
+      unstableEntries++;
+      continue;
+    }
+    compare(`${app} :: ${key}`, bunShape, shapeOf(oxc.n, oxc.c, 'module'));
     checked++;
   }
-  console.error(`${app}: compared ${bunChunks.size} chunks`);
+
+  const fingerprint = (files: [string, string][]) => files.map(([n, c]) => JSON.stringify(shapeOf(n, c, 'module'))).sort();
+  const bunAnon = fingerprint(anonymous(bunChunks));
+  const controlAnon = fingerprint(anonymous(controlChunks));
+  const oxcAnon = fingerprint(anonymous(oxcChunks));
+  const anonStable = bunAnon.length === controlAnon.length && bunAnon.every((s, i) => s === controlAnon[i]);
+  if (!anonStable) {
+    console.error(`${app}: shared chunks are not reproducible between two identical builds — not compared`);
+  } else if (bunAnon.length !== oxcAnon.length) {
+    differences.push(`${app}: shared-chunk count differs — bun ${bunAnon.length}, oxc ${oxcAnon.length}`);
+  } else {
+    for (const [i, shape] of bunAnon.entries()) {
+      if (shape !== oxcAnon[i]) {
+        differences.push(`${app} :: shared chunk #${i}\n      bun: ${shape}\n      oxc: ${oxcAnon[i]}`);
+      }
+    }
+    checked += bunAnon.length;
+  }
+  console.error(
+    `${app}: compared ${checked - checkedBefore} shapes (${unstableEntries} entr${unstableEntries === 1 ? 'y' : 'ies'} excluded as not reproducible, shared chunks ${anonStable ? 'compared' : 'excluded'})`,
+  );
 }
 
 // The three framework scripts that go through the same pass but are not part of an app's chunk set. The two inline
