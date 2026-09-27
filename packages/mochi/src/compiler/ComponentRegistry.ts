@@ -53,7 +53,7 @@ import { registerLocalImageAsset } from '../image/localAssetRegistry';
 import type { LocalImageAsset } from '../image/types';
 import { freshImport } from './freshImport';
 import { resolveSvelteShaker } from './svelteShaker';
-import { DEFAULT_JS_MINIFIER, minifyBuildOutputs, type MochiJsMinifier } from './jsMinifier';
+import { minifyBuildOutputs, resolveMinifierChoice, type MochiJsMinifier } from './jsMinifier';
 import prettyBytes from '../vendor/pretty-bytes';
 
 // The `compile:preprocessors` filter is sync; only applying its preprocessors through Svelte's `preprocess()` is async.
@@ -498,7 +498,7 @@ export class ComponentRegistry {
     this.svelteCompiler = opts.svelteCompiler;
     this.markdown = opts.markdown;
     this.optimize = opts.optimize ?? false;
-    this.minifier = opts.minifier ?? DEFAULT_JS_MINIFIER;
+    this.minifier = resolveMinifierChoice(opts.minifier);
     this.fontInlineThreshold = opts.fonts?.inlineThreshold ?? 4096;
     this.fontDropLegacyWoff = opts.fonts?.dropLegacyWoff ?? true;
     const bw = opts.barrelWarnings;
@@ -1211,7 +1211,7 @@ export class ComponentRegistry {
     // The debug bar builds standalone (production-mode Svelte, own runtime) and only once per process — framework
     // sources don't change under a running user app, so watcher rebuilds skip it entirely.
     if (debugBarEnabled && !this.debugBarBundle) {
-      this.debugBarBuildPromise ??= buildDebugBarBundle({ development, backend });
+      this.debugBarBuildPromise ??= buildDebugBarBundle({ development, backend, minifier: this.minifier });
       // If the main build below throws before the swap-time await, a rejection here would otherwise go unhandled.
       this.debugBarBuildPromise.catch(() => {});
     }

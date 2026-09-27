@@ -1,7 +1,16 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_JS_MINIFIER, isJsMinifier, minifyBuildOutputs, minifyJsChunks, resetOxcMinifyCache, resolveOxcMinify } from './jsMinifier';
+import {
+  assertNoModuleSyntax,
+  DEFAULT_JS_MINIFIER,
+  isJsMinifier,
+  minifyBuildOutputs,
+  minifyJsChunks,
+  resetOxcMinifyCache,
+  resolveMinifierChoice,
+  resolveOxcMinify,
+} from './jsMinifier';
 
 afterEach(() => {
   resetOxcMinifyCache();
@@ -125,5 +134,122 @@ describe('minifyBuildOutputs', () => {
     const chained = JSON.parse(out.get(js.sourcemap!.path)!) as { sources: string[]; mappings: string };
     expect(chained.sources.some((s) => s.endsWith('lib.ts'))).toBe(true);
     expect(chained.mappings.length).toBeGreaterThan(0);
+  });
+});
+
+// Regressions for the classic-script and option-parity bugs the browser sweep turned up. Each of these is a way the
+// second pass could change behaviour rather than just size.
+describe('oxc option parity with Bun', () => {
+  test('keeps legal comments, which oxc drops by default', async () => {
+    const source = '/*! Copyright Someone. @license MIT */\nexport const a = 1;\n';
+
+    const [out] = await minifyJsChunks([{ fileName: 'legal.js', code: source }]);
+
+    expect(out!.code).toContain('@license MIT');
+  });
+
+  test('keeps `debugger`, which oxc drops by default and Bun preserves', async () => {
+    const source = 'export function f() { debugger; return 1; }';
+
+    const [out] = await minifyJsChunks([{ fileName: 'dbg.js', code: source }]);
+
+    expect(out!.code).toContain('debugger');
+  });
+
+  test('keeps `console.*`, since dropping it would silence a running app', async () => {
+    const [out] = await minifyJsChunks([{ fileName: 'log.js', code: 'export const f = () => console.log("kept");' }]);
+
+    expect(out!.code).toContain('console.log');
+  });
+
+  test('keeps a bare property read, which is how Svelte tracks an $effect dependency', async () => {
+    // `obj.prop;` as a statement looks dead; `treeshake.propertyReadSideEffects: 'always'` is what keeps it.
+    const source = 'export function track(obj, run) { obj.prop; obj.nested.deep; run(); }';
+
+    const [out] = await minifyJsChunks([{ fileName: 'reactive.js', code: source }]);
+
+    expect(out!.code).toContain('.prop');
+    expect(out!.code).toContain('.deep');
+  });
+});
+
+describe('classic-script mode', () => {
+  const source = 'const unusedTopLevelGlobal = 1;\nclass SomeWidget extends HTMLElement {}\ncustomElements.define("x-y", SomeWidget);\n';
+
+  test('module mode mangles and drops top-level bindings', async () => {
+    const [out] = await minifyJsChunks([{ fileName: 'm.js', code: source }], { module: true });
+
+    expect(out!.code).not.toContain('unusedTopLevelGlobal');
+    expect(out!.code).not.toContain('SomeWidget');
+  });
+
+  test('script mode keeps them, because a classic script’s top level is the global scope', async () => {
+    // Renaming these to one-letter names is what makes a `SyntaxError` against another classic script's top-level
+    // `let`/`const`/`class` likely; dropping them would delete a global the page can observe.
+    const [out] = await minifyJsChunks([{ fileName: 's.js', code: source }], { module: false });
+
+    expect(out!.code).toContain('unusedTopLevelGlobal');
+    expect(out!.code).toContain('SomeWidget');
+  });
+
+  test('script mode does NOT itself reject module syntax, so the classic-script guard has to be explicit', async () => {
+    // oxc parses `export` even with `module: false` and passes it through, so `assertNoModuleSyntax` is what stands
+    // between an ESM-shaped bundle and a SyntaxError inside `<script>`.
+    const [out] = await minifyJsChunks([{ fileName: 'esm.js', code: 'export const a = 1;' }], { module: false });
+
+    expect(out!.code).toContain('export');
+    expect(() => assertNoModuleSyntax('esm.js', out!.code)).toThrow(/classic <script>/);
+  });
+
+  test('the guard passes a self-contained classic script', () => {
+    expect(() => assertNoModuleSyntax('ok.js', 'var a=1;customElements.define("x-y",class extends HTMLElement{});')).not.toThrow();
+  });
+
+  test('the guard allows a dynamic import, which a classic script can run', () => {
+    expect(() => assertNoModuleSyntax('ok.js', 'import("./x.js").then(m=>m.go());')).not.toThrow();
+  });
+});
+
+describe('resolveMinifierChoice', () => {
+  const saved = process.env.MOCHI_MINIFIER;
+  afterEach(() => {
+    if (saved === undefined) {
+      delete process.env.MOCHI_MINIFIER;
+    } else {
+      process.env.MOCHI_MINIFIER = saved;
+    }
+  });
+
+  test('falls back to the configured value, then the default', () => {
+    delete process.env.MOCHI_MINIFIER;
+    expect(resolveMinifierChoice(undefined)).toBe('bun');
+    expect(resolveMinifierChoice('oxc')).toBe('oxc');
+  });
+
+  test('the env var wins, so dev — which has no build flag — can be A/B’d', () => {
+    process.env.MOCHI_MINIFIER = 'oxc';
+    expect(resolveMinifierChoice(undefined)).toBe('oxc');
+    expect(resolveMinifierChoice('bun')).toBe('oxc');
+  });
+
+  test('an unrecognised value is ignored rather than guessed at', () => {
+    process.env.MOCHI_MINIFIER = 'terser';
+    expect(resolveMinifierChoice('oxc')).toBe('oxc');
+    expect(resolveMinifierChoice(undefined)).toBe('bun');
+  });
+});
+
+// The pinned options only help if they actually reach oxc. This asserts the one that matters most is load-bearing:
+// with the opposite setting the read is deleted, which is exactly how a Svelte $effect would lose its dependency.
+describe('pinned options reach oxc', () => {
+  test('a bare property read survives here but not under the opposite treeshake setting', async () => {
+    const source = 'export function track(obj) { obj.prop; return 1; }';
+    const minify = await resolveOxcMinify();
+
+    const [pinned] = await minifyJsChunks([{ fileName: 'a.js', code: source }]);
+    const loose = await minify('a.js', source, { module: true, compress: { treeshake: { propertyReadSideEffects: false } } });
+
+    expect(pinned!.code).toContain('.prop');
+    expect(loose.code).not.toContain('.prop');
   });
 });

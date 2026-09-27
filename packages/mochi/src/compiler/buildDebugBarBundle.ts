@@ -12,6 +12,7 @@ import { registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader
 import { mergeCompilerOptions } from './svelteConfig';
 import { formatBuildMessages } from './formatBuildMessages';
 import type { SvelteCompilerBackend } from './svelteCompilerBackend';
+import { minifyBuildOutputs, resolveMinifierChoice, type MochiJsMinifier } from './jsMinifier';
 
 const SRC_DIR = path.resolve(import.meta.dir, '..');
 
@@ -20,8 +21,8 @@ export interface DebugBarBundle {
   contents: string;
 }
 
-export async function buildDebugBarBundle(opts: { development: boolean; backend: SvelteCompilerBackend }): Promise<DebugBarBundle> {
-  const { development, backend } = opts;
+export async function buildDebugBarBundle(opts: { development: boolean; backend: SvelteCompilerBackend; minifier?: MochiJsMinifier }): Promise<DebugBarBundle> {
+  const { development, backend, minifier } = opts;
 
   // Diagnostic escape hatch: prod-Svelte's `each_key_duplicate` throws with no key and a minified stack, so a panel
   // fault is unidentifiable. Set MOCHI_DEBUGBAR_DIAGNOSTIC=1 to build the bar dev-Svelte + un-minified — the runtime
@@ -75,5 +76,7 @@ export async function buildDebugBarBundle(opts: { development: boolean; backend:
   if (!entry) {
     throw new Error('Debug bar client build produced no entry-point output');
   }
-  return { fileName: path.basename(entry.path), contents: await entry.text() };
+  // Diagnostic builds skip Bun's minifier, so they skip oxc's too — the point of the escape hatch is readable output.
+  const reminified = diagnostic ? null : await minifyBuildOutputs([entry], resolveMinifierChoice(minifier));
+  return { fileName: path.basename(entry.path), contents: reminified?.get(entry.path) ?? (await entry.text()) };
 }

@@ -96,13 +96,18 @@ await Mochi.serve({
 });
 ```
 
-`mochi-framework build` reads the option from your entry. Override it per build with `--minifier <bun|oxc>`:
+`mochi-framework build` reads the option from your entry. Override it per build with `--minifier <bun|oxc>`, or for any process — including the dev server, which has no build step — with `MOCHI_MINIFIER`:
 
 ```sh
 mochi-framework build --minifier oxc
+MOCHI_MINIFIER=oxc bun run dev
 ```
 
-The pass covers the hydration bundle and the inline web-component scripts. CSS, static assets and the SSR build are untouched. Bun's own minifier keeps running first — it mangles identifiers across the whole split graph, which oxc cannot redo one chunk at a time — so oxc is purely additive.
+The env var wins over the `Mochi.serve()` option, like `MOCHI_SVELTE_COMPILER`, so the two modes can be compared without editing code.
+
+The pass covers the hydration bundle, the debug-bar bundle and the inline web-component scripts. CSS, static assets and the SSR build are untouched. Bun's own minifier keeps running first — it mangles identifiers across the whole split graph, which oxc cannot redo one chunk at a time — so oxc is purely additive.
+
+Behaviour is pinned to match the Bun pass: legal (`/*!`, `@license`) comments are preserved, `debugger` and `console.*` are kept, property reads are always treated as side-effecting so a bare `obj.prop` dependency read survives, and nothing is downlevelled. The two inline classic scripts are minified in script mode, so their top-level names are neither mangled nor dropped.
 
 <Callout type="warning">
 

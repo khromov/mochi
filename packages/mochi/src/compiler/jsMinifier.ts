@@ -21,6 +21,26 @@ export function isJsMinifier(value: unknown): value is MochiJsMinifier {
   return value === 'bun' || value === 'oxc';
 }
 
+const MINIFIER_ENV_VAR = 'MOCHI_MINIFIER';
+const envWarned = new Set<string>();
+
+/**
+ * `MOCHI_MINIFIER` wins over the configured value, mirroring `MOCHI_SVELTE_COMPILER`, so the two modes can be A/B'd
+ * without editing code — including in dev, which has no build CLI to pass a flag to. An unrecognised value is treated
+ * as a typo: warn once (a dev server resolves this on every rebuild) and keep the configured choice.
+ */
+export function resolveMinifierChoice(configured: MochiJsMinifier | undefined): MochiJsMinifier {
+  const env = process.env[MINIFIER_ENV_VAR];
+  if (isJsMinifier(env)) {
+    return env;
+  }
+  if (env && !envWarned.has(env)) {
+    envWarned.add(env);
+    logger.warn(`${MINIFIER_ENV_VAR}=${JSON.stringify(env)} is not a known minifier ('bun' | 'oxc') — ignoring.`);
+  }
+  return configured ?? DEFAULT_JS_MINIFIER;
+}
+
 interface OxcSourceMap {
   file?: string;
   mappings: string;
@@ -43,7 +63,32 @@ interface OxcMinifyResult {
   errors: OxcError[];
 }
 
-type OxcMinifyFn = (filename: string, sourceText: string, options?: { module?: boolean; sourcemap?: boolean }) => Promise<OxcMinifyResult>;
+interface OxcMinifyOptions {
+  module?: boolean;
+  sourcemap?: boolean;
+  compress?: { target?: string; dropDebugger?: boolean; dropConsole?: boolean; treeshake?: { propertyReadSideEffects?: boolean | 'always' } };
+  codegen?: { legalComments?: 'none' | 'inline' | 'eof' };
+}
+
+type OxcMinifyFn = (filename: string, sourceText: string, options?: OxcMinifyOptions) => Promise<OxcMinifyResult>;
+
+/**
+ * Every default where oxc disagrees with the Bun pass it runs after, pinned so the second pass only shrinks the
+ * bundle and never changes what it does:
+ *
+ * - `legalComments` defaults to `'none'`, which silently strips the `/*!` / `@license` banners Bun preserves — a
+ *   licence-compliance regression, so it is forced back to `'inline'`.
+ * - `dropDebugger` defaults to `true`; Bun keeps `debugger` statements, and this pass also runs in dev builds.
+ * - `dropConsole` is `false` in both, and `treeshake.propertyReadSideEffects` is `'always'`, which is what keeps a
+ *   bare property read — `$effect(() => { obj.prop; })`, Svelte's whole dependency-tracking mechanism — from being
+ *   optimised away. Both are pinned so a future default flip can't quietly break reactivity.
+ * - `target` stays `'esnext'`: Bun's `target: 'browser'` does not downlevel either, and naming a lower level here
+ *   would make oxc transpile syntax Bun happily emitted.
+ */
+const OXC_OPTIONS = {
+  compress: { target: 'esnext', dropDebugger: false, dropConsole: false, treeshake: { propertyReadSideEffects: 'always' as const } },
+  codegen: { legalComments: 'inline' as const },
+};
 
 // Held in variables so the `import()`s below stay statically unanalysable: an absent optional peer must surface as a
 // caught runtime rejection rather than a load-time resolution failure.
@@ -100,6 +145,32 @@ export interface MinifiedChunk {
   map?: string;
 }
 
+export interface MinifyChunkOptions {
+  /**
+   * Parse and optimise as an ES module. Pass `false` for output injected as a **classic** `<script>`: in script mode
+   * oxc leaves top-level bindings un-mangled and un-dropped, which a classic script needs because its top-level
+   * declarations are observable globals — renaming them to one-letter names invites a `SyntaxError` against another
+   * classic script's bindings, and dropping an "unused" one deletes a global. Default: `true`.
+   */
+  module?: boolean;
+}
+
+/**
+ * A classic `<script>` cannot run `import`/`export`, and oxc's script mode parses them anyway rather than rejecting
+ * them, so the guard has to be explicit: anything module-shaped reaching this path would be a `SyntaxError` on every
+ * page load, which is worth failing the build over.
+ */
+export function assertNoModuleSyntax(fileName: string, code: string): void {
+  const { imports, exports } = new Bun.Transpiler({ loader: 'js' }).scan(code);
+  const statics = imports.filter((i) => i.kind !== 'dynamic-import');
+  if (statics.length > 0 || exports.length > 0) {
+    throw new Error(
+      `${fileName} is injected as a classic <script> but still contains module syntax ` +
+        `(${statics.length} import(s), ${exports.length} export(s)) — it would be a SyntaxError in the browser.`,
+    );
+  }
+}
+
 function formatOxcErrors(fileName: string, errors: OxcError[]): string {
   return errors.map((e) => `  ${fileName} — ${e.message}${e.codeframe ? `\n${e.codeframe}` : ''}`).join('\n');
 }
@@ -108,15 +179,16 @@ function formatOxcErrors(fileName: string, errors: OxcError[]): string {
  * Run oxc over every chunk, then return them all at once. Nothing is returned until the whole batch succeeds, so a
  * failure on one chunk can't leave the caller writing a bundle where some files went through oxc and some didn't.
  */
-export async function minifyJsChunks(chunks: MinifiableChunk[]): Promise<MinifiedChunk[]> {
+export async function minifyJsChunks(chunks: MinifiableChunk[], opts: MinifyChunkOptions = {}): Promise<MinifiedChunk[]> {
   if (chunks.length === 0) {
     return [];
   }
+  const module = opts.module ?? true;
   const minify = await resolveOxcMinify();
   const results = await Promise.all(
     chunks.map(async (chunk) => {
       const wantsMap = chunk.map !== undefined;
-      const result = await minify(chunk.fileName, chunk.code, { module: true, sourcemap: wantsMap });
+      const result = await minify(chunk.fileName, chunk.code, { ...OXC_OPTIONS, module, sourcemap: wantsMap });
       return { chunk, result };
     }),
   );
@@ -149,7 +221,7 @@ export async function minifyJsChunks(chunks: MinifiableChunk[]): Promise<Minifie
  * whatever it already keeps them in. Returns `null` for the default `'bun'` mode, and leaves CSS, assets and any
  * non-JS output alone. A chunk's sourcemap artifact appears in the map too, remapped onto the original sources.
  */
-export async function minifyBuildOutputs(outputs: BuildArtifact[], minifier: MochiJsMinifier): Promise<Map<string, string> | null> {
+export async function minifyBuildOutputs(outputs: BuildArtifact[], minifier: MochiJsMinifier, opts: MinifyChunkOptions = {}): Promise<Map<string, string> | null> {
   if (minifier !== 'oxc') {
     return null;
   }
@@ -161,7 +233,7 @@ export async function minifyBuildOutputs(outputs: BuildArtifact[], minifier: Moc
       ...(o.sourcemap ? { map: await o.sourcemap.text() } : {}),
     })),
   );
-  const minified = await minifyJsChunks(chunks);
+  const minified = await minifyJsChunks(chunks, opts);
   const byPath = new Map<string, string>();
   for (const [i, artifact] of targets.entries()) {
     const result = minified[i]!;
