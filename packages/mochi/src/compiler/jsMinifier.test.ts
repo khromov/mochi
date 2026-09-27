@@ -205,7 +205,6 @@ describe('classic-script mode', () => {
     expect(out!).toContain('export');
     expect(() => assertNoModuleSyntax('esm.js', out!)).toThrow(/classic <script>/);
   });
-
 });
 
 describe('resolveJsMinifier', () => {
