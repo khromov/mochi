@@ -42,7 +42,7 @@ describe('Cache-Control on prebuilt framework assets (dev mode)', () => {
     }
     const res = await fetch(`${base}${match[0]}`);
     expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toBe('text/css');
+    expect(res.headers.get('content-type')).toBe('text/css; charset=utf-8');
     expect(res.headers.get('cache-control')).toBeNull();
   });
 });
