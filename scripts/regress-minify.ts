@@ -43,6 +43,8 @@ const { values } = parseArgs({
     modes: { type: 'string' },
     'max-routes': { type: 'string' },
     concurrency: { type: 'string' },
+    clicks: { type: 'string' },
+    verbose: { type: 'boolean' },
     out: { type: 'string' },
   },
 });
@@ -51,9 +53,21 @@ const modes = (values.modes ? values.modes.split(',').map((s) => s.trim()) : [..
 const maxRoutes = Number(values['max-routes'] ?? 500);
 // Routes per cell visited at once. Each gets its own isolated page, so this is wall-clock only.
 const concurrency = Number(values.concurrency ?? 6);
+// Buttons clicked per route. Four is enough to reach the interactive island on every demo page in this repo while
+// keeping the click phase — Playwright's actionability checks dominate it — from being the whole run's cost.
+const CLICK_BUDGET = Number(values.clicks ?? 4);
+// Per-route timings. Anything over 5s prints regardless, so a stalling route is never invisible.
+const verbose = values.verbose === true;
 
 // The apps that refuse to boot without them; harmless elsewhere.
 const APP_ENV = { ADMIN_PASSWORD: 'regress', SMTP_HOST: 'localhost', MOCHI_KEY: 'ZGV2LW9ubHktcmVncmVzc2lvbi1rZXktMzJieXRlcw' };
+
+/**
+ * Each app is served on the port it defaults to. Apps build self-referential absolute URLs from their configured
+ * origin rather than the bound socket — `packages/site`'s redirect demo is one — so an arbitrary port turns those
+ * into links at a host nothing is listening on. Runs are sequential, so reusing one port per app is safe.
+ */
+const APP_PORTS: Record<string, number> = { site: 3333, demos: 3334, minimal: 3335, support: 3336 };
 
 /** Ask the app's own entry for its route table, so the harness can never drift from what the app actually serves. */
 async function routesOf(appDir: string): Promise<string[]> {
@@ -97,6 +111,8 @@ async function startApp(appDir: string, mode: Mode, minifier: Minifier, port: nu
   const env: Record<string, string> = {
     PORT: String(port),
     MOCHI_ORIGIN: `http://localhost:${port}`,
+    // `packages/site` derives its CSRF origin from MOCHI_PORT, not from the bound socket, so they have to agree.
+    MOCHI_PORT: String(port),
     // The dev server has no build step to pass `--minifier` to, so it is selected the same way the Svelte backend is.
     MOCHI_MINIFIER: minifier,
     NODE_ENV: mode === 'prod' ? 'production' : 'development',
@@ -180,6 +196,12 @@ function normalizeDom(html: string): string {
       // the feature. Their tags stay in the diff so a missing or extra script is still caught; their contents are
       // compared instead by `check-minify-structure.ts` and the classic-script tests.
       .replace(/(<script(?![^>]*\bsrc=)[^>]*>)[\s\S]*?(<\/script>)/g, '$1<!--code-->$2')
+      // `packages/site` ends every demo page with a strip of randomly chosen other demos, so its contents differ on
+      // every request by design. The container stays in the diff; which links it picked cannot be compared.
+      .replace(/(<div class="more-grid[^"]*">)[\s\S]*?(?=<\/div>\s*<\/(?:section|nav|aside|footer)>)/g, '$1<!--random-->')
+      // Chromium inserts `modulepreload` links of its own while it walks the module graph, so whether one is in the
+      // DOM at snapshot time is a timing artefact of the browser, not of the page.
+      .replace(/<link rel="modulepreload"[^>]*>/g, '')
       .replace(/<!--[\s\S]*?-->/g, '')
       .replace(/\s+/g, ' ')
       .trim()
@@ -209,6 +231,60 @@ const SKELETON = `() => {
 // Routes where hydration never settled within the budget. Reported separately: it is a real symptom, but it is also
 // what a page with no islands at all would look like if the marker ever changed, so it must not be silent.
 const hydrationTimedOut: string[] = [];
+/** Routes that turned out to be endless streams rather than pages. Reported so the skip is visible, not silent. */
+const streamingRoutes = new Set<string>();
+
+/**
+ * An SSE endpoint is a route but not a page: the response body never ends, so reading it never resolves and the
+ * browser's `load` event never fires. Both were unbounded here, which pinned one worker per stream forever and was
+ * the reason a full sweep of `packages/site` could not finish at all.
+ */
+function emptyObservation(route: string, status: number): RouteObservation {
+  const blank = Buffer.alloc(0);
+  return {
+    route,
+    status,
+    consoleErrors: [],
+    consoleWarnings: [],
+    pageErrors: [],
+    failedRequests: [],
+    mochiWarnings: [],
+    hydrationDamage: [],
+    domAfterHydration: '',
+    domAfterInteraction: '',
+    screenshot: blank,
+    screenshotSelf: blank,
+  };
+}
+
+/** Routes that blew the whole-route budget. A sweep must never be wedgeable by one page. */
+const budgetExceeded = new Set<string>();
+
+/**
+ * Hard wall-clock cap around a route. Playwright's own timeouts cover navigation and actions individually, but not
+ * every await in between — a document Chromium renders through an internal viewer, or a WebSocket upgrade endpoint
+ * fetched as a page, can leave a worker parked with nothing left to time out. One such route used to stop the whole
+ * sweep, so the budget is the thing that makes this re-runnable rather than an optimisation.
+ */
+async function observeWithBudget(browser: Browser, origin: string, route: string, ms = 45_000): Promise<RouteObservation> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      observe(browser, origin, route),
+      new Promise<RouteObservation>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`route budget of ${ms}ms exceeded`)), ms);
+      }),
+    ]);
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('route budget')) {
+      budgetExceeded.add(route);
+      return emptyObservation(route, 0);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function observe(browser: Browser, origin: string, route: string): Promise<RouteObservation> {
   const page: Page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
@@ -218,23 +294,48 @@ async function observe(browser: Browser, origin: string, route: string): Promise
   const failedRequests: string[] = [];
   const clean = (s: string) => s.replace(/https?:\/\/localhost:\d+/g, 'http://host').replace(/[\u001b]\[\d+m/g, '');
 
+  // Cross-origin subresources are cut off at the browser. There is no outbound network here, so a page embedding one
+  // — `packages/site`'s blog iframes the newsletter widget — would otherwise sit waiting for it to time out, and
+  // whatever a third party served could never be attributable to the minifier anyway.
+  const blocked = new Set<string>();
+  await page.route('**/*', (route) => {
+    const url = route.request().url();
+    if (url.startsWith(origin) || url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('about:')) {
+      return route.continue();
+    }
+    blocked.add(url);
+    return route.abort();
+  });
+
   page.on('console', (m) => {
-    if (m.type() === 'error') consoleErrors.push(clean(m.text()));
+    // Chromium reports each request this harness aborted as a bare `net::ERR_FAILED` console error with no URL to
+    // match on, so cross-origin blocking would otherwise show up as dozens of findings the harness caused itself.
+    if (m.type() === 'error' && !(blocked.size > 0 && m.text().includes('net::ERR_FAILED'))) {
+      consoleErrors.push(clean(m.text()));
+    }
     if (m.type() === 'warning') consoleWarnings.push(clean(m.text()));
   });
   page.on('pageerror', (e) => pageErrors.push(clean(e.message)));
-  page.on('requestfailed', (r) => failedRequests.push(clean(`${r.url()} ${r.failure()?.errorText ?? ''}`)));
+  page.on('requestfailed', (r) => !blocked.has(r.url()) && failedRequests.push(clean(`${r.url()} ${r.failure()?.errorText ?? ''}`)));
   page.on('response', (r) => r.status() >= 400 && failedRequests.push(clean(`${r.url()} -> ${r.status()}`)));
 
   try {
-    // The server-rendered markup, fetched without a browser so nothing has hydrated yet.
-    const ssrResponse = await fetch(origin + route, { redirect: 'follow' });
+    // The server-rendered markup, fetched without a browser so nothing has hydrated yet. The timeout is not belt and
+    // braces: two of this repo's routes are SSE streams, and reading one to completion never returns.
+    const ssrResponse = await fetch(origin + route, { redirect: 'follow', signal: AbortSignal.timeout(10_000) });
+    if ((ssrResponse.headers.get('content-type') ?? '').includes('text/event-stream')) {
+      await ssrResponse.body?.cancel();
+      streamingRoutes.add(route);
+      return emptyObservation(route, ssrResponse.status);
+    }
     const ssrHtml = await ssrResponse.text();
     // A JSON/text route renders through the browser's built-in viewer, whose wrapper markup is not in the response;
     // comparing it against the raw body would report a mismatch that has nothing to do with hydration.
     const isHtml = (ssrResponse.headers.get('content-type') ?? '').includes('text/html');
 
-    const response = await page.goto(origin + route, { waitUntil: 'load', timeout: 30_000 });
+    // `domcontentloaded`, not `load`: the island bundles are what matter and the hydration wait below covers them,
+    // whereas `load` also waits on every image and font — a slow one would be charged to every route that has it.
+    const response = await page.goto(origin + route, { waitUntil: 'domcontentloaded', timeout: 20_000 });
     // `_unmount` is set on the custom element the moment `hydrate()` returns, so it is the real completion marker —
     // there is no `hydrated` attribute. `:visible` islands are excluded (they wait for the scroll below), and a failed
     // island renders `<mochi-island-failure>` and never sets `_unmount`, so it counts as settled too.
@@ -249,7 +350,6 @@ async function observe(browser: Browser, origin: string, route: string): Promise
         { timeout: 10_000 },
       )
       .catch(() => hydrationTimedOut.push(route));
-    await page.waitForLoadState('networkidle', { timeout: 1_200 }).catch(() => {});
 
     const ssrSkeleton = await page.evaluate(
       ([html, fn]) => {
@@ -270,19 +370,22 @@ async function observe(browser: Browser, origin: string, route: string): Promise
       }
     }
 
+    // No `networkidle` here: the hydration wait above already blocks on the island bundles, and on a page that never
+    // idles (a live-reload socket, an SSE demo) it would only ever cost its full timeout.
     const domAfterHydration = normalizeDom(await page.content());
 
     // Exercise the page: scrolling releases `:visible` islands and deferred server islands, then every enabled button
-    // that will not navigate away gets clicked.
+    // that will not navigate away gets clicked. The budgets here are the harness's whole cost — most pages never
+    // reach network idle at all (live-reload sockets, SSE demos, polling), so every `networkidle` is paid in full.
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForLoadState('networkidle', { timeout: 1_200 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 800 }).catch(() => {});
     await page.evaluate(() => window.scrollTo(0, 0));
-    const buttons = await page.$$('button:not([disabled]):not([type=submit])');
-    for (const button of buttons.slice(0, 8)) {
-      await button.click({ timeout: 2000, noWaitAfter: true }).catch(() => {});
-      await page.waitForTimeout(100);
+    const buttons = await page.$$(`button:not([disabled]):not([type=submit])`);
+    for (const button of buttons.slice(0, CLICK_BUDGET)) {
+      await button.click({ timeout: 800, noWaitAfter: true }).catch(() => {});
+      await page.waitForTimeout(60);
     }
-    await page.waitForLoadState('networkidle', { timeout: 1_200 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 600 }).catch(() => {});
 
     const mochiWarnings = ((await page.evaluate(() => (window as unknown as { __mochi_warnings?: string[] }).__mochi_warnings ?? [])) as string[]).map(clean);
     const domAfterInteraction = normalizeDom(await page.content());
@@ -318,6 +421,10 @@ const SHOT_DIR = path.join(ROOT, '.minify-regression-shots');
 mkdirSync(SHOT_DIR, { recursive: true });
 
 function diffPixels(a: Buffer, b: Buffer): { changed: number; total: number } {
+  // A skipped route carries no screenshot; there is nothing to compare and nothing to report.
+  if (a.length === 0 || b.length === 0) {
+    return { changed: 0, total: 1 };
+  }
   const left = PNG.sync.read(a);
   const right = PNG.sync.read(b);
   if (left.width !== right.width || left.height !== right.height) {
@@ -348,7 +455,6 @@ interface CellResult {
 const browser = await chromium.launch();
 const harnessFailures: string[] = [];
 const cells: CellResult[] = [];
-let port = 4700;
 
 for (const app of apps) {
   const appDir = path.join(ROOT, 'packages', app);
@@ -359,7 +465,7 @@ for (const app of apps) {
     const runs = new Map<RunKey, Map<string, RouteObservation>>();
     // One port for every run of this cell — they never overlap, and a differing port number renders into the dev
     // toolbar and into any absolute URL on the page, which would diff as a false positive.
-    const cellPort = port++;
+    const cellPort = APP_PORTS[app] ?? 4700;
     // `bun` twice, then `oxc`. The repeat run is the baseline for "does this page even render the same twice?" — real
     // pages pick random related links, chart libraries hand out incrementing ids, and clicking things is timing
     // dependent. Without it, that noise is indistinguishable from a minifier bug.
@@ -376,7 +482,12 @@ for (const app of apps) {
           Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
             for (let route = queue.shift(); route !== undefined; route = queue.shift()) {
               try {
-                observations.set(route, await observe(browser, server.origin, route));
+                const startedAt = performance.now();
+                observations.set(route, await observeWithBudget(browser, server.origin, route));
+                const took = performance.now() - startedAt;
+                if (verbose || took > 5_000) {
+                  console.error(`    ${took.toFixed(0).padStart(6)}ms ${route}`);
+                }
               } catch (err) {
                 // A route that takes the app down (or times out) is itself a finding, and the remaining routes still
                 // need visiting — so record it, bring the server back, and carry on rather than aborting the matrix.
@@ -416,13 +527,15 @@ for (const app of apps) {
     });
     if (candidates.length > 0) {
       console.error(`  ${mode}: re-checking ${candidates.length} candidate route(s)`);
-      const recheck = new Map<Minifier, Map<string, RouteObservation>>();
-      for (const minifier of MINIFIERS) {
-        const server = await startApp(appDir, mode, minifier, cellPort);
+      // Same three-run shape as the main pass, not a single bun-vs-oxc pair: a route that reaches the network or
+      // mints something random can differ twice in a row by chance, and one of them did.
+      const recheck = new Map<RunKey, Map<string, RouteObservation>>();
+      for (const run of RUNS) {
+        const server = await startApp(appDir, mode, runMinifier(run), cellPort);
         const seen = new Map<string, RouteObservation>();
         try {
           for (const [route] of candidates) {
-            await observe(browser, server.origin, route).then(
+            await observeWithBudget(browser, server.origin, route).then(
               (o) => seen.set(route, o),
               () => {},
             );
@@ -430,16 +543,20 @@ for (const app of apps) {
         } finally {
           await server.stop();
         }
-        recheck.set(minifier, seen);
+        recheck.set(run, seen);
       }
       for (const [route] of candidates) {
         const b = recheck.get('bun')?.get(route);
+        const b2 = recheck.get('bun-repeat')?.get(route);
         const o = recheck.get('oxc')?.get(route);
-        if (
-          b &&
-          o &&
-          (b.domAfterHydration !== o.domAfterHydration || b.domAfterInteraction !== o.domAfterInteraction || diffPixels(b.screenshot, o.screenshot).changed > 1152000 * 0.001)
-        ) {
+        if (b === undefined || b2 === undefined || o === undefined) {
+          continue;
+        }
+        const dom = (r: RouteObservation) => `${r.domAfterHydration}\u0000${r.domAfterInteraction}`;
+        if (dom(b) !== dom(b2)) {
+          continue;
+        }
+        if (dom(b) !== dom(o) || diffPixels(b.screenshot, o.screenshot).changed > Math.max(1152000 * 0.001, diffPixels(b.screenshot, b2.screenshot).changed * 2)) {
           confirmed.add(route);
         }
       }
@@ -556,7 +673,7 @@ console.log(`\n${table}\n`);
 const allDetails = cells.flatMap((c) => c.details);
 if (allDetails.length > 0) {
   console.error(`\n--- ${allDetails.length} finding(s) ---`);
-  for (const d of allDetails.slice(0, 120)) {
+  for (const d of allDetails) {
     console.error(`  ${d}`);
   }
 }
@@ -564,6 +681,18 @@ if (values.out) {
   await Bun.write(path.resolve(values.out), `${table}\n\n${allDetails.map((d) => `- ${d}`).join('\n')}\n`);
 }
 
+if (budgetExceeded.size > 0) {
+  console.error(`\n--- ${budgetExceeded.size} route(s) that blew the per-route budget and were skipped ---`);
+  for (const r of budgetExceeded) {
+    console.error(`  ${r}`);
+  }
+}
+if (streamingRoutes.size > 0) {
+  console.error(`\n--- ${streamingRoutes.size} route(s) skipped as endless streams (text/event-stream), not pages ---`);
+  for (const r of streamingRoutes) {
+    console.error(`  ${r}`);
+  }
+}
 if (hydrationTimedOut.length > 0) {
   console.error(`\n--- ${hydrationTimedOut.length} route(s) where hydration did not settle in 10s ---`);
   for (const r of [...new Set(hydrationTimedOut)]) console.error(`  ${r}`);
