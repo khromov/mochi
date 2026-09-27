@@ -61,6 +61,11 @@ interface OxcMinifyOptions {
 
 type OxcMinifyFn = (filename: string, sourceText: string, options?: OxcMinifyOptions) => Promise<OxcMinifyResult>;
 
+export interface OxcMinifier {
+  minify: OxcMinifyFn;
+  version: string;
+}
+
 /**
  * Every default where oxc disagrees with the Bun pass it runs after, pinned so the second pass only shrinks the
  * bundle and never changes what it does:
@@ -79,31 +84,46 @@ const OXC_OPTIONS = {
   codegen: { legalComments: 'inline' as const },
 };
 
-// Held in a variable so the `import()` below stays statically unanalysable: an absent optional peer must surface as a
+// Held in a variable so the `import()`s below stay statically unanalysable: an absent optional peer must surface as a
 // caught runtime rejection rather than a load-time resolution failure.
 const OXC_SPECIFIER = 'oxc-minify';
 
 const INSTALL_HINT = `Install it with \`bun add -d ${OXC_SPECIFIER}\`, or drop \`minifier: 'oxc'\` to stay on Bun's minifier.`;
 
-let oxcPending: Promise<OxcMinifyFn> | undefined;
+export interface OxcPackage {
+  module: unknown;
+  version: unknown;
+}
+
+async function loadOxcPackage(): Promise<OxcPackage> {
+  const module: unknown = await import(OXC_SPECIFIER);
+  const pkg = (await import(`${OXC_SPECIFIER}/package.json`, { with: { type: 'json' } })) as { default?: { version?: unknown }; version?: unknown };
+  return { module, version: pkg.default?.version ?? pkg.version };
+}
+
+let oxcPending: Promise<OxcMinifier> | undefined;
 
 /**
  * Resolve `oxc-minify`, throwing with install instructions when it isn't there. Unlike the svelte-shaker add-on this
  * refuses to degrade: an opt-in minifier that quietly wasn't applied would leave a deploy's bundle sizes unexplained.
  */
-export async function resolveOxcMinify(load: () => Promise<unknown> = () => import(OXC_SPECIFIER)): Promise<OxcMinifyFn> {
+export async function resolveOxcMinify(load: () => Promise<OxcPackage> = loadOxcPackage): Promise<OxcMinifier> {
   oxcPending ??= (async () => {
-    let mod: unknown;
+    let pkg: OxcPackage;
     try {
-      mod = await load();
+      pkg = await load();
     } catch (err) {
       throw new Error(`minifier: 'oxc' needs the optional ${OXC_SPECIFIER} package. ${INSTALL_HINT} (${err instanceof Error ? err.message : String(err)})`);
     }
-    const fn = (mod as { minify?: unknown } | null)?.minify;
+    const fn = (pkg.module as { minify?: unknown } | null)?.minify;
     if (typeof fn !== 'function') {
       throw new Error(`minifier: 'oxc' loaded ${OXC_SPECIFIER} but it exports no \`minify\` function. ${INSTALL_HINT}`);
     }
-    return fn as OxcMinifyFn;
+    if (typeof pkg.version !== 'string' || pkg.version === '') {
+      throw new Error(`minifier: 'oxc' could not read the installed ${OXC_SPECIFIER} version. ${INSTALL_HINT}`);
+    }
+    logger.info(`Minifying client JS with ${OXC_SPECIFIER} ${pkg.version}`);
+    return { minify: fn as OxcMinifyFn, version: pkg.version };
   })();
   try {
     return await oxcPending;
@@ -146,7 +166,7 @@ export async function minifyJsChunks(chunks: MinifiableChunk[], opts: MinifyChun
     return [];
   }
   const module = opts.module ?? true;
-  const minify = await resolveOxcMinify();
+  const { minify } = await resolveOxcMinify();
   const results = await Promise.all(chunks.map(async (chunk) => ({ chunk, result: await minify(chunk.fileName, chunk.code, { ...OXC_OPTIONS, module }) })));
 
   const failures = results.filter(({ result }) => result.errors.some((e) => e.severity === 'Error'));

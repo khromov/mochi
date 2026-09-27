@@ -43,18 +43,27 @@ describe('resolveOxcMinify', () => {
   });
 
   test('throws when the package exports no minify function', async () => {
-    await expect(resolveOxcMinify(() => Promise.resolve({}))).rejects.toThrow(/exports no `minify` function/);
+    await expect(resolveOxcMinify(() => Promise.resolve({ module: {}, version: '0.151.0' }))).rejects.toThrow(/exports no `minify` function/);
   });
 
   test('a failed resolution is not memoized, so installing the peer and rebuilding works', async () => {
     await expect(resolveOxcMinify(() => Promise.reject(new Error('nope')))).rejects.toThrow();
 
-    const fn = () => Promise.resolve({ code: '', errors: [], legalComments: [] });
-    expect(await resolveOxcMinify(() => Promise.resolve({ minify: fn }))).toBe(fn);
+    const fn = () => Promise.resolve({ code: '', errors: [] });
+    expect(await resolveOxcMinify(() => Promise.resolve({ module: { minify: fn }, version: '0.151.0' }))).toEqual({ minify: fn, version: '0.151.0' });
   });
 
-  test('resolves the real package', async () => {
-    expect(typeof (await resolveOxcMinify())).toBe('function');
+  test('throws when the version cannot be read', async () => {
+    const minify = () => Promise.resolve({ code: '', errors: [] });
+
+    await expect(resolveOxcMinify(() => Promise.resolve({ module: { minify }, version: undefined }))).rejects.toThrow(/could not read the installed oxc-minify version/);
+  });
+
+  test('resolves the real package and its version', async () => {
+    const oxc = await resolveOxcMinify();
+
+    expect(typeof oxc.minify).toBe('function');
+    expect(oxc.version).toMatch(/^\d+\.\d+\.\d+/);
   });
 });
 
@@ -231,7 +240,7 @@ describe('resolveMinifierChoice', () => {
 describe('pinned options reach oxc', () => {
   test('a bare property read survives here but not under the opposite treeshake setting', async () => {
     const source = 'export function track(obj) { obj.prop; return 1; }';
-    const minify = await resolveOxcMinify();
+    const { minify } = await resolveOxcMinify();
 
     const [pinned] = await minifyJsChunks([{ fileName: 'a.js', code: source }]);
     const loose = await minify('a.js', source, { module: true, compress: { treeshake: { propertyReadSideEffects: false } } });
