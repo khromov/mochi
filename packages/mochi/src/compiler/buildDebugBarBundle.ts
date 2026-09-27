@@ -12,7 +12,7 @@ import { registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader
 import { mergeCompilerOptions } from './svelteConfig';
 import { formatBuildMessages } from './formatBuildMessages';
 import type { SvelteCompilerBackend } from './svelteCompilerBackend';
-import { minifyBuildOutputs, type MochiJsMinifier } from './jsMinifier';
+import { clientBundleNaming, minifyBuildOutputs, type MochiJsMinifier } from './jsMinifier';
 
 const SRC_DIR = path.resolve(import.meta.dir, '..');
 
@@ -65,7 +65,7 @@ export async function buildDebugBarBundle(opts: { development: boolean; backend:
       ...CLIENT_BUILD_DEFINE,
     },
     minify: !diagnostic,
-    naming: '[name]-[hash].[ext]',
+    naming: await clientBundleNaming(minifier),
     throw: false,
   });
 

@@ -53,7 +53,7 @@ import { registerLocalImageAsset } from '../image/localAssetRegistry';
 import type { LocalImageAsset } from '../image/types';
 import { freshImport } from './freshImport';
 import { resolveSvelteShaker } from './svelteShaker';
-import { minifyBuildOutputs, parseJsMinifier, resolveJsMinifier, type MochiJsMinifier } from './jsMinifier';
+import { clientBundleNaming, minifyBuildOutputs, parseJsMinifier, resolveJsMinifier, type MochiJsMinifier } from './jsMinifier';
 import prettyBytes from '../vendor/pretty-bytes';
 
 // The `compile:preprocessors` filter is sync; only applying its preprocessors through Svelte's `preprocess()` is async.
@@ -1339,7 +1339,7 @@ export class ComponentRegistry {
       define: clientBuildDefine(development),
       minify: true,
       splitting: true,
-      naming: '[name]-[hash].[ext]',
+      naming: await clientBundleNaming(this.minifier),
       publicPath: `${this.assetPrefix}/client/`,
       outdir: path.resolve(`${this.outDir}/svelte-client`),
       metafile: true,

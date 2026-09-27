@@ -3,10 +3,12 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { assertNoModuleSyntax } from './buildInlineWebComponent';
 import {
+  clientBundleNaming,
   DEFAULT_JS_MINIFIER,
   isJsMinifier,
   minifyBuildOutputs,
   minifyJsChunks,
+  oxcOutputTag,
   resetOxcMinifyCache,
   resolveJsMinifier,
   resolveOxcMinify,
@@ -238,5 +240,41 @@ describe('resolveJsMinifier', () => {
     [{ flag: 'bun', configured: 1, env: '' }, /Unknown minifier 1/],
   ])('throws on an unknown value: %p', (sources, message) => {
     expect(() => resolveJsMinifier(sources)).toThrow(message);
+  });
+});
+
+describe('clientBundleNaming', () => {
+  test("'bun' keeps the historical string naming, so its file names are unchanged", async () => {
+    expect(await clientBundleNaming('bun')).toBe('[name]-[hash].[ext]');
+  });
+
+  test("'oxc' tags both entries and chunks with the installed version and options", async () => {
+    const { version } = await resolveOxcMinify();
+    const tag = `o${oxcOutputTag(version)}`;
+
+    expect(await clientBundleNaming('oxc')).toEqual({ entry: `[name]-[hash]-${tag}.[ext]`, chunk: `chunk-[hash]-${tag}.[ext]` });
+  });
+
+  test('the tag changes with the oxc version', () => {
+    expect(oxcOutputTag('0.151.0')).toMatch(/^[0-9a-f]{8}$/);
+    expect(oxcOutputTag('0.152.0')).not.toBe(oxcOutputTag('0.151.0'));
+  });
+
+  test('the tag changes with the oxc options', () => {
+    expect(oxcOutputTag('0.151.0', { module: true, codegen: { legalComments: 'none' } })).not.toBe(oxcOutputTag('0.151.0'));
+  });
+});
+// The pinned options only help if they actually reach oxc. This asserts the one that matters most is load-bearing:
+// with the opposite setting the read is deleted, which is exactly how a Svelte $effect would lose its dependency.
+describe('pinned options reach oxc', () => {
+  test('a bare property read survives here but not under the opposite treeshake setting', async () => {
+    const source = 'export function track(obj) { obj.prop; return 1; }';
+    const { minify } = await resolveOxcMinify();
+
+    const [pinned] = await minifyJsChunks([{ fileName: 'a.js', code: source }]);
+    const loose = await minify('a.js', source, { module: true, compress: { treeshake: { propertyReadSideEffects: false } } });
+
+    expect(pinned!).toContain('.prop');
+    expect(loose.code).not.toContain('.prop');
   });
 });

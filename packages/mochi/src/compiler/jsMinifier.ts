@@ -129,6 +129,7 @@ export async function resolveOxcMinify(load: () => Promise<OxcPackage> = loadOxc
     if (typeof fn !== 'function') {
       throw new Error(`minifier: 'oxc' loaded ${OXC_SPECIFIER} but it exports no \`minify\` function. ${INSTALL_HINT}`);
     }
+    // The version is part of every oxc chunk's file name, so a package that hides it can't be served immutable safely.
     if (typeof pkg.version !== 'string' || pkg.version === '') {
       throw new Error(`minifier: 'oxc' could not read the installed ${OXC_SPECIFIER} version. ${INSTALL_HINT}`);
     }
@@ -147,6 +148,29 @@ export async function resolveOxcMinify(load: () => Promise<OxcPackage> = loadOxc
 /** Test-only: drop the memoized resolution so a test can exercise a different loader. */
 export function resetOxcMinifyCache(): void {
   oxcPending = undefined;
+}
+
+/** Short, stable fingerprint of everything besides Bun's input that decides what the oxc pass prints. */
+export function oxcOutputTag(version: string, options: OxcMinifyOptions = { ...OXC_OPTIONS, module: true }): string {
+  return new Bun.CryptoHasher('sha256')
+    .update(`${version}\0${JSON.stringify(options)}`)
+    .digest('hex')
+    .slice(0, 8);
+}
+
+export type ClientBundleNaming = string | { entry: string; chunk: string };
+
+/**
+ * Bun's `[hash]` covers only what Bun printed, and client chunks are served `immutable`, so oxc output gets a literal
+ * tag in the name: switching minifier, upgrading `oxc-minify` or changing its options must change every URL. The
+ * object form is needed because a string `naming` renames entries only.
+ */
+export async function clientBundleNaming(minifier: MochiJsMinifier): Promise<ClientBundleNaming> {
+  if (minifier !== 'oxc') {
+    return '[name]-[hash].[ext]';
+  }
+  const tag = `o${oxcOutputTag((await resolveOxcMinify()).version)}`;
+  return { entry: `[name]-[hash]-${tag}.[ext]`, chunk: `chunk-[hash]-${tag}.[ext]` };
 }
 
 export interface MinifiableChunk {

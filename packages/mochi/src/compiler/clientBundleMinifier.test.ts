@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from './ComponentRegistry';
+import { oxcOutputTag, resetOxcMinifyCache, resolveOxcMinify } from './jsMinifier';
 import { logicalName, moduleShape } from '../__fixtures__/minifier-structure/moduleShape';
 
 const FIXTURE_DIR = path.join(import.meta.dir, '..', '__fixtures__', 'debug-bar-bundles');
@@ -57,6 +58,36 @@ describe('minifier option', () => {
         .map(([url, code]) => `${logicalName(url)} ${JSON.stringify(moduleShape(url, code))}`)
         .sort();
     expect(shapes(oxcRegistry)).toEqual(shapes(bunRegistry));
+  });
+
+  test("'bun' names carry no oxc tag, and 'oxc' tags every chunk URL", async () => {
+    const tag = `-o${oxcOutputTag((await resolveOxcMinify()).version)}.js`;
+    expect(islandJs(bunRegistry).filter(([url]) => url.includes(tag.slice(0, -3)))).toEqual([]);
+    expect(islandJs(oxcRegistry).every(([url]) => url.endsWith(tag))).toBe(true);
+    expect(oxcRegistry.getIslandBootstrapUrl()).toEndWith(tag);
+  });
+
+  test('switching minifier changes every chunk URL, so an immutable cache never serves the other mode', () => {
+    const bunUrls = new Set(islandJs(bunRegistry).map(([url]) => url));
+    expect(islandJs(oxcRegistry).filter(([url]) => bunUrls.has(url))).toEqual([]);
+  });
+
+  test('upgrading oxc-minify changes every chunk URL', async () => {
+    const { minify } = await resolveOxcMinify();
+    resetOxcMinifyCache();
+    await resolveOxcMinify(() => Promise.resolve({ module: { minify }, version: '999.0.0' }));
+    const outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-minifier-oxc-next-'));
+    try {
+      const upgraded = new ComponentRegistry({ development: false, debugBar: false, outDir, minifier: 'oxc' });
+      await upgraded.compileAll([PAGE_A]);
+      const before = new Set(islandJs(oxcRegistry).map(([url]) => url));
+      const after = islandJs(upgraded).map(([url]) => url);
+      expect(after.length).toBe(before.size);
+      expect(after.filter((url) => before.has(url))).toEqual([]);
+    } finally {
+      resetOxcMinifyCache();
+      rmSync(outDir, { recursive: true, force: true });
+    }
   });
 
   test("'oxc' ships strictly less JS than the Bun baseline", () => {

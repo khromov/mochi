@@ -81,5 +81,6 @@ describe('bun and oxc emit the same module interface', () => {
     const backend = await resolveSvelteCompiler();
     const [bunBar, oxcBar] = [await buildDebugBarBundle({ development, backend, minifier: 'bun' }), await buildDebugBarBundle({ development, backend, minifier: 'oxc' })];
     expect(moduleShape(oxcBar.fileName, oxcBar.contents)).toEqual(moduleShape(bunBar.fileName, bunBar.contents));
+    expect(oxcBar.fileName).not.toBe(bunBar.fileName);
   });
 });
