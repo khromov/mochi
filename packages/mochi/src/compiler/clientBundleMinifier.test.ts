@@ -19,8 +19,15 @@ let oxcOutDir: string;
 let bunRegistry: ComponentRegistry;
 let oxcRegistry: ComponentRegistry;
 
+let savedEnv: string | undefined;
+
 describe('minifier option', () => {
   beforeAll(async () => {
+    // This file compares the two modes against each other, so it has to pick them itself. `MOCHI_MINIFIER` wins over
+    // the constructor option by design, and the suite is also run with it set to `oxc` — which would otherwise make
+    // the "bun" registry an oxc one and the comparison vacuously equal.
+    savedEnv = process.env.MOCHI_MINIFIER;
+    delete process.env.MOCHI_MINIFIER;
     bunOutDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-minifier-bun-'));
     oxcOutDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-minifier-oxc-'));
     bunRegistry = new ComponentRegistry({ development: false, debugBar: false, outDir: bunOutDir });
@@ -30,6 +37,9 @@ describe('minifier option', () => {
   });
 
   afterAll(() => {
+    if (savedEnv !== undefined) {
+      process.env.MOCHI_MINIFIER = savedEnv;
+    }
     rmSync(bunOutDir, { recursive: true, force: true });
     rmSync(oxcOutDir, { recursive: true, force: true });
   });

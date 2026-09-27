@@ -192,6 +192,9 @@ function normalizeDom(html: string): string {
       .replace(/(_mochi\/client\/)[\w.-]+/g, '$1<hashed>')
       .replace(/\bprops=[A-Za-z0-9_-]+/g, 'props=<enc>')
       .replace(/\b(island-id|data-mochi-id|id)="[^"]*s\d+[^"]*"/g, '$1="<uid>"')
+      // Svelte's `$props.id()` counter, which `/demos/props-id` renders as visible text. Its value depends on the
+      // order islands hydrate in, and that is 50/50 across two loads of one unchanged build — verified directly.
+      .replace(/>\s*[sc]\d+(?:-\d+-[sc]\d+)*\s*</g, '><uid><')
       // Inline script *bodies* are minified framework code, so they differ between the two modes by definition — that is
       // the feature. Their tags stay in the diff so a missing or extra script is still caught; their contents are
       // compared instead by `check-minify-structure.ts` and the classic-script tests.
@@ -204,6 +207,10 @@ function normalizeDom(html: string): string {
       .replace(/<link rel="modulepreload"[^>]*>/g, '')
       .replace(/<!--[\s\S]*?-->/g, '')
       .replace(/\s+/g, ' ')
+      // Stylesheet links are sorted, not compared in order: a dev server compiles lazily, so which page warmed the
+      // compiler first decides where `import-css/app.generated-*` lands — verified by booting twice and hitting a
+      // different page first. oxc touches no CSS at all, so only the set of links is meaningful here.
+      .replace(/(?:<link rel="stylesheet"[^>]*>\s*)+/g, (run) => (run.match(/<link rel="stylesheet"[^>]*>/g) ?? []).sort().join(''))
       .trim()
   );
 }
