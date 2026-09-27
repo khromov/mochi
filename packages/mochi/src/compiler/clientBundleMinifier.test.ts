@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from './ComponentRegistry';
+import { logicalName, moduleShape } from '../__fixtures__/minifier-structure/moduleShape';
 
 const FIXTURE_DIR = path.join(import.meta.dir, '..', '__fixtures__', 'debug-bar-bundles');
 const PAGE_A = path.join(FIXTURE_DIR, 'PageA.svelte');
@@ -49,12 +50,13 @@ describe('minifier option', () => {
     expect(bunRegistry.minifier).toBe('bun');
   });
 
-  test('the two modes emit the same chunk set', () => {
-    const names = (r: ComponentRegistry) =>
+  test('each chunk keeps its imports and exports', () => {
+    // Only the logical name survives across modes; shared `chunk-*` files have none, so they compare as a multiset.
+    const shapes = (r: ComponentRegistry) =>
       islandJs(r)
-        .map(([url]) => path.basename(url))
+        .map(([url, code]) => `${logicalName(url)} ${JSON.stringify(moduleShape(url, code))}`)
         .sort();
-    expect(names(oxcRegistry)).toEqual(names(bunRegistry));
+    expect(shapes(oxcRegistry)).toEqual(shapes(bunRegistry));
   });
 
   test("'oxc' ships strictly less JS than the Bun baseline", () => {
