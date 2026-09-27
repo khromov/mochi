@@ -103,17 +103,13 @@ mochi-framework build --minifier oxc
 MOCHI_MINIFIER=oxc bun run dev
 ```
 
-The env var wins over the `Mochi.serve()` option, like `MOCHI_SVELTE_COMPILER`, so the two modes can be compared without editing code.
+Precedence is `--minifier`, then `MOCHI_MINIFIER`, then the `Mochi.serve()` option, then `'bun'`. An unknown value from any of them is an error, even one a higher source overrides.
 
 The pass covers the hydration bundle, the debug-bar bundle and the inline web-component scripts. CSS, static assets and the SSR build are untouched. Bun's own minifier keeps running first — it mangles identifiers across the whole split graph, which oxc cannot redo one chunk at a time — so oxc is purely additive.
 
-Behaviour is pinned to match the Bun pass: legal (`/*!`, `@license`) comments are preserved, `debugger` and `console.*` are kept, property reads are always treated as side-effecting so a bare `obj.prop` dependency read survives, and nothing is downlevelled. The two inline classic scripts are minified in script mode, so their top-level names are neither mangled nor dropped.
+With `'oxc'`, every chunk name carries a tag derived from the installed `oxc-minify` version and its options — `PageA-k3v9x2mq-o9f8e7d6c.js` rather than `PageA-a1b2c3d4.js`. Chunks are served `immutable`, so switching minifier or upgrading `oxc-minify` changes every URL and no browser or CDN keeps stale bytes. With `'bun'` the names are unchanged. Source maps are not supported with `'oxc'`; a build that emits one fails.
 
-<Callout type="warning">
-
-Chunk file names are content-hashed from Bun's output, before oxc runs. Switching `minifier` therefore changes a chunk's bytes without changing its name. Purge your CDN cache when you switch.
-
-</Callout>
+Behaviour is pinned to match the Bun pass: legal (`/*!`, `@license`) comments are preserved, `debugger` and `console.*` are kept, property reads are always treated as side-effecting so a bare `obj.prop` dependency read survives, and nothing is downlevelled. The two inline classic scripts are built as IIFEs and minified in script mode, the goal the browser parses them with.
 
 <Callout type="info">
 
