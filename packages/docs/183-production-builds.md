@@ -1,7 +1,7 @@
 ---
 title: 'Production builds'
 slug: production-builds
-description: 'How a Mochi build behaves in production: relocatable output and a persistent image cache.'
+description: 'How a Mochi build behaves in production: relocatable output, sub-path hosting, and a persistent image cache.'
 ---
 
 <script>
@@ -11,7 +11,7 @@ import VersionNote from './_components/VersionNote.svelte';
 
 # Production builds
 
-`mochi-framework build` writes a self-contained build to `.mochi/` (see the [CLI reference](/docs/cli/)). This page covers what that build gives you once it is deployed: it relocates cleanly from where you built it to where you run it, and its image cache can survive container restarts. For where to run it, see [Deployment options](/docs/deployment-options/); to containerize it, see [Building a Dockerfile](/docs/docker/).
+`mochi-framework build` writes a self-contained build to `.mochi/` (see the [CLI reference](/docs/cli/)). This page covers what that build gives you once it is deployed: it relocates cleanly from where you built it to where you run it, it can be hosted under a sub-path, and its image cache can survive container restarts. For where to run it, see [Deployment options](/docs/deployment-options/); to containerize it, see [Building a Dockerfile](/docs/docker/).
 
 ## Relocatable builds
 
@@ -44,6 +44,30 @@ Five things still anchor a prebuilt app to its project:
 The manifest records a schema version, and the runtime loads only the exact version it writes. Booting a build made by a different `mochi-framework` version throws at startup. Always run `mochi-framework build` with the same version you serve with.
 
 </Callout>
+
+## Sub-path and static hosting
+
+Mochi writes absolute URLs for everything it owns: `/_mochi/client/…`, `/_mochi/css/…`, the island `component-url`, and the `import` specifiers inside the client chunks. To host under a sub-path such as `https://example.com/my-app/`, bake the prefix in at build time:
+
+```sh
+mochi-framework build --asset-prefix /my-app/_mochi
+```
+
+The value lands in `manifest.json` and every emitted URL carries it. `Mochi.serve({ assetPrefix })` sets the same thing for on-demand compilation, but once a manifest exists its value wins and a differing `serve()` value only logs a warning.
+
+<Callout type="info">
+
+`assetPrefix` covers framework assets only. Links you write yourself (`href="/about"`) and files in `public/` are served at the paths you give them, so prefix those in your own markup.
+
+</Callout>
+
+The same prefix is what makes a hand-rolled static export work: copy `.mochi/svelte-client` to `<host>/my-app/_mochi/client` and `.mochi/svelte-css` to `<host>/my-app/_mochi/css`, save each prerendered page, and nothing needs rewriting.
+
+### Rewriting URLs yourself
+
+<VersionNote since="0.10.0" message="Before 0.10.0 a relative component-url resolved against the island loader module (/_mochi/client/), not the page." />
+
+If you post-process the HTML into page-relative URLs instead, treat `component-url` like any other attribute: it resolves against the page, so `../_mochi/client/…` on `/my-app/writing/` loads from `/my-app/_mochi/client/`, the same place a `<link href="../_mochi/css/…">` on that page does.
 
 ## Persistent image cache
 
