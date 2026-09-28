@@ -1,14 +1,6 @@
 /**
- * Post-bundle JS minification for the browser-facing builds. Bun's own minifier runs inside `Bun.build`; selecting
- * `'oxc'` runs a second, stronger pass over the emitted chunks with the optional `oxc-minify` peer.
- *
- * The pass is post-bundle rather than a plugin hook on purpose: `onLoad` sees one pre-bundle module at a time and Bun
- * re-prints whatever it returns, and Bun 1.4's `onEnd` is observation-only — its callback returns `void` and fires
- * after `outdir` has already been written.
- *
- * Bun's own `minify` deliberately stays fully on underneath: measured over the site's bundle, oxc alone lands ~3.4%
- * *worse* on gzip than Bun-then-oxc, because Bun mangles identifiers across the whole split graph while oxc only sees
- * one already-split chunk at a time and must preserve its import/export names.
+ * Post-bundle JS minification: `'oxc'` re-minifies the chunks Bun already minified, since Bun mangles across the whole
+ * split graph and oxc alone, seeing one chunk at a time, measured ~3.4% worse on gzip.
  */
 import path from 'node:path';
 import type { BuildArtifact } from 'bun';
@@ -136,11 +128,14 @@ export async function resolveOxcMinify(load: () => Promise<OxcPackage> = loadOxc
     logger.info(`Minifying client JS with ${OXC_SPECIFIER} ${pkg.version}`);
     return { minify: fn as OxcMinifyFn, version: pkg.version };
   })();
+  const pending = oxcPending;
   try {
-    return await oxcPending;
+    return await pending;
   } catch (err) {
     // A rejected resolution must not be memoized, so installing the peer and rebuilding in a watching dev server works.
-    oxcPending = undefined;
+    if (oxcPending === pending) {
+      oxcPending = undefined;
+    }
     throw err;
   }
 }

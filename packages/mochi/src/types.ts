@@ -327,7 +327,7 @@ export interface MochiManifestComponent {
 
 export interface MochiManifest {
   /**
-   * Schema version of the on-disk build output; the runtime loads only the exact version it writes (currently 3)
+   * Schema version of the on-disk build output; the runtime loads only the exact version it writes (currently 4)
    * and throws on anything else, so build and serve must use the same `mochi-framework` version.
    *
    * Every manifest path is relative, in one of three families:
@@ -347,6 +347,8 @@ export interface MochiManifest {
   version: number;
   /** URL prefix under which framework client assets and the server island endpoint are served. */
   assetPrefix: string;
+  /** The minifier the build used; a serve-time client rebuild reuses it rather than the serve process's own setting. */
+  minifier: MochiJsMinifier;
   bootstrapUrl: string | null;
   componentEntryUrls: Record<string, string>;
   /** Maps encoded source path (see `version`) → the URL of that component's scoped CSS. */
@@ -732,7 +734,8 @@ export interface MochiServeOptions {
    * Precedence: `mochi-framework build --minifier`, then `MOCHI_MINIFIER`, then this option. Unknown values throw.
    *
    * Requires the optional `oxc-minify` package (`bun add -d oxc-minify`); the build fails with install instructions
-   * rather than falling back, so a deploy's bundle sizes always match the mode you asked for.
+   * rather than falling back, so a deploy's bundle sizes always match the mode you asked for. A prebuilt server keeps
+   * the build's minifier, and if it has to rebuild the client bundle without `oxc-minify` installed it warns and uses Bun.
    *
    * Default: `'bun'`.
    */

@@ -53,7 +53,7 @@ import { registerLocalImageAsset } from '../image/localAssetRegistry';
 import type { LocalImageAsset } from '../image/types';
 import { freshImport } from './freshImport';
 import { resolveSvelteShaker } from './svelteShaker';
-import { clientBundleNaming, minifyBuildOutputs, parseJsMinifier, resolveJsMinifier, type MochiJsMinifier } from './jsMinifier';
+import { clientBundleNaming, minifyBuildOutputs, parseJsMinifier, resolveJsMinifier, resolveOxcMinify, type MochiJsMinifier } from './jsMinifier';
 import prettyBytes from '../vendor/pretty-bytes';
 
 // The `compile:preprocessors` filter is sync; only applying its preprocessors through Svelte's `preprocess()` is async.
@@ -98,7 +98,7 @@ const builtinTsPreprocessor: PreprocessorGroup = {
 const SRC_DIR = path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..');
 
 /** Manifest schema version this runtime writes; see `MochiManifest.version` for the path families it implies. */
-const MANIFEST_VERSION = 3;
+const MANIFEST_VERSION = 4;
 
 const MARKDOWN_EXTENSIONS = ['.md', '.svx'];
 const MARKDOWN_FILE_FILTER = /\.(md|svx)$/;
@@ -445,6 +445,7 @@ export class ComponentRegistry {
   readonly markdown: MarkdownConfig | undefined;
   readonly optimize: boolean | MochiSvelteShakerOptions;
   readonly minifier: MochiJsMinifier;
+  private warnedOxcFallback = false;
   private readonly fontInlineThreshold: number;
   private readonly fontDropLegacyWoff: boolean;
   private readonly barrelWarningsEnabled: boolean;
@@ -622,6 +623,30 @@ export class ComponentRegistry {
   /** Emitted assets for locally-imported images, keyed by served URL. */
   getLocalImageAssets(): Map<string, LocalImageAsset> {
     return this.localImageAssets;
+  }
+
+  /**
+   * The minifier for a client rebuild. A prebuilt deploy only rebuilds on a manifest miss, and its install may have
+   * omitted the `oxc-minify` dev dependency, so there a missing package degrades to Bun instead of failing the request.
+   */
+  private async clientMinifier(): Promise<MochiJsMinifier> {
+    if (this.minifier !== 'oxc' || !this.loadedFromManifest) {
+      return this.minifier;
+    }
+    try {
+      await resolveOxcMinify();
+      return 'oxc';
+    } catch (err) {
+      if (!this.warnedOxcFallback) {
+        this.warnedOxcFallback = true;
+        logger.warn(
+          `This build was minified with oxc, but oxc-minify can't be loaded at runtime, so the client bundle rebuilt for the manifest miss uses Bun's minifier. ` +
+            `Bundle sizes and chunk URLs will differ from the build until the next deploy. Fix the manifest miss, or install oxc-minify as a regular dependency. ` +
+            `(${err instanceof Error ? err.message : String(err)})`,
+        );
+      }
+      return 'bun';
+    }
   }
 
   /** Record the prebuilt ServerIsland inline script (content + disk path for the manifest). */
@@ -1328,6 +1353,7 @@ export class ComponentRegistry {
       },
     };
 
+    const minifier = await this.clientMinifier();
     const result = await Bun.build({
       entrypoints,
       files: filesMap,
@@ -1339,7 +1365,7 @@ export class ComponentRegistry {
       define: clientBuildDefine(development),
       minify: true,
       splitting: true,
-      naming: await clientBundleNaming(this.minifier),
+      naming: await clientBundleNaming(minifier),
       publicPath: `${this.assetPrefix}/client/`,
       outdir: path.resolve(`${this.outDir}/svelte-client`),
       metafile: true,
@@ -1353,16 +1379,15 @@ export class ComponentRegistry {
     // Post-bundle, because a plugin can't reach the printed chunks: `onLoad` only sees pre-bundle modules Bun then
     // re-prints, and `onEnd` returns `void` after `outdir` is already written. Every chunk is minified before any is
     // swapped in, so a failure can't leave half the bundle re-minified.
-    const reminified = await minifyBuildOutputs(result.outputs, this.minifier);
+    const reminified = await minifyBuildOutputs(result.outputs, minifier);
+    if (reminified) {
+      // `outdir` above already wrote Bun's version; the manifest boot reads these files back off disk.
+      await Promise.all([...reminified].map(([outPath, code]) => Bun.write(outPath, code)));
+    }
 
     for (const output of result.outputs) {
       const filename = path.basename(output.path);
-      const replacement = reminified?.get(output.path);
-      if (replacement !== undefined) {
-        // `outdir` above already wrote Bun's version; the manifest boot reads these files back off disk.
-        await Bun.write(output.path, replacement);
-      }
-      newClientFiles.set(`${this.assetPrefix}/client/${filename}`, replacement ?? (await output.text()));
+      newClientFiles.set(`${this.assetPrefix}/client/${filename}`, reminified?.get(output.path) ?? (await output.text()));
     }
 
     // Map entry-point outputs back to components using metafile.entryPoint
@@ -2431,6 +2456,7 @@ export class ComponentRegistry {
     const manifest: MochiManifest = {
       version: MANIFEST_VERSION,
       assetPrefix: this.assetPrefix,
+      minifier: this.minifier,
       bootstrapUrl: this.islandBootstrapUrl,
       componentEntryUrls: Object.fromEntries(this.componentEntryUrls),
       cssFileUrls: Object.fromEntries([...this.cssFileUrls].map(([componentPath, url]) => [encodeSourcePath(componentPath), url])),
@@ -2467,7 +2493,7 @@ export class ComponentRegistry {
   }
 
   /** Load a registry from a prebuilt manifest (production mode). `options` carries serve-time config a manifest can't: on-demand compiles (manifest misses) must honor it or they diverge from the build output. */
-  static async fromManifest(manifestPath: string, development: boolean = false, options: Pick<ComponentRegistryOptions, 'fonts' | 'minifier'> = {}): Promise<ComponentRegistry> {
+  static async fromManifest(manifestPath: string, development: boolean = false, options: Pick<ComponentRegistryOptions, 'fonts'> = {}): Promise<ComponentRegistry> {
     const raw = await Bun.file(manifestPath).text();
     const manifest: MochiManifest = JSON.parse(raw);
 
@@ -2495,7 +2521,8 @@ export class ComponentRegistry {
       outDir: artifactRoot,
       assetPrefix: manifest.assetPrefix,
       fonts: options.fonts,
-      minifier: options.minifier,
+      // Taken from the build, so a manifest-miss rebuild doesn't swap its chunks for another minifier's names.
+      minifier: parseJsMinifier(manifest.minifier, `${relForDisplay(manifestPath)} minifier`),
     });
     registry.loadedFromManifest = true;
     registry.publicFileCountAtBuild = manifest.publicFileCount ?? 0;

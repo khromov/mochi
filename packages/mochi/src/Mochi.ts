@@ -5,7 +5,7 @@ import path from 'node:path';
 import { ComponentRegistry, formatCompileErrors } from './compiler/ComponentRegistry';
 import type { RenderResult } from './compiler/ComponentRegistry';
 import { loadSvelteConfig } from './compiler/svelteConfig';
-import { resolveJsMinifier } from './compiler/jsMinifier';
+import { MINIFIER_ENV_VAR, resolveJsMinifier } from './compiler/jsMinifier';
 import { resolveOutDir } from './compiler/resolveOutDir';
 import { buildInlineWebComponent } from './compiler/buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './dev/clientStatsRoutes';
@@ -557,10 +557,17 @@ export class Mochi {
       logger.info(`Loading prebuilt manifest from ${relForDisplay(manifestPath)}`);
       // The registry takes its outDir from the manifest's own directory, so an explicit `manifest` pointing elsewhere
       // relocates on-demand island compiles along with it.
-      registry = await ComponentRegistry.fromManifest(manifestPath, development, { fonts: options.fonts, minifier });
+      registry = await ComponentRegistry.fromManifest(manifestPath, development, { fonts: options.fonts });
       if (options.assetPrefix !== undefined && options.assetPrefix !== registry.assetPrefix) {
         logger.warn(
           `assetPrefix in Mochi.serve() (${JSON.stringify(options.assetPrefix)}) differs from the manifest (${JSON.stringify(registry.assetPrefix)}). Using the manifest value — URLs are baked in at build time.`,
+        );
+      }
+      // Only an explicit setting can disagree: `--minifier` never reaches the server, so an unset one is the normal case.
+      const minifierSet = options.minifier !== undefined || !!process.env[MINIFIER_ENV_VAR];
+      if (minifierSet && minifier !== registry.minifier) {
+        logger.warn(
+          `minifier ${JSON.stringify(minifier)} from Mochi.serve() or ${MINIFIER_ENV_VAR} differs from the manifest (${JSON.stringify(registry.minifier)}). Using the manifest value — the client bundle was minified at build time.`,
         );
       }
     } else {

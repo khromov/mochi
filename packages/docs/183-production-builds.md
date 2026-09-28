@@ -139,4 +139,6 @@ Behaviour is pinned to match the Bun pass: legal (`/*!`, `@license`) comments ar
 
 `oxc-minify` is an optional peer dependency. With `minifier: 'oxc'` set and the package missing, the build fails with install instructions rather than quietly falling back, so deployed bundle sizes always match the mode you asked for.
 
+The manifest records the minifier the build used, and a prebuilt server keeps it whatever `Mochi.serve()` or `MOCHI_MINIFIER` says. The server only minifies again when a component is missing from the manifest. If `oxc-minify` isn't installed then, for example after `bun install --production`, the server logs a warning and uses Bun's minifier for that rebuild.
+
 </Callout>
