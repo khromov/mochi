@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { build } from './build';
 import { closeAllQueueResources } from '../queue';
 import { extractServeOptions } from './extractServeOptions';
+import { resolveJsMinifier } from '../compiler/jsMinifier';
 import { updateSkill, SKILL_TARGETS, SKILL_DESTS, DEFAULT_SKILL_TARGET, type SkillTarget } from './updateSkill';
 import { generateKey } from './generateKey';
 import { relForDisplay } from '../utils';
@@ -48,6 +49,10 @@ Options for "build":
   --out-dir <path>         Build output directory. Default: ./.mochi
   --public-dir <path>      Static assets directory. Default: ./public
   --asset-prefix <path>    URL prefix for framework client assets. Default: /_mochi
+  --minifier <bun|oxc>     Which minifier prints the client JS. Wins over
+                           MOCHI_MINIFIER, which wins over the entry's
+                           \`minifier\`. \`oxc\` needs the optional
+                           \`oxc-minify\` package. Default: bun
   --dev                    Build with development: true.
 
 The build reads its config straight from the entry's \`Mochi.serve()\` call, so
@@ -138,6 +143,7 @@ async function main() {
       'out-dir': { type: 'string' },
       'public-dir': { type: 'string' },
       'asset-prefix': { type: 'string' },
+      minifier: { type: 'string' },
       dev: { type: 'boolean' },
       force: { type: 'boolean', short: 'f' },
     },
@@ -182,6 +188,17 @@ async function main() {
   // extractServeOptions hands the entry graph a by-value snapshot, so a later setDevelopment() would be invisible.
   setDevelopment(values.dev === true);
 
+  const resolveMinifierOrExit = (configured?: unknown) => {
+    try {
+      return resolveJsMinifier({ flag: values.minifier, configured });
+    } catch (err) {
+      process.stderr.write(`[mochi] ${err instanceof Error ? err.message : String(err)}\n`);
+      process.exit(1);
+    }
+  };
+  // Run once before the entry is read so a typo in the flag or env var fails fast.
+  resolveMinifierOrExit();
+
   const entryPath = path.resolve(process.cwd(), values.entry ?? './src/index.ts');
   let serveOptions: Awaited<ReturnType<typeof extractServeOptions>> = null;
   if (existsSync(entryPath)) {
@@ -204,6 +221,7 @@ async function main() {
     markdown: serveOptions?.markdown,
     svelteCompiler: serveOptions?.svelteCompiler,
     optimize: serveOptions && 'optimize' in serveOptions ? serveOptions.optimize : undefined,
+    minifier: resolveMinifierOrExit(serveOptions?.minifier),
     barrelWarnings: serveOptions?.barrelWarnings,
     fonts: serveOptions?.fonts,
     errorPage: serveOptions?.errorPage,
