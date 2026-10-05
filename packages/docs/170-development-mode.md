@@ -6,6 +6,7 @@ description: 'What the development flag enables: live reload, file watcher, rout
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Development mode
@@ -128,6 +129,12 @@ await Mochi.serve({
 ```
 
 Returning `null` drops the line; returning it unchanged keeps it. This suppresses only the churn warning — every other log line is untouched.
+
+#### Image config
+
+<VersionNote since="0.10.0" message="Earlier versions kept the boot-time image config until restart." />
+
+An entry reload also applies the [`image`](/docs/images/) config. Edits to `sizes`, `allowedHosts`, and the other per-request options take effect on the next request. `enabled`, `cacheDir`, `storage`, `timeToStale`, `timeToEvict`, and `sweepIntervalMs` apply only at boot: changing one logs a warning, and a restart applies it. A `storage` change is detected only when the backend class changes.
 
 ### `file:change` event
 

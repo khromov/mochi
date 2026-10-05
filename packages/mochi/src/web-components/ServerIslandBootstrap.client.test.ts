@@ -53,6 +53,14 @@ function mount(options: Record<string, unknown> | null = null): HTMLElement {
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
+
+// A dynamic import settles on the loader's schedule, which on Windows CI can outlast a fixed count of ticks.
+async function until(done: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!done() && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
 const runs = () => globalThis.__mochi_bootstrap_stub_runs ?? 0;
 const marker = (url: string) => `<template ${BOOTSTRAP_MARKER_ATTR}="${url}"></template>`;
 const fragment = (url: string) => `${marker(url)}<mochi-hydratable-island component-name="Counter_abc"><button>count 0</button></mochi-hydratable-island>`;
@@ -65,8 +73,7 @@ describe('<mochi-server-island> bootstrap marker', () => {
     bodies = [fragment(STUB), fragment(STUB)];
     const a = mount();
     const b = mount();
-    await settle();
-    await settle();
+    await until(() => [a, b].every((el) => el.querySelector('mochi-hydratable-island')?.hasAttribute('data-upgraded')));
 
     expect(runs()).toBe(1);
     for (const el of [a, b]) {
@@ -104,8 +111,7 @@ describe('<mochi-server-island> bootstrap marker', () => {
   test('a bootstrap that fails to load is reported and leaves the content in place', async () => {
     bodies = [fragment('/_mochi/client/HydratableIsland-missing.js')];
     const el = mount();
-    await settle();
-    await settle();
+    await until(() => warnings.length > 0);
 
     expect(el.querySelector(`[${BOOTSTRAP_MARKER_ATTR}]`)).toBeNull();
     expect(el.querySelector('mochi-hydratable-island')).not.toBeNull();

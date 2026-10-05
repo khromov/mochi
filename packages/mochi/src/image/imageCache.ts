@@ -151,7 +151,7 @@ export class ImageCache {
   private readonly cache: MochiCache;
   private readonly minTimeToStale: number;
   private readonly maxTimeToLive: number;
-  private readonly sizes: Record<string, ResolvedImageSize>;
+  private sizes: Record<string, ResolvedImageSize>;
   private readonly cascadeHandlerName: string;
 
   constructor(options: ImageCacheOptions) {
@@ -195,6 +195,11 @@ export class ImageCache {
   dispose(): void {
     mochiEvents.removeHandler(this.cascadeHandlerName);
     (this.storage as Partial<{ dispose(): void }>).dispose?.();
+  }
+
+  /** Replace the configured sizes after a dev entry reload, so the cascade also reclaims variants of newly added sizes. */
+  setSizes(sizes: Record<string, ResolvedImageSize>): void {
+    this.sizes = sizes;
   }
 
   private async toBytes(field: Uint8Array | BlobRef): Promise<Uint8Array> {
