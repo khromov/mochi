@@ -1,5 +1,8 @@
-import { describe, expect, test } from 'bun:test';
-import { getSize, resolveImageOptions } from './config';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { MemoryStorage } from '../cache/cache-storage';
+import { getImageRuntime, getSize, reloadImageOptions, resolveImageOptions } from './config';
+import { ImageCache, variantId } from './imageCache';
+import type { MochiImageOptions } from './types';
 
 const BASE = { width: 100, height: 80 };
 
@@ -82,5 +85,77 @@ describe('getSize', () => {
     // Even against a plain-object sizes map (user-constructed options).
     const plain = { ...options, sizes: { ...options.sizes } };
     expect(getSize('toString', plain)).toBeUndefined();
+  });
+});
+
+describe('reloadImageOptions (dev entry reload)', () => {
+  const g = globalThis as unknown as Record<string, unknown>;
+  const RUNTIME_KEY = '__mochi_image_runtime__';
+  const SRC = 'https://example.com/photo.png';
+
+  function pinRuntime(opts: MochiImageOptions): { options: ReturnType<typeof resolveImageOptions>; cache: ImageCache } {
+    const options = resolveImageOptions(opts);
+    const cache = new ImageCache({
+      cacheDir: options.cacheDir,
+      minTimeToStale: options.timeToStale,
+      maxTimeToLive: options.timeToEvict,
+      sizes: options.sizes,
+      storage: new MemoryStorage(),
+    });
+    g[RUNTIME_KEY] = { options, cache };
+    return { options, cache };
+  }
+
+  afterEach(() => {
+    (g[RUNTIME_KEY] as { cache: ImageCache } | undefined)?.cache.dispose();
+    delete g[RUNTIME_KEY];
+  });
+
+  test('applies new sizes and allowed hosts to the live runtime, keeping its cache', () => {
+    const { cache } = pinRuntime({ allowedHosts: ['i.ytimg.com'], sizes: {} });
+    expect(reloadImageOptions({ allowedHosts: ['i.ytimg.com', '*.bsky.app'], sizes: { avatar: { width: 80, height: 80, fit: 'fill' } } })).toEqual([]);
+    const runtime = getImageRuntime();
+    expect(runtime.cache).toBe(cache);
+    expect(runtime.options.allowedHosts).toEqual(['i.ytimg.com', '*.bsky.app']);
+    expect(getSize('avatar', runtime.options)).toMatchObject({ width: 80, height: 80, fit: 'fill' });
+  });
+
+  test('a hard invalidation cascades to the variants of a size the reload added', async () => {
+    const { cache } = pinRuntime({ sizes: {} });
+    reloadImageOptions({ sizes: { avatar: BASE } });
+    const avatar = getSize('avatar', getImageRuntime().options)!;
+    const { entry } = await cache.getOriginal(SRC, async () => ({ bytes: new Uint8Array([1]), contentType: 'image/png' }));
+    await cache.getVariant(SRC, variantId(SRC, avatar.configHash), async () => ({
+      bytes: new Uint8Array([2]),
+      contentType: 'image/webp',
+      width: 100,
+      height: 80,
+      format: 'webp',
+      originalCreatedAt: entry.meta.createdAt,
+    }));
+    expect(await cache.keys()).toHaveLength(2);
+
+    await cache.invalidateOriginal(SRC, true);
+    expect(await cache.keys()).toEqual([]);
+  });
+
+  test('reports changed boot-only fields and keeps their boot values', () => {
+    pinRuntime({ cacheDir: './a', timeToStale: 1_000, sizes: {} });
+    expect(reloadImageOptions({ enabled: false, cacheDir: './b', timeToStale: 2_000, sizes: { avatar: BASE } })).toEqual(['enabled', 'cacheDir', 'timeToStale']);
+    const { options } = getImageRuntime();
+    expect(options).toMatchObject({ enabled: true, cacheDir: './a', timeToStale: 1_000 });
+    expect(getSize('avatar', options)).toBeDefined();
+  });
+
+  test('a new storage instance of the same class is not a change, a different backend is', () => {
+    pinRuntime({ storage: new MemoryStorage() });
+    expect(reloadImageOptions({ storage: new MemoryStorage() })).toEqual([]);
+    expect(reloadImageOptions({})).toEqual(['storage']);
+  });
+
+  test('an invalid size throws and leaves the runtime untouched', () => {
+    const { options } = pinRuntime({ sizes: { thumb: BASE } });
+    expect(() => reloadImageOptions({ sizes: { thumb: { width: 0 } } })).toThrow(/must be a positive number/);
+    expect(getImageRuntime().options).toBe(options);
   });
 });

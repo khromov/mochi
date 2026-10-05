@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { getMochiConfig } from '../mochiConfig';
 import { ImageCache } from './imageCache';
+import type { Storage } from '../cache/cache';
 import type { ImageFormat, ImageSize, MochiImageOptions, ResolvedImageOptions, ResolvedImageSize } from './types';
 
 const ALL_FORMATS: ImageFormat[] = ['webp', 'jpeg', 'png', 'avif'];
@@ -134,6 +135,31 @@ export function getImageRuntime(): ImageRuntime {
     g[GLOBAL_KEY] = runtime;
   }
   return runtime;
+}
+
+// Each is baked into the cache instance, its sweeper, or the endpoint route at boot, so a dev entry reload can't apply it.
+const BOOT_ONLY_FIELDS = ['enabled', 'cacheDir', 'storage', 'timeToStale', 'timeToEvict', 'sweepIntervalMs'] as const;
+
+// The entry builds a new storage instance on every reload, so only a different backend class counts as a change.
+function storageClass(storage: Storage | undefined): string | undefined {
+  return storage?.constructor.name;
+}
+
+/**
+ * Apply a dev entry reload's `image` options to the live runtime, returning the boot-only fields that changed and still
+ * need a restart. Those keep their boot values, so minted URLs stay consistent with the running cache and endpoint.
+ */
+export function reloadImageOptions(opts: MochiImageOptions | undefined): string[] {
+  const runtime = getImageRuntime();
+  const next = resolveImageOptions(opts);
+  const prev = runtime.options;
+  const changed = BOOT_ONLY_FIELDS.filter((field) => (field === 'storage' ? storageClass(prev.storage) !== storageClass(next.storage) : prev[field] !== next[field]));
+  for (const field of BOOT_ONLY_FIELDS) {
+    Object.assign(next, { [field]: prev[field] });
+  }
+  runtime.options = next;
+  runtime.cache.setSizes(next.sizes);
+  return changed;
 }
 
 /** Look up a resolved named size, or `undefined` if the name is unknown/absent. */

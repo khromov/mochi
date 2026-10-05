@@ -13,6 +13,8 @@ import { evictPreprocessCacheEntry } from '../compiler/preprocessCache';
 import { extractServeOptions } from '../cli/extractServeOptions';
 import { startCronRuntime, stopCronRuntime } from '../queue';
 import { cronSignature, type MochiCronJob } from '../cron';
+import { reloadImageOptions } from '../image/config';
+import type { MochiImageOptions } from '../image/types';
 import type { MochiQueueStorage } from '../queue';
 import { buildPublicUrl } from '../runtime/proxy';
 import { resolvePublicFiles, registerPublicRoutes, type PublicRouteGuard } from '../runtime/publicDir';
@@ -344,6 +346,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     }
     reloadSpeculationRules?.(serveOptions.speculationRules);
     await reconcileCron(serveOptions as { cron?: MochiCronJob[]; cronStorage?: MochiQueueStorage; queueShutdownTimeout?: number });
+    reloadImage(serveOptions.image);
     const freshRoutes = serveOptions.routes as Record<string, unknown>;
 
     const newComponentPaths = new Set<string>();
@@ -381,6 +384,17 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       logger.info(`[cron] re-registered ${cron.length} job(s) after edit`);
     } catch (err) {
       logger.warn(`[cron] reload failed — no schedule is running; fix the error and save again: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  function reloadImage(image: MochiImageOptions | undefined): void {
+    try {
+      const restartFields = reloadImageOptions(image);
+      if (restartFields.length > 0) {
+        logger.warn(`[image] ${restartFields.map((f) => `image.${f}`).join(', ')} changed — restart the dev server to apply it`);
+      }
+    } catch (err) {
+      logger.warn(`[image] reload failed — keeping the previous image config: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

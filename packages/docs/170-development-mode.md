@@ -80,6 +80,8 @@ await Mochi.serve({
 
 **Route handler code** — `Mochi.api` handlers, `serverProps` resolvers, form `actions`, `Mochi.ws` handlers, `Mochi.sse` handlers — is hot-swapped without a restart. The watcher builds your entry (`src/index.ts`) to discover its transitive dependencies. When any change, it rebuilds the entry, re-reads the `routes` from its `Mochi.serve()` call, and updates the running server in place. Adding, removing, and editing route patterns all work without a restart. WebSocket connections stay open. The browser reloads to pick up updated `serverProps`.
 
+The same reload applies the [`image`](/docs/images/) config: edits to `sizes`, `allowedHosts`, and the other per-request options take effect on the next request. `enabled`, `cacheDir`, `storage`, `timeToStale`, `timeToEvict`, and `sweepIntervalMs` are read once at boot. Mochi warns when one of them changes, and you must restart the dev server to apply it.
+
 <Callout type="warning">
 
 Each reload re-evaluates the **entire first-party dependency graph** — every `let` / `const` at module scope is recreated. This is not just a stale-cache annoyance: a module-scoped singleton that holds an **OS resource** (a DB pool, a `setInterval`, a file watcher, an SMTP pool) is re-created on every save while the previous instance is orphaned with its resource still open. Nothing closes it, so usage grows one leak per save until a hard failure — a Postgres pool, for example, exhausts `max_connections` after a dozen saves and takes the database down for every client.
