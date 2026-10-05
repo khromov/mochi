@@ -216,6 +216,8 @@ await Mochi.serve({
       // Docs screenshots: authored at their natural size (<= 1400px) and shown in a
       // ~800px prose column, so this only re-encodes to webp — it never resizes.
       doc: { width: 1400, withoutEnlargement: true, format: 'webp', quality: 82 },
+      // Landing-page "Runs on Mochi" screenshots, authored at 1280x800.
+      'site-shot': { width: 1280, withoutEnlargement: true, format: 'webp', quality: 80 },
       hero: { width: 600, height: 400, fit: 'inside' },
       square: { width: 400, height: 400, fit: 'inside' },
       card: { width: 400, height: 267, fit: 'inside' },

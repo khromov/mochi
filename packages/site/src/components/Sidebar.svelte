@@ -182,6 +182,11 @@
       <section class="toc-section">
         <h2 class="toc-heading">Demos</h2>
         <ul class="toc-list">
+          {#if !query.trim()}
+            <li class="toc-item level-2" class:active={activePathname === '/demos/'}>
+              <a href="/demos/">All demos</a>
+            </li>
+          {/if}
           {#each filteredDemos as demo (demo.href)}
             {@const external = isExternal(demo.href)}
             <li class="toc-item level-2" class:active={!external && activePathname.startsWith(demo.href)}>

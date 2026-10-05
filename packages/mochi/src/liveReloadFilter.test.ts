@@ -40,7 +40,8 @@ describe('live-reload only signals tabs whose entry was affected', () => {
       throw new Error('server.port not set');
     }
     port = server.port;
-  });
+    // Booting a dev server on a loaded macOS runner can outlast bun's default 5s hook timeout.
+  }, 30_000);
 
   afterAll(() => {
     server.stop(true);
@@ -81,11 +82,13 @@ describe('live-reload only signals tabs whose entry was affected', () => {
       mochiEvents.on('recompile:complete', handler);
     });
 
+    // macOS file watching can miss a write that lands right after the watcher reports ready.
+    await new Promise((r) => setTimeout(r, 500));
     writeFileSync(pageA, '<h1 class="lr-a">A v2</h1>\n');
 
     const evt = await completed;
     // Settle: 100ms watcher debounce + WS message round-trip.
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 500));
 
     expect(evt.pages).toEqual([pageA]);
     expect(aMessages).toEqual(['reload']);
@@ -93,7 +96,7 @@ describe('live-reload only signals tabs whose entry was affected', () => {
 
     wsA.close();
     wsB.close();
-  });
+  }, 60_000);
 
   // A tab that was disconnected when its entry recompiled never received the
   // `reload`, and the boot id alone can't tell it — the server never
