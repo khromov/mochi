@@ -53,12 +53,12 @@ function mount(options: Record<string, unknown> | null = null): HTMLElement {
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
-// An `import()` settling can outlast a fixed tick count on a loaded CI runner (the first one reads and transpiles the
-// stub from disk), so tests that wait on one poll for its outcome instead.
-async function until(condition: () => boolean, timeoutMs = 2000): Promise<void> {
+
+// A dynamic import settles on the loader's schedule, which on Windows CI can outlast a fixed count of ticks.
+async function until(done: () => boolean, timeoutMs = 5_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  while (!condition() && Date.now() < deadline) {
-    await settle();
+  while (!done() && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 5));
   }
 }
 const runs = () => globalThis.__mochi_bootstrap_stub_runs ?? 0;
@@ -73,8 +73,7 @@ describe('<mochi-server-island> bootstrap marker', () => {
     bodies = [fragment(STUB), fragment(STUB)];
     const a = mount();
     const b = mount();
-    await until(() => runs() > 0);
-    await settle();
+    await until(() => [a, b].every((el) => el.querySelector('mochi-hydratable-island')?.hasAttribute('data-upgraded')));
 
     expect(runs()).toBe(1);
     for (const el of [a, b]) {
