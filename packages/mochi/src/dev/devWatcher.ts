@@ -391,7 +391,8 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     try {
       const restartFields = reloadImageOptions(image);
       if (restartFields.length > 0) {
-        logger.warn(`[image] ${restartFields.map((f) => `image.${f}`).join(', ')} changed — restart the dev server to apply it`);
+        const fields = restartFields.map((f) => `image.${f}`).join(', ');
+        logger.warn(`[image] ${fields} changed — restart the dev server to apply ${restartFields.length > 1 ? 'them' : 'it'}`);
       }
     } catch (err) {
       logger.warn(`[image] reload failed — keeping the previous image config: ${err instanceof Error ? err.message : String(err)}`);

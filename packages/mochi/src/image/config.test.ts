@@ -153,6 +153,13 @@ describe('reloadImageOptions (dev entry reload)', () => {
     expect(reloadImageOptions({})).toEqual(['storage']);
   });
 
+  test('a null-prototype storage does not break the reload', () => {
+    const storage = Object.assign(Object.create(null) as object, new MemoryStorage()) as MemoryStorage;
+    pinRuntime({ storage });
+    expect(reloadImageOptions({ storage, sizes: { avatar: BASE } })).toEqual([]);
+    expect(getSize('avatar', getImageRuntime().options)).toBeDefined();
+  });
+
   test('an invalid size throws and leaves the runtime untouched', () => {
     const { options } = pinRuntime({ sizes: { thumb: BASE } });
     expect(() => reloadImageOptions({ sizes: { thumb: { width: 0 } } })).toThrow(/must be a positive number/);
