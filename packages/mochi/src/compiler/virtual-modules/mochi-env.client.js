@@ -52,6 +52,9 @@ export { pinGlobal } from "__MOCHI_GLOBAL_STATE__";
 export { escapeHtmlAttr } from "__MOCHI_HTML_ESCAPE__";
 export { stringify, parse } from "__MOCHI_DEVALUE__";
 export { trailingSlashIt } from "__MOCHI_TRAILING_SLASH__";
+// Client call sites are rewritten to a dynamic `import()` at build time, so this
+// binding is normally tree-shaken; it stays a no-op for an un-rewritten call.
+export function importWebComponent() { return Promise.resolve(); }
 // Server-only; the preprocessor never injects __mochi_emit_props__
 // into client bundles, but this stub keeps the module surface
 // symmetric and produces a clear error if anyone imports it.
