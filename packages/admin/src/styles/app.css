@@ -1,0 +1,63 @@
+/* Tailwind v4 input for the admin template.
+   This is a standalone app with its own shell.html and no surrounding site
+   chrome, so we opt INTO Preflight for a clean, modern reset across every page.
+   Explicit CSS sub-imports (theme/preflight/utilities) resolve reliably through
+   Mochi's compileTailwind — mirrors packages/demos/src/todo/app.css. */
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+@source '../**/*.svelte';
+
+/* Design tokens — a calm, refined admin palette. A single restrained accent
+   (matcha green) with warm stone neutrals. Dark mode swaps via the variant below. */
+@theme {
+  --font-sans: 'Public Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Fraunces Variable', ui-serif, Georgia, serif;
+
+  --color-matcha-50: #f2f7f1;
+  --color-matcha-100: #e0ece0;
+  --color-matcha-200: #c2d9c2;
+  --color-matcha-300: #97bd98;
+  --color-matcha-400: #6b9c6d;
+  --color-matcha-500: #4a7c59;
+  --color-matcha-600: #396147;
+  --color-matcha-700: #2e4d3a;
+  --color-matcha-800: #263d30;
+  --color-matcha-900: #203228;
+}
+
+/* Class-based dark mode: the ThemeToggle island (and the no-flash script in
+   shell.html) stamp data-theme on <html>, mirroring the other Mochi sites. */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/* FlareCharts theming — the library resolves every color/motion token from a
+   --fc-* custom property (with a built-in fallback), so a chart is themed by
+   setting variables on any wrapper. Here we align them to the matcha palette
+   and stone neutrals, for both light and dark. */
+:root {
+  --fc-series-1: #4a7c59; /* matcha */
+  --fc-series-2: #0ea5e9; /* sky */
+  --fc-font: var(--font-sans);
+  --fc-grid: #e7e5e4; /* stone-200 */
+  --fc-axis: #d6d3d1; /* stone-300 */
+  --fc-axis-label: #78716c; /* stone-500 */
+  --fc-label: #57534e; /* stone-600 */
+  --fc-crosshair: #a8a29e; /* stone-400 */
+  --fc-tooltip-bg: #ffffff;
+  --fc-tooltip-border: #e7e5e4;
+  --fc-tooltip-text: #292524; /* stone-800 */
+}
+
+:root[data-theme='dark'] {
+  --fc-series-1: #6b9c6d; /* matcha-400 (brighter on dark) */
+  --fc-series-2: #38bdf8; /* sky-400 */
+  --fc-grid: #292524; /* stone-800 */
+  --fc-axis: #44403c; /* stone-700 */
+  --fc-axis-label: #a8a29e; /* stone-400 */
+  --fc-label: #d6d3d1; /* stone-300 */
+  --fc-crosshair: #57534e; /* stone-600 */
+  --fc-tooltip-bg: #1c1917; /* stone-900 */
+  --fc-tooltip-border: #44403c;
+  --fc-tooltip-text: #e7e5e4; /* stone-200 */
+}
