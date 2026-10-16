@@ -39,6 +39,7 @@
     "@twinkleplop/yaml": "0.1.0",
     "entities": "^8.0.0",
     "hast-util-to-html": "^9.0.5",
+    "html-to-image": "1.11.13",
     "layerchart": "^2.0.3",
     "mdsvex": "^0.12.8",
     "mochi-framework": "workspace:*",
