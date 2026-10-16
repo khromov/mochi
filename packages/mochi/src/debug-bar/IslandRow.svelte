@@ -5,7 +5,7 @@
   import type { IslandInfo } from './types';
   import { formatSize } from './utils';
   import { locateIsland } from './highlight';
-  import { parse as devalueParse } from 'devalue';
+  import { parse as devalueParse } from '../utils/devalue';
   import formatHighlight from '../vendor/json-format-highlight/index.ts';
 
   let { island }: { island: IslandInfo } = $props();

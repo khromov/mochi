@@ -2,7 +2,7 @@
 /// <reference lib="dom.iterable" />
 import { hydrate, mount, unmount } from 'svelte';
 import type { Component } from 'svelte';
-import { parse as devalueParse } from 'devalue';
+import { parse as devalueParse } from '../utils/devalue';
 import { isDev, logger } from 'mochi-framework';
 import './IslandFailure';
 import { islandFailureStub } from './islandFailureStub';

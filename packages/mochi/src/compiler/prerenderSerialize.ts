@@ -1,4 +1,4 @@
-import { uneval } from 'devalue';
+import { uneval } from '../utils/devalue';
 import { pinGlobal } from '../utils/globalState';
 
 /** Pinned so `moduleRef()` in whichever framework copy the module imports sees the evaluation the loader started. */

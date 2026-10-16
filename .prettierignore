@@ -3,3 +3,6 @@ REPORT.md
 packages/docker/.db
 **/*.patch
 **/virtual-modules/
+
+# Upstream devalue sources, kept verbatim so an upstream re-sync stays a file copy.
+packages/mochi/src/vendor/devalue/src/

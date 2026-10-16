@@ -34,6 +34,7 @@
     "src",
     "!src/**/*.test.ts",
     "!src/__fixtures__",
+    "!src/vendor/devalue/uvuShim.ts",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
@@ -110,7 +111,7 @@
     "chokidar": "^5.0.0",
     "css-tree": "^3.2.1",
     "deepmerge": "^4.3.1",
-    "devalue": "^5.9.0",
+    "devalue": "^5.9.2",
     "diff": "^9.0.0",
     "html-entities": "^2.6.0",
     "ipaddr.js": "2.4.0",

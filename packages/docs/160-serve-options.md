@@ -59,6 +59,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `errorPage` — component rendered for uncaught page errors and unmatched routes. Default: built-in. See [Error handling](/docs/error-handling/).
 - `handleError` — `HandleError` hook run before the error page renders. See [Error handling](/docs/error-handling/).
 - `compressServerIslandProps` — deflate server-island props when it reduces size. Default: `true`.
+- `useOptimizedDevalue` — serialize with Mochi's vendored `devalue` build instead of the installed npm package. Default: `true`. See [Optimized devalue](#optimized-devalue).
 - `inlineNestedIslands` — render nested `mochi:defer` islands in-process during an island fetch instead of emitting more client fetches. `mochi:defer:visible` children keep their own fetch; one call site opts out with `mochi:defer={{ inline: false }}`. Default: `true`. See [Server islands](/docs/server-islands/).
 - `logger` — built-in request logger. Default: `{ enabled: true }`.
 - `publicDir` — directory served as static assets. Default: `./public`. Scanned from disk at startup in every mode, so it must ship with a production deploy.
@@ -84,6 +85,28 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 <Callout type="info">
 
 **Sync `assetPrefix` between build and runtime.** When using a prebuilt manifest, pass `assetPrefix` to the `build()` call (or `--asset-prefix`) so the baked-in URLs match. The manifest's URLs take precedence at runtime if the two disagree.
+
+</Callout>
+
+### Optimized devalue
+
+<VersionNote since="0.10.0" message="useOptimizedDevalue ships in the next Mochi release (0.10.0). This section describes the upcoming API." />
+
+Mochi vendors its own build of [`devalue`](https://github.com/sveltejs/devalue) and serializes island props, `hydratable()` values and `enhance` payloads with it. Output is byte-for-byte identical to the npm package; it is only faster.
+
+```ts
+// file: src/index.ts
+await Mochi.serve({
+  useOptimizedDevalue: false, // use the installed `devalue` instead
+  routes,
+});
+```
+
+Set it to `false` to rule the vendored build out while debugging a serialization difference.
+
+<Callout type="info">
+
+**The value is baked into the build.** `mochi-framework build` reads it from your entry and records it in the manifest, so compiled chunks and client bundles carry whichever implementation was chosen at build time. Change it and rebuild; when a manifest disagrees with `Mochi.serve()`, the manifest wins and Mochi warns.
 
 </Callout>
 

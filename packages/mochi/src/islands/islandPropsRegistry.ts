@@ -1,4 +1,4 @@
-import { stringify } from 'devalue';
+import { stringify } from '../utils/devalue';
 import { getRequestContext } from '../runtime/requestContext';
 
 /** One entry in the per-render dedup registry (`ctx.islandProps`): a unique serialized payload's ref id, how many islands emitted it, and every props bag that serialized to it. */

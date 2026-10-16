@@ -57,3 +57,4 @@ tasks*
 snapshots*
 .memtest-out
 paseo.json
+DEVALUE_PERF_REPORT.md

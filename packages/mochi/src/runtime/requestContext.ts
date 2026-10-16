@@ -140,6 +140,8 @@ export interface DebugBarConfig {
   liveReload: boolean;
   warmup: boolean;
   compressServerIslandProps: boolean;
+  /** The effective value after manifest reconciliation, not necessarily what `Mochi.serve()` was passed. */
+  useOptimizedDevalue: boolean;
   trailingSlash: 'never' | 'always';
   assetPrefix?: string;
   logLevel: string;

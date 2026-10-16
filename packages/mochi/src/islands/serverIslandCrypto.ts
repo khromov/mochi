@@ -4,7 +4,7 @@
  * The component name binds as AAD — the one request-identifying part of `/_mochi/island/<componentName>?props=…` —
  * which stops a props token sealed for one component being replayed against another.
  */
-import { parse as devalParse } from 'devalue';
+import { parse as devalParse } from '../utils/devalue';
 import { getMochiConfig } from '../mochiConfig';
 import { requestContext } from '../runtime/requestContext';
 import { encryptPayload, decryptPayload } from './payloadCrypto';

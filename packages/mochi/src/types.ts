@@ -326,7 +326,7 @@ export interface MochiManifestComponent {
 
 export interface MochiManifest {
   /**
-   * Schema version of the on-disk build output; the runtime loads only the exact version it writes (currently 3)
+   * Schema version of the on-disk build output; the runtime loads only the exact version it writes (currently 4)
    * and throws on anything else, so build and serve must use the same `mochi-framework` version.
    *
    * Every manifest path is relative, in one of three families:
@@ -344,6 +344,8 @@ export interface MochiManifest {
    * the count — see `publicFileCount`.
    */
   version: number;
+  /** Which devalue the compiled chunks were built against, so the runtime can match it rather than silently disagreeing. See `MochiServeOptions['useOptimizedDevalue']`. */
+  useOptimizedDevalue?: boolean;
   /** URL prefix under which framework client assets and the server island endpoint are served. */
   assetPrefix: string;
   bootstrapUrl: string | null;
@@ -537,6 +539,15 @@ export interface MochiServeOptions {
   handleError?: HandleError;
   /** Deflate-compress server island props when it reduces size. Default: true. */
   compressServerIslandProps?: boolean;
+  /**
+   * Serialize with Mochi's vendored `devalue` build (`src/vendor/devalue/`) rather than the installed npm `devalue`.
+   * Output is byte-identical either way — this only trades CPU, and the vendored build is markedly faster at
+   * `stringify`/`uneval`. Default: `true`.
+   *
+   * The value is baked into compiled SSR chunks and client bundles, so `mochi-framework build` reads it straight
+   * from your entry's `Mochi.serve()` call; changing it needs a rebuild, and a prebuilt manifest's value wins.
+   */
+  useOptimizedDevalue?: boolean;
   /**
    * Render nested `mochi:defer` islands in-process during an island fetch instead of emitting further client fetches,
    * collapsing an N-level chain into one request. `mochi:defer:visible` children always keep their own lazy fetch, and a
