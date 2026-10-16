@@ -1,3 +1,5 @@
+import type { MochiClientBindOptions, ResolvedBindOptions } from '../runtime/clientBind';
+
 export type MochiProtectionKind = 'page' | 'api' | 'ws' | 'sse' | 'island' | 'file' | 'fallback';
 
 export interface MochiProtectionContext {
@@ -34,6 +36,12 @@ export interface MochiProtectionOptions {
   maxAttempts?: number;
   /** Name of the clearance cookie. Default: `_mochi_clearance`. */
   cookieName?: string;
+  /**
+   * Bind clearances to the client: the network prefix (/24 IPv4, /64 IPv6 — tolerant of CGNAT and mobile IP rotation)
+   * plus a set of key request headers. A mismatch silently re-challenges. `false` disables binding entirely.
+   * Default: `{ network: true, headers: ['accept-language', 'user-agent'] }`.
+   */
+  bind?: MochiClientBindOptions;
 }
 
 export interface ResolvedProtectionOptions {
@@ -46,6 +54,7 @@ export interface ResolvedProtectionOptions {
   protectFiles: boolean;
   maxAttempts: number;
   cookieName: string;
+  bind: ResolvedBindOptions;
 }
 
 /** Props a custom `protection.page` component receives — everything `<MochiCaptchaAuto />` needs, ready to spread. */

@@ -10,6 +10,7 @@ description: 'Slide-to-verify captcha with proof-of-work, replay protection, and
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
   import PersistenceTable from './_components/PersistenceTable.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
   import captchaShot from './images/captcha.png';
 </script>
 
@@ -165,6 +166,7 @@ await Mochi.serve({
 | `maxAgeMs`  | `900_000`                      | Reject tokens older than this (15 minutes).                                 |
 | `store`     | `'memory'`                     | One-time nonce store: `'memory'`, `'sqlite'`, or your own `NonceStore`.     |
 | `storePath` | `.mochi/captcha-nonces.sqlite` | SQLite file when `store: 'sqlite'`.                                         |
+| `bind`      | `false`                        | Bind tokens to the minting client — see [Client binding](#client-binding).  |
 
 `'memory'` and `'sqlite'` are the only built-in nonce backends; anything else — Redis, Postgres, your own database — is a custom `NonceStore`. See [Persistence](/docs/persistence/) for how that compares across Mochi.
 
@@ -224,9 +226,34 @@ send: async ({ formData }) => {
 },
 ```
 
+### Client binding
+
+<VersionNote since="0.10.0" message="Captcha client binding ships in 0.10.0." />
+
+Opt-in: seal the minting client's identity — network prefix (`/24` IPv4, `/64` IPv6) plus key headers (`accept-language`, `user-agent` by default) — into the token, so a token minted for one visitor cannot be solved and redeemed from elsewhere.
+
+```ts
+await Mochi.serve({
+  captcha: { bind: true }, // or { network: false } / { headers: [...] }
+  routes,
+});
+```
+
+Minting and verifying then must run inside a request context (`serverProps`, actions, `Mochi.api`) — `mintCaptcha()` throws outside one. Both accept explicit inputs instead: `mintCaptcha({ bind: true, bindInputs: { address, headers } })` and `verifyCaptcha(formData, { bindInputs })`. Per-call `bind` overrides the global, and the header set is sealed into the token, so config changes never strand in-flight tokens.
+
+A mismatch is reported as the usual generic `'rejected'`; the [`captcha:verify` event](/docs/events/#captchaverify) carries the real `'bind-mismatch'`. A bound token verified with no request context and no `bindInputs` fails closed.
+
+<Callout type="warning">
+
+Pages embedding bound captchas must not be cached across clients — the token only verifies for the visitor it was minted for.
+
+</Callout>
+
+For tests, `solveCaptcha()` works on bound tokens unchanged; pass the same `bindInputs` to mint and verify.
+
 ### Custom messages
 
-`captcha.error` is ready to render. A failure also carries a `reason`, which is only ever `'replay'` or `'rejected'` (tampered, too-fast, expired, and bad proof-of-work all collapse into `'rejected'`). To distinguish the rest, listen for the [`captcha:verify` event](/docs/events/#captchaverify) — operators get the true cause, the client never does.
+`captcha.error` is ready to render. A failure also carries a `reason`, which is only ever `'replay'` or `'rejected'` (tampered, too-fast, expired, bad proof-of-work, and bind mismatches all collapse into `'rejected'`). To distinguish the rest, listen for the [`captcha:verify` event](/docs/events/#captchaverify) — operators get the true cause, the client never does.
 
 ```ts
 const captcha = await verifyCaptcha(formData);

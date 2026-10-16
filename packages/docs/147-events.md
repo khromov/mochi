@@ -427,12 +427,12 @@ Fires whenever the registry rebuilds the hydratable client bundle. Production bu
 
 Fires when [`verifyCaptcha()`](/docs/captcha/) finishes. The client gets one generic message, but this event carries the real cause.
 
-| Field    | Type                  | Notes                                                                     |
-| -------- | --------------------- | ------------------------------------------------------------------------- |
-| `ok`     | `boolean`             | whether verification passed                                               |
-| `reason` | `MochiCaptchaReason`  | `'ok' \| 'malformed' \| 'expired' \| 'too-fast' \| 'bad-pow' \| 'replay'` |
-| `bits`   | `number \| undefined` | difficulty sealed in the token                                            |
-| `ageMs`  | `number \| undefined` | token age at verification                                                 |
+| Field    | Type                  | Notes                                                                                        |
+| -------- | --------------------- | -------------------------------------------------------------------------------------------- |
+| `ok`     | `boolean`             | whether verification passed                                                                  |
+| `reason` | `MochiCaptchaReason`  | `'ok' \| 'malformed' \| 'expired' \| 'too-fast' \| 'bad-pow' \| 'bind-mismatch' \| 'replay'` |
+| `bits`   | `number \| undefined` | difficulty sealed in the token                                                               |
+| `ageMs`  | `number \| undefined` | token age at verification                                                                    |
 
 #### `island:error`
 

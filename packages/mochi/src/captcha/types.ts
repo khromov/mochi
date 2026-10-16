@@ -1,3 +1,5 @@
+import type { MochiClientBindOptions, ResolvedBindOptions } from '../runtime/clientBind';
+
 export interface NonceStore {
   /** Atomically record the nonce; false if it was already seen (and not expired). */
   consume(nonce: string, expiresAt: number): boolean | Promise<boolean>;
@@ -20,6 +22,12 @@ export interface MochiCaptchaOptions {
   store?: 'memory' | 'sqlite' | NonceStore;
   /** SQLite file when `store: 'sqlite'`. Default: `.mochi/captcha-nonces.sqlite`. */
   storePath?: string;
+  /**
+   * Bind minted tokens to the client (network prefix + key headers), so a token minted for one visitor can't be solved
+   * and redeemed from elsewhere. Requires minting and verifying inside a request context (or passing explicit
+   * `bindInputs`). Default: `false`.
+   */
+  bind?: MochiClientBindOptions;
 }
 
 export interface ResolvedCaptchaOptions {
@@ -32,6 +40,7 @@ export interface ResolvedCaptchaOptions {
   solveBudgetMs: number;
   store: 'memory' | 'sqlite' | NonceStore;
   storePath: string;
+  bind: ResolvedBindOptions;
 }
 
 /**
