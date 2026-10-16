@@ -62,6 +62,7 @@ import Table from '@lucide/svelte/icons/table';
 import SunMoon from '@lucide/svelte/icons/sun-moon';
 import CalendarClock from '@lucide/svelte/icons/calendar-clock';
 import FolderOpen from '@lucide/svelte/icons/folder-open';
+import Blocks from '@lucide/svelte/icons/blocks';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -85,6 +86,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'API Endpoints': { icon: Webhook, label: 'JSON API routes' },
   'Rate Limiting': { icon: Gauge, label: 'Per-route request throttling by IP' },
   'Shared State': { icon: Share2, label: 'Shared $state across islands' },
+  'Web Components': { icon: Blocks, label: 'Custom elements, local + npm' },
   'Real-time Streams': { icon: AudioWaveform, label: 'WebSocket + SSE streams' },
   'Background jobs with queues': { icon: Inbox, label: 'Embedded job queue + worker' },
   'Scheduled jobs with cron': { icon: CalendarClock, label: 'Recurring job on a cron schedule' },
