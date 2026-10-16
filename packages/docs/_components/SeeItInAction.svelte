@@ -6,6 +6,7 @@
   import Globe from '@lucide/svelte/icons/globe';
   import Snowflake from '@lucide/svelte/icons/snowflake';
   import Cookie from '@lucide/svelte/icons/cookie';
+  import Flag from '@lucide/svelte/icons/flag';
   import Link from '@lucide/svelte/icons/link';
   import Blend from '@lucide/svelte/icons/blend';
   import Tornado from '@lucide/svelte/icons/tornado';
@@ -48,6 +49,7 @@
     '/demos/data-loading/': Globe,
     '/demos/hydratable/': Snowflake,
     '/demos/cookies/': Cookie,
+    '/demos/feature-flags/': Flag,
     '/demos/url/': Link,
     '/demos/view-transitions/': Blend,
     '/demos/custom-transitions/': Tornado,
