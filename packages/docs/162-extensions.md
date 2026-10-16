@@ -132,6 +132,12 @@ await Mochi.serve({
 });
 ```
 
+<Callout type="warning">
+
+Registering this filter tells Mochi the app owns its CSRF policy, so the framework stops predicting on its behalf: the boot-time `proxy.origin` warning and the per-request "would be blocked in production" development forecast both go quiet, even when the filter only delegates. Set `proxy.origin` (or `proxy.hostHeader`) yourself — without it every form POST still 403s in production.
+
+</Callout>
+
 #### `trailingSlash:redirect`
 
 Override the `trailingSlash` policy for the current request. The filter receives the computed redirect (a 301/308 `Response` or `null`). Return the input to delegate, or `null` to skip the redirect. Sync. It runs only when a `Mochi.page()` route matches; every other route kind and unmatched paths are [exempt from `trailingSlash` outright](/docs/trailing-slash/) and never reach it.

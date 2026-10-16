@@ -474,6 +474,111 @@ describe('csrfCheck via csrf:check filter', () => {
   });
 });
 
+// Warnings describe the effective decision, so the filter has to resolve before anything is logged.
+describe('csrfCheck diagnostics follow the csrf:check filter', () => {
+  // Hook-managed spy so a failed assertion can't leak it into later tests.
+  let warn: Mock<typeof console.warn>;
+  beforeEach(() => {
+    warn = spyOn(console, 'warn').mockImplementation(() => {});
+    initExtensions({});
+  });
+  afterEach(() => {
+    warn.mockRestore();
+    initExtensions({});
+  });
+
+  const warnings = () => warn.mock.calls.map((call) => call.join(' '));
+  const crossOrigin = () => req('DELETE', { origin: 'http://evil.example' });
+  const exempt = () => initExtensions({ filters: { 'csrf:check': () => null } });
+
+  test('production without an exemption: 403 and one blocking warning', () => {
+    expect(csrfCheck(crossOrigin(), sameUrl, undefined, PROD_PROXY, false)?.status).toBe(403);
+    expect(warnings()).toHaveLength(1);
+    expect(warnings()[0]).toContain('CSRF: blocking DELETE /submit');
+  });
+
+  test('production with an exemption: allowed and silent', () => {
+    exempt();
+    expect(csrfCheck(crossOrigin(), sameUrl, undefined, PROD_PROXY, false)).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  test('development without an exemption: allowed, warns that production would block', () => {
+    expect(csrfCheck(crossOrigin(), sameUrl, undefined, PROD_PROXY, true)).toBeNull();
+    expect(warnings()).toHaveLength(1);
+    expect(warnings()[0]).toContain('would be blocked in production');
+    expect(warnings()[0]).not.toContain('CSRF: blocking');
+  });
+
+  test('development with an exemption: allowed, never claims production would block', () => {
+    exempt();
+    expect(csrfCheck(crossOrigin(), sameUrl, undefined, PROD_PROXY, true)).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  test('no proxy origin, production: exemption allows and silences the missing-config block', () => {
+    const r = req('POST', { contentType: 'application/x-www-form-urlencoded', origin: SAME });
+    expect(csrfCheck(r, sameUrl, undefined, undefined, false)?.status).toBe(403);
+    expect(warnings()[0]).toContain('no proxy.origin or proxy.hostHeader configured');
+
+    warn.mockClear();
+    exempt();
+    expect(csrfCheck(r, sameUrl, undefined, undefined, false)).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  test('no proxy origin, development: exemption allows and silences the missing-config warning', () => {
+    const r = req('POST', { contentType: 'application/x-www-form-urlencoded', origin: SAME });
+    expect(csrfCheck(r, sameUrl, undefined, undefined, true)).toBeNull();
+    expect(warnings()[0]).toContain('would be blocked in production');
+
+    warn.mockClear();
+    exempt();
+    expect(csrfCheck(r, sameUrl, undefined, undefined, true)).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  test('a custom filter response is reported as the filter response, with the underlying cause', () => {
+    initExtensions({ filters: { 'csrf:check': () => new Response('go away', { status: 418 }) } });
+    expect(csrfCheck(crossOrigin(), sameUrl, undefined, PROD_PROXY, false)?.status).toBe(418);
+    expect(warnings()).toHaveLength(1);
+    expect(warnings()[0]).toContain('with the 418 response returned by the csrf:check filter');
+    expect(warnings()[0]).toContain('does not match expected http://localhost:3333');
+  });
+
+  test('a custom filter response blocking an otherwise-allowed request omits a cause', () => {
+    initExtensions({ filters: { 'csrf:check': () => new Response('nope', { status: 401 }) } });
+    const sameOrigin = req('POST', { contentType: 'application/x-www-form-urlencoded', origin: SAME });
+    expect(csrfCheck(sameOrigin, sameUrl, undefined, PROD_PROXY, false)?.status).toBe(401);
+    expect(warnings()).toHaveLength(1);
+    expect(warnings()[0]).toContain('CSRF: blocking POST /submit with the 401 response returned by the csrf:check filter.');
+    expect(warnings()[0]).not.toContain('does not match expected');
+  });
+
+  test('a filter that blocks only in development reports a rejection, not a forecast', () => {
+    initExtensions({ filters: { 'csrf:check': () => new Response('nope', { status: 403 }) } });
+    expect(csrfCheck(crossOrigin(), sameUrl, undefined, PROD_PROXY, true)?.status).toBe(403);
+    expect(warnings()[0]).toContain('with the 403 response returned by the csrf:check filter');
+    expect(warnings()[0]).not.toContain('would be blocked in production');
+  });
+
+  test('a delegating filter still gets the framework default blocking warning', () => {
+    initExtensions({ filters: { 'csrf:check': (decision) => decision } });
+    expect(csrfCheck(crossOrigin(), sameUrl, undefined, PROD_PROXY, false)?.status).toBe(403);
+    expect(warnings()).toHaveLength(1);
+    expect(warnings()[0]).toContain('CSRF: blocking DELETE /submit — origin http://evil.example');
+    expect(warnings()[0]).not.toContain('csrf:check filter');
+  });
+
+  test('an allowed request stays silent whether or not a filter is registered', () => {
+    const sameOrigin = req('POST', { contentType: 'application/x-www-form-urlencoded', origin: SAME });
+    expect(csrfCheck(sameOrigin, sameUrl, undefined, PROD_PROXY, false)).toBeNull();
+    initExtensions({ filters: { 'csrf:check': (decision) => decision } });
+    expect(csrfCheck(sameOrigin, sameUrl, undefined, PROD_PROXY, true)).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
 describe('csrfBootWarning', () => {
   const page = (actions?: Record<string, unknown>) => ({ __mochiPage: true, actions });
   const routesWithActions = { '/contact': page({ default: async () => null }), '/about': page() };
