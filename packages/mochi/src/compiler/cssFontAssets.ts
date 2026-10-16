@@ -57,7 +57,7 @@ export function fontContentHash(bytes: Uint8Array): string {
  * hooks for resolved references — fonts above the threshold get their bytes swapped for a unique marker at `onLoad`,
  * keeping the bundler in charge of discovery while the bundled CSS stays tiny.
  */
-export function createFontMarkerPlugin(inlineThreshold: number): { plugin: BunPlugin; refs: FontRef[] } {
+export function createFontMarkerPlugin(inlineThreshold: number, opts: { markAll?: boolean } = {}): { plugin: BunPlugin; refs: FontRef[] } {
   const refs: FontRef[] = [];
   const plugin: BunPlugin = {
     name: 'mochi-font-markers',
@@ -66,7 +66,8 @@ export function createFontMarkerPlugin(inlineThreshold: number): { plugin: BunPl
         const size = fs.statSync(args.path).size;
         // Declining a font Bun would copy rather than inline crashes its bundler (a segfault on 1.3.14, still a hard
         // Rust panic on 1.4.0, both exactly at 128 kB), so those take the marker path whatever the threshold says.
-        if (size <= inlineThreshold && size < BUN_CSS_COPY_THRESHOLD) {
+        // `markAll` (a stylesheet with a subset request) marks even the small ones, since the subset decides inlining.
+        if (!opts.markAll && size <= inlineThreshold && size < BUN_CSS_COPY_THRESHOLD) {
           return undefined;
         }
         const { marker, markerB64 } = markerFor(refs.length);

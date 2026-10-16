@@ -28,10 +28,15 @@ export function collectImageResources(assets: Iterable<LocalImageAsset>): Resour
 }
 
 /** Rows for fonts extracted from imported CSS, sharing the images' resources list. */
-export function collectFontResources(fonts: Iterable<{ diskPath: string }>): ResourceRow[] {
+export function collectFontResources(fonts: Iterable<{ diskPath: string; subsetOf?: number }>): ResourceRow[] {
   const rows: ResourceRow[] = [];
   for (const font of fonts) {
-    rows.push({ name: path.basename(font.diskPath), dimensions: '—', bytes: sizeOnDisk(font.diskPath), symbol: styleText('magenta', 'ƒ') });
+    rows.push({
+      name: path.basename(font.diskPath),
+      dimensions: font.subsetOf === undefined ? '—' : `subset of ${prettyBytes(font.subsetOf)}`,
+      bytes: sizeOnDisk(font.diskPath),
+      symbol: styleText('magenta', 'ƒ'),
+    });
   }
   return rows.sort(byLargest);
 }
