@@ -298,6 +298,15 @@ export interface MochiWarmupCompleteEvent {
   durationMs: number;
 }
 
+export interface MochiDictionaryReadyEvent {
+  /** Lowercase hex SHA-256 of the dictionary — also its `/_mochi/dictionary/:hash` URL segment. */
+  hash: string;
+  sizeBytes: number;
+  /** Static page routes whose HTML was harvested into the dictionary. */
+  routeCount: number;
+  durationMs: number;
+}
+
 export type MochiErrorKind = 'page' | 'api' | 'action' | 'file';
 
 export interface MochiErrorEvent {
@@ -457,6 +466,7 @@ export type MochiEventMap = {
   'server:stop': MochiServerStopEvent;
   'warmup:start': MochiWarmupStartEvent;
   'warmup:complete': MochiWarmupCompleteEvent;
+  'dictionary:ready': MochiDictionaryReadyEvent;
   error: MochiErrorEvent;
   'action:invoke': MochiActionInvokeEvent;
   'action:complete': MochiActionCompleteEvent;
