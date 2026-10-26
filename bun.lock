@@ -7,7 +7,7 @@
       "devDependencies": {
         "@eslint/js": "^10.0.1",
         "@memlab/api": "^2.0.4",
-        "@types/bun": "1.4.1",
+        "@types/bun": "1.4.4",
         "eslint": "^10.8.0",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-svelte": "^3.22.0",
@@ -30,7 +30,7 @@
         "commander": "^15.0.0",
       },
       "devDependencies": {
-        "@types/bun": "1.4.1",
+        "@types/bun": "1.4.4",
         "typescript": "^6.0.3",
       },
     },
@@ -49,7 +49,7 @@
         "tailwindcss": "^4.3.3",
       },
       "devDependencies": {
-        "@types/bun": "1.4.1",
+        "@types/bun": "1.4.4",
         "svelte-check": "4.7.4",
         "typescript": "^6.0.3",
       },
@@ -57,7 +57,7 @@
     "packages/docker": {
       "name": "mochi-docker",
       "devDependencies": {
-        "@types/bun": "1.4.1",
+        "@types/bun": "1.4.4",
         "typescript": "^6.0.3",
       },
     },
@@ -82,7 +82,7 @@
         "svelte": "^5.56.8",
       },
       "devDependencies": {
-        "@types/bun": "1.4.1",
+        "@types/bun": "1.4.4",
         "svelte-check": "4.7.4",
         "typescript": "^6.0.3",
       },
@@ -95,7 +95,7 @@
       },
       "devDependencies": {
         "@mochi-framework/rsvelte": "workspace:*",
-        "@types/bun": "1.4.1",
+        "@types/bun": "1.4.4",
         "svelte-check": "4.7.4",
         "typescript": "^6.0.3",
       },
@@ -131,7 +131,7 @@
         "@happy-dom/global-registrator": "^20.11.1",
         "@tailwindcss/node": "^4.3.3",
         "@tailwindcss/oxide": "^4.3.3",
-        "@types/bun": "1.4.1",
+        "@types/bun": "1.4.4",
         "@types/smtp-server": "3.5.13",
         "fast-check": "4.9.0",
         "smtp-server": "3.19.2",
@@ -160,7 +160,7 @@
         "@rsvelte/vite-plugin-svelte-native": ">=0.2.8 <1.0.0",
       },
       "devDependencies": {
-        "@types/bun": "1.4.1",
+        "@types/bun": "1.4.4",
         "mochi-framework": "workspace:*",
         "svelte": "^5.56.8",
         "typescript": "^6.0.3",
@@ -179,7 +179,7 @@
         "svelte-shaker": ">=0.18.1",
       },
       "devDependencies": {
-        "@types/bun": "1.4.1",
+        "@types/bun": "1.4.4",
         "mochi-framework": "workspace:*",
         "svelte": "^5.56.8",
         "typescript": "^6.0.3",
@@ -205,7 +205,7 @@
         "mochi-framework": "workspace:*",
       },
       "devDependencies": {
-        "@types/bun": "1.4.1",
+        "@types/bun": "1.4.4",
         "typescript": "^6.0.3",
       },
     },
@@ -250,7 +250,7 @@
         "varlock": "1.16.0",
       },
       "devDependencies": {
-        "@types/bun": "1.4.1",
+        "@types/bun": "1.4.4",
         "svelte-check": "4.7.4",
         "typescript": "^6.0.3",
       },
@@ -266,7 +266,7 @@
         "svelte": "^5.56.8",
       },
       "devDependencies": {
-        "@types/bun": "1.4.1",
+        "@types/bun": "1.4.4",
         "devalue": "^5.9.0",
         "svelte-check": "4.7.4",
         "typescript": "^6.0.3",
@@ -282,7 +282,7 @@
         "subset-font": "2.5.0",
       },
       "devDependencies": {
-        "@types/bun": "1.4.1",
+        "@types/bun": "1.4.4",
         "typescript": "^6.0.3",
       },
     },
@@ -609,7 +609,7 @@
 
     "@twinkleplop/yaml": ["@twinkleplop/yaml@0.1.0", "", { "dependencies": { "@twinkleplop/core": "0.1.0" } }, "sha512-pg8q7rcZqYXq0uBF2R7Ok79hqF7wTT6KMy0wsDeVq0GTtRQB+Cf+0LS/BSVY/u2DU1g3i7lM40yKGoIKX66VQw=="],
 
-    "@types/bun": ["@types/bun@1.4.1", "", { "dependencies": { "bun-types": "1.4.1" } }, "sha512-0AVGiTXGajf1rgKom3N+c5L7CBxuoyyv1i44M0nX4UDK0G/fnRAMiri93nHuVPIb429KKtAgj7HatVmmOjeQLA=="],
+    "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
 
     "@types/d3-array": ["@types/d3-array@3.2.2", "", {}, "sha512-hOLWVbm7uRza0BYXpIIW5pxfrKe0W+D5lrFiAEYR+pb6w3N2SwSMaJbXdUfSEv+dT4MfHBLtn5js0LAWaO6otw=="],
 
@@ -729,7 +729,7 @@
 
     "bun-boss": ["bun-boss@0.5.1", "", { "dependencies": { "croner": "^10.0.1" }, "peerDependencies": { "@types/bun": ">=1.3.14" }, "optionalPeers": ["@types/bun"] }, "sha512-eRkLHfGx+cF1f2D5psluIfhq8oLnLSEBMukGXYdBfqnMAFUlvm+gkpNelg5w2plCen+r/OpE0Yfl1uLL0lGkXQ=="],
 
-    "bun-types": ["bun-types@1.4.1", "", { "dependencies": { "@types/node": "*" } }, "sha512-loKuVrAFZKfEv+JvWkHRS9GW5IqLuLRjVXN9p+vZvBN86O5hf/pBZQ5hSoyipsrMmWObZBDvWnlmKvjKTM0PdA=="],
+    "bun-types": ["bun-types@1.4.4", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-yjrJh5oGX7mMPKGd19YXyIjmEuj4G4zNC30bs7PM9Az7NQ3ndF3j6hbeRdvJTRQEhJ/FYQwW0a2moweEi2hMxQ=="],
 
     "call-bind": ["call-bind@1.0.9", "", { "dependencies": { "call-bind-apply-helpers": "^1.0.2", "es-define-property": "^1.0.1", "get-intrinsic": "^1.3.0", "set-function-length": "^1.2.2" } }, "sha512-a/hy+pNsFUTR+Iz8TCJvXudKVLAnz/DyeSUo10I5yvFDQJBFU2s9uqQpoSrJlroHUKoKqzg+epxyP9lqFdzfBQ=="],
 
