@@ -319,7 +319,7 @@ export class Mochi {
     const cssStylePrefix = `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty, mochi-hydratable-island[hydrate-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
       registry.development ? ISLAND_FAILURE_DEV_CSS : ''
     }</style>\n`;
-    const serverIslandScript = `<script>(()=>{${serverIslandClientJs}})()</script>`;
+    const serverIslandScript = `<script>${serverIslandClientJs}</script>`;
     const liveReloadTail = liveReloadClientJs ? `<script>${liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : '';
     const toolbarDiv = registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : '';
     const assetPrefixJson = JSON.stringify(registry.assetPrefix);
@@ -1862,7 +1862,7 @@ export class Mochi {
         if (assetContent !== undefined) {
           // `getClientFile()` returns only registered `.js` or `.css`, so extension alone decides and this branch stays
           // independent of the asset prefix.
-          const contentType = url.pathname.endsWith('.css') ? 'text/css' : 'application/javascript';
+          const contentType = url.pathname.endsWith('.css') ? 'text/css; charset=utf-8' : 'application/javascript; charset=utf-8';
           const headers: Record<string, string> = { 'Content-Type': contentType, 'X-Content-Type-Options': 'nosniff' };
           // Content-hashed filenames change URL whenever bytes change, so prod can mark them immutable; dev skips it to
           // keep live-reload edits out of the browser cache.
