@@ -526,7 +526,8 @@ describe('CSS imports — concurrent bundles sharing an emitted asset', () => {
 
   test('the shared non-font copy lands on one canonical name across every bundle', () => {
     const sheets = [...registry.getClientFiles().entries()].filter(([u]) => u.includes('/import-css/') && u.endsWith('.css'));
-    const names = new Set(sheets.map(([, css]) => /url\(\.\/([^)"']+\.png)\)/.exec(css)?.[1]));
+    // Bun 1.4.4 prints the spliced asset path bare and later versions quote it (oven-sh/bun#47025), so accept both.
+    const names = new Set(sheets.map(([, css]) => /url\((["']?)\.\/([^)"']+\.png)\1\)/.exec(css)?.[2]));
 
     // One name, not one per bundle: a per-build suffix surviving into the served name would point each stylesheet at
     // its own copy of identical bytes, and change that name on every rebuild.
