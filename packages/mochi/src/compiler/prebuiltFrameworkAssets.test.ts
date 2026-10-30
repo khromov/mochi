@@ -14,6 +14,7 @@ import { build } from '../cli/build';
 import { Mochi } from '../Mochi';
 import { mochiEvents } from '../events';
 import { buildInlineWebComponent } from './buildInlineWebComponent';
+import { resolveJsMinifier } from './jsMinifier';
 import type { MochiManifest } from '../types';
 
 const FIXTURE_PAGE = path.join(import.meta.dir, '..', '__fixtures__', 'server-island-endpoint', 'Page.svelte');
@@ -38,7 +39,7 @@ describe('build bakes framework assets into the manifest', () => {
     expect(await Bun.file(diskPath).exists()).toBe(true);
     const baked = await Bun.file(diskPath).text();
     expect(baked.length).toBeGreaterThan(0);
-    expect(baked).toBe(await buildInlineWebComponent('./web-components/ServerIsland.ts'));
+    expect(baked).toBe(await buildInlineWebComponent('./web-components/ServerIsland.ts', resolveJsMinifier()));
   });
 
   // Keyed by the literal `$mochi/` sentinel rather than by `encodeSourcePath()`
