@@ -71,6 +71,7 @@
     "typescript-eslint": "^8.65.0"
   },
   "overrides": {
+    "basic-ftp": "^6.2.1",
     "msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*"
   }
 }

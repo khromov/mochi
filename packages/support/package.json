@@ -23,7 +23,7 @@
   },
   "devDependencies": {
     "@types/bun": "1.4.4",
-    "devalue": "^5.9.0",
+    "devalue": "^5.9.3",
     "svelte-check": "4.7.4",
     "typescript": "^6.0.3"
   },
