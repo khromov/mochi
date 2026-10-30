@@ -59,7 +59,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@memlab/api": "^2.0.4",
-    "@types/bun": "1.4.1",
+    "@types/bun": "1.4.4",
     "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-svelte": "^3.22.0",
@@ -71,6 +71,7 @@
     "typescript-eslint": "^8.65.0"
   },
   "overrides": {
+    "basic-ftp": "^6.2.1",
     "msgpackr-extract": "npm:@mochi-framework/msgpackr-extract-stub@*"
   }
 }
