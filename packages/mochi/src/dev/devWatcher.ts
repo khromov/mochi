@@ -4,6 +4,8 @@ import path from 'node:path';
 import chokidar from 'chokidar';
 import debounce from '../vendor/debounce/index';
 import type { ComponentRegistry } from '../compiler/ComponentRegistry';
+import { resetPrerenderEvaluationCache } from '../compiler/prerenderModules';
+import { resolveOutDir } from '../compiler/resolveOutDir';
 import { mochiEvents } from '../events';
 import type { MochiFileChangeType } from '../events';
 import { logger } from '../utils/log';
@@ -11,6 +13,8 @@ import { evictPreprocessCacheEntry } from '../compiler/preprocessCache';
 import { extractServeOptions } from '../cli/extractServeOptions';
 import { startCronRuntime, stopCronRuntime } from '../queue';
 import { cronSignature, type MochiCronJob } from '../cron';
+import { reloadImageOptions } from '../image/config';
+import type { MochiImageOptions } from '../image/types';
 import type { MochiQueueStorage } from '../queue';
 import { buildPublicUrl } from '../runtime/proxy';
 import { resolvePublicFiles, registerPublicRoutes, type PublicRouteGuard } from '../runtime/publicDir';
@@ -39,6 +43,21 @@ import {
 
 const FILE_CHANGE_EVENTS = new Set<string>(['add', 'change', 'unlink', 'addDir', 'unlinkDir']);
 
+const STRUCTURAL_EXTENSIONS = new Set(['.svelte', '.md', '.svx', '.ts', '.mts', '.cts', '.js', '.mjs', '.cjs', '.json', '.yaml', '.yml', '.txt', '.csv', '.html']);
+
+/**
+ * Whether an add/unlink may change what a prerendered module derives from a directory listing. An edit to an existing
+ * file already reaches its dependents through the import graph, and editor temp files (`.swp`, `4913`, `___jb_tmp___`,
+ * `.DS_Store`) and directories carry nothing such a module reads.
+ */
+export function isStructuralChange(event: string, filePath: string): boolean {
+  if (event !== 'add' && event !== 'unlink') {
+    return false;
+  }
+  const base = path.basename(filePath);
+  return !base.startsWith('.') && STRUCTURAL_EXTENSIONS.has(path.extname(base));
+}
+
 // Chokidar reports a rename as unlink-old + add-new, so logging the verb per
 // event surfaces both the old and new filename instead of just "changed".
 function publicChangeVerb(event: string): string {
@@ -54,9 +73,11 @@ function publicChangeVerb(event: string): string {
 /**
  * Whether a changed file belongs to the server-entry bundle graph, so its change must rebuild the entry (route wiring).
  * A `.svelte` file is never routed here — it recompiles on the page path — even if it is also an entry input.
+ * Until a build has succeeded the graph is unknown, so every other change retries it: the dep set is only ever
+ * populated by a successful build, and without the retry one failed build would strand route HMR for the session.
  */
-export function isServerEntryDep(filePath: string, serverEntryDeps: Set<string>): boolean {
-  return !filePath.endsWith('.svelte') && serverEntryDeps.has(path.resolve(filePath));
+export function isServerEntryDep(filePath: string, serverEntryDeps: Set<string>, entryGraphKnown = true): boolean {
+  return !filePath.endsWith('.svelte') && (!entryGraphKnown || serverEntryDeps.has(path.resolve(filePath)));
 }
 
 // Each entry reload re-evaluates the whole first-party module graph, so a module-scoped resource (a DB pool, a timer,
@@ -174,8 +195,16 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   // Serializing rebuilds through a Promise chain holds the WebSocket reload until client JS chunks are ready; saves
   // arriving mid-rebuild append to the chain, so the browser reloads once, into fresh chunks.
   let reloadChain: Promise<void> = Promise.resolve();
+
+  // Sticky across the debounce window: chokidar can follow an 'add' with a 'change', and only the last call's arguments survive.
+  let pendingStructural = false;
   const triggerReload = debounce((filename: string) => {
+    const structural = pendingStructural;
+    pendingStructural = false;
     reloadChain = reloadChain.then(async () => {
+      // Cleared here rather than on the watcher event, so it cannot land between this rebuild's server and client
+      // passes and let them inline different values into the same island.
+      resetPrerenderEvaluationCache();
       // pageCount on the start event is the universe size, not the
       // affected size — the watcher doesn't know which pages depend on
       // the changed file until recompileChanged inspects the graph.
@@ -184,16 +213,22 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
       let failed = false;
       try {
-        summary = await registry.recompileChanged(filename);
-        if (summary.pages.size === 0) {
-          const resolved = path.resolve(filename);
-          if (routeComponentPaths.has(resolved)) {
-            await registry.compile(resolved, { force: true });
-            summary = { pages: new Set([resolved]), clientBundleCount: 0 };
+        if (structural) {
+          const count = registry.getPrerenderModules().length;
+          if (count > 0) {
+            logger.info(`Rebuilding ${count} prerendered module${count === 1 ? '' : 's'} — their inputs are not in the import graph`);
           }
+        }
+        summary = await registry.recompileChanged(filename, { withPrerenderModules: structural });
+        const resolved = path.resolve(filename);
+        if (routeComponentPaths.has(resolved) && !summary.pages.has(resolved)) {
+          await registry.compile(resolved, { force: true });
+          summary = { pages: new Set([...summary.pages, resolved]), clientBundleCount: summary.clientBundleCount };
         }
       } catch (e) {
         failed = true;
+        // Consumed above but never acted on, so the next save still rebuilds the prerendered modules.
+        pendingStructural ||= structural;
         logger.warn(`Rebuild failed: ${e instanceof Error ? e.message : e}`);
       }
       mochiEvents.emit('recompile:complete', {
@@ -270,6 +305,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   // Building the entry module discovers its transitive deps, so a dep change can rebuild, re-extract routes via
   // `extractServeOptions`, and hot-swap handlers in place for the running server.
   let serverEntryDeps: Set<string> = new Set();
+  let entryGraphKnown = false;
   const entryBuildOutDir = path.resolve(`${outDir}/entry-hmr`);
 
   let entryReloadCount = 0;
@@ -281,7 +317,9 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       packages: 'external',
       target: 'bun',
       outdir: entryBuildOutDir,
-      naming: { entry: 'entry.js' },
+      // `[ext]` and not a literal `.js`: an entry graph that also imports CSS emits a second output under this same
+      // template, and without the extension both land on `entry.js` and the whole build fails on the collision.
+      naming: { entry: 'entry.[ext]' },
       metafile: true,
       throw: false,
     });
@@ -299,6 +337,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       }
     }
     serverEntryDeps = newDeps;
+    entryGraphKnown = true;
     const outFile = path.resolve(entryBuildOutDir, 'entry.js');
     const serveOptions = await extractServeOptions(outFile, { fresh: true });
     if (!serveOptions?.routes) {
@@ -307,6 +346,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     }
     reloadSpeculationRules?.(serveOptions.speculationRules);
     await reconcileCron(serveOptions as { cron?: MochiCronJob[]; cronStorage?: MochiQueueStorage; queueShutdownTimeout?: number });
+    reloadImage(serveOptions.image);
     const freshRoutes = serveOptions.routes as Record<string, unknown>;
 
     const newComponentPaths = new Set<string>();
@@ -344,6 +384,18 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       logger.info(`[cron] re-registered ${cron.length} job(s) after edit`);
     } catch (err) {
       logger.warn(`[cron] reload failed — no schedule is running; fix the error and save again: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  function reloadImage(image: MochiImageOptions | undefined): void {
+    try {
+      const restartFields = reloadImageOptions(image);
+      if (restartFields.length > 0) {
+        const fields = restartFields.map((f) => `image.${f}`).join(', ');
+        logger.warn(`[image] ${fields} changed — restart the dev server to apply ${restartFields.length > 1 ? 'them' : 'it'}`);
+      }
+    } catch (err) {
+      logger.warn(`[image] reload failed — keeping the previous image config: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -527,6 +579,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
 
   const triggerEntryReload = debounce((filename: string) => {
     reloadChain = reloadChain.then(async () => {
+      resetPrerenderEvaluationCache();
       mochiEvents.emit('recompile:start', { trigger: 'entry', path: filename, pageCount: registry.getPageCount() });
       const start = performance.now();
       let summary: { pages: Set<string>; clientBundleCount: number } = { pages: new Set(), clientBundleCount: 0 };
@@ -624,9 +677,17 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   });
 
   const finalWatchPaths = watchPaths.filter((p) => existsSync(p));
-  const outDirAbs = path.resolve(outDir);
+  const outDirAbs = resolveOutDir(outDir);
+  // Both sides go through the same canonicalisation, or a project root reached through a symlink spells the watched
+  // file one way and the out-dir another, and artifacts we just wrote look like user edits.
   const isInsideOutDir = (filePath: string): boolean => {
-    const abs = path.resolve(filePath);
+    let abs: string;
+    try {
+      abs = resolveOutDir(filePath);
+    } catch {
+      // An unreadable watched path must not take the watcher down, and it is not an artifact we wrote.
+      abs = path.resolve(filePath);
+    }
     return abs === outDirAbs || abs.startsWith(outDirAbs + path.sep);
   };
   const watcher = chokidar.watch(finalWatchPaths, {
@@ -703,11 +764,12 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
         reloadPublic();
       } else if (filePath.endsWith('.css')) {
         triggerCssReload(filePath);
-      } else if (isServerEntryDep(filePath, serverEntryDeps)) {
+      } else if (isServerEntryDep(filePath, serverEntryDeps, entryGraphKnown)) {
         // triggerEntryReload rebuilds the entry AND recompiles any page whose SSR bundle inlines this module, so the
         // exclusive branch is correct: one serialized task, one reload.
         triggerEntryReload(filePath);
       } else {
+        pendingStructural ||= isStructuralChange(event, filePath);
         triggerReload(filePath);
       }
     })
@@ -719,6 +781,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   const svelteConfigPath = path.resolve('svelte.config.js');
   const reloadSvelteConfig = debounce(() => {
     reloadChain = reloadChain.then(async () => {
+      resetPrerenderEvaluationCache();
       const pageCount = registry.getPageCount();
       mochiEvents.emit('recompile:start', { trigger: 'svelte-config', path: svelteConfigPath, pageCount });
       const start = performance.now();

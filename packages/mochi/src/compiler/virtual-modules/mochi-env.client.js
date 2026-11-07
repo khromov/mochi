@@ -49,6 +49,7 @@ export function devWarn(msg) { if (typeof window !== "undefined" && window.__moc
 // Isomorphic: pins a value on globalThis (per realm in the browser). Real re-export,
 // not a server-only stub, so island code can dedupe singletons on the client too.
 export { pinGlobal } from "__MOCHI_GLOBAL_STATE__";
+export { escapeHtmlAttr } from "__MOCHI_HTML_ESCAPE__";
 export { stringify, parse } from "__MOCHI_DEVALUE__";
 export { trailingSlashIt } from "__MOCHI_TRAILING_SLASH__";
 // Server-only; the preprocessor never injects __mochi_emit_props__
@@ -137,3 +138,6 @@ export { enhance, deserialize } from "__MOCHI_ENHANCE_CLIENT__";
 export function isHydratable() { return true; }
 // Server filesystem path — meaningless in the browser.
 export const PROTECTION_SHELL_COMPONENT = undefined;
+export function moduleRef(specifier) {
+  throw new Error("moduleRef(" + JSON.stringify(specifier) + ") only works inside a *.prerender.ts module, which runs at build time.");
+}

@@ -1,10 +1,7 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import RedirectDemo from './RedirectDemo.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
-
-  const sources = await loadSources(files);
+  import { sources } from './sources.prerender.ts';
 
   let { redirected }: { redirected: boolean } = $props();
 </script>

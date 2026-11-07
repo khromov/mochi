@@ -1,4 +1,4 @@
-import type { BunFile, Server, ServerWebSocket } from 'bun';
+import type { BunFile, Server, ServerWebSocket, WebSocketHandler } from 'bun';
 import type { Handle, HandleError, MochiEvent } from './runtime/hooks';
 import type { MochiCookieJar } from './runtime/cookies';
 import type { MochiCsrfOptions } from './runtime/csrf';
@@ -420,7 +420,7 @@ export interface MarkdownConfig {
   remarkPlugins?: unknown[];
   /**
    * Syntax highlighter for fenced code blocks; omit for mdsvex's bare `<pre><code>` output.
-   * Wrap Shiki, highlight.js, or any other library in a `(code, lang) => string | Promise<string>` function.
+   * Build one with `createTwinkleplopHighlighter` (or wrap any other library in a `(code, lang) => string | Promise<string>` function with `createHighlighter`) from `mochi-framework/highlight`.
    */
   highlight?: { highlighter: MarkdownHighlighter };
 }
@@ -446,15 +446,28 @@ export const FRAMEWORK_OWNED_BUN_KEYS = ['fetch', 'websocket', 'routes', 'error'
  */
 export type BunServeOverrides = Omit<NonNullable<Parameters<typeof Bun.serve>[0]>, (typeof FRAMEWORK_OWNED_BUN_KEYS)[number]>;
 
+/**
+ * Raw Bun WebSocket options, merged underneath the handlers Mochi installs for `Mochi.ws()` routes. `maxPayloadLength`
+ * is the only inbound size bound that runs before a frame is buffered — Bun defaults it to 16 MB, so `maxPayloadLength`
+ * caps what the server allocates while a check inside a `message` handler caps what you store.
+ */
+export type MochiWebSocketOptions = Omit<WebSocketHandler<MochiWsData>, 'open' | 'message' | 'close' | 'drain'>;
+
 export interface MochiServeOptions {
   port?: number;
   hostname?: string;
+  /** Bun WebSocket tuning shared by every `Mochi.ws()` route — see {@link MochiWebSocketOptions}. */
+  websocket?: MochiWebSocketOptions;
   /**
    * Escape hatch for raw `Bun.serve()` options Mochi doesn't surface — e.g.
    * `idleTimeout` (seconds; HTTP default 10, max 255, 0 disables), `maxRequestBodySize`,
    * `reusePort`, `tls`. Spread into `Bun.serve()`; framework-owned keys are rejected.
    */
   bun?: BunServeOverrides;
+  /**
+   * Force development mode on or off. Defaults to `NODE_ENV === 'development'`, which is also what `isDev` and
+   * `setupTailwind` read, so an override makes module top-level code — which already ran — disagree with the server.
+   */
   development?: boolean;
   /** Mount the dev-only debug toolbar. Default: `true`, and ignored entirely when `development` is `false`. */
   debugBar?: boolean;

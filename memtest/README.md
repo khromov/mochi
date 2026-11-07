@@ -16,7 +16,8 @@ multi-day unattended run on a dedicated server.
    is exercised each pass.
 4. **Snapshot loop** — captures a **baseline snapshot immediately after readiness**,
    before any load is applied, then every `SNAPSHOT_INTERVAL_MS` downloads `/_heapsnapshot`
-   (`Bun.generateHeapSnapshot('v8')`) with **curl** to
+   (`Bun.gc(true)` + `Bun.generateHeapSnapshot('v8')`, so the dump measures live
+   memory rather than live-plus-garbage) with **curl** to
    `/snapshots/heap-<timestamp>.heapsnapshot`, then prunes to the newest
    `SNAPSHOT_KEEP` files. curl runs as a separate process so the large body
    streams to disk with constant memory and never contends with the load loop

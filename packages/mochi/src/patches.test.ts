@@ -2,19 +2,17 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+// Scaffolds pair the templates with the published framework, so each template keeps its own
+// svelte-check patch until the release whose ambient types cover the directives is on npm.
 const PATCH = 'svelte-check@4.7.4.patch';
-const CANONICAL = join(import.meta.dir, '..', 'patches', PATCH);
-const TEMPLATE_COPIES = [join(import.meta.dir, '..', '..', 'minimal', 'patches', PATCH), join(import.meta.dir, '..', '..', 'demos', 'patches', PATCH)];
+const [reference, ...copies] = ['minimal', 'demos'].map((name) => join(import.meta.dir, '..', '..', name, 'patches', PATCH));
 
-describe('template patch copies match canonical', () => {
-  const canonical = readFileSync(CANONICAL);
+describe('template svelte-check patches stay identical', () => {
+  const expected = readFileSync(reference!);
 
-  for (const copy of TEMPLATE_COPIES) {
+  for (const copy of copies) {
     test(copy, () => {
-      // Templates can't reference the framework's `patches/` at install time
-      // (bun resolves patchedDependencies before unpacking node_modules), so
-      // each template ships its own copy. This test guards against drift.
-      expect(readFileSync(copy)).toEqual(canonical);
+      expect(readFileSync(copy)).toEqual(expected);
     });
   }
 });

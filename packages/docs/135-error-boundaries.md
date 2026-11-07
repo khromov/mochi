@@ -6,11 +6,12 @@ description: 'Hydratable islands are auto-wrapped in svelte:boundary, so one isl
 
 <script>
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Error boundaries
 
-Mochi auto-wraps every `mochi:hydrate` and `mochi:hydrate:visible` island in `<svelte:boundary>`. A throw inside one island no longer takes down the page render. Mochi replaces the failed island with a `<mochi-island-failure>` stub, and the rest of the page continues. No opt-in, no configuration.
+Mochi auto-wraps every `mochi:hydrate` and `mochi:hydrate:visible` island in `<svelte:boundary>`. A throw inside one island no longer takes down the page render. Mochi marks the failed island with a `<mochi-island-failure>` stub, and the rest of the page continues. No opt-in, no configuration.
 
 ### What is wrapped
 
@@ -30,7 +31,11 @@ A client-side throw logs to the browser console but does **not** emit `island:er
 
 ### Visual behavior
 
-In development, Mochi replaces the failed island with a dashed-red `<mochi-island-failure>` marker showing the component name and error message. In production, the element is hidden with `display: none`, so users see a clean gap.
+<VersionNote since="0.10.0" message="Before 0.10.0 a client-side hydration failure replaced the island's server-rendered markup with the marker." />
+
+In development, the `<mochi-island-failure>` marker is a dashed-red box showing the component name and error message. In production, it is hidden with `display: none`.
+
+What the marker replaces depends on where the failure happened. An SSR throw renders the marker instead of the island. A client-side failure — the bundle import, the CSS load, the props payload, or `hydrate()` itself — keeps the server-rendered markup and appends the marker after it. The static HTML stays on screen; it just never becomes interactive.
 
 ### Server islands (`mochi:defer`)
 

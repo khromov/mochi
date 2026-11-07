@@ -1,16 +1,13 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
-
-  const sources = await loadSources(files);
+  import { sources } from './sources.prerender.ts';
 
   let { used, limit, resetIn }: { used: number; limit: number; resetIn: number } = $props();
 </script>
 
 <DemoPage
   title="Rate Limiting"
-  description="Add rateLimit to any Mochi.page() or Mochi.api() route — or globally on Mochi.serve() — to throttle requests per client. Requests are keyed by the proxy-aware client IP by default, memory-backed out of the box, with sqliteStore and postgresStore for persistence. Blocked page routes render the error page with a 429; API routes return JSON with RateLimit-* headers."
+  description="Add rateLimit to any Mochi.page() or Mochi.api() route — or globally on Mochi.serve() — to throttle requests per client. Requests are keyed by the proxy-aware client IP by default, memory-backed out of the box, with rateLimitSqliteStore and rateLimitPostgresStore for persistence. Blocked page routes render the error page with a 429; API routes return JSON with RateLimit-* headers."
   {sources}
 >
   <div class="card">

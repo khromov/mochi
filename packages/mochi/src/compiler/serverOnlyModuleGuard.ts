@@ -17,6 +17,7 @@ const SERVER_ONLY_MODULES = new Map<string, string>([
   [path.join(SRC_DIR, 'extensions.ts'), 'hooks and filters'],
   [path.join(SRC_DIR, 'mochiConfig.ts'), 'the Mochi.serve() config singleton'],
   [path.join(SRC_DIR, 'runtime', 'requestContext.ts'), 'the request context'],
+  [path.join(SRC_DIR, 'utils', 'env.ts'), 'the dev-mode flag'],
 ]);
 
 /** Injected by every browser build so `utils/serverOnly.ts` can tell which bundle it landed in. */
@@ -25,7 +26,7 @@ export const CLIENT_BUILD_DEFINE = { MOCHI_CLIENT: 'true' } as const;
 // Narrow enough that the handler runs for a handful of specifiers per build; a
 // user file that happens to share one of these basenames falls through to normal
 // resolution below.
-const CANDIDATE_SPECIFIER = /(^|[\\/])(extensions|mochiConfig|requestContext)(\.[jt]s)?$/;
+const CANDIDATE_SPECIFIER = /(^|[\\/])(extensions|mochiConfig|requestContext|env)(\.[jt]s)?$/;
 
 export const serverOnlyModuleGuard: BunPlugin = {
   name: 'mochi-server-only-module-guard',

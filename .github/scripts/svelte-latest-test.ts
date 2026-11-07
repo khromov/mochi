@@ -146,7 +146,7 @@ async function smokeTest(scaffoldDir: string): Promise<RunResult> {
     cwd: scaffoldDir,
     stdout: 'pipe',
     stderr: 'pipe',
-    env: { ...process.env, PORT: String(SMOKE_PORT), MODE: 'production' },
+    env: { ...process.env, PORT: String(SMOKE_PORT), NODE_ENV: 'production' },
   });
 
   // Drain the pipes concurrently so a chatty server can't fill the OS buffer,

@@ -15,6 +15,8 @@ description: 'Prefetch and prerender same-site URLs via a typed speculationRules
 
 The [Speculation Rules API](https://developer.mozilla.org/en-US/docs/Web/API/Speculation_Rules_API) lets the browser prefetch or prerender same-site URLs ahead of a navigation, so the next page loads instantly. Pass a typed `speculationRules` object to `Mochi.serve()` and Mochi injects it as a `<script type="speculationrules">` tag in every page's `<head>`.
 
+`prerender` here is the browser hint, unrelated to [`*.prerender.ts` modules](/docs/prerender/).
+
 ```ts
 import { Mochi } from 'mochi-framework';
 import type { SpeculationRules } from 'mochi-framework';

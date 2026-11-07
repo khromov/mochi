@@ -5,19 +5,17 @@ import rehypeExternalLinks from './lib/rehypeExternalLinks';
 import { Mochi, mochiEvents, sequence, logger, noCache, compress, silenceInternalRoutes } from 'mochi-framework';
 import type { Handle, HandleError, MarkdownConfig, SpeculationRules } from 'mochi-framework';
 import { analytics } from 'mochi-shared';
-import { generateDocsBarrel } from './lib/generateDocsBarrel';
-import { generateBlogBarrel } from './lib/generateBlogBarrel';
 import { clearDocsCaches, DOCS_DIR } from './lib/docs';
 import { clearBlogCaches, BLOG_DIR } from './lib/blog';
 import { clearFeedCache } from './lib/feed';
-import { highlightCode } from './lib/highlight.server';
 import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes';
 import { handle as modeWatcherHandle } from './demos/mode-watcher/routes';
 import { handle as shotHandle } from './shot/routes';
 import { encodeDebugBarGlobals } from './lib/debugBarEncode';
 import { routes, queues, cron } from './routes';
+import { CHAT_WS_MAX_PAYLOAD_BYTES } from './demos/chat/routes';
 
-const DEVELOPMENT = process.env.MODE === 'development';
+const DEVELOPMENT = process.env.NODE_ENV === 'development';
 const IS_DOCKER = process.env.MOCHI_DOCKER === 'true';
 const immutableAssets: Handle = async ({ event, resolve }) => {
   const response = await resolve(event);
@@ -27,26 +25,21 @@ const immutableAssets: Handle = async ({ event, resolve }) => {
   return response;
 };
 
-if (process.env.MODE === 'development') {
-  await generateDocsBarrel();
-  await generateBlogBarrel();
-
+if (process.env.NODE_ENV === 'development') {
   const docsDirPrefix = DOCS_DIR + path.sep;
-  mochiEvents.setHandler('docs-cache-clear', 'file:change', async ({ path: changed }) => {
+  mochiEvents.setHandler('docs-cache-clear', 'file:change', ({ path: changed }) => {
     if (changed.startsWith(docsDirPrefix) && changed.endsWith('.md')) {
       clearDocsCaches();
-      await generateDocsBarrel();
     }
   });
 
   const blogDirPrefix = BLOG_DIR + path.sep;
-  mochiEvents.setHandler('blog-cache-clear', 'file:change', async ({ path: changed }) => {
+  mochiEvents.setHandler('blog-cache-clear', 'file:change', ({ path: changed }) => {
     if (changed.startsWith(blogDirPrefix) && changed.endsWith('.md')) {
       clearBlogCaches();
       clearFeedCache();
       // The sitemap cache lives with the docs caches and includes blog URLs.
       clearDocsCaches();
-      await generateBlogBarrel();
     }
   });
 }
@@ -127,7 +120,8 @@ const origin = CSRF_DOMAIN.includes('://') ? CSRF_DOMAIN : `${CSRF_PROTOCOL}://$
 const markdownConfig: MarkdownConfig = {
   compile: mdsvexCompile,
   rehypePlugins: [rehypeSlug, rehypeExternalLinks],
-  highlight: { highlighter: (code, lang) => highlightCode(code, lang) },
+  // Imported lazily so the grammars are only ever loaded by a build that actually compiles markdown, not by every server boot.
+  highlight: { highlighter: async (code, lang) => (await import('./lib/highlight.server')).highlightCode(code, lang) },
 };
 
 const speculationRules: SpeculationRules = {
@@ -168,9 +162,11 @@ const speculationRules: SpeculationRules = {
 
 await Mochi.serve({
   port: PORT,
-  development: DEVELOPMENT,
   liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
+  // `maxPayloadLength` is the only inbound bound running before Bun buffers a frame, and `idleTimeout` keeps Bun's
+  // keepalive pings landing inside nginx's 60s `proxy_read_timeout`, which would otherwise drop every idle tab.
+  websocket: { maxPayloadLength: CHAT_WS_MAX_PAYLOAD_BYTES, idleTimeout: 30 },
   speculationRules,
   trailingSlash: 'always',
   // /ci/dashboard is a chrome-free always-on display — it would otherwise report a pageview every refresh.
@@ -200,7 +196,8 @@ await Mochi.serve({
   warmup: { enabledInProd: true, enabledInDev: true },
   additionalWatchPaths: ['../docs'],
   logger: { level: 'log' },
-  proxy: { origin }, // TODO: This is a bit of an awkward way to set the allowed csrf domain...
+  // nginx is the socket peer for every visitor, so reading the rightmost entry nginx appends is what distinguishes them.
+  proxy: { origin, addressHeader: 'x-forwarded-for', xffDepth: 1 }, // TODO: This is a bit of an awkward way to set the allowed csrf domain...
   // Served straight from disk as one Bun directory route for the /demos/static-dirs page
   // (kept in sync with the example shown in ./src/demoIndex.ts).
   staticDirs: { '/gallery': './images' },

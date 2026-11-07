@@ -2,9 +2,8 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import CodeSnippet from '../../components/CodeSnippet.svelte';
   import ImageCredits from '../../components/ImageCredits.svelte';
-  import { loadSources } from '../../components/utils.ts';
+  import { sources } from './sources.prerender.ts';
   import { highlightCode } from '../../lib/highlight.server';
-  import { files } from './files.ts';
 
   const photos = [1, 2, 3, 6, 9, 13];
 
@@ -21,8 +20,6 @@
     ].join('\n'),
     'typescript',
   );
-
-  const sources = await loadSources(files);
 </script>
 
 <DemoPage

@@ -13,14 +13,17 @@ import path from 'node:path';
 import { scanPublicDir, publicRouteKey } from '../runtime/publicDir';
 import { scanEmailTemplates } from '../email/templates';
 import { encodeSourcePath } from '../compiler/manifestPaths';
+import { resolveOutDir } from '../compiler/resolveOutDir';
 import { loadSvelteConfig } from '../compiler/svelteConfig';
 import { logger, setLogLevel } from '../utils/log';
+import { relForDisplay } from '../utils/index';
 import { consoleLogger } from '../dev/consoleLogger';
 import { mochiEvents } from '../events';
 import type { MochiCompileCompleteEvent } from '../events';
 import { styleText } from 'node:util';
 import prettyBytes from '../vendor/pretty-bytes';
 import { collectFontResources, collectImageResources, mergeResourceRows, printResourceTree } from './resourceReport';
+import { printPrerenderModules } from './prerenderReport';
 
 export interface MochiBuildOptions {
   routes: Record<string, MochiRouteValue>;
@@ -95,7 +98,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   mochiEvents.on('compile:complete', onCompileComplete);
   try {
     const development = options.development ?? false;
-    const baseOutDir = options.outDir ?? './.mochi';
+    const baseOutDir = resolveOutDir(options.outDir ?? './.mochi');
     // Mirror the dev/prod split in Mochi.serve(): a `--dev` build nests under
     // `dev/` so it can't clobber the production manifest at the root.
     const outDir = development ? path.join(baseOutDir, 'dev') : baseOutDir;
@@ -249,6 +252,8 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     // island-only and client-only barrels are in the summary.
     registry.flushBarrelWarnings();
 
+    printPrerenderModules(registry.getPrerenderModules().map(relForDisplay));
+
     allRoutes.sort((a, b) => a.pattern.localeCompare(b.pattern, undefined, { numeric: true }));
     printBuildTree({
       routes: allRoutes,
@@ -296,7 +301,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     const emailSummary = emailTemplates.length > 0 ? `, ${emailTemplates.length} email template(s)` : '';
     const fontSummary = fontAssets.size > 0 ? `, ${fontAssets.size} font(s)` : '';
     logger.info(
-      `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s), ${imageAssets.size} image asset(s)${fontSummary}${emailSummary}. Manifest written to ${manifestPath}`,
+      `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s), ${imageAssets.size} image asset(s)${fontSummary}${emailSummary}. Manifest written to ${relForDisplay(manifestPath)}`,
     );
   } finally {
     mochiEvents.off('client-bundle:complete', onClientBundle);

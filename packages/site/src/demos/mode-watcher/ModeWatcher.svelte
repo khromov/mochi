@@ -2,13 +2,10 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import CodeSnippet from '../../components/CodeSnippet.svelte';
   import ModeControls from './ModeControls.svelte';
-  import { loadSources } from '../../components/utils.ts';
+  import { sources } from './sources.prerender.ts';
   import { highlightCode } from '../../lib/highlight.server';
-  import { files } from './files.ts';
 
   let { initialMode = null } = $props();
-
-  const sources = await loadSources(files);
 
   const codeInstall = await highlightCode('bun add mode-watcher', 'bash');
   const codeUsage = await highlightCode(

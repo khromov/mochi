@@ -65,6 +65,26 @@ const announced = new Set<string>();
 const envWarned = new Set<string>();
 
 /**
+ * An adapter that is installed but whose native binding won't load is a different problem from an
+ * absent one, and "install it" is actively wrong advice for the first — on Windows the usual cause
+ * is a missing C runtime, not a missing package.
+ * @internal Exported for testing.
+ */
+export function rsvelteFallbackAdvice(message: string): string {
+  // Recent adapters already rewrite their own binding failures with the actionable cause.
+  if (message.includes('VCRedist')) {
+    return '';
+  }
+  if (process.platform === 'win32' && message.includes('LoadLibrary')) {
+    return (
+      ' Its native binding is on disk but will not load — on Windows that usually means the Microsoft Visual C++ Redistributable is missing' +
+      ' (`winget install --id Microsoft.VCRedist.2015+.x64 -e`).'
+    );
+  }
+  return ` Install it with \`bun add -d ${RSVELTE_SPECIFIER}\`.`;
+}
+
+/**
  * @internal Load, validate and fall back — with the module loader injected so a
  * test can exercise a rejected import or a malformed export without uninstalling
  * the adapter. Never throws.
@@ -74,9 +94,9 @@ export async function loadRsvelte(load: () => Promise<unknown> = () => import(RS
   try {
     mod = await load();
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     logger.warn(
-      `svelteCompiler: 'rsvelte' was requested but ${RSVELTE_SPECIFIER} could not be loaded — falling back to svelte/compiler. ` +
-        `Install it with \`bun add -d ${RSVELTE_SPECIFIER}\`. (${err instanceof Error ? err.message : String(err)})`,
+      `svelteCompiler: 'rsvelte' was requested but ${RSVELTE_SPECIFIER} could not be loaded — falling back to svelte/compiler.` + `${rsvelteFallbackAdvice(message)} (${message})`,
     );
     return officialBackend;
   }

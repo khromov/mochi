@@ -4,7 +4,7 @@
  * Keeping the name on the wire makes tokens tiny and lets a size redefinition re-render existing URLs, since the
  * endpoint re-resolves the name against the current config.
  *
- * A leading `https://` or `http://` — the only protocols `assertPublicUrl` lets through — collapses to a single control
+ * A leading `https://` or `http://` — the only protocols `resolvePublicUrl` lets through — collapses to a single control
  * bit rather than literal bytes, which covers nearly every source and saves 7-8 bytes per image URL.
  *
  * Layout (before encryption):

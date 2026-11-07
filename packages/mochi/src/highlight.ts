@@ -20,16 +20,15 @@ export interface CreateHighlighterOptions {
 
 /**
  * Build a `highlightCode(code, lang)` function from any highlighting engine. You supply `highlight`, turning source into
- * themed HTML (e.g. Shiki's `codeToHtml`), and the result composes it with the code-block wrapper, copy button, and
- * Svelte-brace escape. Results memoize per `(code, lang)`, so a page re-highlighting the same snippets pays once.
+ * themed HTML, and the result composes it with the code-block wrapper, copy button, and Svelte-brace escape.
+ * Results memoize per `(code, lang)`, so a page re-highlighting the same snippets pays once.
  *
  * ```ts
- * import { createHighlighter as createShiki } from 'shiki';
+ * import hljs from 'highlight.js';
  * import { createHighlighter } from 'mochi-framework/highlight';
  *
- * const shiki = await createShiki({ themes: ['vitesse-dark'], langs: ['typescript'] });
  * export const highlightCode = createHighlighter((code, lang) =>
- *   shiki.codeToHtml(code, { lang, theme: 'vitesse-dark' }),
+ *   hljs.highlight(code, { language: lang }).value,
  * );
  * ```
  */
@@ -38,7 +37,7 @@ export function createHighlighter(
   options: CreateHighlighterOptions = {},
 ): (code: string, lang?: string | null) => string | Promise<string> {
   const max = options.cacheSize ?? DEFAULT_HIGHLIGHT_CACHE_SIZE;
-  // Highlighting is pure in (code, lang) but a TextMate grammar pass costs milliseconds per snippet, enough that a page
+  // Highlighting is pure in (code, lang) but a tokenizer pass costs milliseconds per snippet, enough that a page
   // re-highlighting its own code blocks each SSR render spends longer in the highlighter than in Svelte. The in-flight
   // promise is stored so concurrent callers share one pass, and insertion-ordered eviction bounds an app highlighting
   // user content.

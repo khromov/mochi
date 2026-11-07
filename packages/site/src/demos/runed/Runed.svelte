@@ -6,11 +6,8 @@
   import Elements from './Elements.svelte';
   import Sensors from './Sensors.svelte';
   import AsyncFsm from './AsyncFsm.svelte';
-  import { loadSources } from '../../components/utils.ts';
+  import { sources } from './sources.prerender.ts';
   import { highlightCode } from '../../lib/highlight.server';
-  import { files } from './files.ts';
-
-  const sources = await loadSources(files);
 
   const codeInstall = await highlightCode('bun add runed', 'bash');
   const codeUsage = await highlightCode(

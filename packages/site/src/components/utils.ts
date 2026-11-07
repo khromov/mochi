@@ -1,12 +1,7 @@
 import { highlightCode } from '../lib/highlight.server';
 import { isDemoIndex, stripImageConfig, stripStaticDirs, type SourceSpec } from './sourceUtils';
 
-export { isDemoIndex, stripImageConfig, stripStaticDirs, type SourceSpec } from './sourceUtils';
-
-export function delay(minMs: number, maxMs: number = minMs): Promise<void> {
-  const ms = minMs + Math.random() * (maxMs - minMs);
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+export { isDemoIndex, stripImageConfig, stripStaticDirs, delay, type SourceSpec } from './sourceUtils';
 
 type Source = { label: string; lang: string; html: string; styleHtml?: string };
 
@@ -82,10 +77,9 @@ function stripDemoWrapper(code: string): string {
 
   let out = code;
   out = out.replace(/^[^\S\n]*import\s+DemoPage\s+from\s+['"][^'"]+['"];?[^\S\n]*\n?/m, '');
-  out = out.replace(/^[^\S\n]*import\s*\{\s*loadSources\s*\}\s*from\s+['"][^'"]+['"];?[^\S\n]*\n?/m, '');
-  out = out.replace(/^[^\S\n]*const\s+sources\s*=\s*await\s+loadSources\s*\(\s*\[[\s\S]*?\]\s*\)\s*;?[^\S\n]*\n?/m, '');
+  out = out.replace(/^[^\S\n]*import\s*\{\s*sources\s*\}\s*from\s+['"]\.\/sources\.prerender(?:\.ts)?['"];?[^\S\n]*\n?/m, '');
   // Multi-page demos hoist their description/sources plumbing into ./shared —
-  // hide that import like the inline loadSources call it replaces.
+  // hide that import like the sources.prerender.ts import it replaces.
   out = out.replace(/^[^\S\n]*import\s*\{[^}]*\}\s*from\s+['"]\.\/shared['"];?[^\S\n]*\n?/m, '');
   out = out.replace(/<DemoPage\b(?:"[^"]*"|'[^']*'|[^>])*>([\s\S]*?)<\/DemoPage>/, (_, inner) => dedent(inner).trim());
   out = out.replace(/<script(?:\s[^>]*)?>\s*<\/script>\s*\n?/, '');

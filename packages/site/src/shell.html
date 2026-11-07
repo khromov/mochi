@@ -201,7 +201,7 @@
         text-rendering: optimizeLegibility;
       }
 
-      /* Shared code-block markup. Produced by `highlightCode()` in src/lib/highlightCode.ts
+      /* Shared code-block markup. Produced by `highlightCode()` in src/lib/highlight.server.ts
          (used by both mdsvex doc pages and the demo source viewer), so the visual
          treatment lives globally rather than inside any one prose surface. */
       pre {
@@ -264,6 +264,134 @@
         border-radius: 0;
         color: inherit;
         font-size: inherit;
+      }
+
+      .twinkleplop .tok.comment,
+      .twinkleplop .tok.doc_marker,
+      .twinkleplop .tok.hash,
+      .twinkleplop .tok.label {
+        color: #72786c;
+        font-style: italic;
+      }
+
+      .twinkleplop .tok.keyword,
+      .twinkleplop .tok.operator,
+      .twinkleplop .tok.builtin,
+      .twinkleplop .tok.boolean,
+      .twinkleplop .tok.null,
+      .twinkleplop .tok.constant,
+      .twinkleplop .tok.decorator,
+      .twinkleplop .tok.directive,
+      .twinkleplop .tok.lifetime,
+      .twinkleplop .tok.unit,
+      .twinkleplop .tok.attr_sigil,
+      .twinkleplop .tok.svelte_block,
+      .twinkleplop .tok.svelte_directive {
+        color: #a7c9a8;
+      }
+
+      .twinkleplop .tok.string,
+      .twinkleplop .tok.template,
+      .twinkleplop .tok.regex,
+      .twinkleplop .tok.plain_scalar,
+      .twinkleplop .tok.code,
+      .twinkleplop .tok.code_block,
+      .twinkleplop .tok.raw_code_block,
+      .twinkleplop .tok.raw_front_matter,
+      .twinkleplop .tok.raw_script,
+      .twinkleplop .tok.raw_style,
+      .twinkleplop .tok.raw_svelte_expression,
+      .twinkleplop .tok.autolink,
+      .twinkleplop .tok.link_text,
+      .twinkleplop .tok.url,
+      .twinkleplop .tok.url_link,
+      .twinkleplop .tok.url_title,
+      .twinkleplop .tok.inserted,
+      .twinkleplop .tok.inserted_marker {
+        color: #d5b982;
+      }
+
+      .twinkleplop .tok.number,
+      .twinkleplop .tok.bit,
+      .twinkleplop .tok.datetime,
+      .twinkleplop .tok.escape,
+      .twinkleplop .tok.string_escape,
+      .twinkleplop .tok.hard_break,
+      .twinkleplop .tok.expression,
+      .twinkleplop .tok.changed,
+      .twinkleplop .tok.changed_marker,
+      .twinkleplop .tok.deleted,
+      .twinkleplop .tok.deleted_marker {
+        color: #e9a89a;
+      }
+
+      .twinkleplop .tok.type,
+      .twinkleplop .tok.class_name,
+      .twinkleplop .tok.namespace,
+      .twinkleplop .tok.variant,
+      .twinkleplop .tok.entity,
+      .twinkleplop .tok.doctype,
+      .twinkleplop .tok.code_language,
+      .twinkleplop .tok.array_table_header,
+      .twinkleplop .tok.block_scalar_header {
+        color: #c7e0cd;
+      }
+
+      .twinkleplop .tok.variable,
+      .twinkleplop .tok.identifier,
+      .twinkleplop .tok.parameter,
+      .twinkleplop .tok.property,
+      .twinkleplop .tok.attribute,
+      .twinkleplop .tok.attr_name,
+      .twinkleplop .tok.css_variable,
+      .twinkleplop .tok.selector_class,
+      .twinkleplop .tok.selector_id,
+      .twinkleplop .tok.selector_pseudo {
+        color: #b8d5be;
+      }
+
+      .twinkleplop .tok.tag_name,
+      .twinkleplop .tok.tag,
+      .twinkleplop .tok.selector,
+      .twinkleplop .tok.heading,
+      .twinkleplop .tok.heading_marker,
+      .twinkleplop .tok.list_marker,
+      .twinkleplop .tok.task_marker,
+      .twinkleplop .tok.blockquote_marker,
+      .twinkleplop .tok.front_matter_marker,
+      .twinkleplop .tok.code_fence,
+      .twinkleplop .tok.hr,
+      .twinkleplop .tok.autolink_open,
+      .twinkleplop .tok.autolink_close,
+      .twinkleplop .tok.bold_open,
+      .twinkleplop .tok.bold_close,
+      .twinkleplop .tok.code_open,
+      .twinkleplop .tok.code_close,
+      .twinkleplop .tok.italic_open,
+      .twinkleplop .tok.italic_close,
+      .twinkleplop .tok.link_text_open,
+      .twinkleplop .tok.link_text_close,
+      .twinkleplop .tok.strike_open,
+      .twinkleplop .tok.strike_close {
+        color: #8fb097;
+      }
+
+      .twinkleplop .tok.function,
+      .twinkleplop .tok.punctuation,
+      .twinkleplop .tok.format {
+        color: #e8e6dd;
+      }
+
+      .twinkleplop .tok.bold {
+        font-weight: 600;
+      }
+
+      .twinkleplop .tok.italic {
+        font-style: italic;
+      }
+
+      .twinkleplop .tok.strike {
+        text-decoration: line-through;
       }
 
       .hero,

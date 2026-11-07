@@ -5,6 +5,7 @@ import path from 'node:path';
 import { ComponentRegistry, formatCompileErrors } from './compiler/ComponentRegistry';
 import type { RenderResult } from './compiler/ComponentRegistry';
 import { loadSvelteConfig } from './compiler/svelteConfig';
+import { resolveOutDir } from './compiler/resolveOutDir';
 import { buildInlineWebComponent } from './compiler/buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './dev/clientStatsRoutes';
 import { buildEmailViewerRoutes, EMAIL_VIEWER_COMPONENT } from './dev/emailViewerRoutes';
@@ -22,6 +23,7 @@ import {
   FRAMEWORK_OWNED_BUN_KEYS,
 } from './types';
 import { HYDRATABLE_CONTEXT_KEY } from './islands/isHydratable';
+import { BOOTSTRAP_MARKER_ATTR } from './islands/bootstrapMarker';
 import type {
   BunRouteValue,
   HttpMethod,
@@ -112,6 +114,7 @@ import { sendEmail } from './email/mailer';
 import type { MochiEmailMessage, MochiEmailResult } from './email/types';
 import { initMochiConfig } from './mochiConfig';
 import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './utils/log';
+import { SEEDED_IS_DEV, setDevelopment } from './utils/env';
 import { mochiEvents } from './events';
 import type { MochiActionResult, MochiErrorEvent, MochiErrorKind, MochiServerStartEvent, MochiServerStopEvent } from './events';
 import type { DebugBarData, DebugBarRuntimeData } from './runtime/requestContext';
@@ -316,7 +319,7 @@ export class Mochi {
     const cssStylePrefix = `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty, mochi-hydratable-island[hydrate-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
       registry.development ? ISLAND_FAILURE_DEV_CSS : ''
     }</style>\n`;
-    const serverIslandScript = `<script>(()=>{${serverIslandClientJs}})()</script>`;
+    const serverIslandScript = `<script>${serverIslandClientJs}</script>`;
     const liveReloadTail = liveReloadClientJs ? `<script>${liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : '';
     const toolbarDiv = registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : '';
     const assetPrefixJson = JSON.stringify(registry.assetPrefix);
@@ -464,9 +467,17 @@ export class Mochi {
 
     const { svelteVersion } = await checkEnvironment();
     const mochiVersion = await readMochiVersion();
+
+    // Same value `isDev` seeded from, so top-level reads — which already ran — agree by construction.
+    const development = options.development ?? SEEDED_IS_DEV;
+    // Published before initExtensions so an extension's `mochi:init` hook reads the resolved mode rather than the env
+    // seed, and before setLogLevel so a configured `logger.level` can't swallow the env-mismatch warning.
+    setDevelopment(development, { warnOnEnvMismatch: true });
+
     initExtensions(options);
     await runHook('mochi:init', { options });
-    await initMochiConfig(options);
+    // Resolved, so downstream `options.development` readers can't re-default it differently.
+    await initMochiConfig({ ...options, development });
 
     // Resolved once at startup and captured by the per-request closures below. Each default Set is copied before it
     // reaches the user, so an in-place mutation can't poison the framework default for the next call.
@@ -480,14 +491,13 @@ export class Mochi {
       logger.warn(bootCsrfWarning);
     }
 
-    const development = options.development ?? true;
     const inlineNestedIslands = options.inlineNestedIslands !== false;
     const warmupEnabled = resolveWarmupEnabled(options.warmup, development);
     const debugBarEnabled = development && (options.debugBar ?? true);
     const liveReloadEnabled = options.liveReload ?? development;
     const middleware = options.handle;
     const protectionEnabled = options.protection?.enabled === true;
-    const baseOutDir = options.outDir ?? './.mochi';
+    const baseOutDir = resolveOutDir(options.outDir ?? './.mochi');
     // Nesting dev artifacts keeps a stale prod manifest and dev chunks apart across a later `start`, while prod stays at
     // the root so Docker and deploys are unaffected.
     const outDir = development ? path.join(baseOutDir, 'dev') : baseOutDir;
@@ -541,7 +551,7 @@ export class Mochi {
     const manifestPath = options.manifest ?? `${outDir}/manifest.json`;
     let registry: ComponentRegistry;
     if (!development && existsSync(manifestPath)) {
-      logger.info(`Loading prebuilt manifest from ${manifestPath}`);
+      logger.info(`Loading prebuilt manifest from ${relForDisplay(manifestPath)}`);
       // The registry takes its outDir from the manifest's own directory, so an explicit `manifest` pointing elsewhere
       // relocates on-demand island compiles along with it.
       registry = await ComponentRegistry.fromManifest(manifestPath, development, { fonts: options.fonts });
@@ -578,7 +588,7 @@ export class Mochi {
         // Production without a prebuilt manifest is valid but much slower, compiling components at boot and server islands
         // on the request path; the error level keeps a forgotten build from masquerading as a healthy deploy.
         logger.error(
-          `Running in production without a prebuilt manifest (${manifestPath} not found). ` +
+          `Running in production without a prebuilt manifest (${relForDisplay(manifestPath)} not found). ` +
             `This is an unsupported configuration and is not recommended: components compile at startup ` +
             `and server islands compile on the first request, making cold starts and initial responses ` +
             `much slower. Run \`mochi-framework build\` before \`start\` to precompile and bake the manifest.`,
@@ -713,7 +723,7 @@ export class Mochi {
     // Mirrors the handleError logic in renderErrorResponse, skipping the HTML render for the enhanced JSON path.
     const handleEnhancedError = async (err: unknown, event: MochiEvent): Promise<Response> => {
       let status = err instanceof MochiHttpError ? err.status : 500;
-      let message = err instanceof Error ? err.message : 'Internal Error';
+      let message = err instanceof MochiHttpError ? err.message : development && err instanceof Error ? err.message : 'Internal Server Error';
       if (options.handleError) {
         try {
           const override = await options.handleError({ error: err, event, status, message });
@@ -763,7 +773,7 @@ export class Mochi {
       ...(debugBarEnabled ? buildPageCacheAdminRoutes() : {}),
       ...(emailViewerEnabled ? buildEmailViewerRoutes(registry) : {}),
     };
-    const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...(options.routes ?? {}) } : options.routes;
+    const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...options.routes } : options.routes;
 
     const rateLimitStores = new Set<MochiRateLimitStore>();
     // Route closures look their limiter up per request so the dev watcher can swap one in place when a route's
@@ -810,7 +820,7 @@ export class Mochi {
       // use it, and its counters intentionally survive dev reloads.
       if (limiter && limiter !== sharedGlobalLimiter && limiter.ownsStore) {
         rateLimitStores.delete(limiter.store);
-        // sqliteStore's shutdown can throw synchronously from its finalize-verification guard, which a bare
+        // rateLimitSqliteStore's shutdown can throw synchronously from its finalize-verification guard, which a bare
         // `Promise.resolve()` would let escape into the dev watcher.
         (async () => limiter.store.shutdown?.())().catch((err: unknown) => {
           logger.warn(`Rate limit store shutdown failed: ${err instanceof Error ? err.message : err}`);
@@ -1263,8 +1273,10 @@ export class Mochi {
           let userData: unknown = undefined;
 
           const liveWsHandlers = wsHandlersMap.get(pattern) ?? wsHandlers;
-          if (liveWsHandlers.upgrade) {
-            const result = await liveWsHandlers.upgrade(req, wsParams);
+          const upgradeHandler = liveWsHandlers.upgrade;
+          if (upgradeHandler) {
+            // The handshake is the only point in a socket's life with a Request to read, so `getRequestContext()` has to work here.
+            const result = await requestContext.run(wsHookCtx, () => upgradeHandler(req, wsParams));
             if (result === false) {
               emitWsReject(400);
               return new Response('WebSocket upgrade rejected', {
@@ -1639,14 +1651,6 @@ export class Mochi {
           body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
         }
 
-        // Appended whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain
-        // mochi:hydrate children, or inlined also-hydrate islands — so the fragment self-hydrates even on a page that
-        // shipped no bootstrap of its own; duplicate module scripts are no-ops by src.
-        const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
-        if (bootstrapUrl) {
-          body += `<script type="module" src="${bootstrapUrl}"></script>`;
-        }
-
         // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`
         // tags are prepended here along with side-effect CSS imports; browsers honour a `<link>` assigned via `innerHTML`.
         // The island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
@@ -1654,6 +1658,13 @@ export class Mochi {
         const extraCss = result.cssUrls.filter((url) => url !== ownCss);
         if (extraCss.length > 0) {
           body = extraCss.map(cssLinkTag).join('') + body;
+        }
+
+        // A page whose only hydratables are deferred ships no bootstrap, and a `<script>` in the fragment would stay
+        // inert, so the fragment names it in a marker that the wrapper element imports (see ServerIsland.ts).
+        const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
+        if (bootstrapUrl) {
+          body = `<template ${BOOTSTRAP_MARKER_ATTR}="${escapeHtmlAttr(bootstrapUrl)}"></template>` + body;
         }
 
         return new Response(body, {
@@ -1851,7 +1862,7 @@ export class Mochi {
         if (assetContent !== undefined) {
           // `getClientFile()` returns only registered `.js` or `.css`, so extension alone decides and this branch stays
           // independent of the asset prefix.
-          const contentType = url.pathname.endsWith('.css') ? 'text/css' : 'application/javascript';
+          const contentType = url.pathname.endsWith('.css') ? 'text/css; charset=utf-8' : 'application/javascript; charset=utf-8';
           const headers: Record<string, string> = { 'Content-Type': contentType, 'X-Content-Type-Options': 'nosniff' };
           // Content-hashed filenames change URL whenever bytes change, so prod can mark them immutable; dev skips it to
           // keep live-reload edits out of the browser cache.

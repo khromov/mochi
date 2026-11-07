@@ -51,16 +51,7 @@ await Mochi.serve({
 
 Which severity each event lands on is a framework default. Remap them per app with the [`consoleLogger:level` filter](/docs/extensions/).
 
-If `level` is omitted, Mochi picks the default from the `development` flag: `'info'` when `development: true`, `'warn'` otherwise.
-
-A common pattern drives `development` from an env var so one `index.ts` handles both:
-
-```ts
-await Mochi.serve({
-  development: process.env.MODE === 'development',
-  routes,
-});
-```
+If `level` is omitted, Mochi picks the default from the [mode](/docs/development-mode/): `'info'` in development, `'warn'` in production.
 
 The level applies on both server and client. The server sends its configured level to the browser, so client-side `logger` calls honour it too. Reload the page after changing the config to pick up a new level on the client.
 

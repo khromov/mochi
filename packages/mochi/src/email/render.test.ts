@@ -76,14 +76,14 @@ describe('renderEmailComponent', () => {
   // `ctx.islandProps` and emits no `mochi-props` blocks.
   test('does not touch ctx.islandProps when run inside a request context', async () => {
     const ctx = makeCtx();
-    ctx.islandProps.set('seed', { id: 'mochi-props-0', emitCount: 1 });
+    ctx.islandProps.set('seed', { id: 'mochi-props-0', emitCount: 1, bags: [] });
 
     const html = await requestContext.run(ctx, () => renderEmailComponent(registry, WELCOME, { name: 'Ada' }));
 
     expect(html).toContain('Hello Ada');
     expect(html).not.toContain('mochi-props');
     // The pre-seeded entry survives untouched — the email render ran isolated.
-    expect(ctx.islandProps.get('seed')).toEqual({ id: 'mochi-props-0', emitCount: 1 });
+    expect(ctx.islandProps.get('seed')).toEqual({ id: 'mochi-props-0', emitCount: 1, bags: [] });
     expect(ctx.islandProps.size).toBe(1);
   });
 

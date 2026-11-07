@@ -19,8 +19,8 @@ async function runCli(...args: string[]) {
 // Runs the real CLI as a subprocess, with MOCHI_SKILL_URL pointed at a local
 // server so the end-to-end path is exercised without depending on the network
 // (the live https://mochi.fast/SKILL.md still 404s).
-async function runUpdateSkill(cwd: string, skillUrl: string, agent?: string) {
-  const proc = Bun.spawn([process.execPath, CLI, 'update-skill', ...(agent ? [agent] : [])], {
+async function runUpdateSkill(cwd: string, skillUrl: string, agent?: string, flags: string[] = ['--force']) {
+  const proc = Bun.spawn([process.execPath, CLI, 'update-skill', ...(agent ? [agent] : []), ...flags], {
     cwd,
     env: { ...process.env, MOCHI_SKILL_URL: skillUrl },
     stdout: 'pipe',
@@ -35,12 +35,48 @@ describe('mochi-framework update-skill (subprocess)', () => {
     const server = Bun.serve({ port: 0, fetch: () => new Response('# Hosted skill body', { status: 200 }) });
     const cwd = freshCwd();
     try {
-      const { exitCode } = await runUpdateSkill(cwd, server.url.href);
+      const { exitCode, stdout } = await runUpdateSkill(cwd, server.url.href);
 
       expect(exitCode).toBe(0);
+      // Nothing to review on a first write, so the confirmation preview stays out of the way.
+      expect(stdout).not.toContain('Skill update fetched');
       const dest = path.join(cwd, '.claude', 'skills', 'mochi', 'SKILL.md');
       expect(existsSync(dest)).toBe(true);
       expect(await Bun.file(dest).text()).toBe('# Hosted skill body');
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  it('shows the diff and applies an overwrite under --force', async () => {
+    const server = Bun.serve({ port: 0, fetch: () => new Response('# Hosted skill body', { status: 200 }) });
+    const cwd = freshCwd();
+    const dest = path.join(cwd, '.claude', 'skills', 'mochi', 'SKILL.md');
+    await Bun.write(dest, '# Stale skill body');
+    try {
+      const { exitCode, stdout } = await runUpdateSkill(cwd, server.url.href);
+
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain('Skill update fetched');
+      expect(stdout).toContain('+# Hosted skill body');
+      expect(await Bun.file(dest).text()).toBe('# Hosted skill body');
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  // Without --force and without a terminal, confirm() would read false at EOF and quietly exit 0 having written nothing.
+  it('fails loudly instead of silently declining an overwrite with no terminal attached', async () => {
+    const server = Bun.serve({ port: 0, fetch: () => new Response('# Hosted skill body', { status: 200 }) });
+    const cwd = freshCwd();
+    const dest = path.join(cwd, '.claude', 'skills', 'mochi', 'SKILL.md');
+    await Bun.write(dest, '# Stale skill body');
+    try {
+      const { exitCode, stderr } = await runUpdateSkill(cwd, server.url.href, undefined, []);
+
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain('--force');
+      expect(await Bun.file(dest).text()).toBe('# Stale skill body');
     } finally {
       server.stop(true);
     }

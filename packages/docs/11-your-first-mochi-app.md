@@ -37,7 +37,7 @@ const PORT = Number(process.env.PORT) || 3333;
 
 await Mochi.serve({
   port: PORT,
-  development: process.env.MODE === 'development',
+  development: process.env.NODE_ENV === 'development',
   routes: {
     '/': Mochi.page('./src/HelloWorld.svelte'),
   },
@@ -56,7 +56,7 @@ import { Mochi } from 'mochi-framework';
 
 await Mochi.serve({
   port: Number(process.env.PORT) || 3333,
-  development: process.env.MODE === 'development',
+  development: process.env.NODE_ENV === 'development',
   routes: {
     '/hello': Mochi.page('./src/Hello.svelte', {
       serverProps: () => ({

@@ -7,7 +7,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { PGLiteSocketServer } from '@electric-sql/pglite-socket';
 
 export interface TestPostgres {
-  /** Connection string for bun:sql / `postgresStore({ url })`. */
+  /** Connection string for bun:sql / `rateLimitPostgresStore({ url })`. */
   url: string;
   port: number;
   /** Run SQL directly against the underlying database (seeding, assertions). */

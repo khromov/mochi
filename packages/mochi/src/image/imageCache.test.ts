@@ -410,15 +410,15 @@ describe('ImageCache.setPlaceholder', () => {
         await Bun.sleep(0);
       }
     })();
-    for (let i = 0; i < 20; i++) {
+    // Rewrites keep going until the reader has sampled enough for the assertion below to mean
+    // anything; a fixed count went vacuous on runners where a rewrite outpaces the timer yield.
+    for (let i = 0; i < 400 && reads < 200; i++) {
       await cache.setPlaceholder(SRC, `data:image/png;base64,GEN${i}`, i);
     }
     stop = true;
     await reader;
 
     expect(sawMiss).toBe(false);
-    // Guards the assertion above from going vacuous: it only means anything if the reader
-    // actually sampled while the rewrites were in flight.
     expect(reads).toBeGreaterThan(100);
   });
 });

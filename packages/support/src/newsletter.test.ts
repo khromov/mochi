@@ -373,30 +373,25 @@ describe('newsletter signup', () => {
   });
 });
 
+// Env goes in per call rather than onto `process.env`: mutating the real one leaks into whatever else this file
+// evaluates afterwards, and NODE_ENV in particular is read by dependencies far outside this describe.
 describe('embed ancestors', () => {
-  const original = process.env.NEWSLETTER_EMBED_ANCESTORS;
-  const originalMode = process.env.MODE;
-
-  afterAll(() => {
-    process.env.NEWSLETTER_EMBED_ANCESTORS = original;
-    process.env.MODE = originalMode;
-  });
-
   test('an explicit allow-list wins', () => {
-    process.env.NEWSLETTER_EMBED_ANCESTORS = 'https://a.test  https://b.test';
-    expect(embedAncestors()).toEqual(['https://a.test', 'https://b.test']);
+    expect(embedAncestors({ NEWSLETTER_EMBED_ANCESTORS: 'https://a.test  https://b.test' })).toEqual(['https://a.test', 'https://b.test']);
   });
 
   test('production falls back to the mochi.fast origins alone', () => {
-    delete process.env.NEWSLETTER_EMBED_ANCESTORS;
-    process.env.MODE = 'production';
-    expect(embedAncestors()).toEqual(['https://mochi.fast', 'https://www.mochi.fast']);
+    expect(embedAncestors({ NODE_ENV: 'production' })).toEqual(['https://mochi.fast', 'https://www.mochi.fast']);
   });
 
   test('development also allows the local site and smoke-test ports', () => {
-    delete process.env.NEWSLETTER_EMBED_ANCESTORS;
-    process.env.MODE = 'development';
-    expect(embedAncestors()).toContain('http://localhost:3333');
-    expect(embedAncestors()).toContain('https://mochi.fast');
+    const ancestors = embedAncestors({ NODE_ENV: 'development', SUPPORT_DEV: '1' });
+    expect(ancestors).toContain('http://localhost:3333');
+    expect(ancestors).toContain('https://mochi.fast');
+  });
+
+  // A host or CI image exporting NODE_ENV=development must not open the allow-list on its own.
+  test('NODE_ENV alone does not allow localhost', () => {
+    expect(embedAncestors({ NODE_ENV: 'development' })).toEqual(['https://mochi.fast', 'https://www.mochi.fast']);
   });
 });
