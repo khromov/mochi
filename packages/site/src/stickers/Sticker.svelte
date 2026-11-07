@@ -1,6 +1,7 @@
 <script>
   import '@fontsource-variable/fraunces/full.css';
   import StickerExport from './StickerExport.svelte';
+  import StickerSoloExport from './StickerSoloExport.svelte';
   import { dangoDataUri } from './dango';
 </script>
 
@@ -10,14 +11,18 @@
   <meta name="robots" content="noindex" />
 </svelte:head>
 
+{#snippet content()}
+  <div class="sticker-inner">
+    <span class="sticker-logo"><span class="sticker-dango" aria-hidden="true" style="--dango-url: url({dangoDataUri})"></span>mochi</span>
+    <span class="sticker-tag">The new Svelte meta-framework</span>
+    <span class="sticker-url">mochi.fast</span>
+  </div>
+{/snippet}
+
 {#snippet card()}
   <div class="sticker-cell">
     <div class="sticker-canvas">
-      <div class="sticker-inner">
-        <span class="sticker-logo"><span class="sticker-dango" aria-hidden="true" style="--dango-url: url({dangoDataUri})"></span>mochi</span>
-        <span class="sticker-tag">The new Svelte meta-framework</span>
-        <span class="sticker-url">mochi.fast</span>
-      </div>
+      {@render content()}
     </div>
   </div>
 {/snippet}
@@ -35,6 +40,19 @@
       {/each}
     </div>
   </div>
+
+  <section class="solo">
+    <h2 class="section-title">Single sticker</h2>
+    <p class="page-desc">One sticker without the cut-line border, on a transparent background. Or download just its green background, or the dango icon.</p>
+
+    <StickerSoloExport mochi:hydrate targetId="sticker-solo" />
+
+    <div class="sticker-cell sticker-solo-cell">
+      <div id="sticker-solo" class="sticker-canvas sticker-solo">
+        {@render content()}
+      </div>
+    </div>
+  </section>
 </div>
 
 <style>
@@ -107,6 +125,34 @@
     /* Slim gray cut-line around the outer edge of the white border.
        outline (not box-shadow) so it survives printing. */
     outline: 0.35cqw solid #cccccc;
+  }
+
+  .solo {
+    margin-top: 3rem;
+  }
+
+  .section-title {
+    font-family: var(--font-serif);
+    font-size: 1.2rem;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 0.25rem;
+  }
+
+  /* Same size as a 3 × 3 sheet cell, so the cqw-sized text keeps the sheet's proportions. */
+  .sticker-solo-cell {
+    width: 720px;
+    height: 380px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .sticker-solo {
+    width: calc(100% - 5cqw);
+    height: calc(100% - 5cqw);
+    border: none;
+    outline: none;
   }
 
   /* Sized to the logo so the URL can right-align directly under its final glyph. */
