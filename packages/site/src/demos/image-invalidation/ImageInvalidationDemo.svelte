@@ -1,7 +1,6 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
+  import { sources } from './sources.prerender.ts';
   import { getImageUrl } from 'mochi-framework';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 
@@ -17,20 +16,18 @@
   // re-request the otherwise URL-stable images so the swap is visible immediately.
   const bust = (url) => `${url}&g=${generation}`;
   const originalUrl = bust(getImageUrl(src));
-
-  const sources = await loadSources(files);
 </script>
 
 <DemoPage
-  title="Image Invalidation"
+  title="Image: Invalidation"
   description="Clear a cached image on demand with invalidateImage(). Our own source endpoint returns a random bundled photo on every fetch, so a hard invalidation — which drops the shared original and cascades to its variants — is visible the moment the sizes re-fetch together."
   {sources}
 >
   <p>
     The images below all derive from <strong>one shared cached original</strong>, fetched from our own
     <code>/demos/image-invalidation/source.jpg</code> route — a <code>Mochi.file()</code> endpoint that serves a random bundled photo on every request. Hit the button to
-    <code>invalidateImage(src, &lbrace; hard: true &rbrace;)</code>: it deletes the cached original and cascades to every named size, so the next request re-fetches the source and
-    <strong>all sizes update to the same new photo in lockstep</strong>.
+    <code>invalidateImage(src, &lbrace; hard: true &rbrace;)</code>: it <strong>hard-deletes</strong> the cached original and cascades to every named size, so the next request
+    re-fetches the source and <strong>all sizes update to the same new photo in lockstep</strong>.
   </p>
 
   <div class="actions">

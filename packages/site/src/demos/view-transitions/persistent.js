@@ -1,13 +1,7 @@
-// Inline boot script for the persistent video, authored as a raw string and
-// rendered into the page via {@html} in PersistentVideo.svelte. Because it's
-// part of the server-rendered HTML it runs on initial parse of every page —
-// including the page the browser lands on after a cross-document navigation —
-// so the video resumes at the saved timestamp with no hydration bundle.
-//
-// The full <script> wrapper lives here (the closing tag is split across a
-// concatenation so it never appears verbatim) rather than being assembled in
-// the .svelte file: a literal closing script tag inside a Svelte
-// <script lang="ts"> block would close it early.
+// Rendered into the page via {@html} in PersistentVideo.svelte, so it runs on initial parse of every
+// page — including after a cross-document navigation — resuming the video with no hydration bundle.
+// The closing script tag is split across concatenation here rather than assembled in the .svelte file,
+// since a literal one there would close that file's own script block early.
 export const persistentVideoScript =
   `<script>(function () {
   var KEY = 'mochi-vt-video-time';

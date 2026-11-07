@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { logger, isBrowser } from 'mochi-framework';
+
   type Leaf = {
     x: number;
     y: number;
@@ -99,6 +101,7 @@
   let canvas: HTMLCanvasElement;
 
   $effect(() => {
+    logger.info(`[leaves] hydrated, isBrowser=${isBrowser}`);
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       return;
     }

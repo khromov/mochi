@@ -10,7 +10,7 @@ description: 'Replace the default HTML wrapper with a custom shell template cont
 
 ## Custom HTML shell
 
-`htmlShell` overrides the default `<!doctype html>` wrapper that Mochi renders pages into. Pass either a path to an `.html` file (detected by the `.html` suffix) or the template string directly:
+`htmlShell` overrides the default `<!doctype html>` wrapper that Mochi renders pages into. Pass a path to an `.html` file (detected by the `.html` suffix) or the template string directly.
 
 ```ts
 // file: src/index.ts
@@ -24,11 +24,11 @@ await Mochi.serve({
 });
 ```
 
-The default shell lives at `packages/mochi/src/templates/default-shell.html` — copy it as a starting point.
+Start from the minimal shell shown below and add your own markup around the placeholders.
 
 ### Placeholders
 
-A custom shell must contain four placeholders. Each is replaced once per request by `Mochi.resolveHtmlShell()`:
+A custom shell must contain four placeholders. Mochi replaces each one per request:
 
 | Placeholder        | Replaced with                                                                                          |
 | ------------------ | ------------------------------------------------------------------------------------------------------ |
@@ -37,7 +37,7 @@ A custom shell must contain four placeholders. Each is replaced once per request
 | `{{mochi.body}}`   | Rendered component HTML, debug-info script, dev toolbar mount, dev error overlay, error-report script. |
 | `{{mochi.script}}` | Hydration bootstrap `<script type="module">`, server-island loader, debug bar, and dev live-reload.    |
 
-_Example:_ minimal shell.
+A minimal shell:
 
 ```html
 <!-- file: src/shell.html -->

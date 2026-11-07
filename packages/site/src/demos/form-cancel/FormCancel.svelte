@@ -3,10 +3,7 @@
   import CancelDemo from './CancelDemo.svelte';
   import AbortDemo from './AbortDemo.svelte';
   import PlainDemo from './PlainDemo.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
-
-  const sources = await loadSources(files);
+  import { sources } from './sources.prerender.ts';
 </script>
 
 <DemoPage

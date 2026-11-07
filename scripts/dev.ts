@@ -5,9 +5,14 @@ import { styleText } from 'node:util';
 
 const packagesDir = path.resolve(import.meta.dir, '..', 'packages');
 
+// Packages that are CI build targets rather than things you'd normally iterate
+// on — started only by `bun run dev:full`, so the everyday fanout stays small.
+const FULL_ONLY = new Set(['minimal-rsvelte']);
+const full = process.argv.includes('--full');
+
 const targets: { name: string; cwd: string }[] = [];
 for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
-  if (!entry.isDirectory()) {
+  if (!entry.isDirectory() || (FULL_ONLY.has(entry.name) && !full)) {
     continue;
   }
   const pkgPath = path.join(packagesDir, entry.name, 'package.json');
@@ -57,7 +62,7 @@ const procs: Subprocess[] = targets.map((t, i) => {
   const proc = spawn({
     cmd: ['bun', 'run', 'dev'],
     cwd: t.cwd,
-    env: { ...process.env, MODE: 'development', FORCE_COLOR: '1' },
+    env: { ...process.env, NODE_ENV: 'development', FORCE_COLOR: '1' },
     stdout: 'pipe',
     stderr: 'pipe',
     stdin: 'ignore',

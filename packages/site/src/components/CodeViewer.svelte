@@ -33,11 +33,8 @@
   .code-viewer {
     margin-top: 1rem;
     max-width: 100%;
-    /* Persist the viewer across cross-document view transitions instead of
-       letting the root snapshot cross-fade it — otherwise it blinks on nav.
-       view-transition-names must be unique per document, so this assumes at
-       most one CodeViewer per page (DemoPage renders exactly one); a second
-       instance would silently break the page's whole transition. */
+    /* Persist the viewer across cross-document view transitions so it doesn't blink on nav;
+       assumes at most one CodeViewer per page since view-transition-names must be unique. */
     view-transition-name: code-viewer;
   }
 
@@ -82,17 +79,14 @@
     box-shadow: var(--focus-ring);
   }
 
-  /* The global rules in shell.html handle padding, radius, and background.
-     Zero the prose-flow bottom margin and tighten the font for the demo viewer. */
+  /* Padding/radius/background come from shell.html; just zero the prose margin and tighten the font. */
   .cv-panel :global(pre),
   .cv-style :global(pre) {
     margin: 0;
     font-size: 0.82rem;
   }
 
-  /* When a styles section follows the main panel, fuse them visually into one
-     continuous code box: square the seam between them and let the styles
-     section carry the rounded bottom corners. */
+  /* Fuse a following styles section into one continuous code box: square the shared seam. */
   .code-viewer:has(.cv-style) .cv-panel :global(pre) {
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;

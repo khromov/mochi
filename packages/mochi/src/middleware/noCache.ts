@@ -1,4 +1,4 @@
-import type { Handle } from '../hooks';
+import type { Handle } from '../runtime/hooks';
 
 /**
  * Default `Cache-Control: no-cache` on `page` and `api` responses. Routes

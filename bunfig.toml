@@ -1,0 +1,9 @@
+# Force the hoisted node_modules layout. Bun's default isolated linker for
+# workspaces (symlinks through a node_modules/.bun store) trips a Bun bundler
+# bug: inside a `bun test` process, a second Bun.build() fails with "EISDIR
+# reading file" on a node_modules file the test process already loaded
+# through the symlink store. Plain `bun run` processes and the hoisted layout
+# are both unaffected. See ComponentRegistry.ts's formatBuildMessages for the
+# detection/fix hint if this ever reappears.
+[install]
+linker = "hoisted"

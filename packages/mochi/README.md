@@ -2,7 +2,7 @@
 
 An SSR framework for [Svelte 5](https://svelte.dev/) on [Bun](https://bun.sh/) with islands-based selective hydration. Components render server-side on every request; only those marked `mochi:hydrate` (or `mochi:hydrate:visible` / `mochi:defer`) ship JavaScript to the browser.
 
-> **Early prototype.** Only use in production if you are brave!
+> **Work in progress.** Mochi is a new framework and we're still working on features. Be one of the first ones to try it and report any issues you find!
 
 ## Install
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { buildInlineWebComponent } from './buildInlineWebComponent';
-import { checkEnvironment } from './checkEnvironment';
+import { buildInlineWebComponent } from './compiler/buildInlineWebComponent';
+import { checkEnvironment } from './cli/checkEnvironment';
 
 // These verify that expensive, process-stable startup work is memoized rather
 // than repeated on every Mochi.serve()/build() call. A memoized function
@@ -11,11 +11,14 @@ describe('startup memoization', () => {
   test('buildInlineWebComponent produces a correct, non-empty bundle', async () => {
     const script = await buildInlineWebComponent('./web-components/ServerIsland.ts');
     expect(script.length).toBeGreaterThan(0);
-    // The ServerIsland web component registers a custom element; the minified
-    // bundle must still reference the custom-element registry.
-    expect(script).toContain('customElements');
+    // The registration call and the tag-name literal both survive minification,
+    // so their presence proves the element is actually defined, not just referenced.
+    expect(script).toContain('customElements.define');
+    expect(script).toContain('mochi-server-island');
   });
 
+  // Relies on run-tests.ts per-file process isolation for fresh module-level
+  // memoization state; under a shared process a prior caller would have primed it.
   test('checkEnvironment returns the same promise across calls', () => {
     expect(checkEnvironment()).toBe(checkEnvironment());
   });

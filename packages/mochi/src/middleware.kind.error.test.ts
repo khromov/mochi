@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
-import type { Handle, MochiEventKind } from './hooks';
+import type { Handle, MochiEventKind } from './runtime/hooks';
 
 // Previously .isolated.test.ts — all tests now run in isolated processes.
 // Sister file `middleware.kind.test.ts` covers page/api/asset/fallback;

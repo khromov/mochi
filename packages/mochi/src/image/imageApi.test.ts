@@ -1,14 +1,17 @@
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { getImageUrl, getImageAttrs, getImage } from './imageApi';
+import { getImageUrl, getImageAttrs, getImage, imagePlaceholder } from './imageApi';
+import { registerLocalImageAsset } from './localAssetRegistry';
 import { resolveImageOptions } from './config';
 import { ImageCache } from './imageCache';
 import { initExtensions } from '../extensions';
+import { requestContext } from '../runtime/requestContext';
 
 const GLOBAL_CONFIG_KEY = '__mochi_config__';
 const GLOBAL_RUNTIME_KEY = '__mochi_image_runtime__';
+const GLOBAL_LOCAL_ASSETS_KEY = '__mochi_local_image_assets__';
 
 function installConfig(options: Record<string, unknown> = {}): void {
   (globalThis as unknown as Record<string, unknown>)[GLOBAL_CONFIG_KEY] = {
@@ -34,6 +37,7 @@ function installRuntime(imageOptions: Record<string, unknown> = {}): ImageCache 
 afterEach(() => {
   delete (globalThis as unknown as Record<string, unknown>)[GLOBAL_CONFIG_KEY];
   delete (globalThis as unknown as Record<string, unknown>)[GLOBAL_RUNTIME_KEY];
+  delete (globalThis as unknown as Record<string, unknown>)[GLOBAL_LOCAL_ASSETS_KEY];
   initExtensions({});
   for (const d of dirs.splice(0)) {
     rmSync(d, { recursive: true, force: true });
@@ -41,6 +45,11 @@ afterEach(() => {
 });
 
 const SRC = 'https://example.com/photo.png';
+
+// Minimal store: `imagePlaceholder` only needs a context object to hang its memo on.
+function runInRequestContext<T>(fn: () => Promise<T>): Promise<T> {
+  return requestContext.run({ islandProps: new Map() } as never, fn);
+}
 
 // A tiny valid PNG; decoded and re-encoded at 64×64 to give tests a real source.
 const PNG_1x1 = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
@@ -147,7 +156,7 @@ describe('getImage', () => {
   test('returns transformed bytes + metadata for a real named size', async () => {
     installConfig();
     const cache = installRuntime({ sizes: { thumb: { width: 20, height: 20, format: 'webp' } } });
-    await cache.getOriginal(SRC, 3_600_000, 86_400_000, async () => ({ bytes: SOURCE_BYTES, contentType: 'image/png' }));
+    await cache.getOriginal(SRC, async () => ({ bytes: SOURCE_BYTES, contentType: 'image/png' }));
 
     const result = await getImage(SRC, 'thumb');
     expect(result.format).toBe('webp');
@@ -160,10 +169,107 @@ describe('getImage', () => {
   test('an unknown/omitted size returns the original bytes', async () => {
     installConfig();
     const cache = installRuntime({});
-    await cache.getOriginal(SRC, 3_600_000, 86_400_000, async () => ({ bytes: SOURCE_BYTES, contentType: 'image/png' }));
+    await cache.getOriginal(SRC, async () => ({ bytes: SOURCE_BYTES, contentType: 'image/png' }));
 
     const result = await getImage(SRC);
     expect(result.contentType).toBe('image/png');
     expect(Array.from(result.bytes)).toEqual(Array.from(SOURCE_BYTES));
+  });
+});
+
+describe('locally-imported image src (disk-backed)', () => {
+  // Register a real on-disk asset so getImage/getImageUrl transform it via the
+  // fetchImageSource local branch instead of a network fetch.
+  function installLocalAsset(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'mochi-imgapi-local-'));
+    dirs.push(dir);
+    const diskPath = join(dir, 'hero.png');
+    writeFileSync(diskPath, SOURCE_BYTES);
+    const url = '/_mochi/asset/hero-deadbeef.png';
+    registerLocalImageAsset(url, { diskPath, contentType: 'image/png' });
+    return url;
+  }
+
+  test('getImageUrl mints a normal signed URL for a local src', () => {
+    installConfig();
+    installRuntime({ sizes: { thumb: { width: 20, height: 20 } } });
+    initExtensions({});
+    const src = installLocalAsset();
+    expect(getImageUrl(src, 'thumb')).toStartWith('/_mochi/image/hero-deadbeef-thumb.webp?p=');
+  });
+
+  test('getImage transforms a local src by reading it from disk', async () => {
+    installConfig();
+    installRuntime({ sizes: { thumb: { width: 20, height: 20, format: 'webp' } } });
+    initExtensions({});
+    const src = installLocalAsset();
+    const result = await getImage(src, 'thumb');
+    expect(result.format).toBe('webp');
+    expect(result.width).toBe(20);
+    expect(result.height).toBe(20);
+    expect(result.bytes.byteLength).toBeGreaterThan(0);
+  });
+
+  test('getImage with no size returns the original disk bytes', async () => {
+    installConfig();
+    installRuntime({});
+    initExtensions({});
+    const src = installLocalAsset();
+    const result = await getImage(src);
+    expect(result.contentType).toBe('image/png');
+    expect(Array.from(result.bytes)).toEqual(Array.from(SOURCE_BYTES));
+  });
+});
+
+describe('imagePlaceholder memoization', () => {
+  // Renders each seed a placeholder into a fresh cache and count how many reads a
+  // run makes, by spying on the cache instance the runtime hands out.
+  function countingCache(cache: ImageCache): { cache: ImageCache; reads: () => number } {
+    let reads = 0;
+    const original = cache.getPlaceholder.bind(cache);
+    cache.getPlaceholder = async (src: string) => {
+      reads++;
+      return original(src);
+    };
+    return { cache, reads: () => reads };
+  }
+
+  test('reads the placeholder cache once per source within a request', async () => {
+    installConfig();
+    const cache = installRuntime({});
+    initExtensions({});
+    const { reads } = countingCache(cache);
+    await cache.setPlaceholder(SRC, 'data:image/png;base64,AAAA', Date.now());
+
+    const results = await runInRequestContext(() => Promise.all([imagePlaceholder(SRC), imagePlaceholder(SRC), imagePlaceholder(SRC)]));
+
+    expect(results).toEqual(['data:image/png;base64,AAAA', 'data:image/png;base64,AAAA', 'data:image/png;base64,AAAA']);
+    expect(reads()).toBe(1);
+  });
+
+  test('keys the memo by source, and does not leak across requests', async () => {
+    installConfig();
+    const cache = installRuntime({});
+    initExtensions({});
+    const other = 'https://example.com/other.png';
+    await cache.setPlaceholder(SRC, 'data:a', Date.now());
+    await cache.setPlaceholder(other, 'data:b', Date.now());
+    const { reads } = countingCache(cache);
+
+    const first = await runInRequestContext(() => Promise.all([imagePlaceholder(SRC), imagePlaceholder(other)]));
+    expect(first).toEqual(['data:a', 'data:b']);
+    expect(reads()).toBe(2);
+
+    // A second request re-reads, so an invalidation between requests is seen.
+    await runInRequestContext(() => imagePlaceholder(SRC));
+    expect(reads()).toBe(3);
+  });
+
+  test('works with no request context (e.g. a background warm)', async () => {
+    installConfig();
+    const cache = installRuntime({});
+    initExtensions({});
+    await cache.setPlaceholder(SRC, 'data:a', Date.now());
+    expect(await imagePlaceholder(SRC)).toBe('data:a');
   });
 });

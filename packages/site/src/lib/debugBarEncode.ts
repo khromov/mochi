@@ -1,26 +1,11 @@
-// We run this site in dev mode in production to show off the debug bar. The debug bar inlines
-// build-time file paths (e.g. "../mochi/src/cookies.client.ts") as raw JSON in executable
-// <script>s; crawlers mine those slash-shaped strings as relative URLs and resolve them against
-// the page, producing phantom Search Console URLs like /mochi/src/cookies.client.ts. Re-encode the
-// payload so it's opaque to static link extraction — the client decodes back to the same value,
-// leaving the debug bar fully functional.
-//
-// base64url (not plain base64) is deliberate: the standard base64 alphabet still contains `/`, so
-// an encoded blob would re-introduce the very slash-shaped strings we're trying to eliminate.
-// base64url uses `-`/`_` instead, so the payload is guaranteed slash-free. The client maps those
-// back to `+`/`/` before atob.
-//
-// The framework emits these as `<script>window.<name>=<json></script>` (see Mochi.ts
-// resolveHtmlShell). jsonForHtml escapes `<`, so the JSON never contains a literal `</script>`,
-// making the non-greedy match safe. The match is coupled to that exact emission format; debugBarEncode.test.ts
-// boots a real Mochi dev server and asserts we still match, so a framework format change fails loudly.
+// This site runs in dev mode in production to show the debug bar, which inlines build-time
+// file paths as raw JSON — crawlers mine those slash-shaped strings as URLs, producing phantom
+// Search Console hits. Re-encode as base64url (plain base64 still has `/`) so the payload is
+// opaque to link extraction while the client decodes it back losslessly; `debugBarEncode.test.ts`
+// guards the coupling to the framework's exact `<script>window.<name>=<json></script>` emission.
 export const DEBUG_GLOBALS = ['__mochi_debug', '__mochi_page_entry'];
 
-/**
- * Rewrite the inlined debug-bar globals to a base64url-encoded form. Returns the transformed
- * HTML plus the number of globals actually re-encoded, so callers can detect a silent no-op
- * (framework emission format drifted) instead of letting phantom URLs quietly return.
- */
+/** Rewrites the inlined debug-bar globals to base64url; `matched` lets callers detect a silent no-op if the framework's emission format drifts. */
 export function encodeDebugBarGlobals(html: string): { html: string; matched: number } {
   let out = html;
   let matched = 0;

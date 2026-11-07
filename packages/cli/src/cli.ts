@@ -6,13 +6,17 @@ import { styleText } from 'node:util';
 import pkg from '../package.json' with { type: 'json' };
 import { create, SCAFFOLDED_PORT } from './create.ts';
 import { TEMPLATES, TEMPLATE_IDS, type TemplateId } from './templates.ts';
-import { isDirEmpty, validatePackageName } from './utils.ts';
+import { bunVersionWarning, isDirEmpty, validatePackageName } from './utils.ts';
 
 const program = new Command('create-mochi')
   .description('Scaffold a new Mochi project.')
   .argument('[path]', 'where the project should be created')
   .addOption(new Option('--template <name>', 'starter template').choices([...TEMPLATE_IDS]))
   .addOption(new Option('--force', 'overwrite existing directory contents'))
+  .addOption(new Option('--eslint', 'include ESLint setup (default)'))
+  .addOption(new Option('--no-eslint', 'skip ESLint setup'))
+  .addOption(new Option('--prettier', 'include Prettier setup (default)'))
+  .addOption(new Option('--no-prettier', 'skip Prettier setup'))
   .version(pkg.version, '-v, --version')
   .configureHelp({
     formatHelp(cmd, helper) {
@@ -37,21 +41,30 @@ await program.parseAsync().catch((err) => {
 interface CliOptions {
   template?: TemplateId;
   force?: boolean;
+  eslint?: boolean;
+  prettier?: boolean;
 }
 
 async function runCreate(rawPath: string | undefined, opts: CliOptions): Promise<void> {
   p.intro(`${styleText(['bgMagenta', 'black'], ' create-mochi ')} ${styleText('dim', `v${pkg.version}`)}`);
 
+  const bunWarning = bunVersionWarning(Bun.version);
+  if (bunWarning) {
+    p.log.warn(styleText('yellow', bunWarning));
+  }
+
   const dir = await promptDirectory(rawPath);
   const force = await maybePromptForce(dir, opts.force === true);
   const template = await promptTemplate(opts.template);
+  const eslint = await promptToggle(opts.eslint, 'Add ESLint for linting?');
+  const prettier = await promptToggle(opts.prettier, 'Add Prettier for formatting?');
   const name = defaultNameFor(dir);
 
   const spinner = p.spinner();
   spinner.start(`Downloading ${styleText('cyan', template)} template`);
   let result;
   try {
-    result = await create({ dir, template, name, force });
+    result = await create({ dir, template, name, force, eslint, prettier });
   } catch (err) {
     spinner.stop(styleText('red', 'Failed to download template.'));
     p.cancel(err instanceof Error ? err.message : String(err));
@@ -128,6 +141,22 @@ async function maybePromptForce(dir: string, alreadyForced: boolean): Promise<bo
     process.exit(0);
   }
   return true;
+}
+
+async function promptToggle(provided: boolean | undefined, message: string): Promise<boolean> {
+  if (provided !== undefined) {
+    return provided;
+  }
+  // No terminal to ask (CI, piped stdin) — take the default rather than hanging on the prompt.
+  if (!process.stdin.isTTY) {
+    return true;
+  }
+  const result = await p.confirm({ message, initialValue: true });
+  if (p.isCancel(result)) {
+    p.cancel('Operation cancelled.');
+    process.exit(0);
+  }
+  return result;
 }
 
 async function promptTemplate(provided: string | undefined): Promise<TemplateId> {

@@ -20,19 +20,14 @@
     object-fit: cover;
     background: linear-gradient(135deg, #2b3d33 0%, #4a7c59 100%);
     border: 1px solid var(--border);
-    /* The video owns its cross-document view transition rather than going
-       through <ViewTransitions keepElementSelectors>: a stable name lets the outgoing and
-       incoming pages pair the element up. */
+    /* The video owns its cross-document view transition rather than going through
+       <ViewTransitions keepElementSelectors>: a stable name lets the outgoing and incoming pages pair it up. */
     view-transition-name: mochi-vt-video;
   }
 
-  /* These pseudo-elements are document-global and bound to no element, so
-     Svelte's scoper would prune them without :global(). Freeze the group so the
-     box can't shift, hold the outgoing frame (old keeps opacity 1 with no
-     animation), and hide the incoming snapshot — a freshly-loaded <video>
-     usually hasn't painted a frame yet, so its snapshot would flash the
-     placeholder backdrop as a box. The live element takes over, resuming at the
-     saved timestamp, once the transition ends. */
+  /* Document-global pseudo-elements need :global() or Svelte's scoper would prune them.
+     Animations are disabled and the incoming snapshot hidden because a freshly-loaded <video> usually
+     hasn't painted yet, so it would otherwise flash the placeholder backdrop before the live element takes over. */
   :global(::view-transition-group(mochi-vt-video)) {
     animation: none;
   }

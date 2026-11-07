@@ -1,0 +1,17 @@
+<script>
+  (function () {
+    function load() {
+      var s = document.createElement('script');
+      s.defer = true;
+      s.src = 'https://u.khromov.se/u.js';
+      s.setAttribute('data-website-id', '8dceb8f5-6533-4c03-9cd6-1ce74accd63a');
+      s.setAttribute('data-performance', 'true');
+      document.head.appendChild(s);
+    }
+    if (document.prerendering) {
+      document.addEventListener('prerenderingchange', load, { once: true });
+    } else {
+      load();
+    }
+  })();
+</script>

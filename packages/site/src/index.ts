@@ -3,15 +3,19 @@ import { compile as mdsvexCompile } from 'mdsvex';
 import rehypeSlug from 'rehype-slug';
 import rehypeExternalLinks from './lib/rehypeExternalLinks';
 import { Mochi, mochiEvents, sequence, logger, noCache, compress, silenceInternalRoutes } from 'mochi-framework';
-import type { Handle, HandleError, MarkdownConfig } from 'mochi-framework';
-import { generateDocsBarrel } from './lib/generateDocsBarrel';
+import type { Handle, HandleError, MarkdownConfig, SpeculationRules } from 'mochi-framework';
+import { analytics } from 'mochi-shared';
 import { clearDocsCaches, DOCS_DIR } from './lib/docs';
-import { highlightCode } from './lib/highlight.server';
+import { clearBlogCaches, BLOG_DIR } from './lib/blog';
+import { clearFeedCache } from './lib/feed';
 import { handle as cookieVaryTestHandle } from './demos/cookie-vary-test/routes';
+import { handle as modeWatcherHandle } from './demos/mode-watcher/routes';
+import { handle as shotHandle } from './shot/routes';
 import { encodeDebugBarGlobals } from './lib/debugBarEncode';
-import { routes, queues } from './routes';
+import { routes, queues, cron } from './routes';
+import { CHAT_WS_MAX_PAYLOAD_BYTES } from './demos/chat/routes';
 
-const DEVELOPMENT = process.env.MODE === 'development';
+const DEVELOPMENT = process.env.NODE_ENV === 'development';
 const IS_DOCKER = process.env.MOCHI_DOCKER === 'true';
 const immutableAssets: Handle = async ({ event, resolve }) => {
   const response = await resolve(event);
@@ -21,14 +25,21 @@ const immutableAssets: Handle = async ({ event, resolve }) => {
   return response;
 };
 
-if (process.env.MODE === 'development') {
-  await generateDocsBarrel();
-
+if (process.env.NODE_ENV === 'development') {
   const docsDirPrefix = DOCS_DIR + path.sep;
-  mochiEvents.setHandler('docs-cache-clear', 'file:change', async ({ path: changed }) => {
+  mochiEvents.setHandler('docs-cache-clear', 'file:change', ({ path: changed }) => {
     if (changed.startsWith(docsDirPrefix) && changed.endsWith('.md')) {
       clearDocsCaches();
-      await generateDocsBarrel();
+    }
+  });
+
+  const blogDirPrefix = BLOG_DIR + path.sep;
+  mochiEvents.setHandler('blog-cache-clear', 'file:change', ({ path: changed }) => {
+    if (changed.startsWith(blogDirPrefix) && changed.endsWith('.md')) {
+      clearBlogCaches();
+      clearFeedCache();
+      // The sitemap cache lives with the docs caches and includes blog URLs.
+      clearDocsCaches();
     }
   });
 }
@@ -41,7 +52,6 @@ const handleError: HandleError = ({ error, event, status, message }) => {
   if (error && status >= 500) {
     logger.error('app:', event.url.pathname, error);
   }
-  // Short-circuit: redirect this specific demo path instead of rendering the error page
   if (event.url.pathname === '/demos/error/redirect/') {
     return Response.redirect(new URL('/demos/error', event.url), 302);
   }
@@ -81,15 +91,6 @@ Hello from Mochi! Inserted via transformPage
   });
 };
 
-const ANALYTICS_SCRIPT = `<script defer src="https://u.khromov.se/u.js" data-performance="true" data-website-id="8dceb8f5-6533-4c03-9cd6-1ce74accd63a"></script>`;
-const analytics: Handle = async ({ event, resolve }) => {
-  return resolve(event, {
-    transformPage({ html }) {
-      return html.replace('{{mochi.analytics}}', IS_DOCKER ? ANALYTICS_SCRIPT : '');
-    },
-  });
-};
-
 // Re-encodes the debug bar's inlined file paths so crawlers can't mine them as phantom URLs.
 // See packages/site/src/lib/debugBarEncode.ts for the why; debugBarEncode.test.ts guards the match.
 const encodeDebugBarPaths: Handle = async ({ event, resolve }) => {
@@ -119,33 +120,102 @@ const origin = CSRF_DOMAIN.includes('://') ? CSRF_DOMAIN : `${CSRF_PROTOCOL}://$
 const markdownConfig: MarkdownConfig = {
   compile: mdsvexCompile,
   rehypePlugins: [rehypeSlug, rehypeExternalLinks],
-  highlight: { highlighter: (code, lang) => highlightCode(code, lang) },
+  // Imported lazily so the grammars are only ever loaded by a build that actually compiles markdown, not by every server boot.
+  highlight: { highlighter: async (code, lang) => (await import('./lib/highlight.server')).highlightCode(code, lang) },
+};
+
+const speculationRules: SpeculationRules = {
+  prefetch: [
+    {
+      where: {
+        and: [
+          { href_matches: '/*' },
+          { not: { href_matches: ['/discord', '/discord/*'] } },
+          { not: { href_matches: ['/support', '/support/*'] } },
+          { not: { href_matches: '/demos/login/*' } },
+          { not: { href_matches: '/demos/protection*' } },
+          { not: { href_matches: '/cookie-vary-test/*' } },
+          { not: { href_matches: '/api/*' } },
+          { not: { href_matches: ['/mcp', '/mcp/'] } },
+          { not: { href_matches: '/_*' } },
+          { not: { selector_matches: '[target=_blank]' } },
+          { not: { selector_matches: '[rel~=nofollow]' } },
+        ],
+      },
+      eagerness: 'moderate',
+    },
+  ],
+  prerender: [
+    {
+      where: {
+        and: [
+          { or: [{ href_matches: '/' }, { href_matches: '/docs/*' }, { href_matches: '/blog/*' }, { href_matches: '/ci/*' }] },
+          { not: { href_matches: ['/ci/data', '/ci/data/*'] } },
+          { not: { selector_matches: '[target=_blank]' } },
+          { not: { selector_matches: '[rel~=nofollow]' } },
+        ],
+      },
+      eagerness: 'moderate',
+    },
+  ],
 };
 
 await Mochi.serve({
   port: PORT,
-  development: DEVELOPMENT,
   liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
+  // `maxPayloadLength` is the only inbound bound running before Bun buffers a frame, and `idleTimeout` keeps Bun's
+  // keepalive pings landing inside nginx's 60s `proxy_read_timeout`, which would otherwise drop every idle tab.
+  websocket: { maxPayloadLength: CHAT_WS_MAX_PAYLOAD_BYTES, idleTimeout: 30 },
+  speculationRules,
   trailingSlash: 'always',
-  handle: sequence(compress(), immutableAssets, helloWorld, asciiDog, analytics, encodeDebugBarPaths, noCache, cookieVaryTestHandle),
+  // /ci/dashboard is a chrome-free always-on display — it would otherwise report a pageview every refresh.
+  handle: sequence(
+    compress(),
+    immutableAssets,
+    helloWorld,
+    asciiDog,
+    analytics({ exclude: ['/ci/dashboard'] }),
+    encodeDebugBarPaths,
+    noCache,
+    cookieVaryTestHandle,
+    modeWatcherHandle,
+    shotHandle,
+  ),
   handleError,
+  // Only the protection demo's own page and API are gated — the rest of the site (including
+  // /demos/protection/llms.txt) never sees the interstitial.
+  protection: {
+    enabled: true,
+    protect: ({ path }) => path === '/demos/protection' || path === '/demos/protection/' || path.startsWith('/demos/protection/api'),
+    // Above the default so visitors actually see the interstitial do its work.
+    bits: 20,
+  },
   idleTimeout: 60,
   compressServerIslandProps: true,
-  optimize: { enabled: true, exclude: [] },
-  warmup: true,
+  warmup: { enabledInProd: true, enabledInDev: true },
   additionalWatchPaths: ['../docs'],
   logger: { level: 'log' },
-  proxy: { origin }, // TODO: This is a bit of an awkward way to set the allowed csrf domain...
+  // nginx is the socket peer for every visitor, so reading the rightmost entry nginx appends is what distinguishes them.
+  proxy: { origin, addressHeader: 'x-forwarded-for', xffDepth: 1 }, // TODO: This is a bit of an awkward way to set the allowed csrf domain...
+  // Served straight from disk as one Bun directory route for the /demos/static-dirs page
+  // (kept in sync with the example shown in ./src/demoIndex.ts).
+  staticDirs: { '/gallery': './images' },
   // Named image sizes used by the /demos/image* pages (kept in sync with the
   // example shown in ./src/demoIndex.ts).
   image: {
+    // Persist transformed bytes to a mountable volume in containers; unset locally
+    // falls back to the framework default (./.mochi/image-cache).
+    cacheDir: process.env.MOCHI_IMAGE_CACHE_DIR,
     // The image-invalidation demo sources from our own loopback endpoint, which the
     // SSRF guard would otherwise reject as a private address. Safe here: every image
     // src on this site is hardcoded and server-minted (encrypted URLs), never taken
     // from user input, so there's no arbitrary-fetch vector to protect against.
     blockPrivateNetworks: false,
     sizes: {
+      // Docs screenshots: authored at their natural size (<= 1400px) and shown in a
+      // ~800px prose column, so this only re-encodes to webp — it never resizes.
+      doc: { width: 1400, withoutEnlargement: true, format: 'webp', quality: 82 },
       hero: { width: 600, height: 400, fit: 'inside' },
       square: { width: 400, height: 400, fit: 'inside' },
       card: { width: 400, height: 267, fit: 'inside' },
@@ -173,12 +243,10 @@ await Mochi.serve({
   },
   filters: {
     'consoleLogger:line': (line, ctx) => (ctx.path.startsWith('/health') ? null : silenceInternalRoutes(line, ctx)),
-    // The MCP endpoint must answer at exactly /mcp; the site-wide trailingSlash: 'always'
-    // policy would otherwise 308 it to /mcp/ and some MCP clients don't follow the redirect.
-    'trailingSlash:redirect': (redirect, { url }) => (url.pathname === '/mcp' ? null : redirect),
   },
   routes,
   queues,
+  cron,
 });
 
 logger.info('Server running at ' + origin);

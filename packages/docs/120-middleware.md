@@ -1,7 +1,7 @@
 ---
 title: 'Middleware (hooks)'
 slug: middleware
-description: 'Intercept and transform requests and responses using SvelteKit-style handle functions.'
+description: 'Intercept and transform requests and responses with SvelteKit-style handle functions.'
 ---
 
 <script>
@@ -11,11 +11,11 @@ description: 'Intercept and transform requests and responses using SvelteKit-sty
 
 ## Middleware (hooks)
 
-Middleware uses SvelteKit-style `Handle` functions registered via `Mochi.serve({ handle })`. Each handle receives `{ event, resolve }`, mutates `event` as needed, calls `resolve(event)` to continue the chain, and returns the resulting `Response`.
+Middleware uses `Handle` functions registered through `Mochi.serve({ handle })`. Each handle receives `{ event, resolve }`, mutates `event` as needed, calls `resolve(event)` to continue the chain, and returns the resulting `Response`.
 
 ### `Handle`
 
-A `Handle` is `async ({ event, resolve }) => Response`. `event` carries `{ request, url, server, locals, kind }`; `resolve(event)` invokes the next middleware or the final route handler and returns its `Response`.
+A `Handle` is `async ({ event, resolve }) => Response`. `event` carries `{ request, url, server, locals, kind }`. `resolve(event)` invokes the next middleware or the final route handler and returns its `Response`.
 
 ```ts
 // file: src/handle.ts
@@ -31,13 +31,13 @@ export const auth: Handle = async ({ event, resolve }) => {
 
 <Callout type="warning">
 
-**Await `resolve()` to post-process responses.** When you need to inspect or modify the response, use `const response = await resolve(event)` and return the response explicitly. Without `await`, your function completes before post-processing finishes, causing silent data loss and race conditions.
+**Await `resolve()` to post-process responses.** To inspect or modify the response, use `const response = await resolve(event)` and return it explicitly. Without `await`, your function completes before post-processing finishes, causing silent data loss and race conditions.
 
 </Callout>
 
 ### `event.locals`
 
-`event.locals` is a per-request object for passing data between middleware layers and into route handlers. Read it from any server-side context via `getRequestContext().locals`.
+`event.locals` is a per-request object for passing data between middleware layers and into route handlers. Read it from any server-side context with `getRequestContext().locals`.
 
 ```ts
 // file: src/handle.ts
@@ -51,17 +51,17 @@ export const attachUser: Handle = async ({ event, resolve }) => {
 
 ### `event.kind`
 
-Every event carries a `kind` discriminator describing what the framework is about to do with the request:
+Every event carries a `kind` that describes what the framework is about to do with the request:
 
 | Value        | When                                                                         |
 | ------------ | ---------------------------------------------------------------------------- |
 | `'page'`     | `Mochi.page` route (GET render or POST form action)                          |
 | `'api'`      | `Mochi.api` route                                                            |
 | `'asset'`    | Framework static asset (`.js` / `.css` client bundle or the dev stats route) |
-| `'fallback'` | Unmatched URL — will be passed to your `fetch` handler                       |
-| `'error'`    | Unmatched URL with no `fetch` configured — framework will render a 404       |
+| `'fallback'` | Unmatched URL — passed to your `fetch` handler                               |
+| `'error'`    | Unmatched URL with no `fetch` configured — framework renders a 404           |
 
-`kind` is set once at construction and isn't mutated; an error thrown _during_ a `Mochi.page` render is still `kind: 'page'`.
+`kind` is set once at construction. An error thrown during a `Mochi.page` render stays `kind: 'page'`.
 
 Use it to opt out of per-request work for framework assets:
 
@@ -80,7 +80,7 @@ export const auth: Handle = async ({ event, resolve }) => {
 
 ### `sequence`
 
-Compose multiple handles into one with `sequence(...handlers)`. Handles run in order: the first handle's pre-processing runs first, and its post-processing runs last (nested-middleware semantics).
+Compose multiple handles into one with `sequence(...handlers)`. Handles run in order. The first handle's pre-processing runs first, and its post-processing runs last (nested-middleware semantics).
 
 ```ts
 // file: src/index.ts
@@ -112,11 +112,11 @@ export const stripServerHeader: Handle = ({ event, resolve }) =>
   });
 ```
 
-When composed with `sequence`, `transformPage` runs in **reverse** order (inner handle transforms first, outer wraps the result), and `filterResponseHeaders` uses **first-defined-wins** — only the earliest handle's filter is applied.
+When composed with `sequence`, `transformPage` runs in **reverse** order (inner handle transforms first, outer wraps the result). `filterResponseHeaders` uses **first-defined-wins** — only the earliest handle's filter applies.
 
 ### `compress`
 
-Built-in middleware factory for response compression. Negotiates between gzip and brotli based on the client's `Accept-Encoding`. Place it innermost in `sequence(...)` so it sees the body produced by the rest of the chain (and by `transformPage`):
+Built-in middleware factory for response compression. It negotiates gzip, zstd or deflate from the client's `Accept-Encoding`. Place it innermost in `sequence(...)` so it sees the body produced by the rest of the chain:
 
 ```ts
 // file: src/index.ts
@@ -130,22 +130,20 @@ await Mochi.serve({
 
 Options:
 
-- `methods` — the encodings the server is willing to use, gating which ones may be picked. Defaults to `['brotli', 'gzip']`. The client's `Accept-Encoding` decides the winner among them (header order + q-values; q=0 forbids). The array order is only used as a tiebreak when the client expresses no preference (e.g. `Accept-Encoding: *`).
-- `brotliQuality` — brotli quality level `0..11`. Defaults to `4`. The zlib default of `11` is designed for static prebuilds and is too slow for per-request SSR; raise it only when the response is cached.
+- `methods` — the encodings the server is willing to use: `'gzip'`, `'zstd'`, `'deflate'`. Defaults to `['zstd', 'gzip']`. The client's `Accept-Encoding` picks the winner. The array order is only a tiebreak when the client expresses no preference.
 
 ```ts
-// Bump brotli quality for pages you also cache
-sequence(auth, compress({ brotliQuality: 6 }));
-
-// Disable brotli (e.g. CPU-constrained host)
 sequence(auth, compress({ methods: ['gzip'] }));
+sequence(auth, compress({ methods: ['zstd', 'gzip'] }));
 ```
 
-`compress()` is a no-op in development so the debug bar can render the uncompressed HTML response. In production it always adds `Vary: Accept-Encoding`, and compresses when the response carries a compressible `Content-Type` (`text/*`, `application/json`, `application/javascript`, `application/xml`, `application/manifest+json`, `application/ld+json`, `image/svg+xml`). Responses that already declare a `Content-Encoding` pass through untouched. Static framework assets (JS/CSS bundles) and the framework error page also flow through `handle`, so the same `compress()` covers them — that's why other body-touching middleware (auth, etc.) should branch on `event.kind === 'asset'` if they need to skip framework bundles.
+Every encoding streams through one `CompressionStream`, so a chunked SSR response stays chunked and the client sees the first bytes before the handler has finished. Brotli is intentionally not offered — Bun's `CompressionStream("brotli")` is fixed at quality 11, far too slow for per-request SSR — so reach for `zstd` when you want brotli-class ratios without giving up streaming; a client that only accepts `br` is served uncompressed. Brotli returns once Bun's `CompressionStream` accepts a quality level. A `methods` entry this build does not support — `'brotli'`, carried over from an older config — is dropped with a warning at startup, leaving the remaining methods in play.
+
+`compress()` is a no-op in development, because the debug bar must inject itself into the HTML after the response is built. In production it adds `Vary: Accept-Encoding` and compresses compressible content types (`text/*`, `application/json`, `application/javascript`, `application/xml`, and others). A response that already declares `Content-Encoding` passes through untouched. Static framework assets also flow through `handle`, so `compress()` covers them. Other body-touching middleware must branch on `event.kind === 'asset'` when it needs to skip framework bundles.
 
 ### `noCache`
 
-Built-in middleware that defaults `Cache-Control: no-cache` on `page` and `api` responses. Routes that set their own `Cache-Control` are left untouched, so opt-in caching still works per route.
+Built-in middleware that defaults `Cache-Control: no-cache` on `page` and `api` responses. A route that sets its own `Cache-Control` is left untouched, so opt-in caching works per route.
 
 ```ts
 // file: src/index.ts
@@ -157,8 +155,8 @@ await Mochi.serve({
 });
 ```
 
-`asset`, `fallback`, and `error` events pass through unchanged — framework bundles already get long-lived immutable caching in production. WebSocket upgrades and SSE streams never reach the middleware.
+`asset`, `fallback`, and `error` events pass through unchanged. WebSocket upgrades and SSE streams never reach the middleware.
 
 <SeeItInAction
-demos={[{ href: "/demos/request-id/", title: "Request ID", hook: "Every request gets a UUID v7 — read it server-side via getRequestContext().requestId; the same id rides every lifecycle event for correlation." }]}
+demos={[{ href: "/demos/request-id/", title: "Request ID", hook: "How request IDs work — every request gets a UUID v7 on getRequestContext().requestId that rides every lifecycle event for correlation." }]}
 />

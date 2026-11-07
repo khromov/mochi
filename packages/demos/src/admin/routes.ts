@@ -25,7 +25,6 @@ function nextStockPrice(): { price: number; change: number; timestamp: string } 
 export const routes: Record<string, MochiRouteValue> = {
   '/admin': Mochi.page('./src/admin/AdminDashboard.svelte'),
 
-  // SSE: streams a synthetic stock price every ~1.5s.
   '/sse/admin/stock': Mochi.sse((stream) => {
     stream.send(JSON.stringify(nextStockPrice()));
     const interval = setInterval(() => {
@@ -34,7 +33,6 @@ export const routes: Record<string, MochiRouteValue> = {
     stream.onClose(() => clearInterval(interval));
   }),
 
-  // REST: returns top products after an artificial 1.5-2.5s delay.
   '/api/admin/products': Mochi.api(async () => {
     await Bun.sleep(1500 + Math.random() * 1000);
     return Response.json({

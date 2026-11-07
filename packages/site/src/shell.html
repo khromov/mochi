@@ -21,8 +21,20 @@
       })();
     </script>
     <style>
+      /* Pin the cascade layer order before any stylesheet can imply one. Libraries that
+         layer their styles (LayerChart, Tailwind) otherwise inherit whatever order the
+         bundler happened to emit, which can differ between dev and production. */
+      @layer reset, theme, base, components, utilities;
+
       :root {
         color-scheme: light dark;
+
+        /* Bun downlevels `light-dark(a, b)` in dependency CSS to `var(--buncss-light, a) var(--buncss-dark, b)`
+           and emits these definitions onto whichever selector declares `color-scheme` in the same stylesheet.
+           Component CSS is bundled per file, so a dependency that uses light-dark() but never declares
+           color-scheme ships the usage without the definitions and the declaration resolves to nothing. */
+        --buncss-light: initial;
+        --buncss-dark: ;
 
         --bg: #f5f3ec;
         --surface: #fffdf8;
@@ -51,8 +63,8 @@
         --badge-success-text: var(--accent-soft-text);
         --badge-warning-bg: #f5ecd7;
         --badge-warning-text: #7a5a20;
-        --badge-info-bg: #e3ece0;
-        --badge-info-text: #2f5235;
+        --badge-info-bg: #dde7ec;
+        --badge-info-text: #2c4d61;
         --badge-danger-bg: #f4dcd6;
         --badge-danger-text: #7a2e20;
         --badge-tip-bg: #dde7ec;
@@ -78,6 +90,9 @@
          query via higher specificity, so it works on dark-preferring systems too. */
       @media (prefers-color-scheme: dark) {
         :root:not([data-theme='light']) {
+          --buncss-light: ;
+          --buncss-dark: initial;
+
           --bg: #171914;
           --surface: #1f221c;
           --surface-muted: #1a1d17;
@@ -103,8 +118,8 @@
           --badge-success-text: #c7e0cd;
           --badge-warning-bg: #2f281a;
           --badge-warning-text: #d5b982;
-          --badge-info-bg: #233028;
-          --badge-info-text: #b8d5be;
+          --badge-info-bg: #1e2b33;
+          --badge-info-text: #b6cdd8;
           --badge-danger-bg: #351f1a;
           --badge-danger-text: #e9a89a;
           --badge-tip-bg: #1e2b33;
@@ -118,6 +133,9 @@
 
       /* Explicit dark choice — wins regardless of system preference. */
       :root[data-theme='dark'] {
+        --buncss-light: ;
+        --buncss-dark: initial;
+
         --bg: #171914;
         --surface: #1f221c;
         --surface-muted: #1a1d17;
@@ -143,8 +161,8 @@
         --badge-success-text: #c7e0cd;
         --badge-warning-bg: #2f281a;
         --badge-warning-text: #d5b982;
-        --badge-info-bg: #233028;
-        --badge-info-text: #b8d5be;
+        --badge-info-bg: #1e2b33;
+        --badge-info-text: #b6cdd8;
         --badge-danger-bg: #351f1a;
         --badge-danger-text: #e9a89a;
         --badge-tip-bg: #1e2b33;
@@ -155,12 +173,18 @@
         --code-chrome-border: #000000;
       }
 
-      *,
-      *::before,
-      *::after {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
+      /* Layered so it still beats the UA defaults but loses to layered library styles —
+         unlayered, this `padding: 0` would win over every cascade layer regardless of
+         specificity and strip the spacing off things like LayerChart's tooltips. Every
+         other stylesheet on the site is unlayered and so still beats it, as before. */
+      @layer reset {
+        *,
+        *::before,
+        *::after {
+          box-sizing: border-box;
+          margin: 0;
+          padding: 0;
+        }
       }
 
       html {
@@ -177,7 +201,7 @@
         text-rendering: optimizeLegibility;
       }
 
-      /* Shared code-block markup. Produced by `highlightCode()` in src/lib/highlightCode.ts
+      /* Shared code-block markup. Produced by `highlightCode()` in src/lib/highlight.server.ts
          (used by both mdsvex doc pages and the demo source viewer), so the visual
          treatment lives globally rather than inside any one prose surface. */
       pre {
@@ -240,6 +264,134 @@
         border-radius: 0;
         color: inherit;
         font-size: inherit;
+      }
+
+      .twinkleplop .tok.comment,
+      .twinkleplop .tok.doc_marker,
+      .twinkleplop .tok.hash,
+      .twinkleplop .tok.label {
+        color: #72786c;
+        font-style: italic;
+      }
+
+      .twinkleplop .tok.keyword,
+      .twinkleplop .tok.operator,
+      .twinkleplop .tok.builtin,
+      .twinkleplop .tok.boolean,
+      .twinkleplop .tok.null,
+      .twinkleplop .tok.constant,
+      .twinkleplop .tok.decorator,
+      .twinkleplop .tok.directive,
+      .twinkleplop .tok.lifetime,
+      .twinkleplop .tok.unit,
+      .twinkleplop .tok.attr_sigil,
+      .twinkleplop .tok.svelte_block,
+      .twinkleplop .tok.svelte_directive {
+        color: #a7c9a8;
+      }
+
+      .twinkleplop .tok.string,
+      .twinkleplop .tok.template,
+      .twinkleplop .tok.regex,
+      .twinkleplop .tok.plain_scalar,
+      .twinkleplop .tok.code,
+      .twinkleplop .tok.code_block,
+      .twinkleplop .tok.raw_code_block,
+      .twinkleplop .tok.raw_front_matter,
+      .twinkleplop .tok.raw_script,
+      .twinkleplop .tok.raw_style,
+      .twinkleplop .tok.raw_svelte_expression,
+      .twinkleplop .tok.autolink,
+      .twinkleplop .tok.link_text,
+      .twinkleplop .tok.url,
+      .twinkleplop .tok.url_link,
+      .twinkleplop .tok.url_title,
+      .twinkleplop .tok.inserted,
+      .twinkleplop .tok.inserted_marker {
+        color: #d5b982;
+      }
+
+      .twinkleplop .tok.number,
+      .twinkleplop .tok.bit,
+      .twinkleplop .tok.datetime,
+      .twinkleplop .tok.escape,
+      .twinkleplop .tok.string_escape,
+      .twinkleplop .tok.hard_break,
+      .twinkleplop .tok.expression,
+      .twinkleplop .tok.changed,
+      .twinkleplop .tok.changed_marker,
+      .twinkleplop .tok.deleted,
+      .twinkleplop .tok.deleted_marker {
+        color: #e9a89a;
+      }
+
+      .twinkleplop .tok.type,
+      .twinkleplop .tok.class_name,
+      .twinkleplop .tok.namespace,
+      .twinkleplop .tok.variant,
+      .twinkleplop .tok.entity,
+      .twinkleplop .tok.doctype,
+      .twinkleplop .tok.code_language,
+      .twinkleplop .tok.array_table_header,
+      .twinkleplop .tok.block_scalar_header {
+        color: #c7e0cd;
+      }
+
+      .twinkleplop .tok.variable,
+      .twinkleplop .tok.identifier,
+      .twinkleplop .tok.parameter,
+      .twinkleplop .tok.property,
+      .twinkleplop .tok.attribute,
+      .twinkleplop .tok.attr_name,
+      .twinkleplop .tok.css_variable,
+      .twinkleplop .tok.selector_class,
+      .twinkleplop .tok.selector_id,
+      .twinkleplop .tok.selector_pseudo {
+        color: #b8d5be;
+      }
+
+      .twinkleplop .tok.tag_name,
+      .twinkleplop .tok.tag,
+      .twinkleplop .tok.selector,
+      .twinkleplop .tok.heading,
+      .twinkleplop .tok.heading_marker,
+      .twinkleplop .tok.list_marker,
+      .twinkleplop .tok.task_marker,
+      .twinkleplop .tok.blockquote_marker,
+      .twinkleplop .tok.front_matter_marker,
+      .twinkleplop .tok.code_fence,
+      .twinkleplop .tok.hr,
+      .twinkleplop .tok.autolink_open,
+      .twinkleplop .tok.autolink_close,
+      .twinkleplop .tok.bold_open,
+      .twinkleplop .tok.bold_close,
+      .twinkleplop .tok.code_open,
+      .twinkleplop .tok.code_close,
+      .twinkleplop .tok.italic_open,
+      .twinkleplop .tok.italic_close,
+      .twinkleplop .tok.link_text_open,
+      .twinkleplop .tok.link_text_close,
+      .twinkleplop .tok.strike_open,
+      .twinkleplop .tok.strike_close {
+        color: #8fb097;
+      }
+
+      .twinkleplop .tok.function,
+      .twinkleplop .tok.punctuation,
+      .twinkleplop .tok.format {
+        color: #e8e6dd;
+      }
+
+      .twinkleplop .tok.bold {
+        font-weight: 600;
+      }
+
+      .twinkleplop .tok.italic {
+        font-style: italic;
+      }
+
+      .twinkleplop .tok.strike {
+        text-decoration: line-through;
       }
 
       .hero,

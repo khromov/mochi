@@ -3,6 +3,7 @@
   import Hero from './components/Hero.svelte';
   import Footer from './components/Footer.svelte';
   import QuickStart from './components/QuickStart.svelte';
+  import PostBanner from './components/PostBanner.svelte';
   import { demos, categoryLabels, categoryOrder, type DemoCategory, type Demo } from './lib/demos';
   import { demoIconFor } from './lib/demoIcons';
   import { isExternal } from './lib/isExternal';
@@ -34,6 +35,8 @@
   <Hero />
 
   <main class="body">
+    <PostBanner />
+
     <section class="docs-cta">
       <h2 class="docs-cta-title">What is Mochi?</h2>
       <p class="lead">

@@ -1,12 +1,15 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
+  import CodeSnippet from '../../components/CodeSnippet.svelte';
   import ImageCredits from '../../components/ImageCredits.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
+  import Callout from '../../../../docs/_components/Callout.svelte';
+  import { sources } from './sources.prerender.ts';
   import ImageIslandCard from './ImageIslandCard.svelte';
   import { Image } from 'mochi-framework/image';
   import { getImageUrl, getImagePlaceholder } from 'mochi-framework';
+  import { highlightCode } from '../../lib/highlight.server';
   import ArrowDown from '@lucide/svelte/icons/arrow-down';
+  import hero from './hero.jpg';
 
   const remote = 'https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi/mochi-1.jpg';
 
@@ -21,11 +24,23 @@
 
   const blur = await getImagePlaceholder(remote);
 
-  const sources = await loadSources(files);
+  // Syntax highlighting is server-side, so these are computed once during SSR.
+  const svelte = (code) => highlightCode(code, 'svelte');
+  const ts = (code) => highlightCode(code, 'typescript');
+  const codeComponent = await svelte('<Image src={photo} size="hero" alt="A resized photo" />');
+  const codePlaceholder = await svelte('<Image src={photo} size="hero" placeholder alt="A resized photo" />');
+  const codeIsland = await svelte('<ImageIslandCard mochi:hydrate src={photo} />');
+  const codeProgrammatic = await ts("const url = getImageUrl(src, 'square');");
+  const codeOriginal = await ts('const url = getImageUrl(src); // no size name → the original');
+  const codeGallery = await svelte('{#each gallery as src (src)}\n  <Image {src} size="square" placeholder alt="Photo" />\n{/each}');
+  const codeLocalImport = await ts("import hero from './hero.jpg';\n// hero → { src, width, height, format }");
+  const codeLocalUsage = await svelte('<Image src={hero} size="hero" alt="A local image" />');
+  const codeLocalBare = await svelte('<Image src={hero} alt="At natural size" />');
+  const codeLocalImg = await svelte('<img src={hero.src} width={hero.width} height={hero.height} alt="" />');
 </script>
 
 <DemoPage
-  title="Image Pipelines"
+  title="Image: Component"
   description="On-the-fly image transforms on Bun.Image, served from an encrypted, stale-while-revalidate disk cache. Transforms are declared once as named sizes in Mochi.serve(); <Image> and getImageUrl() only mint a signed URL, and the endpoint runs the size lazily — so SSR never blocks on image work."
   {sources}
 >
@@ -37,6 +52,31 @@
   <div class="frame">
     <Image src={remote} size="hero" alt="A resized random photo" />
   </div>
+  <CodeSnippet html={codeComponent} />
+
+  <h3>Local image imports</h3>
+  <p>
+    Import a local image Vite-style and get back <code>{'{ src, width, height, format }'}</code>. Pass the object straight to <code>&lt;Image&gt;</code> (transforms and
+    <code>placeholder</code> work as usual), or drop <code>hero.src</code> into a plain <code>&lt;img&gt;</code>. The file is served from a content-hashed URL and read from disk
+    for transforms — no network fetch:
+  </p>
+  <CodeSnippet html={codeLocalImport} />
+  <div class="frame">
+    <Image src={hero} size="hero" alt="A locally-imported photo, resized" />
+  </div>
+  <CodeSnippet html={codeLocalUsage} />
+  <p>
+    A bare <code>&lt;Image src={'{hero}'}&gt;</code> with no size renders the original at its intrinsic dimensions ({hero.width}&times;{hero.height}), straight from the static URL:
+  </p>
+  <div class="frame">
+    <Image src={hero} alt="Local image at natural size" />
+  </div>
+  <CodeSnippet html={codeLocalBare} />
+  <p>Or use <code>hero.src</code> directly — it's a real URL (<code>{hero.src}</code>):</p>
+  <div class="frame">
+    <img src={hero.src} width="300" alt="Via hero.src in a plain img" />
+  </div>
+  <CodeSnippet html={codeLocalImg} />
 
   <h3>With a blur placeholder</h3>
   <p>
@@ -54,6 +94,7 @@
       <Image src={remote} size="hero" alt="A resized random photo with blur-up" placeholder />
     </div>
   {/if}
+  <CodeSnippet html={codePlaceholder} />
 
   <h3>Inside a hydrated island</h3>
   <p>
@@ -63,10 +104,11 @@
   <div class="frame">
     <ImageIslandCard mochi:hydrate src={remote} />
   </div>
-  <p class="note">
-    Caveat: props passed to a hydrated island — like this card's <code>src</code> — are serialized in plain text into the page for hydration, so the source URL is visible to the
-    client here. If your origin must stay secret, keep <code>&lt;Image&gt;</code> in server-rendered markup or a server island, whose props are encrypted.
-  </p>
+  <CodeSnippet html={codeIsland} />
+  <Callout type="warning">
+    Props passed to a hydrated island — like this card's <code>src</code> — are serialized in plain text into the page for hydration, so the source URL is visible to the client
+    here. If your origin must stay secret, keep <code>&lt;Image&gt;</code> in server-rendered markup or a server island, whose props are encrypted.
+  </Callout>
 
   <h3>Programmatic</h3>
   <p><code>getImageUrl(src, 'square')</code> returns the same encrypted URL you can use anywhere:</p>
@@ -74,6 +116,7 @@
   <div class="frame">
     <img src={directUrl} width="400" alt="Resized via getImageUrl()" />
   </div>
+  <CodeSnippet html={codeProgrammatic} />
   <p class="note">
     The <code>square</code> size uses <code>fit: 'inside'</code>, which preserves aspect ratio and fits <em>within</em> the 400&times;400 box — so this 3:2 photo becomes
     400&times;267. Set <code>fit: 'fill'</code> on the size to force an exact square (stretching); <code>Bun.Image</code> has no crop/cover mode.
@@ -87,6 +130,7 @@
   <div class="frame">
     <img src={originalUrl} width="400" alt="Full-size original via getImageUrl()" />
   </div>
+  <CodeSnippet html={codeOriginal} />
 
   <h3>Gallery</h3>
   <p>
@@ -97,6 +141,7 @@
       <Image {src} size="square" placeholder alt="Gallery photo {i + 1}" class="grid__img" />
     {/each}
   </div>
+  <CodeSnippet html={codeGallery} />
 
   <ImageCredits />
 </DemoPage>

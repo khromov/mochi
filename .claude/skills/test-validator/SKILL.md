@@ -20,10 +20,10 @@ This is a Bun monorepo. Use `bun test` to run tests:
 
 ```sh
 # Run a single test file
-bun test packages/mochi/src/serverIslandCrypto.test.ts
+bun test packages/mochi/src/islands/serverIslandCrypto.test.ts
 
 # Run a single test by name within a file
-bun test packages/mochi/src/serverIslandCrypto.test.ts -t "round-trips"
+bun test packages/mochi/src/islands/serverIslandCrypto.test.ts -t "round-trips"
 
 # Run all tests
 bun run test

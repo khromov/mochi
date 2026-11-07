@@ -8,7 +8,7 @@ import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
 import { mochiEvents } from './events';
-import { success } from './forms';
+import { success } from './runtime/forms';
 
 const FIXTURE_PAGE = path.join(import.meta.dir, '__fixtures__', 'css-imports', 'Page.svelte');
 

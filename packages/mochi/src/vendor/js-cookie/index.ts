@@ -151,6 +151,6 @@ function init(converter: CookieConverter, defaultAttributes: CookieAttributes): 
   ) as CookiesApi;
 }
 
-const api = init(defaultConverter, { path: '/' });
+const api = /*@__PURE__*/ init(defaultConverter, { path: '/' });
 
 export default api;

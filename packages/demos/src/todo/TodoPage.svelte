@@ -19,10 +19,7 @@
 </div>
 
 <style>
-  /* Scoped reset — the demos shell.html no longer ships a universal reset,
-     and Tailwind preflight is intentionally off, so the todo subtree owns
-     normalization for the elements it actually uses. Confined to .todo-app
-     descendants so it never leaks into HN/Admin. */
+  /* Scoped reset — shell.html ships no universal reset and Tailwind preflight is off, so this subtree owns its own normalization, confined to .todo-app so it never leaks into HN/Admin. */
   .todo-app :global(*),
   .todo-app :global(*::before),
   .todo-app :global(*::after) {

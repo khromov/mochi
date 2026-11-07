@@ -2,7 +2,7 @@
 /**
  * Renders the markdown body for the review-bot PR comment by diffing two
  * loc-report.ts JSON outputs.
- * Usage: bun loc-comment.ts <main.json> <pr.json> [--repo <owner/repo> --run-id <id> --dep-report <dep-report.txt>]
+ * Usage: bun loc-comment.ts <main.json> <pr.json> [--repo <owner/repo> --run-id <id> --dep-report <dep-report.txt> --audit <audit.txt> --licenses <licenses.txt>]
  */
 
 import { readFileSync } from 'node:fs';
@@ -67,6 +67,23 @@ function renderDepReportSection(content: string): string[] {
   return ['### Dependency report', '', '<details>', '<summary>Expand report</summary>', '', '```', content.trimEnd(), '```', '', '</details>'];
 }
 
+// CLIs may still emit color when run under CI; strip it so the code block reads cleanly.
+// eslint-disable-next-line no-control-regex
+const stripAnsi = (text: string): string => text.replace(/\u001b\[[0-9;]*m/g, '');
+
+/** Folds `bun audit` and `bun pm licenses --prod` into one collapsible section — advisory only, so the PR never goes
+ * red for a vulnerability it did not introduce. */
+function renderAdvisorySection(audit?: string, licenses?: string): string[] {
+  const out: string[] = ['### Security & licenses', ''];
+  if (audit !== undefined) {
+    out.push('<details>', '<summary><code>bun audit</code></summary>', '', '```', stripAnsi(audit).trimEnd() || '(no output)', '```', '', '</details>');
+  }
+  if (licenses !== undefined) {
+    out.push('<details>', '<summary><code>bun pm licenses --prod</code></summary>', '', '```', stripAnsi(licenses).trimEnd() || '(no output)', '```', '', '</details>');
+  }
+  return out;
+}
+
 function renderInstallSection(repo: string, runId: string): string[] {
   const runUrl = `https://github.com/${repo}/actions/runs/${runId}`;
   return [
@@ -97,6 +114,10 @@ function main() {
   const depReportPath = depIdx !== -1 ? args[depIdx + 1] : undefined;
   const changedIdx = args.indexOf('--changed-paths');
   const changedPathsPath = changedIdx !== -1 ? args[changedIdx + 1] : undefined;
+  const auditIdx = args.indexOf('--audit');
+  const auditPath = auditIdx !== -1 ? args[auditIdx + 1] : undefined;
+  const licensesIdx = args.indexOf('--licenses');
+  const licensesPath = licensesIdx !== -1 ? args[licensesIdx + 1] : undefined;
 
   if (!mainPath || !prPath) {
     console.error('Usage: bun loc-comment.ts <main.json> <pr.json> [--repo <owner/repo> --run-id <id>]');
@@ -137,6 +158,24 @@ function main() {
     } catch {
       // dep-report is optional — skip if the file is missing or unreadable
     }
+  }
+
+  // Each file is optional — read what exists, render the section only if either is present.
+  const readOptional = (path: string | undefined): string | undefined => {
+    if (!path) {
+      return undefined;
+    }
+    try {
+      return readFileSync(path, 'utf8');
+    } catch {
+      return undefined;
+    }
+  };
+  const auditContent = readOptional(auditPath);
+  const licensesContent = readOptional(licensesPath);
+  if (auditContent !== undefined || licensesContent !== undefined) {
+    lines.push(...renderAdvisorySection(auditContent, licensesContent));
+    lines.push('');
   }
 
   lines.push('### Lines of code', '');

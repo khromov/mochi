@@ -1,8 +1,10 @@
 <script>
   import { isServer } from 'mochi-framework';
-  import { delay } from '../../components/utils.ts';
+  import { delay } from '../../components/sourceUtils';
 
-  await (isServer ? delay(300, 600) : Promise.resolve());
+  let { inline = true } = $props();
+
+  await (isServer ? delay(inline ? 300 : 600, inline ? 600 : 1200) : Promise.resolve());
 </script>
 
 <div class="level level-4">

@@ -7,6 +7,7 @@ description: 'Register WebSocket endpoints with Mochi.ws() and handle upgrade, o
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## WebSocket routes
@@ -35,11 +36,17 @@ await Mochi.serve({
 });
 ```
 
-Only `message` is required; the rest are optional.
+Only `message` is required.
+
+<Callout type="warning">
+
+[`trailingSlash`](/docs/trailing-slash/) does not apply to WebSocket routes, so connect to exactly the pattern you declared.
+
+</Callout>
 
 ### `upgrade`
 
-Runs once per HTTP upgrade request. Return a value to attach to `ws.data.user`, or return `false` to reject the connection. The route's URL params are passed as the second argument.
+Runs once per HTTP upgrade request. Return a value to attach to `ws.data.user`, or return `false` to reject the connection. The route's URL params are the second argument.
 
 ```ts
 // file: src/index.ts
@@ -63,7 +70,38 @@ await Mochi.serve({
 
 <Callout type="warning">
 
-**Reject unauthenticated sockets in `upgrade`, not `message`.** Authenticating inside `message` and dropping frames still lets the connection establish. Return `false` from `upgrade` so the client never connects.
+**Reject unauthenticated sockets in `upgrade`, not `message`.** Authenticating inside `message` still lets the connection establish. Return `false` from `upgrade` so the client never connects.
+
+</Callout>
+
+#### Request context during the handshake
+
+<VersionNote since="0.10.0" message="Earlier versions threw from getRequestContext() inside upgrade." />
+
+`getRequestContext()` works inside `upgrade`, so cookies and `getClientAddress()` are available there. `handle` middleware does not run for WebSocket upgrades, so `locals` is empty. Later callbacks receive only the socket, so derive anything header-based here and return it on `ws.data.user`.
+
+```ts
+// file: src/index.ts
+import { Mochi, getRequestContext } from 'mochi-framework';
+
+await Mochi.serve({
+  proxy: { addressHeader: 'x-forwarded-for', xffDepth: 1 },
+  routes: {
+    '/ws/chat': Mochi.ws<{ address: string | null }>({
+      upgrade() {
+        return { address: getRequestContext().getClientAddress() };
+      },
+      message(ws, msg) {
+        console.log(ws.data.user.address, msg);
+      },
+    }),
+  },
+});
+```
+
+<Callout type="info">
+
+Behind a reverse proxy every socket shares one peer address, so `ws.remoteAddress` is the proxy rather than the visitor. Rate limiting keyed on it becomes one bucket for your whole site — configure `proxy.addressHeader` and read `getClientAddress()` instead.
 
 </Callout>
 
@@ -105,17 +143,11 @@ close(ws, code, reason) {
 
 ### `drain`
 
-Fires when the socket's send buffer has drained after a backpressured `ws.send`. Resume queued writes here.
-
-```ts
-drain(ws) {
-  // resume buffered sends
-}
-```
+Fires when the socket's send buffer drains after a backpressured `ws.send`. Resume queued writes here.
 
 ### `ws.data`
 
-Each socket carries a typed `data` object. Mochi reserves the internal fields `__mochiRoutePattern`, `__mochiOpenedAt`, and `__mochiPath`; your `upgrade` return value is exposed as `ws.data.user`.
+Each socket carries a typed `data` object. Mochi reserves the internal fields `__mochiRoutePattern`, `__mochiOpenedAt`, and `__mochiPath`. Your `upgrade` return value is exposed as `ws.data.user`.
 
 ```ts
 Mochi.ws<{ userId: string }>({
@@ -131,16 +163,7 @@ Mochi.ws<{ userId: string }>({
 
 ### Pub/sub
 
-Every socket exposes Bun's pub/sub primitives: `ws.subscribe(topic)`, `ws.publish(topic, data)`, `ws.unsubscribe(topic)`. To broadcast from outside a handler, capture the `server` returned by `Mochi.serve()` and call `server.publish(topic, data)`.
-
-```ts
-open(ws) {
-  ws.subscribe('chat');
-},
-message(ws, msg) {
-  ws.publish('chat', String(msg)); // fan out to every other subscriber
-},
-```
+Every socket exposes `ws.subscribe(topic)`, `ws.publish(topic, data)`, and `ws.unsubscribe(topic)`. To broadcast from outside a handler, capture the `server` returned by `Mochi.serve()` and call `server.publish(topic, data)`.
 
 <Callout type="info">
 
@@ -148,13 +171,32 @@ message(ws, msg) {
 
 </Callout>
 
+### Socket limits
+
+<VersionNote since="0.10.0" message="The websocket serve option was added in 0.10.0." />
+
+`Mochi.serve({ websocket })` passes Bun's socket-level options through to every `Mochi.ws()` route. Mochi owns `open`, `message`, `close`, and `drain`; everything else — `maxPayloadLength`, `idleTimeout`, `backpressureLimit`, `perMessageDeflate` — is yours.
+
+```ts
+await Mochi.serve({
+  routes,
+  websocket: { maxPayloadLength: 4 * 1024 },
+});
+```
+
+<Callout type="warning">
+
+`maxPayloadLength` is the only inbound size bound that runs **before** Bun buffers the frame, and it defaults to 16 MB. It caps what the server allocates while a length check inside `message` caps what you store — set both.
+
+</Callout>
+
 ### Lifecycle events
 
-Every WebSocket emits `ws:open`, `ws:message`, and `ws:close` on `mochiEvents`. `logger()` already prints them. See `Events` for the full payload shape and how to add custom subscribers.
+Every WebSocket emits `ws:open`, `ws:message`, and `ws:close` on `mochiEvents`. `consoleLogger()` prints them. See [Events](/docs/events/) for the payload shape.
 
 <SeeItInAction
 demos={[
-{ href: "/demos/chat/", title: "Real-time Chat", hook: "A hydrated island over a Mochi.ws() route, with pub/sub broadcast and in-memory history." },
-{ href: "/demos/streams/", title: "Real-time Streams", hook: "WebSocket and SSE clocks, lazily hydrated via mochi:hydrate:visible." },
+{ href: "/demos/chat/", title: "Real-time Chat", hook: "How WebSocket routes work — a hydrated island over Mochi.ws() with pub/sub broadcast and in-memory history." },
+{ href: "/demos/streams/", title: "Real-time Streams", hook: "How server-sent events and WebSocket streaming work — live SSE and WebSocket clocks, lazily hydrated via mochi:hydrate:visible." },
 ]}
 />

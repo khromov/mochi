@@ -19,6 +19,7 @@ Target is `packages/docs/<NN>-<slug>.md`. Audience is a developer skimming for h
 - **Cross-link with `[text](slug)`** — bare slug, no extension, no path. That's how existing pages link.
 - **No "do/don't" callouts in the body.** Mochi docs don't use them; stay consistent.
 - **Code samples use real project APIs.** Import paths like `mochi-framework`, real route shapes, real symbol names. Never invent APIs — verify against `packages/mochi/src/` first.
+- **Flag unreleased APIs with `VersionNote`.** If the API exists on HEAD but not in the published npm version, import `VersionNote` from `./_components/VersionNote.svelte` in the page `<script>` block and place `<VersionNote since="<next-version>" message="…" />` under the page's `##` title (whole page is new) or under the specific `###`/`####` heading (one new sub-feature on an otherwise-released page — don't page-flag it). Bump `since` to the version the feature ships in. See `115-queues.md` (page) and the `.server.svelte` section of `73-server-only-imports.md` (section).
 - **Svelte 5 only.** `$state`, `$props`, `$derived`, `onclick={...}` — never `export let`, `on:click`, or `$:`.
 
 ## Picking the filename

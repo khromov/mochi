@@ -3,7 +3,7 @@
   import DebugPanel from './DebugPanel.svelte';
   import ImageRow from './ImageRow.svelte';
   import { debugBarState } from './state.svelte';
-  import type { ImageDebugEntry } from '../requestContext';
+  import type { ImageDebugEntry } from '../runtime/requestContext';
 
   let { open, onclose }: { open: boolean; onclose: () => void } = $props();
 

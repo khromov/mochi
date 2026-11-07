@@ -16,21 +16,19 @@ export const routes: Record<string, MochiRouteValue> = {
           from: 'Mochi Demo <noreply@mochi.demo>',
           to: DEMO_TO,
           subject: preset.subject,
-          component: './src/demos/email/PresetEmail.svelte',
+          component: './src/emails/PresetEmail.svelte',
           props: { preset: preset.id, name: 'Ada' },
         });
         return success({ preset: preset.id, subject: preset.subject });
       },
-      // Read the (pre-resized) image off disk and hand it to Mochi.email() as a
-      // real file attachment. The recipient, subject, and file are all fixed
-      // server-side — nothing about the attachment comes from the request.
+      // The recipient, subject, and file are all fixed server-side — nothing about the attachment comes from the request.
       sendPhoto: async () => {
         const content = await Bun.file(ATTACHMENT.path).bytes();
         await Mochi.email({
           from: 'Mochi Demo <noreply@mochi.demo>',
           to: DEMO_TO,
           subject: ATTACHMENT.subject,
-          component: './src/demos/email/AttachmentEmail.svelte',
+          component: './src/emails/AttachmentEmail.svelte',
           props: { name: 'Ada', filename: ATTACHMENT.filename },
           attachments: [{ filename: ATTACHMENT.filename, content, contentType: ATTACHMENT.contentType }],
         });

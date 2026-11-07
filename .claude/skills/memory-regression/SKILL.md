@@ -1,0 +1,77 @@
+---
+name: memory-regression
+description: Analyze Mochi heap snapshots for memory regressions with memlab and suggest fixes. Use when the user says "analyze heap snapshots", "check for memory leaks", "memory regression", "run memlab", "analyze the snapshots", or "/memory-regression".
+user-invocable: true
+---
+
+# Analyze heap snapshots for memory regressions
+
+`memtest/analyze.ts` runs memlab's offline leak detector over the `.heapsnapshot` files in
+`./snapshots/`, feeding it the **oldest / midpoint / newest** of the local series (baseline →
+target → final). Your job is to run it, then map any leaked-object retainer traces back to
+Mochi source and propose fixes.
+
+## Steps
+
+1. **Check inputs.** `ls -lh snapshots/`. memlab needs **≥3** snapshots. If the local
+   folder is empty or stale, sync the whole series from the remote memtest box with
+   `bun run memtest:pull` (incremental — skips files already present; override the host via
+   `REMOTE_HOST`). The analyzer then diffs the oldest/midpoint/newest of whatever's local — a
+   wide window so a slow leak stands out rather than hiding between adjacent hourly captures.
+   If there's no remote either, tell the user to capture more with the memtest harness
+   (`memtest/README.md` has a no-Docker dry run) and stop — don't fabricate an analysis.
+
+2. **Run the analyzer:** `bun run memtest:analyze`. It parses ~60 MB of heap JSON, so it
+   takes a bit. It prints which three snapshots it chose (oldest/midpoint/newest), memlab's own report,
+   then a `=== SUMMARY ===` block: leak-trace count and the top leaked objects ranked by
+   retained size. Exit code is non-zero when leaks are found. For the complete report, run
+   `bun run memtest:analyze --full` — it skips the summary and prints memlab's verbatim
+   VERBOSE output (every retainer trace in full).
+
+3. **If no leaks — but the heap is known to creep — run the trend mode.** `findLeaks` is a
+   pattern detector and misses slow, diffuse growth. Run growth mode over the whole series:
+
+   ```sh
+   bun run memtest:analyze --growth
+   ```
+
+   It reports object **shapes with unbound growth** (count/size climbing every snapshot) and a
+   **constructor delta** table (oldest → newest). A shape/constructor that grows monotonically
+   is the leak candidate — take its name to the source map below. Otherwise report clean, and
+   note a longer window (`SNAPSHOT_INTERVAL_MS`) may be needed to surface a slow leak.
+
+4. **If leaks:** for each top cluster, read memlab's full retainer trace (leaked object →
+   GC root, in the console report and the per-trace JSON under `.memtest-out/analyze/`).
+   The trace names the property/edge chain holding the object. Follow it to the Mochi source
+   that owns the retaining structure, then propose a concrete fix (evict/bound the cache,
+   remove the listener on teardown, stop capturing request state in a module-level closure).
+
+## Interpreting a trace
+
+The retaining chain is read root-ward: `leaked object → …edge… → …edge… → GC root`. The
+**last hop before a long-lived root** is usually the bug — a module-level `Map`/`Set`/array,
+an event emitter's listener list, or a closure captured by a cached function. A leaked object
+retained only by request-scoped state that should have been released points at per-request
+state escaping its lifetime.
+
+## Common Mochi leak sources (grep these when a trace hits framework internals)
+
+- **Unbounded module-level caches** — `packages/mochi/src/compiler/compileCache.ts`,
+  `preprocessCache.ts`, `cache/cache-storage.ts`, `islands/islandPropsRegistry.ts`.
+  A cache keyed by per-request data with no eviction grows forever.
+- **Event-bus / listener accumulation** — `mochiEvents` subscriptions (`events.ts`,
+  `dev/consoleLogger.ts`) and the SSE/WS handler sets in `Mochi.ts`. A subscribe with no
+  matching off, or a connection set that isn't pruned on close.
+- **Per-request state outliving the request** — the `AsyncLocalStorage` context in
+  `runtime/requestContext.ts`, rate-limit maps in `runtime/rateLimit.ts`, `runtime/warmup.ts`.
+- **Growing arrays** — `ComponentRegistry.errors` and similar append-only buffers.
+
+Confirm empirically — reproduce the growth with a minimal repro before claiming a root cause
+(project rule); a trace is a strong lead, not proof.
+
+## Guardrails
+
+- **Never auto-commit or auto-fix.** Propose the fix and wait for the user to approve (repo rule).
+- After any code change, **delegate `bun run checks`** to a sub-agent (don't run it in the main context).
+- `./snapshots/` and `.memtest-out/` are gitignored — nothing here gets committed.
+- Kill stray `bun`/`node` processes when done.

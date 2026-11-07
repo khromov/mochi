@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { ComponentRegistry } from '../ComponentRegistry';
-import { requestContext, type MochiRequestContext } from '../requestContext';
+import { ComponentRegistry } from '../compiler/ComponentRegistry';
+import { requestContext, type MochiRequestContext } from '../runtime/requestContext';
+import { HYDRATABLE_CONTEXT_KEY } from '../islands/isHydratable';
 
-const COMPONENT_PATH = path.join(import.meta.dir, 'ViewTransitions.svelte');
+const COMPONENT_PATH = path.join(import.meta.dir, 'ViewTransitions.server.svelte');
 
 describe('ViewTransitions', () => {
   let outDir: string;
@@ -60,7 +61,8 @@ describe('ViewTransitions', () => {
 
   test('duration is interpolated into the animation', async () => {
     const { head } = await render({ duration: 500 });
-    expect(head).toContain('500ms');
+    expect(head).toContain('mochi-vt-out 500ms');
+    expect(head).toContain('mochi-vt-in 500ms');
   });
 
   test('custom wraps the supplied bodies in keyframes and the rules still reference them', async () => {
@@ -183,9 +185,11 @@ describe('ViewTransitions', () => {
     await expect(render({ keepElementSelectors: '</style><script>' })).rejects.toThrow('must not contain "<"');
   });
 
-  test('throws when invoked as an island (isHydratable)', async () => {
-    // The framework injects isHydratable: true on mochi:hydrate*/defer* invocations.
-    await expect(render({ isHydratable: true })).rejects.toThrow('must not be hydrated');
+  test('throws when invoked as an island (isHydratable())', async () => {
+    // The framework seeds the hydratable context on mochi:hydrate*/defer*
+    // invocations; the component detects it via isHydratable().
+    const context = new Map<unknown, unknown>([[HYDRATABLE_CONTEXT_KEY, true]]);
+    await expect(renderInRequest(() => registry.renderComponent(COMPONENT_PATH, undefined, { context }))).rejects.toThrow('must not be hydrated');
   });
 
   test('throws on a non-finite or negative duration', async () => {

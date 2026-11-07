@@ -15,3 +15,11 @@ coverage*
 .mochi
 packages/**/.mochi
 packages/**/.mochi-*
+# Local SQLite data (packages/support). Never ship a dev database into an image —
+# a named volume mounted over the directory would inherit those files.
+packages/**/.db
+
+# Heap dumps from the memtest harness — bind-mounted into ./snapshots, and
+# multi-GB after a long run. Without this every rebuild re-uploads them as
+# build context.
+snapshots

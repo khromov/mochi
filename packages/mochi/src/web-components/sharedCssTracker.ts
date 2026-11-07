@@ -1,4 +1,4 @@
-import { pinGlobal } from '../globalState';
+import { pinGlobal } from '../utils/globalState';
 
 // `ServerIsland.ts` is inline-bundled separately from `HydratableIsland.ts`
 // (see `buildInlineWebComponent`), so a plain module-level `Set` would be

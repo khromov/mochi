@@ -1,36 +1,47 @@
 import { Mochi, mochiEvents } from 'mochi-framework';
-import type { MochiQueueConfig } from 'mochi-framework';
 import type { NotificationJob, ProcessedEntry, QueueStatus } from './types';
 
 export const QUEUE_NAME = 'demo-notifications';
 
-// One server-owned snapshot, shared by every connected client. `inFlight` is
-// tracked off the event bus (not per request) so it counts enqueues and
-// completions from all browsers — everyone sees the same numbers.
+// Pending jobs are tracked on the event bus as shared server state, so every connected browser sees the same numbers.
 const processed: ProcessedEntry[] = [];
 let processedTotal = 0;
-let inFlight = 0;
+let reservations = 0;
+
+export const MAX_PENDING_NOTIFICATION_JOBS = 100;
+
+// Jobs here take under two seconds, so anything still counted after a minute lost its terminal event. Ageing those
+// out matters because the count also gates admission — a stuck counter would wedge the demo at "full" for everyone.
+const PENDING_TTL_MS = 60_000;
+const pendingSince: number[] = [];
+
+function pendingJobs(): number {
+  const cutoff = Date.now() - PENDING_TTL_MS;
+  while (pendingSince.length > 0 && pendingSince[0]! < cutoff) {
+    pendingSince.shift();
+  }
+  return pendingSince.length;
+}
 
 mochiEvents.on('queue:added', (e) => {
   if (e.queue === QUEUE_NAME) {
-    inFlight++;
+    pendingSince.push(Date.now());
   }
 });
 const settle = (e: { queue: string }) => {
   if (e.queue === QUEUE_NAME) {
-    inFlight = Math.max(0, inFlight - 1);
+    pendingSince.shift();
   }
 };
 mochiEvents.on('queue:completed', settle);
 mochiEvents.on('queue:failed', settle);
 
-// In-memory so the demo writes no SQLite file into the site working dir; pass
-// `dataPath` to persist. Mounted under QUEUE_NAME in Mochi.serve({ queues }).
-export const notificationQueue: MochiQueueConfig = Mochi.queue<NotificationJob>({
+// The site rides the default `queueStorage: 'memory'`, so the demo writes no queue file into the working dir;
+// set `Mochi.serve({ queueStorage })` to persist.
+export const notificationQueue = Mochi.queue<NotificationJob>(QUEUE_NAME, {
   concurrency: 2,
   process: async (job) => {
-    // Simulate delivery latency so the UI shows the queued → processing → done
-    // transition rather than completing instantly.
+    // Simulate delivery latency so the UI shows the queued → processing → done transition.
     const start = Date.now();
     await Bun.sleep(500 + Math.random() * 1500);
     processed.push({ user: job.data.user, at: Date.now(), ms: Date.now() - start });
@@ -42,6 +53,35 @@ export const notificationQueue: MochiQueueConfig = Mochi.queue<NotificationJob>(
   },
 });
 
+// `add()` awaits the queue write before `queue:added` fires, so concurrent submissions need the reservation to see
+// each other during that window; the reservation is released once the event has taken over the count.
+export function reserveNotificationSlot(): (() => void) | null {
+  if (pendingJobs() + reservations >= MAX_PENDING_NOTIFICATION_JOBS) {
+    return null;
+  }
+  reservations++;
+  let released = false;
+  return () => {
+    if (!released) {
+      reservations = Math.max(0, reservations - 1);
+      released = true;
+    }
+  };
+}
+
+export async function enqueueNotification(data: NotificationJob): Promise<boolean> {
+  const release = reserveNotificationSlot();
+  if (!release) {
+    return false;
+  }
+  try {
+    await notificationQueue.add(data);
+    return true;
+  } finally {
+    release();
+  }
+}
+
 export function queueStatus(): QueueStatus {
-  return { processed: [...processed].reverse(), processedTotal, inFlight };
+  return { processed: [...processed].reverse(), processedTotal, inFlight: pendingJobs() };
 }

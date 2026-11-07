@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
-import type { Handle, MochiEventKind } from './hooks';
+import type { Handle, MochiEventKind } from './runtime/hooks';
 
 // Fixture has a `mochi:hydrate` child so the page renders with a
 // `/_mochi/client/...js` bundle script — the asset test below scrapes it.

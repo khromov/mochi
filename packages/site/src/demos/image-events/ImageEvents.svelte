@@ -1,16 +1,13 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
   import ImageCredits from '../../components/ImageCredits.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
+  import { sources } from './sources.prerender.ts';
   import { remote } from './log.ts';
   import { Image } from 'mochi-framework/image';
-
-  const sources = await loadSources(files);
 </script>
 
 <DemoPage
-  title="Image Events"
+  title="Image: Events"
   description="The <Image> cache emits image:store when it downloads an original, generates a resized variant, or computes a blur placeholder — and image:delete when a file is evicted, superseded, or invalidated. Subscribe on mochiEvents to mirror the cache to durable storage like S3. This demo logs every event to the server console with a [demo:image-events] prefix — load this page cold and watch your terminal."
   {sources}
 >

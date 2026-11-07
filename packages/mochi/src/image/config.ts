@@ -1,36 +1,35 @@
 import { createHash } from 'node:crypto';
 import { getMochiConfig } from '../mochiConfig';
 import { ImageCache } from './imageCache';
+import type { Storage } from '../cache/cache';
 import type { ImageFormat, ImageSize, MochiImageOptions, ResolvedImageOptions, ResolvedImageSize } from './types';
 
 const ALL_FORMATS: ImageFormat[] = ['webp', 'jpeg', 'png', 'avif'];
 const DEFAULT_INPUT_FORMATS = ['jpeg', 'png', 'webp', 'avif', 'gif'];
 
-function checkDimension(name: string, pipe: string, value: number | undefined): number | undefined {
+function checkDimension(field: string, sizeName: string, value: number | undefined): number | undefined {
   if (value === undefined) {
     return undefined;
   }
   if (!Number.isFinite(value) || value < 1) {
-    throw new Error(`Image size "${pipe}": ${name} must be a positive number, got ${value}`);
+    throw new Error(`Image size "${sizeName}": ${field} must be a positive number, got ${value}`);
   }
   return Math.round(value);
 }
 
-function checkTtl(name: string, pipe: string, value: number | undefined): number | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (!Number.isFinite(value) || value < 0) {
-    throw new Error(`Image size "${pipe}": ${name} must be a non-negative number of ms, got ${value}`);
-  }
-  return Math.round(value);
+// JSON.stringify with object keys sorted at every depth, so the config hash is
+// insensitive to key order (e.g. a reordered `modulate` object hashes the same).
+function canonicalStringify(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown) => {
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+      return Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+    }
+    return v;
+  });
 }
 
-/**
- * Resolve one named size against the global defaults and stamp a config hash.
- * The hash covers every byte-affecting field (not the TTLs) so redefining a
- * size changes the cache key + ETag and re-renders its already-minted URLs.
- */
+// The stamped hash covers every byte-affecting field, so redefining a size changes the cache key and ETag and
+// re-renders its already-minted URLs.
 function resolveSize(
   name: string,
   p: ImageSize,
@@ -40,7 +39,14 @@ function resolveSize(
   if (!defaults.outputFormats.includes(format)) {
     throw new Error(`Image size "${name}": format "${format}" is not in outputFormats`);
   }
-  const quality = Math.min(100, Math.max(1, Math.round(p.quality ?? defaults.quality)));
+  const rawQuality = p.quality ?? defaults.quality;
+  if (!Number.isFinite(rawQuality)) {
+    throw new Error(`Image size "${name}": quality must be a finite number, got ${rawQuality}`);
+  }
+  const quality = Math.min(100, Math.max(1, Math.round(rawQuality)));
+  if (p.rotate !== undefined && !Number.isFinite(p.rotate)) {
+    throw new Error(`Image size "${name}": rotate must be a finite number, got ${p.rotate}`);
+  }
   const resolved: ResolvedImageSize = {
     name,
     width: checkDimension('width', name, p.width),
@@ -55,13 +61,12 @@ function resolveSize(
     quality,
     autoOrient: p.autoOrient ?? defaults.autoOrient,
     maxPixels: p.maxPixels ?? defaults.maxPixels,
-    timeToStale: checkTtl('timeToStale', name, p.timeToStale),
-    timeToEvict: checkTtl('timeToEvict', name, p.timeToEvict),
     configHash: '',
   };
-  // Hash the byte-affecting fields (everything but name + TTLs + the placeholder hash).
-  const { name: _n, timeToStale: _s, timeToEvict: _e, configHash: _h, ...bytesAffecting } = resolved;
-  resolved.configHash = createHash('sha256').update(JSON.stringify(bytesAffecting)).digest('base64url').slice(0, 16);
+  // Hash the byte-affecting fields (everything but name + the placeholder hash),
+  // with keys canonicalized so identical configs always share a hash.
+  const { name: _n, configHash: _h, ...bytesAffecting } = resolved;
+  resolved.configHash = createHash('sha256').update(canonicalStringify(bytesAffecting)).digest('base64url').slice(0, 16);
   return resolved;
 }
 
@@ -73,7 +78,9 @@ export function resolveImageOptions(opts: MochiImageOptions | undefined): Resolv
   const maxPixels = o.maxPixels ?? 50_000_000;
   const autoOrient = o.autoOrient ?? true;
 
-  const sizes: Record<string, ResolvedImageSize> = {};
+  // Null-prototype map: size names are arbitrary user strings, so a plain object
+  // would resolve names like "toString" or "__proto__" through the prototype chain.
+  const sizes: Record<string, ResolvedImageSize> = Object.create(null);
   for (const [name, p] of Object.entries(o.sizes ?? {})) {
     sizes[name] = resolveSize(name, p, { format: defaultFormat, quality: defaultQuality, autoOrient, maxPixels, outputFormats });
   }
@@ -82,6 +89,7 @@ export function resolveImageOptions(opts: MochiImageOptions | undefined): Resolv
     enabled: o.enabled ?? true,
     sizes,
     cacheDir: o.cacheDir ?? './.mochi/image-cache',
+    storage: o.storage,
     defaultFormat,
     defaultQuality,
     outputFormats,
@@ -104,9 +112,8 @@ interface ImageRuntime {
   cache: ImageCache;
 }
 
-// Pinned on globalThis like __mochi_config__: compiled Svelte components get
-// their own bundled copy of this module, but must share one cache instance and
-// the same resolved config as the endpoint handler in the main bundle.
+// Pinned on globalThis like `__mochi_config__`: compiled Svelte components each get their own bundled copy of this
+// module yet must share one cache instance and the endpoint handler's resolved config.
 const GLOBAL_KEY = '__mochi_image_runtime__';
 
 export function getImageRuntime(): ImageRuntime {
@@ -117,16 +124,46 @@ export function getImageRuntime(): ImageRuntime {
     const resolved = resolveImageOptions(options.image as MochiImageOptions | undefined);
     runtime = {
       options: resolved,
-      cache: new ImageCache({ cacheDir: resolved.cacheDir, minTimeToStale: resolved.timeToStale, maxTimeToLive: resolved.timeToEvict, sizes: resolved.sizes }),
+      cache: new ImageCache({
+        cacheDir: resolved.cacheDir,
+        minTimeToStale: resolved.timeToStale,
+        maxTimeToLive: resolved.timeToEvict,
+        sizes: resolved.sizes,
+        storage: resolved.storage,
+      }),
     };
     g[GLOBAL_KEY] = runtime;
   }
   return runtime;
 }
 
+// Each is baked into the cache instance, its sweeper, or the endpoint route at boot, so a dev entry reload can't apply it.
+const BOOT_ONLY_FIELDS = ['enabled', 'cacheDir', 'storage', 'timeToStale', 'timeToEvict', 'sweepIntervalMs'] as const;
+
+// The entry builds a new storage instance on every reload, so only a different backend class counts as a change.
+function storageClass(storage: Storage | undefined): string | undefined {
+  return storage?.constructor?.name;
+}
+
+// Changed boot-only fields keep their boot values, so minted URLs stay consistent with the running cache and endpoint.
+export function reloadImageOptions(opts: MochiImageOptions | undefined): string[] {
+  const runtime = getImageRuntime();
+  const next = resolveImageOptions(opts);
+  const prev = runtime.options;
+  const changed = BOOT_ONLY_FIELDS.filter((field) => (field === 'storage' ? storageClass(prev.storage) !== storageClass(next.storage) : prev[field] !== next[field]));
+  for (const field of BOOT_ONLY_FIELDS) {
+    Object.assign(next, { [field]: prev[field] });
+  }
+  runtime.options = next;
+  runtime.cache.setSizes(next.sizes);
+  return changed;
+}
+
 /** Look up a resolved named size, or `undefined` if the name is unknown/absent. */
 export function getSize(name: string | undefined, options: ResolvedImageOptions): ResolvedImageSize | undefined {
-  return name === undefined ? undefined : options.sizes[name];
+  // Object.hasOwn guards a `sizes` that arrived as a plain object literal (tests,
+  // user-constructed options) against prototype-chain hits like "constructor".
+  return name !== undefined && Object.hasOwn(options.sizes, name) ? options.sizes[name] : undefined;
 }
 
 export function getImageAssetPrefix(): string {

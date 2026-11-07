@@ -1,6 +1,5 @@
-// Shared open/closed state for the ComparisonTable, reactive across separately
-// hydrated islands (the table itself and the "Expand the table" link).
-// `null` means "no user interaction yet — fall back to the per-instance default".
+// Shared open/closed state reactive across separately hydrated islands (the table
+// and the "Expand the table" link); `null` means no interaction yet, so callers fall back to their own default.
 let open: boolean | null = $state(null);
 
 export function comparisonOpen(): boolean | null {

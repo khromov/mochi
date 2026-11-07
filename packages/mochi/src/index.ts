@@ -8,22 +8,31 @@
 // eslint-disable-next-line @typescript-eslint/triple-slash-reference
 /// <reference path="./mochi-framework.d.ts" />
 export { Mochi } from './Mochi';
-export { build } from './build';
-export type { MochiBuildOptions } from './build';
-export { runTests } from './testing';
-export type { RunTestsOptions } from './testing';
-export type { MochiSvelteConfig } from './svelteConfig';
-export { getRequestContext } from './requestContext';
-export type { MochiRequestContext } from './requestContext';
+export { build } from './cli/build';
+export type { MochiBuildOptions } from './cli/build';
+export { runTests } from './cli/testing';
+export type { RunTestsOptions } from './cli/testing';
+export type { MochiSvelteConfig } from './compiler/svelteConfig';
+export type { MochiSvelteCompiler, SvelteCompilerBackend, SvelteCompileOutput } from './compiler/svelteCompilerBackend';
+export type { ShakeAppResult, SvelteShakerBackend } from './compiler/svelteShaker';
+export { getRequestContext } from './runtime/requestContext';
+export type { MochiRequestContext } from './runtime/requestContext';
 export { getMochiConfig } from './mochiConfig';
-export type { CookieSerializeOptions, Cookie } from './cookies';
-export { MochiCache } from './cache';
-export type { MochiCacheOptions, CacheResult, CacheStatus, Storage } from './cache';
-export { MemoryStorage, FileStorage } from './cache-storage';
-export type { FileStorageOptions } from './cache-storage';
+export type { CookieSerializeOptions, Cookie } from './runtime/cookies';
+export { MochiCache } from './cache/cache';
+export type { MochiCacheOptions, CacheResult, CacheStatus, Storage, SweepOptions, SweepResult } from './cache/cache';
+export { requestCache, requestMemo, getRequestCache } from './runtime/requestCache';
+export type { MochiRequestCache, RequestMemoOptions } from './runtime/requestCache';
+export { MemoryStorage, FileStorage, isBlobRef, readBlobRef } from './cache/cache-storage';
+export type { FileStorageOptions, MemoryStorageOptions, BlobRef } from './cache/cache-storage';
 export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from './image/imageApi';
 export type { ResolvedImage, ImageAttrs } from './image/imageApi';
-export type { MochiImageOptions, ImageSize, InvalidateImageOptions, ImageFormat, ImageFit } from './image/types';
+export { reloadDeferredIsland, reloadDeferredIslandAll } from './islands/deferInvalidation';
+export { deferReloadState, DeferReloadState } from './islands/deferReloadState.svelte';
+export type { DeferredIslandChange } from './islands/deferInvalidation';
+export type { MochiDirectives, MochiDeferOptions, MochiDeferVisibleOptions, MochiHydrateVisibleOptions, MochiClientOnlyVisibleOptions } from './islands/directives';
+export type { MochiImageOptions, ImageSize, InvalidateImageOptions, ImageFormat, ImageFit, ImportedImage, ImportedImageFormat } from './image/types';
+export { IMAGE_FILE_FILTER } from './compiler/imageAssetLoader';
 export { EmailError } from './email/types';
 export type {
   MochiEmailOptions,
@@ -35,17 +44,21 @@ export type {
   MochiSmtpConfig,
   ResolvedEmailMessage,
 } from './email/types';
-export { sequence } from './hooks';
+export { sequence } from './runtime/hooks';
 export { compress } from './middleware/compress';
 export type { CompressOptions } from './middleware/compress';
 export type { CompressionMethod } from './utils';
 export { noCache } from './middleware/noCache';
-export { consoleLogger, silenceInternalRoutes } from './consoleLogger';
-export type { ConsoleLoggerOptions } from './consoleLogger';
-export { logger, setLogLevel, getLogLevel } from './log';
-export type { LogLevel } from './log';
+export { consoleLogger, silenceInternalRoutes } from './dev/consoleLogger';
+export type { ConsoleLoggerOptions } from './dev/consoleLogger';
+export { logger, setLogLevel, getLogLevel } from './utils/log';
+export type { LogLevel } from './utils/log';
+export { pinGlobal } from './utils/globalState';
+export { escapeHtmlAttr } from './utils/htmlEscape';
+export { isBuilding } from './utils/buildFlag';
+export { isDev, isServer, isBrowser } from './utils/env';
 export { mochiEvents, hasSubscribers } from './events';
-export type { MochiCompileError } from './ComponentRegistry';
+export type { MochiCompileError } from './compiler/ComponentRegistry';
 export type {
   MochiEmitter,
   MochiEventMap,
@@ -64,8 +77,11 @@ export type {
   MochiCacheStatus,
   MochiCacheReadEvent,
   MochiCacheRevalidateEvent,
+  MochiCacheInflightDeferredEvent,
   MochiCacheDeleteEvent,
   MochiCacheSweepEvent,
+  MochiMemoryPressureEvent,
+  MochiCachePressureEvent,
   MochiImageCacheSweepEvent,
   MochiImageEntryKind,
   MochiImageStoreEvent,
@@ -74,10 +90,12 @@ export type {
   MochiCacheRevalidateFailedEvent,
   MochiCacheErrorEvent,
   MochiQueueAddedEvent,
+  MochiQueueAddedBulkEvent,
   MochiQueueActiveEvent,
   MochiQueueCompletedEvent,
   MochiQueueFailedEvent,
   MochiQueueErrorEvent,
+  MochiCronScheduledEvent,
   MochiEmailSentEvent,
   MochiEmailErrorEvent,
   MochiServerStartEvent,
@@ -96,17 +114,48 @@ export type {
   MochiCompileErrorLog,
   MochiRecompileStartEvent,
   MochiRecompileCompleteEvent,
+  MochiRecompileModuleChurnEvent,
   MochiRecompileTrigger,
   MochiClientBundleEvent,
+  MochiCaptchaVerifyEvent,
+  MochiCaptchaReason,
 } from './events';
-export type { MochiQueue, MochiJob, MochiJobRef, MochiJobOptions, MochiQueueOptions, MochiQueueRuntimeOptions, MochiQueueListeners, MochiProcessor } from './queue';
-export { json, error, apiError } from './utils';
-export { trailingSlashIt } from './trailingSlash';
-export { fail, redirect, success } from './forms';
-export { enhance, deserialize } from './enhance.ssr';
-export { isFormContentType, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './csrf';
-export { DEFAULT_COMPRESS_MIN_BYTES } from './payloadCrypto';
-export type { MochiCsrfOptions } from './csrf';
+export type {
+  MochiQueue,
+  MochiQueueDescriptor,
+  MochiWorker,
+  MochiJob,
+  MochiJobOptions,
+  MochiQueueOptions,
+  MochiQueueRuntimeOptions,
+  MochiDeadLetterTarget,
+  MochiWorkerTuning,
+  MochiQueueListeners,
+  MochiProcessor,
+  MochiQueueStorage,
+  PGliteLike,
+} from './queue';
+export { DEFAULT_EXPIRE_IN_SECONDS } from './queue';
+export type { MochiCronJob, MochiCronHandler, MochiCronRun, MochiCronOptions, MochiCronRuntimeOptions } from './cron';
+export { json, error, apiError, MochiHttpError } from './utils';
+export { trailingSlashIt } from './runtime/trailingSlash';
+export { fail, redirect, success } from './runtime/forms';
+export { isHydratable } from './islands/isHydratable';
+export { moduleRef } from './moduleRef';
+
+export { mintCaptcha, verifyCaptcha, consumeCaptcha, solveCaptcha } from './captcha/captcha';
+export { MemoryNonceStore, SqliteNonceStore } from './captcha/nonceStore';
+export { DEFAULT_CAPTCHA_BITS, DEFAULT_CAPTCHA_MIN_AGE_MS, DEFAULT_CAPTCHA_DRIFT_ALLOWANCE_MS } from './captcha/config';
+export type { MintedCaptcha } from './captcha/captcha';
+export type { MochiCaptchaOptions, CaptchaResult, CaptchaFailureReason, NonceStore } from './captcha/types';
+export { PROTECTION_CLEARANCE_COOKIE, DEFAULT_PROTECTION_MAX_AGE_MS, DEFAULT_PROTECTION_MAX_ATTEMPTS, PROTECTION_SHELL_COMPONENT } from './protection/config';
+export type { MochiProtectionOptions, MochiProtectionContext, MochiProtectionKind, MochiProtectionPageProps } from './protection/types';
+export { enhance, deserialize } from './runtime/enhance.ssr';
+export { isFormContentType, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
+export { DEFAULT_COMPRESS_MIN_BYTES, encryptPayload, decryptPayload } from './islands/payloadCrypto';
+export { DEFAULT_INLINE_BUDGET } from './islands/inlineServerIslands';
+export type { EncryptOptions } from './islands/payloadCrypto';
+export type { MochiCsrfOptions } from './runtime/csrf';
 export type {
   MochiHooks,
   MochiFilters,
@@ -117,10 +166,32 @@ export type {
   MochiFilterReturn,
   MochiFilterKindMap,
   ConsoleLoggerSource,
+  ConsoleLoggerLevel,
+  ConsoleLoggerLine,
 } from './extensions';
-export { getClientAddress, resolveExpectedOrigin } from './proxy';
-export type { MochiProxyOptions } from './proxy';
-export type { Handle, HandleError, MochiErrorInfo, MochiEvent, MochiEventKind, MochiResolveOptions, MochiResolveFn } from './hooks';
+export { getClientAddress, resolveExpectedOrigin } from './runtime/proxy';
+export type { MochiProxyOptions } from './runtime/proxy';
+export { rateLimitMemoryStore, rateLimitSqliteStore, rateLimitPostgresStore } from './runtime/rateLimit';
+export type {
+  MochiRateLimitOptions,
+  MochiRateLimitContext,
+  MochiRateLimitKey,
+  MochiRateLimitTier,
+  MochiRateLimitSkip,
+  MochiRateLimitGroup,
+  MochiRateLimitInfo,
+  MochiRateLimitStore,
+  MochiRateLimitStoreResult,
+  MochiRateLimitStoreBanResult,
+  MochiRateLimitTierConfig,
+  MochiRateLimitHeadersConfig,
+  MochiRateLimitBanConfig,
+  MochiRateLimitStoreErrorHandler,
+  MochiRateLimitResponseFormatter,
+  MochiRateLimitSqliteStoreOptions,
+  MochiRateLimitPostgresStoreOptions,
+} from './runtime/rateLimit';
+export type { Handle, HandleError, MochiErrorInfo, MochiEvent, MochiEventKind, MochiResolveOptions, MochiResolveFn } from './runtime/hooks';
 export type {
   MarkdownConfig,
   MarkdownHighlighter,
@@ -133,6 +204,7 @@ export type {
   MochiFormActions,
   MochiFormActionHandler,
   MochiFormEvent,
+  MochiRedirect,
   MochiEnhanceOptions,
   MochiEnhanceResult,
   MochiFormShape,
@@ -140,9 +212,11 @@ export type {
   MochiSubmitCallback,
   HttpMethod,
   MochiServeOptions,
+  MochiWorkerOptions,
   MochiWarmupOptions,
   MochiRouteValue,
   MochiWsConfig,
+  MochiWebSocketOptions,
   MochiWsHandlers,
   MochiWsData,
   MochiSseConfig,
@@ -151,17 +225,20 @@ export type {
   MochiFileConfig,
   MochiFileResolver,
   MochiQueueConfig,
+  MochiCronConfig,
   BunRouteValue,
   MochiSvelteShakerOptions,
+  MochiBarrelWarningOptions,
+  MochiBuildReportOptions,
+  MochiFontOptions,
 } from './types';
+export type { SpeculationRules, SpeculationRule, SpeculationListRule, SpeculationDocumentRule, SpeculationRuleCondition, SpeculationEagerness } from './runtime/speculationRules';
 
 import type { Snippet } from 'svelte';
 
 /**
- * Props helper for a `mochi:clientOnly` component. Adds an optional `children`
- * snippet so the SSR fallback passed as children type-checks against the
- * component. The fallback is SSR-only placeholder markup — it is NOT passed to
- * the component at runtime, so don't render `children` inside a client-only
- * component.
+ * Props helper for a `mochi:clientOnly` component, adding an optional `children` snippet so the SSR fallback passed as
+ * children type-checks. That fallback is SSR-only placeholder markup and never reaches the component at runtime, so
+ * leave `children` unrendered inside a client-only component.
  */
 export type ClientOnlyProps<T> = Omit<T, 'children'> & { children?: Snippet };

@@ -3,9 +3,9 @@ import { getCachedOriginal } from './imageApi';
 import { decryptImageRequest } from './imageCrypto';
 import { originalId, variantId } from './imageCache';
 import { getMochiConfig } from '../mochiConfig';
-import { logger } from '../log';
-import { baseContentType, INLINE_SAFE_IMAGE_TYPES } from '../inlineContentTypeSafety';
-import { extForFormat, runPipeline } from './resize';
+import { logger } from '../utils/log';
+import { baseContentType, INLINE_SAFE_IMAGE_TYPES } from '../utils/inlineContentTypeSafety';
+import { runPipeline } from './resize';
 import { ImageError } from './types';
 import type { ResolvedImageSize } from './types';
 
@@ -17,11 +17,10 @@ function textResponse(status: number, message: string): Response {
 }
 
 /**
- * Originals are served verbatim from an upstream we don't fully control. Only
- * raster image types are safe to render inline in our origin; anything else
- * (`image/svg+xml`, `text/html`, …) is forced to a non-rendering download to
- * prevent same-origin XSS — `nosniff` alone wouldn't stop a directly-navigated
- * SVG from executing, so the Content-Type is rewritten rather than just labelled.
+ * Originals come verbatim from an upstream we don't fully control, and only raster image types are safe to render
+ * inline in our origin, so anything else (`image/svg+xml`, `text/html`) becomes a non-rendering download. The
+ * Content-Type is rewritten rather than merely labelled, since `nosniff` alone wouldn't stop a directly-navigated SVG
+ * from executing.
  */
 export function safeOriginalContentType(contentType: string): { contentType: string; attachment: boolean } {
   if (INLINE_SAFE_IMAGE_TYPES.has(baseContentType(contentType))) {
@@ -31,11 +30,9 @@ export function safeOriginalContentType(contentType: string): { contentType: str
 }
 
 /**
- * Browser/CDN cache policy for a successful image response, derived from the
- * entry's SWR window: cache without revalidating for `timeToStale`, then serve
- * stale while revalidating in the background for the rest of the evict window.
- * The URL is stable per (src, size), so correctness across a refresh rides on
- * the generation-aware ETag once `max-age` lapses.
+ * Browser/CDN cache policy for a successful image response, derived from the entry's SWR window: cache without
+ * revalidating for `timeToStale`, then serve stale while revalidating for the rest of the evict window. The URL is
+ * stable per (src, size), so correctness across a refresh rides on the generation-aware ETag once `max-age` lapses.
  */
 export function imageCacheControl(timeToStaleMs: number, timeToEvictMs: number): string {
   const maxAge = Math.max(0, Math.floor(timeToStaleMs / 1000));
@@ -43,9 +40,8 @@ export function imageCacheControl(timeToStaleMs: number, timeToEvictMs: number):
   return swr > 0 ? `public, max-age=${maxAge}, stale-while-revalidate=${swr}` : `public, max-age=${maxAge}`;
 }
 
-// The Cache-Control for both originals and variants: undefined in dev (so
-// edits/invalidations aren't fought by the browser cache), else derived from the
-// effective TTL window (a size's overrides, or the global defaults).
+// Undefined in dev, so the browser cache doesn't fight edits and invalidations; otherwise derived from the effective
+// TTL window — a size's overrides or the global defaults.
 export function resolveImageCacheControl(timeToStale: number, timeToEvict: number, development: boolean): string | undefined {
   if (development) {
     return undefined;
@@ -63,11 +59,9 @@ function warnUnknownSize(name: string): void {
 }
 
 /**
- * The `/_mochi/image/<filename>?p=…` endpoint: decrypt the payload (the filename
- * is bound as AAD), then serve from the stale-while-revalidate disk cache,
- * regenerating on miss by fetching the source and running the referenced named
- * size. An `original` request (or an unknown size name) serves the shared
- * original bytes verbatim.
+ * The `/_mochi/image/<filename>?p=…` endpoint: decrypt the payload with the filename bound as AAD, then serve from the
+ * stale-while-revalidate disk cache, regenerating on a miss by fetching the source and running the referenced named
+ * size. An `original` request, or an unknown size name, serves the shared original bytes verbatim.
  */
 export function createImageHandler(): (req: Request) => Promise<Response> {
   // In dev, omit Cache-Control entirely so edits/invalidations show up on the
@@ -99,7 +93,7 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
     // gif/svg/etc.). Covers explicit originals and unknown-size fallbacks.
     if (!size) {
       try {
-        const { bytes, contentType, status, createdAt } = await getCachedOriginal(request.src, {}, options, cache);
+        const { bytes, contentType, status, createdAt } = await getCachedOriginal(request.src, options, cache);
         const etag = `"${originalId(request.src)}-${createdAt}"`;
         const cacheControl = resolveImageCacheControl(options.timeToStale, options.timeToEvict, development);
         if (req.headers.get('if-none-match') === etag) {
@@ -128,8 +122,8 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
 
     try {
       const id = variantId(request.src, size.configHash);
-      const { entry, status } = await cache.getVariant(request.src, id, extForFormat(size.format), async () => {
-        const { bytes, createdAt } = await getCachedOriginal(request.src, { timeToStale: size.timeToStale, timeToEvict: size.timeToEvict }, options, cache);
+      const { entry, status } = await cache.getVariant(request.src, id, async () => {
+        const { bytes, createdAt } = await getCachedOriginal(request.src, options, cache);
         const result = await runPipeline(bytes, size, options);
         return {
           bytes: result.bytes,
@@ -141,11 +135,11 @@ export function createImageHandler(): (req: Request) => Promise<Response> {
         };
       });
 
-      // ETag carries the variant id (which folds in the size config hash) plus
-      // the served bytes' generation, so both a redefinition and a source refresh
-      // revalidate correctly.
-      const etag = `"${id}-${entry.meta.createdAt}"`;
-      const cacheControl = resolveImageCacheControl(size.timeToStale ?? options.timeToStale, size.timeToEvict ?? options.timeToEvict, development);
+      // The ETag carries the variant id, which folds in the size config hash, plus the original generation the bytes
+      // came from, so a redefinition and a source refresh both revalidate while a re-encode from the same generation
+      // keeps its ETag and avoids a spurious re-download.
+      const etag = `"${id}-${entry.meta.originalCreatedAt ?? entry.meta.createdAt}"`;
+      const cacheControl = resolveImageCacheControl(options.timeToStale, options.timeToEvict, development);
       if (req.headers.get('if-none-match') === etag) {
         return new Response(null, { status: 304, headers: { ETag: etag, 'X-Content-Type-Options': 'nosniff', ...(cacheControl ? { 'Cache-Control': cacheControl } : {}) } });
       }

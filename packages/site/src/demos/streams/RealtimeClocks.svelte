@@ -21,7 +21,7 @@
       wsStatus = 'disconnected';
     });
 
-    const timeSse = new EventSource(`/sse/time/`);
+    const timeSse = new EventSource('/sse/time');
     timeSse.addEventListener('open', () => {
       sseStatus = 'connected';
     });

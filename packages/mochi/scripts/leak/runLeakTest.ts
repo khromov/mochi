@@ -80,7 +80,7 @@ async function main(): Promise<number> {
   const server = await startServer({
     cwd: siteCwd,
     port: args.port,
-    env: { MOCHI_MEMORY_PROBE: '1', MODE: 'production', PORT: String(args.port) },
+    env: { MOCHI_MEMORY_PROBE: '1', NODE_ENV: 'production', PORT: String(args.port) },
   });
   console.log(`[leak] Server up (pid=${server.pid})`);
 

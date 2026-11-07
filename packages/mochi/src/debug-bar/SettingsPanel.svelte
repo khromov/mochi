@@ -22,6 +22,7 @@
     images: { bg: '#382a32', fg: '#d4b8c8', border: '#5a4050' },
     warnings: { bg: '#3a3120', fg: '#f0d398', border: '#6a5530' },
     bundles: { bg: '#2e2a38', fg: '#c4b8d4', border: '#4a4060' },
+    cache: { bg: '#223833', fg: '#a7d0c4', border: '#3f5f54' },
   };
 </script>
 

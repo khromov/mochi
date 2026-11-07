@@ -1,17 +1,13 @@
-import { promisify } from 'node:util';
-import { brotliCompress as brotliCompressCb, constants as zlibConstants, gzip as gzipCb } from 'node:zlib';
-import type { Handle } from '../hooks';
-import { getMochiConfig } from '../mochiConfig';
-import { appendVary, COMPRESSION_TOKEN, negotiateEncoding } from '../utils';
+import type { Handle } from '../runtime/hooks';
+import { isDev } from '../utils/env';
+import { appendVary, COMPRESSION_FORMAT, COMPRESSION_TOKEN, negotiateEncoding } from '../utils';
 import type { CompressionMethod } from '../utils';
-const gzipAsync = promisify(gzipCb);
-const brotliAsync = promisify(brotliCompressCb);
+import { logger } from '../utils/log';
 
 const COMPRESSIBLE_TYPES = ['text/', 'application/json', 'application/javascript', 'application/xml', 'application/manifest+json', 'application/ld+json', 'image/svg+xml'];
 
 export interface CompressOptions {
   methods?: CompressionMethod[];
-  brotliQuality?: number;
 }
 
 function isCompressible(contentType: string): boolean {
@@ -19,28 +15,27 @@ function isCompressible(contentType: string): boolean {
   return COMPRESSIBLE_TYPES.some((prefix) => lower.startsWith(prefix));
 }
 
-function isDev(): boolean {
-  try {
-    return getMochiConfig().options.development ?? true;
-  } catch {
-    // Mochi.serve() hasn't initialized config (e.g. unit tests) — assume prod.
-    return false;
-  }
-}
-
 /**
- * Negotiates response compression between gzip and brotli using `Accept-Encoding`.
- * The client's preference (header order + q-values) wins among encodings allowed
- * by `methods`; the array order is only the tiebreak for `Accept-Encoding: *`.
+ * Negotiates response compression from `Accept-Encoding`. The client's preference (header order + q-values) wins among
+ * encodings allowed by `methods`; the array order is only the tiebreak for `Accept-Encoding: *`.
+ *
+ * Every encoding streams through a single `CompressionStream`, so a chunked SSR response stays chunked. Brotli is
+ * deliberately absent — Bun's `CompressionStream('brotli')` is fixed at quality 11, too slow for per-request SSR, so we
+ * use `zstd` for brotli-class ratios instead and will revisit once Bun exposes a quality level (see the TODO in
+ * `utils/index.ts`).
  */
 export function compress(opts: CompressOptions = {}): Handle {
-  const methods = opts.methods ?? ['brotli', 'gzip'];
-  const brotliQuality = opts.brotliQuality ?? 4;
+  const declared = opts.methods ?? ['zstd', 'gzip'];
+  const methods = declared.filter((m) => COMPRESSION_TOKEN[m]);
+  const dropped = declared.filter((m) => !COMPRESSION_TOKEN[m]);
+  if (dropped.length > 0) {
+    logger.warn(`compress(): ignoring unsupported method(s) ${dropped.join(', ')} — supported: ${Object.keys(COMPRESSION_TOKEN).join(', ')}.`);
+  }
 
   return async ({ event, resolve }) => {
     const response = await resolve(event);
 
-    if (isDev()) {
+    if (isDev) {
       return response;
     }
 
@@ -60,21 +55,15 @@ export function compress(opts: CompressOptions = {}): Handle {
     }
 
     const chosen = negotiateEncoding(event.request.headers.get('Accept-Encoding') ?? '', methods);
-    if (!chosen) {
+    if (!chosen || !response.body) {
       return response;
     }
-
-    const buf = new Uint8Array(await response.arrayBuffer());
-    const compressed = chosen === 'brotli' ? await brotliAsync(buf, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: brotliQuality } }) : await gzipAsync(buf);
 
     const headers = new Headers(response.headers);
     headers.set('Content-Encoding', COMPRESSION_TOKEN[chosen]);
     headers.delete('Content-Length');
+    const init = { status: response.status, statusText: response.statusText, headers };
 
-    return new Response(compressed, {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    });
+    return new Response(response.body.pipeThrough(new CompressionStream(COMPRESSION_FORMAT[chosen] as CompressionFormat)), init);
   };
 }

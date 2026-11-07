@@ -4,7 +4,7 @@ const PORT = Number(process.env.PORT) || 3335;
 
 await Mochi.serve({
   port: PORT,
-  development: process.env.MODE === 'development',
+  development: process.env.NODE_ENV === 'development',
   htmlShell: './src/shell.html',
   trailingSlash: 'always',
   filters: {
@@ -12,6 +12,7 @@ await Mochi.serve({
   },
   routes: {
     '/': Mochi.page('./src/HelloWorld.svelte'),
+    '/health': Mochi.api(() => Response.json({ status: 'ok' })),
   },
 });
 

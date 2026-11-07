@@ -1,7 +1,7 @@
 ---
 title: 'Environment constants'
 slug: environment-constants
-description: 'Build-time constants for branching on render target (isServer, isBrowser) and development mode (isDev).'
+description: 'Constants for branching on render target (isServer, isBrowser), dev mode (isDev), and the build itself (isBuilding).'
 ---
 
 <script>
@@ -11,13 +11,21 @@ description: 'Build-time constants for branching on render target (isServer, isB
 
 ## Environment constants
 
-Import build-time constants from the `mochi-framework` virtual module to branch on render target or dev mode:
+Import these from `mochi-framework` to branch on render target or dev mode:
 
 ```ts
 import { isServer, isBrowser, isDev } from 'mochi-framework';
 ```
 
-`mochi-framework` resolves to one of two virtual modules at compile time — server builds export `isServer = true`, client bundles export `isBrowser = true`. The values are literal booleans, so `if (isBrowser) { … }` blocks dead-code-eliminate out of the opposite bundle.
+Inside compiled code — `.svelte`, `.svelte.[jt]s`, and any `.ts` they import — Mochi substitutes a per-bundle module, so each constant is a literal boolean fixed when that bundle is built. In the server build `isServer` is `true` and `isBrowser` is `false`; in the client bundle the values are reversed.
+
+Everywhere else — `src/index.ts`, `routes.ts`, a `.server.ts` reached from them — they are ordinary exports of the package, read at runtime.
+
+<Callout type="warning">
+
+**These do not keep code out of the client bundle.** The constant is a literal, but Bun does not fold it across module boundaries, so the untaken branch is still bundled — it just never runs. To keep a server-only implementation out of the browser entirely, put it in a [`.server.ts` file](/docs/server-only-imports/), which Mochi replaces with a throwing stub in the client build.
+
+</Callout>
 
 ### `isServer`
 
@@ -29,7 +37,7 @@ import { isServer, isBrowser, isDev } from 'mochi-framework';
   import { isServer } from 'mochi-framework';
 
   if (isServer) {
-    // safe to reach into request-scoped APIs here
+    // reach into request-scoped APIs here
   }
 </script>
 ```
@@ -51,7 +59,7 @@ import { isServer, isBrowser, isDev } from 'mochi-framework';
 
 ### `isDev`
 
-`true` when `Mochi.serve()` was started with `development: true`. Identical on server and client builds.
+`true` in [development mode](/docs/development-mode/), which is `NODE_ENV=development`. Identical on server and client builds.
 
 ```ts
 // file: src/lib/log.ts
@@ -62,45 +70,41 @@ export function trace(msg: string) {
 }
 ```
 
-## Auto-injected island props
+Because it comes from the environment, `isDev` is correct from the first line of your entry — including in module top-level code, which runs before `Mochi.serve()` does.
 
-The preprocessor injects one extra prop on every component invoked with `mochi:hydrate`, `mochi:hydrate:visible`, or `mochi:defer mochi:hydrate`:
-
-- `isHydratable` (`true | undefined`): `true` for hydratable invocations, absent on plain SSR-only invocations.
-
-Accept it with `$props`:
-
-```svelte
-<!-- file: src/lib/Counter.svelte -->
-<script lang="ts">
-  let { isHydratable }: { isHydratable?: boolean } = $props();
-</script>
-```
-
-For a unique per-instance id (e.g. `<label for>`), use Svelte's native `$props.id()` — see [Selective hydration](/docs/selective-hydration/).
-
-### Branching SSR-only behavior with `isHydratable`
-
-Use `isHydratable` to peek request-scoped state only when the client won't take over rendering — e.g. read the post-submit form snapshot so the SSR HTML reflects the last action result, but skip it when an `enhance` attachment will populate state client-side.
-
-```svelte
-<!-- file: src/lib/RandomRoll.svelte -->
-<script lang="ts">
-  import { isServer, getRequestContext } from 'mochi-framework';
-
-  let { isHydratable }: { isHydratable?: boolean } = $props();
-
-  const initial = isHydratable || !isServer ? null : peekForm();
-
-  function peekForm() {
-    const f = getRequestContext().form;
-    return f && f.ok && typeof f.data.value === 'number' ? f.data.value : null;
+```json
+// file: package.json
+{
+  "scripts": {
+    "dev": "NODE_ENV=development bun src/index.ts",
+    "start": "bun src/index.ts"
   }
-</script>
+}
 ```
 
-See the [Forms demo](/demos/login/) for a side-by-side comparison of hydrated and SSR-only render paths.
+Overriding the mode with `Mochi.serve({ development })` is the one way to make them disagree: top-level code has already run by then, so it saw the environment's answer, not your override. Mochi warns at boot when an override contradicts `NODE_ENV=development`, since dev-only top-level branches will have run inside a production process.
+
+### `isBuilding`
+
+`true` only while `mochi-framework build` runs your `index.ts`, `false` when serving (dev or prod). `mochi-framework build` executes your entry to capture its `Mochi.serve()` options, so top-level side effects in `index.ts` run at build time too. Gate the ones you don't want then — connecting a database, spawning workers, running migrations:
+
+```ts
+// file: src/index.ts
+import { Mochi, isBuilding } from 'mochi-framework';
+
+if (!isBuilding) await db.connect();
+
+await Mochi.serve({ routes });
+```
+
+The dev server re-imports `index.ts` on every rebuild to pick up route changes; that import sees `true` too, so gated side effects don't re-run on each save.
+
+Inside `.svelte` components it is always `false` — components are compiled but never executed during a build.
+
+## Detecting hydration with `isHydratable()`
+
+To branch on whether the client will take over rendering, use `isHydratable()`: it returns `true` when the calling component — at any nesting depth — belongs to a subtree that will hydrate on this page load. Unlike the constants above it is a runtime signal, not a build-time literal, so it lives with the hydration model rather than here. See [Selective hydration](/docs/selective-hydration/#ishydratable) for the full semantics and an example.
 
 <SeeItInAction
-demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "One import for the current URL — reads from the request on the server, window.location on the client." }]}
+demos={[{ href: "/demos/url/", title: "Isomorphic URL", hook: "How the isomorphic URL helper works — one import that reads the request URL on the server and window.location on the client." }]}
 />

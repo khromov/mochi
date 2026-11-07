@@ -26,15 +26,12 @@
 
   const mergedMetaTags = $derived(mergeMetaTags(metaTags));
 
-  // The nav islands hydrate, so their props are serialized into the page. Each demo's
-  // server-only `files` carries paths like './src/demos/url/routes.ts'; crawlers mine
-  // those as relative URLs and resolve them against the page, producing phantom 404s.
-  // Nav never reads `.files`, so drop it before it ships to the client.
+  // Nav islands hydrate and serialize their props into the page; drop `.files` (nav never
+  // reads it) since crawlers otherwise mine its relative paths as URLs, producing phantom 404s.
   const navDemos = demos.map(({ files: _files, ...rest }) => rest);
 
-  // These demos render their own <ViewTransitions>. Match each route and its
-  // subpaths exactly so an unrelated future demo sharing the prefix (e.g.
-  // /demos/view-transitions-foo) doesn't lose the site instance.
+  // Match each route and its subpaths exactly so a future demo sharing the prefix
+  // (e.g. /demos/view-transitions-foo) doesn't steal these demos' own <ViewTransitions>.
   const ownsViewTransitions = $derived(['/demos/view-transitions', '/demos/custom-transitions'].some((base) => url.pathname === base || url.pathname.startsWith(`${base}/`)));
 </script>
 
@@ -51,10 +48,8 @@
 <div class="page">
   <Sidebar mochi:hydrate {docsNav} demos={navDemos} {currentSlug} />
 
-  <!-- Naming `.body` (rendered by the page component) confines the transition to
-       it; everything else (banner, sidebar, debug bar) is part of `root` and
-       frozen by ViewTransitions. Gate the name off on demo pages so their own
-       transitions own the whole subtree. -->
+  <!-- Naming `.body` confines the transition to it, leaving banner/sidebar/debug bar frozen;
+       gate it off on demo pages so their own transitions own the whole subtree. -->
   <div class="main-col" class:scope-view-transition={!ownsViewTransitions}>
     {@render children()}
   </div>

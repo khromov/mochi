@@ -85,11 +85,7 @@
 </main>
 
 <style>
-  /* Landing-only palette. We deliberately don't reuse the shell's --admin-*
-     tokens because those flip with prefers-color-scheme / data-theme; the
-     landing page is pinned light regardless of the user's system theme.
-     Defined on :root (scoped via :global) so body can also see them — this
-     stylesheet is only loaded on the / route. */
+  /* Landing-only palette — doesn't reuse the shell's --admin-* tokens since those flip with prefers-color-scheme/data-theme, but the landing page is pinned light regardless. */
   :global(:root) {
     --l-bg: #f5f3ec;
     --l-surface: #fffdf8;

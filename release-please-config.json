@@ -25,6 +25,14 @@
     "packages/cli": {
       "package-name": "create-mochi",
       "changelog-path": "CHANGELOG.md"
+    },
+    "packages/mochi-rsvelte": {
+      "package-name": "@mochi-framework/rsvelte",
+      "changelog-path": "CHANGELOG.md"
+    },
+    "packages/mochi-svelte-shaker": {
+      "package-name": "@mochi-framework/svelte-shaker",
+      "changelog-path": "CHANGELOG.md"
     }
   }
 }

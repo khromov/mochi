@@ -19,3 +19,31 @@ declare module '*.md' {
   const component: import('svelte').Component;
   export default component;
 }
+
+// Local raster image imports (`import hero from './hero.png'`) resolve to an
+// `ImportedImage` object served from a content-hashed URL. SVG is intentionally
+// omitted — it can't be decoded for metadata/transforms; use a `public/` asset.
+declare module '*.png' {
+  const image: import('mochi-framework/image').ImportedImage;
+  export default image;
+}
+declare module '*.jpg' {
+  const image: import('mochi-framework/image').ImportedImage;
+  export default image;
+}
+declare module '*.jpeg' {
+  const image: import('mochi-framework/image').ImportedImage;
+  export default image;
+}
+declare module '*.webp' {
+  const image: import('mochi-framework/image').ImportedImage;
+  export default image;
+}
+declare module '*.avif' {
+  const image: import('mochi-framework/image').ImportedImage;
+  export default image;
+}
+declare module '*.gif' {
+  const image: import('mochi-framework/image').ImportedImage;
+  export default image;
+}

@@ -14,6 +14,7 @@ function decodeEmittedGlobal(transformedHtml: string, name: string): unknown {
     throw new Error(`no transformed <script> for window.${name}`);
   }
   // The RHS uses atob/TextDecoder/Uint8Array — all available as Bun globals — so eval matches the browser.
+  // oxlint-disable-next-line no-eval
   return eval(m[1]!);
 }
 
@@ -41,9 +42,9 @@ describe('encodeDebugBarGlobals', () => {
   });
 });
 
-// Regression guard for the brittle coupling: the regex depends on the framework's exact
-// `<script>window.<name>=…</script>` emission. Boot a real Mochi dev server and assert we still
-// match — if the framework ever changes that format, this fails instead of silently leaking URLs.
+// Regression guard: the regex depends on the framework's exact `<script>window.<name>=…</script>`
+// emission, so boot a real Mochi dev server and assert we still match. If the framework ever
+// changes that format, this fails instead of silently leaking URLs.
 describe('encodeDebugBarGlobals against real framework output', () => {
   let server: Server<undefined>;
   let outDir: string;

@@ -2,27 +2,29 @@
 # variant is selected by the WORKSPACE build arg:
 #   docker build --build-arg WORKSPACE=site  -f Dockerfile .   # mochi
 #   docker build --build-arg WORKSPACE=demos -f Dockerfile .   # mochi-demos
-# Running in dev mode (`bun run dev:<workspace>` sets MODE=development) so
+# Running in dev mode (`bun run dev:<workspace>` sets NODE_ENV=development) so
 # the debug bar and dev overlays are visible in the deployed environment.
 # MOCHI_LIVE_RELOAD=false strips the live-reload WS — the socket is flaky
 # behind the deploy proxy and dropped connections trigger a page reload.
 # Prebuilt production variants live at Dockerfile.production and
 # packages/demos/Dockerfile.production if we ever need to flip back.
 #
-# Base image is oven/bun:1.3.14-alpine (pure musl alpine, multi-arch).
-# Earlier revisions used frolvlad/alpine-glibc with a copied bun binary;
-# that combo broke @tailwindcss/oxide's native binding on linux/arm64
-# because the glibc compat shim was loaded in place of musl libc.
+# Base image defaults to oven/bun:1.4.4-alpine (pure musl alpine, multi-arch),
+# overridable via the BUN_IMAGE build arg so a single workspace can ride a
+# different Bun tag without moving the others. Earlier revisions used
+# frolvlad/alpine-glibc with a copied bun binary; that combo broke
+# @tailwindcss/oxide's native binding on linux/arm64 because the glibc compat
+# shim was loaded in place of musl libc.
 
-FROM oven/bun:1.3.14-alpine AS base
+ARG BUN_IMAGE=oven/bun:1.4.4-alpine
+FROM ${BUN_IMAGE} AS base
 WORKDIR /usr/src/app
 
 # install dependencies into a temp directory. We copy the whole packages/
 # tree (rather than only the workspace package.json files) so bun install
 # can reconcile the lockfile topology AND resolve workspace:* bin shims
-# (e.g. mochi-framework -> src/cli.js). packages/ also carries
-# packages/mochi/patches/ which the root package.json's patchedDependencies
-# field references. Trades a bit of layer-cache granularity for robustness.
+# (e.g. mochi-framework -> src/cli.js). Trades a bit of layer-cache
+# granularity for robustness.
 FROM base AS install
 COPY package.json bun.lock /temp/dev/
 COPY packages /temp/dev/packages
@@ -45,6 +47,7 @@ COPY --from=install /temp/dev/packages/mochi/node_modules packages/mochi/node_mo
 COPY --from=install /temp/dev/packages/site/node_modules packages/site/node_modules
 COPY --from=install /temp/dev/packages/demos/node_modules packages/demos/node_modules
 COPY --from=install /temp/dev/packages/docs/node_modules packages/docs/node_modules
+COPY --from=install /temp/dev/packages/shared/node_modules packages/shared/node_modules
 
 # ncdu for disk usage analysis. libgcc is already present in oven/bun:alpine.
 RUN apk add --no-cache ncdu
@@ -53,19 +56,24 @@ RUN apk add --no-cache ncdu
 # tailwind step writes app.generated.css into src/ at startup (no-op for site).
 RUN mkdir -p packages/${WORKSPACE}/.mochi && chown -R bun:bun packages/${WORKSPACE}/.mochi packages/${WORKSPACE}/src
 
-RUN bun packages/site/src/lib/generateDocsBarrel.ts
-
 ENV WORKSPACE=${WORKSPACE}
 ENV PORT=${PORT}
 ENV MOCHI_LIVE_RELOAD=false
 ENV MOCHI_DOCKER=true
+
+# Dedicated, mountable image-transform cache — kept out of .mochi (whose dev
+# build cache is wiped on every boot). Pre-created + chowned so a mounted volume
+# inherits bun:bun; the site reads MOCHI_IMAGE_CACHE_DIR for image.cacheDir.
+ENV MOCHI_IMAGE_CACHE_DIR=/data/image-cache
+RUN mkdir -p /data/image-cache && chown -R bun:bun /data
+
 USER bun
 EXPOSE ${PORT}/tcp
 
 # No curl/wget in the alpine base; bun is on PATH, so probe with fetch. Reads
-# PORT from the env above and hits the canonical /health/ (trailingSlash:'always'
-# would otherwise 308 a bare /health) so the redirect hop never happens.
+# PORT from the env above and hits the bare /health: it is a Mochi.api() route,
+# so trailingSlash:'always' never applies to it and /health/ is a hard 404.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD bun --eval "fetch('http://127.0.0.1:'+process.env.PORT+'/health/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD bun --eval "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT [ "sh", "-c", "exec bun run dev:${WORKSPACE}" ]

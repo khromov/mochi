@@ -10,14 +10,11 @@ export interface NotificationJob {
 export interface ProcessedEntry {
   user: string;
   at: number;
-  /** How long the job spent in `process()`, in milliseconds. */
   ms: number;
 }
 
 export interface QueueStatus {
-  /** Global, server-owned snapshot broadcast to every client — all browsers see the same numbers. */
   processed: ProcessedEntry[];
   processedTotal: number;
-  /** Jobs enqueued but not yet completed, across all clients. */
   inFlight: number;
 }

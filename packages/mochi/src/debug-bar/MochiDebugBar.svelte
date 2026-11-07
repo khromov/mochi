@@ -7,6 +7,7 @@
   import WarningsPanel from './WarningsPanel.svelte';
   import BundlesPanel from './BundlesPanel.svelte';
   import InfoPanel from './InfoPanel.svelte';
+  import CachePanel from './CachePanel.svelte';
   import SettingsPanel from './SettingsPanel.svelte';
   import Settings from '../icons/settings.svelte';
   import Mail from '../icons/mail.svelte';
@@ -18,7 +19,7 @@
 
   const STORAGE_KEY = 'mochi:debug:collapsed';
 
-  type Panel = 'warnings' | 'islands' | 'images' | 'request' | 'bundles' | 'info' | 'settings' | null;
+  type Panel = 'warnings' | 'islands' | 'images' | 'request' | 'bundles' | 'info' | 'cache' | 'settings' | null;
   let activePanel: Panel = $state(null);
 
   let hasDebugInfo = $state(false);
@@ -28,10 +29,9 @@
   // toolbar link on the config snapshot rather than always showing it.
   let emailHref = $state<string | null>(null);
 
-  // Ids of dev emails captured but not yet read in the outbox. Persisted in
-  // localStorage so the badge survives reloads and stays in sync across tabs:
-  // LiveReload's `mochi:email-new` adds ids, the outbox's `mochi:outbox-sync`
-  // removes read/cleared ones, and `storage` events mirror other tabs.
+  // Ids of dev emails captured but not yet read, persisted in localStorage so the badge survives reloads and stays in
+  // sync across tabs: LiveReload's `mochi:email-new` adds ids, the outbox's `mochi:outbox-sync` removes read ones, and
+  // `storage` events mirror other tabs.
   let unreadIds = $state<string[]>([]);
 
   function persistUnread() {
@@ -157,16 +157,30 @@
   onDestroy(() => {
     cleanupHighlight();
   });
+
+  // The boundary swallows the fault to spare the host page, so log it here or it vanishes silently; build the bar with
+  // MOCHI_DEBUGBAR_DIAGNOSTIC=1 to get the offending key + an un-minified stack in that log.
+  function reportPanelError(error: unknown) {
+    const err = error as { message?: string; stack?: string } | undefined;
+    console.error('[mochi] debug-bar panel render fault:', err?.message ?? error, err?.stack ?? '');
+  }
 </script>
 
 <div class="mochi-debug-bar-root" bind:this={rootEl}>
-  <WarningsPanel open={activePanel === 'warnings'} onclose={() => (activePanel = null)} />
-  <IslandsPanel open={activePanel === 'islands'} onclose={() => (activePanel = null)} />
-  <ImagesPanel open={activePanel === 'images'} onclose={() => (activePanel = null)} />
-  <BundlesPanel open={activePanel === 'bundles'} onclose={() => (activePanel = null)} />
-  <RequestPanel open={activePanel === 'request'} onclose={() => (activePanel = null)} />
-  <InfoPanel open={activePanel === 'info'} onclose={() => (activePanel = null)} />
-  <SettingsPanel open={activePanel === 'settings'} onclose={() => (activePanel = null)} {hiddenPanels} ontoggle={togglePanelVisibility} />
+  <!-- A panel renders from uncontrolled runtime state (live DOM scans, request headers, cache keys); a fault there — a
+       keyed-each duplicate from that state, say — must degrade the non-essential debug UI, never throw an uncaught error
+       onto the host page. The toolbar below stays outside so it keeps working when a panel fails. -->
+  <svelte:boundary onerror={reportPanelError}>
+    <WarningsPanel open={activePanel === 'warnings'} onclose={() => (activePanel = null)} />
+    <IslandsPanel open={activePanel === 'islands'} onclose={() => (activePanel = null)} />
+    <ImagesPanel open={activePanel === 'images'} onclose={() => (activePanel = null)} />
+    <BundlesPanel open={activePanel === 'bundles'} onclose={() => (activePanel = null)} />
+    <RequestPanel open={activePanel === 'request'} onclose={() => (activePanel = null)} />
+    <InfoPanel open={activePanel === 'info'} onclose={() => (activePanel = null)} />
+    <CachePanel open={activePanel === 'cache'} onclose={() => (activePanel = null)} />
+    <SettingsPanel open={activePanel === 'settings'} onclose={() => (activePanel = null)} {hiddenPanels} ontoggle={togglePanelVisibility} />
+    {#snippet failed()}{/snippet}
+  </svelte:boundary>
 
   <div class="bar" class:is-collapsed={collapsed}>
     <button
@@ -212,6 +226,9 @@
       {/if}
       {#if hasDebugInfo && !hiddenPanels.includes('info')}
         <button class="btn info-btn" onclick={() => toggle('info')} tabindex={collapsed ? -1 : 0}>Info</button>
+      {/if}
+      {#if !hiddenPanels.includes('cache')}
+        <button class="btn cache-btn" onclick={() => toggle('cache')} tabindex={collapsed ? -1 : 0}>Cache</button>
       {/if}
       {#if emailHref}
         <a
@@ -448,6 +465,16 @@
     background: #2d3b44;
     color: #d4e4ec;
     border-color: #7a96a4;
+  }
+  .cache-btn {
+    background: #223833;
+    color: #a7d0c4;
+    border-color: #3f5f54;
+  }
+  .cache-btn:hover {
+    background: #2b453e;
+    color: #c8ece0;
+    border-color: #6fae9c;
   }
   .bundles-btn {
     position: relative;

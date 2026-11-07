@@ -1,8 +1,4 @@
-<!--
-  Mounted once per page: a single delegated click listener handles every code
-  block, resolving the nearest ancestor `.code-block` from the click target
-  rather than rendering a copy handler per block.
--->
+<!-- Mounted once per page: a single delegated click listener replaces a per-block copy handler. -->
 <script lang="ts">
   import { onMount } from 'svelte';
   import { isBrowser } from 'mochi-framework';

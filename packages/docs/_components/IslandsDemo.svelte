@@ -96,7 +96,6 @@
     min-height: 110px;
   }
 
-  /* After click: non-island boxes turn green (SSR'd, no JS). */
   .islands-demo.hydrated .box {
     border-style: solid;
     border-color: var(--demo-green);
@@ -104,8 +103,7 @@
     color: var(--demo-green-text);
   }
 
-  /* After click: island boxes turn orange (hydrated). Must come after the
-     non-island rule above so its same-specificity selector wins by order. */
+  /* Must come after the non-island rule above so its same-specificity selector wins by source order. */
   .islands-demo.hydrated .box-island {
     border-color: var(--demo-accent);
     background: var(--demo-accent-soft);
@@ -174,8 +172,7 @@
     background: var(--demo-accent-soft);
   }
 
-  /* Three-colour theme — scoped to this demo so it doesn't leak into doc
-     styles. Gray = initial, green = SSR'd / non-hydrated, orange = hydrated. */
+  /* Scoped to this demo (gray/green/accent = initial/SSR'd/hydrated) so it doesn't leak into doc styles. */
   .islands-demo {
     --demo-gray: #cbd0d3;
     --demo-gray-soft: #f3f4f5;
@@ -208,8 +205,8 @@
     --demo-accent-text: #f7c79b;
   }
 
-  /* Auto mode — follow the OS preference, mirroring shell.html's global theme.
-     `:not([data-theme='light'])` lets an explicit light choice win on dark systems. */
+  /* Follows the OS preference, mirroring shell.html's global theme; `:not([data-theme='light'])`
+     lets an explicit light choice win on dark systems. */
   @media (prefers-color-scheme: dark) {
     :global(html:not([data-theme='light'])) .islands-demo {
       --demo-gray: #3d4146;

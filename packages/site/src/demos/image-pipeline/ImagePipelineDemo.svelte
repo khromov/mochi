@@ -1,7 +1,6 @@
 <script module>
   import { getImageUrl, getImage } from 'mochi-framework';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
+  import { sources } from './sources.prerender.ts';
   import { highlightCode } from '../../lib/highlight.server';
 
   const CDN = 'https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi';
@@ -9,17 +8,13 @@
 
   const snippet = (code) => highlightCode(code, 'typescript');
 
-  // Every URL + snippet below is request-independent, so compute the whole page
-  // once and cache the result. getImageUrl() is synchronous and near-instant — it
-  // only mints a signed URL; the endpoint runs the size lazily on request.
-  // getImage() is the inline escape hatch: it runs the size now and returns
-  // the transformed bytes + metadata (used here for dimensions and byte sizes).
-  async function computePipeline() {
+  // Every URL + snippet below is request-independent, so compute the whole page once and cache the result.
+  async function computePage() {
     const codeSetup = await snippet(
       [
         "import { getImageUrl, getImage } from 'mochi-framework';",
         '',
-        '// Pipelines are declared once in Mochi.serve({ image: { sizes } }).',
+        '// Sizes are declared once in Mochi.serve({ image: { sizes } }).',
         '// getImageUrl mints a signed URL; the transform runs in the endpoint.',
         "const url = getImageUrl(src, 'thumb'); // near-instant, for <img src>",
         '',
@@ -51,9 +46,7 @@
     const modSaturate = getImageUrl(srcUrl(7), 'saturate');
     const codeModulate = await snippet("// { modulate: { saturation: 0 } }\ngetImageUrl(src, 'grayscale');");
 
-    // Byte-size comparison across formats — getImage runs each inline so we can
-    // report the encoded size, while getImageUrl gives the <img src>. Same source
-    // + size for a fair comparison.
+    // getImage runs each inline so we can report the encoded byte size; same source + size for a fair comparison.
     const FMT_SRC = 9;
     const fmtDefs = [
       { label: 'fmt-jpeg (q85)', name: 'fmt-jpeg' },
@@ -64,8 +57,6 @@
       fmtDefs.map(async (d) => ({ label: d.label, url: getImageUrl(srcUrl(FMT_SRC), d.name), size: (await getImage(srcUrl(FMT_SRC), d.name)).bytes.length })),
     );
     const codeFormat = await snippet("const { bytes } = await getImage(src, 'fmt-webp');");
-
-    const sources = await loadSources(files);
 
     return {
       codeSetup,
@@ -89,15 +80,14 @@
       codeModulate,
       formats,
       codeFormat,
-      sources,
     };
   }
 
   // In-process layer: assemble the page (incl. syntax highlighting) once per
   // process; the image cache is the persistent, cross-restart layer underneath.
   let built;
-  export function buildPipeline() {
-    return (built ??= computePipeline());
+  export function buildPage() {
+    return (built ??= computePage());
   }
 </script>
 
@@ -130,12 +120,11 @@
     codeModulate,
     formats,
     codeFormat,
-    sources,
-  } = await buildPipeline();
+  } = await buildPage();
 </script>
 
 <DemoPage
-  title="Named sizes"
+  title="Image: Named sizes"
   description="Transforms are declared once as named sizes under image.sizes in Mochi.serve() and referenced by name. getImageUrl(src, name) mints a signed URL and the /_mochi/image endpoint runs the size lazily — so SSR never blocks. getImage(src, name) is the inline escape hatch that returns the transformed bytes + metadata, used below for dimensions and byte sizes."
   {sources}
 >

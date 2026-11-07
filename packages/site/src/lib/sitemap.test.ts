@@ -16,6 +16,15 @@ describe('buildSitemapXml', () => {
     expect(locs(xml).length).toBe(urlCount);
   });
 
+  // Parsing it back is the check string-joining could never pass: Bun.XML.stringify escapes every value,
+  // so a stray & or < in a slug no longer breaks the document.
+  it('round-trips through an XML parser', async () => {
+    const xml = await buildSitemapXml();
+    const parsed = Bun.XML.parse(xml) as { urlset: { url: { loc: string }[] } };
+    expect(parsed.urlset.url.length).toBe(locs(xml).length);
+    expect(parsed.urlset.url[0]!.loc).toBe('https://mochi.fast/');
+  });
+
   it('never produces a double slash in the path (regression: …/request-id//)', async () => {
     const xml = await buildSitemapXml();
     for (const loc of locs(xml)) {
@@ -55,5 +64,15 @@ describe('buildSitemapXml', () => {
 
     // At least one docs URL of the expected shape is present.
     expect([...urls].some((u) => /^https:\/\/mochi\.fast\/docs\/[^/]+\/$/.test(u))).toBe(true);
+  });
+
+  it('includes the blog index and published posts, never drafts', async () => {
+    const xml = await buildSitemapXml();
+    const urls = new Set(locs(xml));
+    expect(urls.has('https://mochi.fast/blog/')).toBe(true);
+    expect(urls.has('https://mochi.fast/blog/hello-world/')).toBe(true);
+    for (const loc of urls) {
+      expect(loc).not.toContain('mochi-on-bun-1-4');
+    }
   });
 });
