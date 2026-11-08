@@ -57,7 +57,7 @@
 
   <section class="solo">
     <h2 class="section-title">Oblong sticker</h2>
-    <p class="page-desc">The dango and mochi wordmark on a green pill, with a transparent background.</p>
+    <p class="page-desc">The dango and mochi wordmark on green with rounded corners, with a transparent background.</p>
 
     <StickerOblongExport mochi:hydrate targetId="sticker-oblong" />
 

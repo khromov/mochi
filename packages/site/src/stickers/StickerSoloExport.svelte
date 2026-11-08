@@ -6,48 +6,73 @@
 
   let busy = $state<string | null>(null);
   let error = $state('');
+  let white = $state(false);
 
-  function save(href: string, filename: string) {
+  function save(href: string, name: string) {
     const a = document.createElement('a');
     a.href = href;
-    a.download = filename;
+    a.download = white ? `${name}-white.png` : `${name}.png`;
     a.click();
   }
 
-  async function exportSticker(filename: string, withText: boolean) {
+  async function exportSticker(name: string, withText: boolean) {
     const node = document.getElementById(targetId);
     if (!node) {
       return;
     }
-    busy = filename;
+    busy = name;
     error = '';
     try {
-      // pixelRatio 3 renders the 8rem noise tile at its native 384px; no backgroundColor keeps the corners transparent.
+      // pixelRatio 3 renders the 8rem noise tile at its native 384px; without a backgroundColor the corners stay transparent.
       const dataUrl = await toPng(node, {
         pixelRatio: 3,
         cacheBust: true,
         skipFonts: !withText,
+        backgroundColor: white ? '#ffffff' : undefined,
         filter: (child) => withText || !(child instanceof HTMLElement && child.classList.contains('sticker-inner')),
       });
-      save(dataUrl, filename);
+      save(dataUrl, name);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
       busy = null;
     }
   }
+
+  async function downloadIcon() {
+    if (!white) {
+      save(dangoDataUri, 'mochi-dango');
+      return;
+    }
+    const img = new Image();
+    img.src = dangoDataUri;
+    await img.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+    save(canvas.toDataURL('image/png'), 'mochi-dango');
+  }
 </script>
 
 <div class="export">
-  <button class="export-btn" onclick={() => exportSticker('mochi-sticker.png', true)} disabled={busy !== null}>
-    {busy === 'mochi-sticker.png' ? 'Generating…' : 'Download sticker'}
+  <button class="export-btn" onclick={() => exportSticker('mochi-sticker', true)} disabled={busy !== null}>
+    {busy === 'mochi-sticker' ? 'Generating…' : 'Download sticker'}
   </button>
 
-  <button class="export-btn" onclick={() => exportSticker('mochi-sticker-background.png', false)} disabled={busy !== null}>
-    {busy === 'mochi-sticker-background.png' ? 'Generating…' : 'Download background'}
+  <button class="export-btn" onclick={() => exportSticker('mochi-sticker-background', false)} disabled={busy !== null}>
+    {busy === 'mochi-sticker-background' ? 'Generating…' : 'Download background'}
   </button>
 
-  <button class="export-btn" onclick={() => save(dangoDataUri, 'mochi-dango.png')} disabled={busy !== null}>Download icon</button>
+  <button class="export-btn" onclick={downloadIcon} disabled={busy !== null}>Download icon</button>
+
+  <label class="bg-toggle">
+    <input type="checkbox" bind:checked={white} />
+    White background
+  </label>
 
   {#if error}
     <span class="export-error">Export failed: {error}</span>
@@ -83,6 +108,15 @@
   .export-btn:disabled {
     opacity: 0.65;
     cursor: default;
+  }
+
+  .bg-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.9rem;
+    color: var(--text-muted, #4a5751);
+    cursor: pointer;
   }
 
   .export-error {

@@ -5,6 +5,7 @@
 
   let busy = $state(false);
   let error = $state('');
+  let white = $state(false);
 
   async function download() {
     const node = document.getElementById(targetId);
@@ -14,11 +15,11 @@
     busy = true;
     error = '';
     try {
-      // pixelRatio 3 renders the 8rem noise tile at its native 384px; no backgroundColor keeps the rounded ends transparent.
-      const dataUrl = await toPng(node, { pixelRatio: 3, cacheBust: true });
+      // pixelRatio 3 renders the 8rem noise tile at its native 384px; without a backgroundColor the corners stay transparent.
+      const dataUrl = await toPng(node, { pixelRatio: 3, cacheBust: true, backgroundColor: white ? '#ffffff' : undefined });
       const a = document.createElement('a');
       a.href = dataUrl;
-      a.download = 'mochi-sticker-oblong.png';
+      a.download = white ? 'mochi-sticker-oblong-white.png' : 'mochi-sticker-oblong.png';
       a.click();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -32,6 +33,11 @@
   <button class="export-btn" onclick={download} disabled={busy}>
     {busy ? 'Generating…' : 'Download sticker'}
   </button>
+
+  <label class="bg-toggle">
+    <input type="checkbox" bind:checked={white} />
+    White background
+  </label>
 
   {#if error}
     <span class="export-error">Export failed: {error}</span>
@@ -66,6 +72,15 @@
   .export-btn:disabled {
     opacity: 0.65;
     cursor: default;
+  }
+
+  .bg-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.9rem;
+    color: var(--text-muted, #4a5751);
+    cursor: pointer;
   }
 
   .export-error {
