@@ -42,7 +42,7 @@ import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlySc
 import { serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { registerServerOnlyComponentStubs, SSR_ONLY_COMPONENT_NAMESPACE } from './serverOnlyComponents';
 import { cleanInputs, SERVER_ONLY_MODULE_NAMESPACE } from './bundleInputPaths';
-import { renderMochiEnvServer } from './virtualModuleTemplate';
+import { renderMochiEnvServer, renderSvelteServerShim } from './virtualModuleTemplate';
 import { buildDebugBarBundle, type DebugBarBundle } from './buildDebugBarBundle';
 import { formatBuildMessages } from './formatBuildMessages';
 import { clientBuildDefine, registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
@@ -722,6 +722,14 @@ export class ComponentRegistry {
         }));
         build.onLoad({ filter: /.*/, namespace: 'mochi-env' }, () => ({
           contents: renderMochiEnvServer(development),
+          loader: 'js',
+        }));
+        // User imports of `svelte` get the framework's `hydratable` wrapper; the wrapper's own import stays external.
+        build.onResolve({ filter: /^svelte$/ }, (args) =>
+          args.importer === 'mochi-svelte-shim' ? { path: 'svelte', external: true } : { path: 'mochi-svelte-shim', namespace: 'mochi-svelte' },
+        );
+        build.onLoad({ filter: /.*/, namespace: 'mochi-svelte' }, () => ({
+          contents: renderSvelteServerShim(),
           loader: 'js',
         }));
         build.onResolve({ filter: /^mochi-server-island-runtime$/ }, () => ({
@@ -1581,15 +1589,14 @@ export class ComponentRegistry {
       context?: Map<unknown, unknown>;
     } = {
       transformError,
+      // Read by the `svelte` shim (virtual-modules/svelte.server.js) so a repeated hydratable() key reuses this render's value.
+      context: new Map<unknown, unknown>([...(opts?.context ?? []), [Symbol.for('mochi:hydratable-values'), new Map()]]),
     };
     if (props) {
       renderOptions.props = props;
     }
     if (opts?.idPrefix) {
       renderOptions.idPrefix = opts.idPrefix;
-    }
-    if (opts?.context) {
-      renderOptions.context = opts.context;
     }
 
     // Each render owns the whole `islandProps` map: `emitIslandProps` fills it during this `render()` and the

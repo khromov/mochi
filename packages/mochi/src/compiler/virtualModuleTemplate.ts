@@ -1,4 +1,5 @@
 import path from 'node:path';
+import * as svelte from 'svelte';
 import { toPosixPath } from '../utils';
 
 /** Directory containing this file (`src/compiler/`). */
@@ -14,6 +15,7 @@ const SRC_DIR = path.join(FRAMEWORK_DIR, '..');
 // in. Read once at load, mirroring the default-shell.html asset in Mochi.ts.
 const SERVER_TEMPLATE = await Bun.file(new URL('./virtual-modules/mochi-env.server.js', import.meta.url)).text();
 const CLIENT_TEMPLATE = await Bun.file(new URL('./virtual-modules/mochi-env.client.js', import.meta.url)).text();
+const SVELTE_SHIM_TEMPLATE = await Bun.file(new URL('./virtual-modules/svelte.server.js', import.meta.url)).text();
 
 function fill(template: string, tokens: Record<string, string>): string {
   let out = template;
@@ -65,4 +67,10 @@ export function renderMochiEnvClient(development: boolean, cookiesClientPath: st
     __MOCHI_DEFER_REACTIVE__: frameworkFile('islands/deferReloadState.svelte.ts'),
     __MOCHI_ENHANCE_CLIENT__: enhanceClientPath,
   });
+}
+
+// Named re-exports because Bun's bundler drops the binding for `export * from` an external module.
+export function renderSvelteServerShim(): string {
+  const names = Object.keys(svelte).filter((name) => name !== 'hydratable' && name !== 'default');
+  return fill(SVELTE_SHIM_TEMPLATE, { __MOCHI_SVELTE_EXPORTS__: names.join(', ') });
 }
