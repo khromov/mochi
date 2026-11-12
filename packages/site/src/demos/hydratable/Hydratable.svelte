@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { hydratable } from 'svelte';
+  import { hydratable, setContext } from 'svelte';
   import { Database } from 'bun:sqlite';
   import DemoPage from '../../components/DemoPage.svelte';
   import { sources } from './sources.prerender.ts';
@@ -18,6 +18,8 @@
       computedAt: row.now,
     };
   });
+  // Lets FactCard's fallback hand Svelte's dev-mode server check this exact value instead of recomputing it.
+  setContext('mochi-demo:fact', fact);
 </script>
 
 <DemoPage
