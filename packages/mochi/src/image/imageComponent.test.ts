@@ -16,6 +16,7 @@ const PAGE_SRC = `<script>
 <Image src={portrait} size="hero" placeholder alt="portrait" />
 <Image src={rotated} size="hero" alt="rotated" />
 <Image src={local} size="hero" alt="local" />
+<Image src={local} size="raw" alt="local-raw" />
 `;
 
 function imgTag(html: string, alt: string): string {
@@ -62,7 +63,11 @@ describe('<Image> reserves the served aspect ratio', () => {
       warmup: false,
       logger: { enabled: false },
       outDir,
-      image: { blockPrivateNetworks: false, cacheDir: path.join(outDir, 'image-cache'), sizes: { hero: { width: 600, height: 400, fit: 'inside' } } },
+      image: {
+        blockPrivateNetworks: false,
+        cacheDir: path.join(outDir, 'image-cache'),
+        sizes: { hero: { width: 600, height: 400, fit: 'inside' }, raw: { width: 300, autoOrient: false } },
+      },
       routes: {
         '/': Mochi.page(pagePath, {
           serverProps: () => ({ portrait: `http://127.0.0.1:${origin.port}/portrait.jpg`, rotated: `http://127.0.0.1:${origin.port}/rotated.jpg` }),
@@ -88,6 +93,11 @@ describe('<Image> reserves the served aspect ratio', () => {
 
   test('a local import is sized from its intrinsic dimensions on the first render', async () => {
     expect(dims(imgTag(await render(), 'local'))).toEqual({ width: '267', height: '400' });
+  });
+
+  // With `autoOrient: false` the intrinsic (EXIF-oriented) size can't predict the variant, so nothing is known yet.
+  test('an unpredictable width-only size keeps its declared width rather than the import intrinsic one', async () => {
+    expect(dims(imgTag(await render(), 'local-raw')).width).toBe('300');
   });
 
   test('a remote portrait falls back to the declared box while cold, then matches its blur placeholder', async () => {

@@ -63,7 +63,8 @@
   // the browser would reserve (and paint the placeholder into) until the image loads.
   const mintDims = () => (isBrowser || (intrinsic && size === undefined) ? null : imageDimensions(intrinsic ?? resolvedSrc, size));
   const dims = $derived(await (hydratableSubtree ? hydratable(`${key}#dimensions`, mintDims) : mintDims()));
-  const natural = $derived(dims ?? (attrs.width && attrs.height ? { width: attrs.width, height: attrs.height } : intrinsic));
+  // An import's intrinsic size stands in only when no size constrains it; with a width-only size it would override that width.
+  const natural = $derived(dims ?? (attrs.width && attrs.height ? { width: attrs.width, height: attrs.height } : attrs.width || attrs.height ? undefined : intrinsic));
   // A single override keeps the natural aspect ratio rather than pairing with the other axis of a different box.
   const imgWidth = $derived(width ?? (height !== undefined && natural ? Math.round((height * natural.width) / natural.height) : (natural?.width ?? attrs.width)));
   const imgHeight = $derived(height ?? (width !== undefined && natural ? Math.round((width * natural.height) / natural.width) : (natural?.height ?? attrs.height)));
