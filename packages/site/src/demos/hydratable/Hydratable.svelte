@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { hydratable } from 'svelte';
+  import { hydratable, setContext } from 'svelte';
   import { Database } from 'bun:sqlite';
   import DemoPage from '../../components/DemoPage.svelte';
   import { sources } from './sources.prerender.ts';
@@ -8,7 +8,7 @@
 
   // With hydratable, the result is serialized into <head>; the matching call inside the hydrated
   // island below reads it back from window.__svelte.h instead of re-running this function on the client.
-  const fact = await hydratable('mochi-demo:fact', () => {
+  const fact = hydratable('mochi-demo:fact', () => {
     console.log('[server] computing fact via bun:sqlite (should print once per request)');
     const db = new Database(':memory:');
     const row = db.query("SELECT datetime('now') as now, sqlite_version() as version").get() as { now: string; version: string };
@@ -18,6 +18,8 @@
       computedAt: row.now,
     };
   });
+  // Lets FactCard's fallback hand Svelte's dev-mode server check this exact value instead of recomputing it.
+  setContext('mochi-demo:fact', fact);
 </script>
 
 <DemoPage
