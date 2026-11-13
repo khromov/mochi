@@ -313,6 +313,16 @@ export class ImageCache {
     return { entry: { bytes, meta: this.metaFrom(src, value) }, status: mapStatus(status) };
   }
 
+  /** The encoded size of a cached variant, or `null` unless it was built from the current, unexpired original generation. */
+  async variantDimensions(src: string, id: string): Promise<{ width: number; height: number } | null> {
+    const orig = await this.cache.peek<StoredImage>(origKey(src));
+    if (!orig || orig.status === 'expired') {
+      return null;
+    }
+    const variant = (await this.cache.peek<StoredImage>(varKey(id)))?.value;
+    return variant && variant.originalCreatedAt === orig.value.createdAt && variant.width > 0 && variant.height > 0 ? { width: variant.width, height: variant.height } : null;
+  }
+
   /**
    * Immediately invalidate a source. `hard` deletes the original key, whose `cache:delete` cascades to every variant and
    * the placeholder; `soft` marks the original stale so the variant mirror serves stale-while-revalidate.
