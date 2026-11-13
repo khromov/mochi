@@ -53,7 +53,7 @@ Transforms apply in a fixed order: resize → rotate → flip → flop → modul
 
 ### Component
 
-Import `Image` and reference a size by name. It renders one `<img>` with an encrypted `src` and no client JavaScript. The `<img>` `width`/`height` default to the size's declared dimensions.
+Import `Image` and reference a size by name. It renders one `<img>` with an encrypted `src` and no client JavaScript. The `<img>` `width`/`height` are the served image's real dimensions once that size has been generated and cached. Until then they fall back to the size's declared dimensions, which under `fit: 'inside'` can have a different aspect ratio.
 
 ```svelte
 <script>
@@ -80,7 +80,7 @@ Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) bl
 | `size`                 | —           | Named size; omitted → the full-size original                               |
 | `alt`                  | `''`        | Always set this                                                            |
 | `placeholder`          | `false`     | Background-warmed ThumbHash blur-up; pure SSR, no client JavaScript        |
-| `width` / `height`     | size's dims | `<img>` attribute override                                                 |
+| `width` / `height`     | served dims | `<img>` attribute override                                                 |
 | `loading` / `decoding` | lazy/async  | Passed through to `<img>`                                                  |
 
 A bare `<Image src>` with no `size` serves the full-size original. An unknown size name degrades to the original and logs a one-time server warning.
