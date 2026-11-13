@@ -25,8 +25,8 @@ export { requestCache, requestMemo, getRequestCache } from './runtime/requestCac
 export type { MochiRequestCache, RequestMemoOptions } from './runtime/requestCache';
 export { MemoryStorage, FileStorage, isBlobRef, readBlobRef } from './cache/cache-storage';
 export type { FileStorageOptions, MemoryStorageOptions, BlobRef } from './cache/cache-storage';
-export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, imageDimensions, warmImagePlaceholder, invalidateImage } from './image/imageApi';
-export type { ResolvedImage, ImageAttrs, ImageDimensions } from './image/imageApi';
+export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from './image/imageApi';
+export type { ResolvedImage, ImageAttrs } from './image/imageApi';
 export { reloadDeferredIsland, reloadDeferredIslandAll } from './islands/deferInvalidation';
 export { deferReloadState, DeferReloadState } from './islands/deferReloadState.svelte';
 export type { DeferredIslandChange } from './islands/deferInvalidation';
