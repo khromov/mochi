@@ -9,7 +9,7 @@
   // minted values are wrapped in `hydratable`, devalue-serialized into the page and reused during hydration. Pure SSR
   // serializes nothing. The import goes through the `mochi-framework` virtual module, whose client build ships stubs.
   import { hydratable } from 'svelte';
-  import { getImageAttrs, imagePlaceholder, isHydratable } from 'mochi-framework';
+  import { getImageAttrs, imageDimensions, imagePlaceholder, isHydratable } from 'mochi-framework';
   import type { ImportedImage } from 'mochi-framework';
 
   let {
@@ -31,9 +31,9 @@
     loading?: 'lazy' | 'eager';
     decoding?: 'async' | 'sync' | 'auto';
     placeholder?: boolean;
-    /** `<img width>` override (px). Defaults to the size's declared width. */
+    /** `<img width>` override (px). Defaults to the served image's width once known, else the size's declared width. */
     width?: number;
-    /** `<img height>` override (px). Defaults to the size's declared height. */
+    /** `<img height>` override (px). Defaults to the served image's height once known, else the size's declared height. */
     height?: number;
     class?: string;
   } = $props();
@@ -59,8 +59,14 @@
   const key = $derived(`mochi:image:${JSON.stringify([resolvedSrc, size])}`);
   const attrs = $derived(hydratableSubtree ? hydratable(key, mintAttrs) : mintAttrs());
   const blur = $derived(placeholder ? await (hydratableSubtree ? hydratable(`${key}#placeholder`, mintBlur) : mintBlur()) : null);
-  const imgWidth = $derived(width ?? attrs.width ?? intrinsic?.width);
-  const imgHeight = $derived(height ?? attrs.height ?? intrinsic?.height);
+  // The served dimensions, not the size's declared box: under `fit: 'inside'` that box has the wrong aspect ratio, which
+  // the browser would reserve (and paint the placeholder into) until the image loads.
+  const mintDims = () => (isBrowser || (intrinsic && size === undefined) ? null : imageDimensions(intrinsic ?? resolvedSrc, size));
+  const dims = $derived(await (hydratableSubtree ? hydratable(`${key}#dimensions`, mintDims) : mintDims()));
+  const natural = $derived(dims ?? (attrs.width && attrs.height ? { width: attrs.width, height: attrs.height } : intrinsic));
+  // A single override keeps the natural aspect ratio rather than pairing with the other axis of a different box.
+  const imgWidth = $derived(width ?? (height !== undefined && natural ? Math.round((height * natural.width) / natural.height) : (natural?.width ?? attrs.width)));
+  const imgHeight = $derived(height ?? (width !== undefined && natural ? Math.round((width * natural.height) / natural.width) : (natural?.height ?? attrs.height)));
 </script>
 
 <img

@@ -2,7 +2,7 @@ import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { getImageUrl, getImageAttrs, getImage, imagePlaceholder } from './imageApi';
+import { getImageUrl, getImageAttrs, getImage, imageDimensions, imagePlaceholder } from './imageApi';
 import { registerLocalImageAsset } from './localAssetRegistry';
 import { resolveImageOptions } from './config';
 import { ImageCache } from './imageCache';
@@ -271,5 +271,51 @@ describe('imagePlaceholder memoization', () => {
     initExtensions({});
     await cache.setPlaceholder(SRC, 'data:a', Date.now());
     expect(await imagePlaceholder(SRC)).toBe('data:a');
+  });
+});
+
+describe('imageDimensions', () => {
+  const PORTRAIT = 'https://example.com/portrait.png';
+  let portraitBytes: Uint8Array;
+  beforeAll(async () => {
+    portraitBytes = await new Bun.Image(PNG_1x1).resize(40, 60, { fit: 'fill' }).png().bytes();
+  });
+
+  test('is null while nothing about the source is cached', async () => {
+    installConfig();
+    installRuntime({ sizes: { hero: { width: 600, height: 400 } } });
+    expect(await runInRequestContext(() => imageDimensions(PORTRAIT, 'hero'))).toBeNull();
+  });
+
+  test('predicts the inside-fit size from the cached original, not the declared box', async () => {
+    installConfig();
+    const cache = installRuntime({ sizes: { hero: { width: 600, height: 400 }, wide: { width: 300 } } });
+    await cache.getOriginal(PORTRAIT, async () => ({ bytes: portraitBytes, contentType: 'image/png' }));
+    expect(getImageAttrs(PORTRAIT, 'hero')).toMatchObject({ width: 600, height: 400 });
+    expect(await runInRequestContext(() => imageDimensions(PORTRAIT, 'hero'))).toEqual({ width: 267, height: 400 });
+    expect(await runInRequestContext(() => imageDimensions(PORTRAIT, 'wide'))).toEqual({ width: 300, height: 450 });
+    expect(await runInRequestContext(() => imageDimensions(PORTRAIT))).toEqual({ width: 40, height: 60 });
+  });
+
+  test('reads an encoded variant exactly', async () => {
+    installConfig();
+    const cache = installRuntime({ sizes: { hero: { width: 600, height: 400 } } });
+    await cache.getOriginal(PORTRAIT, async () => ({ bytes: portraitBytes, contentType: 'image/png' }));
+    const served = await getImage(PORTRAIT, 'hero');
+    expect(await runInRequestContext(() => imageDimensions(PORTRAIT, 'hero'))).toEqual({ width: served.width, height: served.height });
+  });
+
+  test('uses a local import intrinsic size without any cache', async () => {
+    installConfig();
+    installRuntime({ sizes: { hero: { width: 600, height: 400 } } });
+    const local = { src: '/_mochi/asset/portrait-abc.png', width: 40, height: 60, format: 'png' as const };
+    expect(await runInRequestContext(() => imageDimensions(local, 'hero'))).toEqual({ width: 267, height: 400 });
+  });
+
+  test('reports the untransformed original when the endpoint is disabled', async () => {
+    installConfig();
+    const cache = installRuntime({ enabled: false, sizes: { hero: { width: 600, height: 400 } } });
+    await cache.getOriginal(PORTRAIT, async () => ({ bytes: portraitBytes, contentType: 'image/png' }));
+    expect(await runInRequestContext(() => imageDimensions(PORTRAIT, 'hero'))).toEqual({ width: 40, height: 60 });
   });
 });

@@ -3,6 +3,7 @@ import type { CacheStatus, Storage } from '../cache/cache';
 import { MochiCache } from '../cache/cache';
 import { FileStorage, isBlobRef, readBlobRef, type BlobRef } from '../cache/cache-storage';
 import { mochiEvents, type MochiImageDeleteReason } from '../events';
+import { probeSourceDimensions, type ImageDimensions, type SourceDimensions } from './resize';
 import type { ImageFormat, ResolvedImageSize } from './types';
 
 // For the shared full-size original entry, `width`/`height` are 0 and `format`
@@ -106,6 +107,8 @@ interface StoredImage {
   bytes: Uint8Array | BlobRef;
   /** For variants: the original generation the bytes were encoded from. */
   originalCreatedAt?: number;
+  /** For originals: the header-probed source dimensions, absent for an undecodable source or an entry cached before they were recorded. */
+  source?: SourceDimensions;
 }
 
 interface StoredPlaceholder {
@@ -294,6 +297,7 @@ export class ImageCache {
         height: 0,
         format: '',
         bytes: fetched.bytes,
+        source: await probeSourceDimensions(fetched.bytes),
       };
       mochiEvents.emit('image:store', {
         kind: 'original',
@@ -311,6 +315,23 @@ export class ImageCache {
 
     const bytes = await this.toBytes(value.bytes);
     return { entry: { bytes, meta: this.metaFrom(src, value) }, status: mapStatus(status) };
+  }
+
+  /**
+   * The cached dimensions for a source without touching any bytes: the exact output of an encoded variant built from the
+   * current original generation (when `id` is given and one exists), and the original's probed source dimensions.
+   */
+  async peekDimensions(src: string, id?: string): Promise<{ variant?: ImageDimensions; source?: SourceDimensions }> {
+    const orig = await this.cache.peek<StoredImage>(origKey(src));
+    const source = orig?.value.source;
+    if (id === undefined || !orig) {
+      return { source };
+    }
+    const variant = await this.cache.peek<StoredImage>(varKey(id));
+    if (variant && variant.value.originalCreatedAt === orig.value.createdAt && variant.value.width > 0 && variant.value.height > 0) {
+      return { variant: { width: variant.value.width, height: variant.value.height }, source };
+    }
+    return { source };
   }
 
   /**

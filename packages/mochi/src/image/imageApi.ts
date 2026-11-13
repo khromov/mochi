@@ -5,14 +5,14 @@ import { getLocalImageAsset } from './localAssetRegistry';
 import { toPosixPath } from '../utils';
 import { encryptImageRequest } from './imageCrypto';
 import { variantId } from './imageCache';
-import { computePlaceholder, runPipeline } from './resize';
+import { computePlaceholder, predictVariantDimensions, runPipeline, type ImageDimensions } from './resize';
 import { buildImageFilename, buildOriginalFilename } from './slug';
 import { requestContext, type ImageDebugEntry } from '../runtime/requestContext';
 import { requestMemo } from '../runtime/requestCache';
 import { applyFilter } from '../extensions';
 import { logger } from '../utils/log';
 import type { ImageCache, ImageCacheStatus } from './imageCache';
-import type { ImageRequest, InvalidateImageOptions, ResolvedImageOptions, ResolvedImageSize } from './types';
+import type { ImageRequest, ImportedImage, InvalidateImageOptions, ResolvedImageOptions, ResolvedImageSize } from './types';
 
 const warnedUnknownSize = new Set<string>();
 
@@ -51,16 +51,48 @@ export function getImageUrl(src: string, size?: string): string {
 
 export interface ImageAttrs {
   url: string;
-  /** The size's declared width (px), for the `<img width>` attribute. */
+  /** The size's declared width (px) — an upper bound under `fit: 'inside'`; see {@link imageDimensions} for the served size. */
   width?: number;
-  /** The size's declared height (px), for the `<img height>` attribute. */
+  /** The size's declared height (px) — an upper bound under `fit: 'inside'`; see {@link imageDimensions} for the served size. */
   height?: number;
 }
 
-/** The signed URL plus the size's declared dimensions, letting `<Image>` set `src`/`width`/`height` in one server-side pass. Server-only. */
+/** The signed URL plus the size's declared dimensions, synchronously and without touching the cache. Server-only. */
 export function getImageAttrs(src: string, size?: string): ImageAttrs {
   const { url, resolved } = mintFor(src, size, getImageRuntime().options);
   return { url, width: resolved?.width, height: resolved?.height };
+}
+
+export type { ImageDimensions };
+
+/**
+ * The pixel dimensions the browser will actually receive for `src` at `size` — what `<Image>` puts on `<img width/height>`
+ * so the reserved box (and its placeholder) has the image's real aspect ratio, which a size's declared box only matches
+ * under `fit: 'fill'`. Non-blocking like {@link imagePlaceholder}: it reads an encoded variant's exact dimensions, or
+ * predicts them from the cached original's (or a local import's intrinsic size), and returns `null` while neither is
+ * known. Request-cached. Server-only.
+ */
+export const imageDimensions: (src: string | ImportedImage, size?: string) => Promise<ImageDimensions | null> = requestMemo(readDimensions, {
+  namespace: 'mochi:image:dimensions',
+  quiet: true,
+});
+
+async function readDimensions(image: string | ImportedImage, size?: string): Promise<ImageDimensions | null> {
+  const { options, cache } = getImageRuntime();
+  const src = typeof image === 'string' ? image : image.src;
+  const local = typeof image === 'string' ? undefined : image;
+  const resolved = options.enabled ? resolveNamed(size, options) : undefined;
+  const { variant, source } = await cache.peekDimensions(src, resolved ? variantId(src, resolved.configHash) : undefined);
+  if (variant) {
+    return variant;
+  }
+  // An imported asset's intrinsic size is EXIF-oriented, so it can stand in only where the pipeline orients too.
+  const known = source ?? (local && (!resolved || resolved.autoOrient) ? { width: local.width, height: local.height, transposed: false } : undefined);
+  if (!known) {
+    return null;
+  }
+  // An untransformed original is served verbatim and the browser applies its EXIF orientation.
+  return resolved ? predictVariantDimensions(known, resolved) : { width: known.width, height: known.height };
 }
 
 let warnedDisabled = false;

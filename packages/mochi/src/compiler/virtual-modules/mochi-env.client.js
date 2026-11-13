@@ -125,6 +125,7 @@ export function warmImagePlaceholder() {}
 export function getImage() { __serverOnly("getImage()"); }
 export function getImagePlaceholder() { return Promise.resolve(null); }
 export function imagePlaceholder() { return Promise.resolve(null); }
+export function imageDimensions() { return Promise.resolve(null); }
 export function invalidateImage() { __serverOnly("invalidateImage()"); }
 export { reloadDeferredIsland, reloadDeferredIslandAll } from "__MOCHI_DEFER_API__";
 export { deferReloadState, DeferReloadState } from "__MOCHI_DEFER_REACTIVE__";

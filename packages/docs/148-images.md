@@ -10,6 +10,7 @@ description: 'On-the-fly image transforms on Bun.Image via named sizes, with enc
   import Callout from './_components/Callout.svelte';
   import PersistenceTable from './_components/PersistenceTable.svelte';
   import placeholderShot from './images/image-placeholder.jpg';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Images
@@ -53,7 +54,7 @@ Transforms apply in a fixed order: resize → rotate → flip → flop → modul
 
 ### Component
 
-Import `Image` and reference a size by name. It renders one `<img>` with an encrypted `src` and no client JavaScript. The `<img>` `width`/`height` default to the size's declared dimensions.
+Import `Image` and reference a size by name. It renders one `<img>` with an encrypted `src` and no client JavaScript. The `<img>` `width`/`height` are the dimensions the browser will receive, so the reserved box and its placeholder keep the image's real aspect ratio. A local import knows them up front. A remote source uses the size's declared dimensions until the source is cached, which happens on the first variant or placeholder request.
 
 ```svelte
 <script>
@@ -80,7 +81,7 @@ Add `placeholder` to render a [ThumbHash](https://evanw.github.io/thumbhash/) bl
 | `size`                 | —           | Named size; omitted → the full-size original                               |
 | `alt`                  | `''`        | Always set this                                                            |
 | `placeholder`          | `false`     | Background-warmed ThumbHash blur-up; pure SSR, no client JavaScript        |
-| `width` / `height`     | size's dims | `<img>` attribute override                                                 |
+| `width` / `height`     | served dims | `<img>` attribute override; set one and the other follows the aspect ratio |
 | `loading` / `decoding` | lazy/async  | Passed through to `<img>`                                                  |
 
 A bare `<Image src>` with no `size` serves the full-size original. An unknown size name degrades to the original and logs a one-time server warning.
@@ -150,9 +151,23 @@ const { url, width, height } = getImageAttrs(src, 'thumbnail');
 
 <Callout type="warning">
 
-With `fit: 'inside'` (the default), the served image's real dimensions can be smaller than the declared ones. If the aspect ratio matters for layout, add CSS such as `height: auto` so the declared attributes only reserve space.
+With `fit: 'inside'` (the default), the served image's real dimensions can be smaller than the declared ones, with a different aspect ratio. Use [`imageDimensions`](#imagedimensions-served-dimensions) for the served size.
 
 </Callout>
+
+### `imageDimensions` — served dimensions
+
+<VersionNote since="0.10.0" message="Before 0.10.0 the Image component used the size's declared width/height, so a portrait source under fit: 'inside' reserved a landscape box." />
+
+`imageDimensions(src, size?)` returns the `{ width, height }` the endpoint serves for `src` at `size`. `<Image>` uses it for its `width`/`height`. It never fetches: it reads an encoded variant's dimensions, or predicts them from the cached original or a local import's intrinsic size. It returns `null` while the source is uncached. Server-only.
+
+```ts
+import { imageDimensions } from 'mochi-framework';
+
+// A 2080×3120 source under { width: 600, height: 400, fit: 'inside' }:
+await imageDimensions(src, 'hero');
+// → { width: 267, height: 400 }
+```
 
 ### `getImage` — inline bytes + metadata
 
