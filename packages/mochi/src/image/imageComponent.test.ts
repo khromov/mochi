@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from '../Mochi';
-import { withExifOrientation } from './__testUtils__/exif';
+import { invalidateImage } from './imageApi';
 
 const GLOBAL_LOCAL_ASSETS_KEY = '__mochi_local_image_assets__';
 const RM_OPTS = { recursive: true, force: true, maxRetries: 5, retryDelay: 100 } as const;
@@ -11,12 +11,11 @@ const RM_OPTS = { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }
 const PAGE_SRC = `<script>
   import { Image } from 'mochi-framework/image';
   import local from './portrait.jpg';
-  let { portrait, rotated } = $props();
+  let { remote } = $props();
 </script>
-<Image src={portrait} size="hero" placeholder alt="portrait" />
-<Image src={rotated} size="hero" alt="rotated" />
+<Image src={remote} size="hero" placeholder alt="remote" />
 <Image src={local} size="hero" alt="local" />
-<Image src={local} size="raw" alt="local-raw" />
+<Image src={local} size="wide" alt="local-wide" />
 `;
 
 function imgTag(html: string, alt: string): string {
@@ -31,25 +30,21 @@ function dims(tag: string): { width: string | undefined; height: string | undefi
   return { width: tag.match(/\swidth="(\d+)"/)?.[1], height: tag.match(/\sheight="(\d+)"/)?.[1] };
 }
 
-// `<Image>`'s `<img width/height>` must carry the served image's aspect ratio, not the size's declared box: under
-// `fit: 'inside'` a 2:3 source in a 600×400 box is served at 267×400, and a 3:2 box would reserve (and paint the
-// placeholder into) the wrong shape until the image loads.
-describe('<Image> reserves the served aspect ratio', () => {
+// Under `fit: 'inside'` a 2:3 source in a 600×400 box is served at 267×400; once that variant is cached, `<Image>` must
+// reserve its real shape rather than the declared 3:2 box.
+describe('<Image> width/height', () => {
   let fixtureDir: string;
   let outDir: string;
   let origin: Server<undefined>;
   let server: Server<undefined>;
   let base: string;
+  let upstream: Uint8Array;
 
   beforeAll(async () => {
     const tiny = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
     const portrait = await new Bun.Image(tiny).resize(40, 60, { fit: 'fill' }).jpeg().bytes();
-    // Stored landscape, displayed portrait: EXIF orientation 6 rotates it 90°.
-    const rotated = withExifOrientation(await new Bun.Image(tiny).resize(60, 40, { fit: 'fill' }).jpeg().bytes(), 6);
-    origin = Bun.serve({
-      port: 0,
-      fetch: (req) => new Response(new URL(req.url).pathname === '/rotated.jpg' ? rotated : new Uint8Array(portrait), { headers: { 'content-type': 'image/jpeg' } }),
-    });
+    upstream = portrait;
+    origin = Bun.serve({ port: 0, fetch: () => new Response(new Uint8Array(upstream), { headers: { 'content-type': 'image/jpeg' } }) });
 
     fixtureDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-image-dims-fix-'));
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-image-dims-out-'));
@@ -66,12 +61,10 @@ describe('<Image> reserves the served aspect ratio', () => {
       image: {
         blockPrivateNetworks: false,
         cacheDir: path.join(outDir, 'image-cache'),
-        sizes: { hero: { width: 600, height: 400, fit: 'inside' }, raw: { width: 300, autoOrient: false } },
+        sizes: { hero: { width: 600, height: 400, fit: 'inside' }, wide: { width: 300 } },
       },
       routes: {
-        '/': Mochi.page(pagePath, {
-          serverProps: () => ({ portrait: `http://127.0.0.1:${origin.port}/portrait.jpg`, rotated: `http://127.0.0.1:${origin.port}/rotated.jpg` }),
-        }),
+        '/': Mochi.page(pagePath, { serverProps: () => ({ remote: `http://127.0.0.1:${origin.port}/remote.jpg` }) }),
       },
     });
     base = `http://127.0.0.1:${server.port}`;
@@ -91,36 +84,45 @@ describe('<Image> reserves the served aspect ratio', () => {
     return res.text();
   };
 
-  test('a local import is sized from its intrinsic dimensions on the first render', async () => {
+  const fetchVariant = async (tag: string) => {
+    const src = tag.match(/\ssrc="([^"]+)"/)![1]!.replaceAll('&amp;', '&');
+    const res = await fetch(`${base}${src}`);
+    expect(res.status).toBe(200);
+    return new Bun.Image(new Uint8Array(await res.arrayBuffer())).metadata();
+  };
+
+  test('a remote portrait reserves the declared box while cold, then the served size once its variant is cached', async () => {
+    const cold = imgTag(await render(), 'remote');
+    expect(dims(cold)).toEqual({ width: '600', height: '400' });
+
+    expect(await fetchVariant(cold)).toMatchObject({ width: 267, height: 400 });
+    expect(dims(imgTag(await render(), 'remote'))).toEqual({ width: '267', height: '400' });
+  });
+
+  test('a local import does the same', async () => {
+    const cold = imgTag(await render(), 'local');
+    expect(dims(cold)).toEqual({ width: '600', height: '400' });
+
+    await fetchVariant(cold);
     expect(dims(imgTag(await render(), 'local'))).toEqual({ width: '267', height: '400' });
   });
 
-  // With `autoOrient: false` the intrinsic (EXIF-oriented) size can't predict the variant, so nothing is known yet.
-  test('an unpredictable width-only size keeps its declared width rather than the import intrinsic one', async () => {
-    expect(dims(imgTag(await render(), 'local-raw')).width).toBe('300');
+  test('a cold width-only size keeps its declared width rather than the import intrinsic one', async () => {
+    const cold = imgTag(await render(), 'local-wide');
+    expect(dims(cold)).toEqual({ width: '300', height: undefined });
+
+    await fetchVariant(cold);
+    expect(dims(imgTag(await render(), 'local-wide'))).toEqual({ width: '300', height: '450' });
   });
 
-  test('a remote portrait falls back to the declared box while cold, then matches its blur placeholder', async () => {
-    expect(dims(imgTag(await render(), 'portrait'))).toEqual({ width: '600', height: '400' });
+  test('a hard invalidation drops the old dimensions until the new variant is served', async () => {
+    upstream = await new Bun.Image(upstream).resize(60, 20, { fit: 'fill' }).jpeg().bytes();
+    const remote = `http://127.0.0.1:${origin.port}/remote.jpg`;
+    await invalidateImage(remote, { hard: true });
 
-    // The cold render warms the placeholder in the background, which caches the original and its dimensions.
-    let tag = '';
-    for (let i = 0; i < 100 && !tag.includes('background-image'); i++) {
-      await Bun.sleep(50);
-      tag = imgTag(await render(), 'portrait');
-    }
-    expect(tag).toContain('background-image');
-    expect(dims(tag)).toEqual({ width: '267', height: '400' });
-  });
-
-  test('an EXIF-rotated remote source is sized by the variant the endpoint actually served', async () => {
-    const src = imgTag(await render(), 'rotated')
-      .match(/\ssrc="([^"]+)"/)![1]!
-      .replaceAll('&amp;', '&');
-    const variant = await fetch(`${base}${src}`);
-    expect(variant.status).toBe(200);
-    expect(await new Bun.Image(new Uint8Array(await variant.arrayBuffer())).metadata()).toMatchObject({ width: 267, height: 400 });
-
-    expect(dims(imgTag(await render(), 'rotated'))).toEqual({ width: '267', height: '400' });
+    const cold = imgTag(await render(), 'remote');
+    expect(dims(cold)).toEqual({ width: '600', height: '400' });
+    await fetchVariant(cold);
+    expect(dims(imgTag(await render(), 'remote'))).toEqual({ width: '600', height: '200' });
   });
 });

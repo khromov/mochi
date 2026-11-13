@@ -270,6 +270,41 @@ describe('ImageCache.getVariant (generation-stamped)', () => {
   });
 });
 
+describe('ImageCache.variantDimensions', () => {
+  test('reports an encoded variant, and the dims survive a restart over the same directory', async () => {
+    const dir = tmp();
+    const a = makeCache({ cacheDir: dir });
+    expect(await a.variantDimensions(SRC, ID)).toBeNull();
+    await a.getOriginal(SRC, origFn([1, 2, 3]));
+    expect(await a.variantDimensions(SRC, ID)).toBeNull();
+    await a.getVariant(SRC, ID, regen(a, [9]));
+    expect(await a.variantDimensions(SRC, ID)).toEqual({ width: 100, height: 100 });
+    expect(await makeCache({ cacheDir: dir }).variantDimensions(SRC, ID)).toEqual({ width: 100, height: 100 });
+  });
+
+  test('ignores a variant encoded from another original generation', async () => {
+    const cache = makeCache();
+    const { entry } = await cache.getOriginal(SRC, origFn([1, 2, 3]));
+    await cache.getVariant(SRC, ID, async () => ({
+      bytes: new Uint8Array([9]),
+      contentType: 'image/webp',
+      width: 100,
+      height: 100,
+      format: 'webp',
+      originalCreatedAt: entry.meta.createdAt - 1,
+    }));
+    expect(await cache.variantDimensions(SRC, ID)).toBeNull();
+  });
+
+  test('is null after a hard invalidation', async () => {
+    const cache = makeCache();
+    await cache.getOriginal(SRC, origFn([1, 2, 3]));
+    await cache.getVariant(SRC, ID, regen(cache, [9]));
+    await cache.invalidateOriginal(SRC, true);
+    expect(await cache.variantDimensions(SRC, ID)).toBeNull();
+  });
+});
+
 describe('ImageCache.invalidateOriginal cascade', () => {
   test('hard invalidation removes the source variants and placeholder', async () => {
     const cache = makeCache();
