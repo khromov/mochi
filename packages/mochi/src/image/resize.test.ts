@@ -111,7 +111,9 @@ describe('predictVariantDimensions', () => {
               const actual = await runPipeline(bytes, size, opts);
               const predicted = predictVariantDimensions({ width: sw, height: sh, transposed: false }, size);
               if (predicted?.width !== actual.width || predicted?.height !== actual.height) {
-                mismatches.push(`${sw}x${sh} ${JSON.stringify({ width, height, fit, withoutEnlargement, rotate })}: predicted ${JSON.stringify(predicted)}, got ${actual.width}x${actual.height}`);
+                mismatches.push(
+                  `${sw}x${sh} ${JSON.stringify({ width, height, fit, withoutEnlargement, rotate })}: predicted ${JSON.stringify(predicted)}, got ${actual.width}x${actual.height}`,
+                );
               }
             }
           }

@@ -47,7 +47,7 @@ describe('<Image> reserves the served aspect ratio', () => {
     const rotated = withExifOrientation(await new Bun.Image(tiny).resize(60, 40, { fit: 'fill' }).jpeg().bytes(), 6);
     origin = Bun.serve({
       port: 0,
-      fetch: (req) => new Response(new URL(req.url).pathname === '/rotated.jpg' ? rotated : portrait, { headers: { 'content-type': 'image/jpeg' } }),
+      fetch: (req) => new Response(new URL(req.url).pathname === '/rotated.jpg' ? rotated : new Uint8Array(portrait), { headers: { 'content-type': 'image/jpeg' } }),
     });
 
     fixtureDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-image-dims-fix-'));
@@ -104,7 +104,9 @@ describe('<Image> reserves the served aspect ratio', () => {
   });
 
   test('an EXIF-rotated remote source is sized by the variant the endpoint actually served', async () => {
-    const src = imgTag(await render(), 'rotated').match(/\ssrc="([^"]+)"/)![1]!.replaceAll('&amp;', '&');
+    const src = imgTag(await render(), 'rotated')
+      .match(/\ssrc="([^"]+)"/)![1]!
+      .replaceAll('&amp;', '&');
     const variant = await fetch(`${base}${src}`);
     expect(variant.status).toBe(200);
     expect(await new Bun.Image(new Uint8Array(await variant.arrayBuffer())).metadata()).toMatchObject({ width: 267, height: 400 });
