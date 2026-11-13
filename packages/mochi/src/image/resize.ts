@@ -176,8 +176,9 @@ export async function probeSourceDimensions(input: Uint8Array): Promise<SourceDi
  * The dimensions {@link runPipeline} will produce for `size` from a source of the given dimensions, without decoding
  * or encoding anything, so `<Image>` can size its box before the variant exists. Mirrors `Bun.Image`'s actual
  * arithmetic, which differs from the documented order: it rotates before resizing, floors a width-only resize's derived
- * height, and skips a `fill` + `withoutEnlargement` resize outright when either axis would grow. `null` when a
- * non-right-angle `rotate` makes the output canvas unpredictable.
+ * height, and skips a `fill` + `withoutEnlargement` resize outright when either axis would grow. Exact for PNG/WebP
+ * sources; a JPEG decoder shrinks on load, so its output can drift a few pixels. `null` when a non-right-angle
+ * `rotate` makes the output canvas unpredictable.
  */
 export function predictVariantDimensions(source: SourceDimensions, size: ResolvedImageSize): ImageDimensions | null {
   const swap = source.transposed && !size.autoOrient;

@@ -159,7 +159,7 @@ With `fit: 'inside'` (the default), the served image's real dimensions can be sm
 
 <VersionNote since="0.10.0" message="Before 0.10.0 the Image component used the size's declared width/height, so a portrait source under fit: 'inside' reserved a landscape box." />
 
-`imageDimensions(src, size?)` returns the `{ width, height }` the endpoint serves for `src` at `size`. `<Image>` uses it for its `width`/`height`. It never fetches: it reads an encoded variant's dimensions, or predicts them from the cached original or a local import's intrinsic size. It returns `null` while the source is uncached. Server-only.
+`imageDimensions(src, size?)` returns the `{ width, height }` the endpoint serves for `src` at `size`. `<Image>` uses it for its `width`/`height`. It never fetches: it reads an encoded variant's dimensions, or predicts them from the cached original or a local import's intrinsic size (for a JPEG source the prediction can be a few pixels off until the variant is encoded). It returns `null` while the source is uncached. Server-only.
 
 ```ts
 import { imageDimensions } from 'mochi-framework';

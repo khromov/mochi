@@ -83,7 +83,7 @@ describe('predictVariantDimensions', () => {
     expect(predictVariantDimensions({ width: 2080, height: 3120, transposed: false }, size)).toEqual({ width: 267, height: 400 });
   });
 
-  test('matches what runPipeline actually encodes', async () => {
+  test('matches what runPipeline actually encodes for a PNG source', async () => {
     const sources: [number, number][] = [
       [40, 60],
       [301, 199],
@@ -132,6 +132,26 @@ describe('predictVariantDimensions', () => {
       const { opts, size } = build({ width: 600, height: 400, format: 'png', autoOrient });
       const actual = await runPipeline(rotated, size, opts);
       expect(predictVariantDimensions(source!, size)).toEqual({ width: actual.width, height: actual.height });
+    }
+  });
+
+  // A JPEG decoder shrinks on load, so its output can drift a few pixels from the prediction; the aspect ratio must hold.
+  test('stays within a pixel-level drift of a JPEG source', async () => {
+    const cases: [number, number, number | undefined, number | undefined][] = [
+      [2080, 3120, 600, 400],
+      [197, 829, 169, 713],
+      [289, 469, undefined, 153],
+      [1077, 325, 129, undefined],
+      [643, 1137, 457, undefined],
+    ];
+    for (const [sw, sh, width, height] of cases) {
+      const bytes = await new Bun.Image(new Uint8Array(PNG)).resize(sw, sh, { fit: 'fill' }).jpeg().bytes();
+      const { opts, size } = build({ width, height, format: 'png' });
+      const actual = await runPipeline(bytes, size, opts);
+      const predicted = predictVariantDimensions({ width: sw, height: sh, transposed: false }, size)!;
+      expect(Math.abs(predicted.width - actual.width)).toBeLessThanOrEqual(3);
+      expect(Math.abs(predicted.height - actual.height)).toBeLessThanOrEqual(3);
+      expect(Math.abs(predicted.width / predicted.height / (actual.width / actual.height) - 1)).toBeLessThan(0.01);
     }
   });
 
