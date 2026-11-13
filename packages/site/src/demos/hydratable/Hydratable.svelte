@@ -8,7 +8,7 @@
 
   // With hydratable, the result is serialized into <head>; the matching call inside the hydrated
   // island below reads it back from window.__svelte.h instead of re-running this function on the client.
-  const fact = await hydratable('mochi-demo:fact', () => {
+  const fact = hydratable('mochi-demo:fact', () => {
     console.log('[server] computing fact via bun:sqlite (should print once per request)');
     const db = new Database(':memory:');
     const row = db.query("SELECT datetime('now') as now, sqlite_version() as version").get() as { now: string; version: string };
