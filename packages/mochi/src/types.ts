@@ -724,7 +724,7 @@ export interface MochiServeOptions {
   optimize?: boolean | MochiSvelteShakerOptions;
   /**
    * Which minifier prints the browser-facing JS: Bun's built-in one, or a second
-   * [oxc](https://oxc.rs/docs/guide/usage/minifier) pass over the chunks Bun emitted.
+   * [oxc](https://oxc.rs/docs/guide/usage/minifier) pass over the chunks Bun emitted (experimental).
    *
    * `'oxc'` takes roughly another 3–4% off the island bundle for a few tens of milliseconds of build time. It covers
    * the hydration bundle, the debug-bar bundle and the inline web-component scripts; CSS, static assets and the SSR

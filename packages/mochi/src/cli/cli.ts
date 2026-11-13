@@ -51,8 +51,8 @@ Options for "build":
   --asset-prefix <path>    URL prefix for framework client assets. Default: /_mochi
   --minifier <bun|oxc>     Which minifier prints the client JS. Wins over
                            MOCHI_MINIFIER, which wins over the entry's
-                           \`minifier\`. \`oxc\` needs the optional
-                           \`oxc-minify\` package. Default: bun
+                           \`minifier\`. \`oxc\` (experimental) needs the
+                           optional \`oxc-minify\` package. Default: bun
   --dev                    Build with development: true.
 
 The build reads its config straight from the entry's \`Mochi.serve()\` call, so

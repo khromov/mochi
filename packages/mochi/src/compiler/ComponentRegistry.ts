@@ -311,7 +311,7 @@ export interface ComponentRegistryOptions {
   markdown?: MarkdownConfig;
   /** Run the whole-program svelte-shaker pass before compiling. Production only — `prepareShake()` is a no-op in dev. */
   optimize?: boolean | MochiSvelteShakerOptions;
-  /** Which minifier prints the client bundle. `'oxc'` needs the optional `oxc-minify` package. Default: `'bun'`. */
+  /** Which minifier prints the client bundle. `'oxc'` (experimental) needs the optional `oxc-minify` package. Default: `'bun'`. */
   minifier?: MochiJsMinifier;
   /** See `MochiServeOptions.barrelWarnings`. */
   barrelWarnings?: boolean | MochiBarrelWarningOptions;

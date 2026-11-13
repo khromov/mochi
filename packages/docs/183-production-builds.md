@@ -104,7 +104,15 @@ Keep `MOCHI_KEY` stable across restarts. Image URLs are signed with a key derive
 
 <VersionNote since="0.10.0" message="The minifier option was added in 0.10.0. Earlier versions always use Bun's minifier." />
 
-Client JavaScript is minified by Bun's bundler. Set `minifier: 'oxc'` to run a second [oxc](https://oxc.rs/docs/guide/usage/minifier) pass over the chunks Bun emitted, which takes roughly another **3–4%** off the bundle:
+Client JavaScript is minified by Bun's bundler. Set `minifier: 'oxc'` to run a second [oxc](https://oxc.rs/docs/guide/usage/minifier) pass over the chunks Bun emitted, which takes roughly another **3–4%** off the bundle.
+
+<Callout type="warning">
+
+**Experimental.** The oxc minifier is opt-in: Mochi uses Bun's minifier unless you set `minifier: 'oxc'`. If you hit a problem with it, please [open an issue](https://github.com/khromov/mochi/issues).
+
+</Callout>
+
+Install `oxc-minify` and set the option:
 
 ```sh
 bun add -d oxc-minify
