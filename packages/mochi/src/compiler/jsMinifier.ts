@@ -58,7 +58,7 @@ interface OxcMinifyResult {
 interface OxcMinifyOptions {
   module?: boolean;
   compress?: { target?: string; dropDebugger?: boolean; dropConsole?: boolean; treeshake?: { propertyReadSideEffects?: boolean | 'always' } };
-  codegen?: { legalComments?: 'none' | 'inline' | 'eof' };
+  codegen?: { legalComments?: 'none' | 'inline' | 'eof' | 'external' | { linked: string } };
 }
 
 type OxcMinifyFn = (filename: string, sourceText: string, options?: OxcMinifyOptions) => Promise<OxcMinifyResult>;
@@ -70,10 +70,10 @@ export interface OxcMinifier {
 
 /**
  * Every default where oxc disagrees with the Bun pass it runs after, pinned so the second pass only shrinks the
- * bundle and never changes what it does:
+ * bundle and never changes what it does, with one deliberate exception:
  *
- * - `legalComments` defaults to `'none'`, which silently strips the `/*!` / `@license` banners Bun preserves — a
- *   licence-compliance regression, so it is forced back to `'inline'`.
+ * - `legalComments` is `'none'`, so the `/*!` / `@license` banners Bun keeps are stripped for the smallest output;
+ *   apps that must ship third-party notices provide them separately. Pinned so a default flip can't change the bytes.
  * - `dropDebugger` defaults to `true`; Bun keeps `debugger` statements, and this pass also runs in dev builds.
  * - `dropConsole` is `false` in both, and `treeshake.propertyReadSideEffects` is `'always'`, which is what keeps a
  *   bare property read — `$effect(() => { obj.prop; })`, Svelte's whole dependency-tracking mechanism — from being
@@ -83,7 +83,7 @@ export interface OxcMinifier {
  */
 const OXC_OPTIONS = {
   compress: { target: 'esnext', dropDebugger: false, dropConsole: false, treeshake: { propertyReadSideEffects: 'always' as const } },
-  codegen: { legalComments: 'inline' as const },
+  codegen: { legalComments: 'none' as const },
 };
 
 // Held in a variable so the `import()`s below stay statically unanalysable: an absent optional peer must surface as a

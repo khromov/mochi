@@ -98,12 +98,13 @@ describe('minifyBuildOutputs', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  async function buildFixture(opts: { sourcemap?: 'linked' } = {}) {
+  async function buildFixture(opts: { sourcemap?: 'linked'; banner?: boolean } = {}) {
     // Inside the package tree, like every other build-running test here — see CLAUDE.md on outDir placement.
     dir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-js-minifier-'));
     writeFileSync(
       path.join(dir, 'lib.ts'),
-      'export function addTogether(firstNumber: number, secondNumber: number) {\n  const sum = firstNumber + secondNumber;\n  return sum;\n}\n',
+      (opts.banner ? '/*! lib v1 | @license MIT */\n' : '') +
+        'export function addTogether(firstNumber: number, secondNumber: number) {\n  const sum = firstNumber + secondNumber;\n  return sum;\n}\n',
     );
     writeFileSync(path.join(dir, 'entry.ts'), 'import { addTogether } from "./lib";\nglobalThis.result = addTogether(1, 2);\n');
     return Bun.build({
@@ -119,6 +120,14 @@ describe('minifyBuildOutputs', () => {
     const result = await buildFixture();
 
     expect(await minifyBuildOutputs(result.outputs, 'bun')).toBeNull();
+  });
+
+  test("strips the legal banner Bun kept, so 'bun' mode alone ships it", async () => {
+    const result = await buildFixture({ banner: true });
+    const js = result.outputs.find((o) => o.path.endsWith('.js'))!;
+
+    expect(await js.text()).toContain('@license MIT');
+    expect((await minifyBuildOutputs(result.outputs, 'oxc'))!.get(js.path)).not.toContain('@license');
   });
 
   test('re-minifies JS chunks below what Bun alone produced, and the result still runs', async () => {
@@ -142,17 +151,20 @@ describe('minifyBuildOutputs', () => {
   });
 });
 
+describe('legal comments', () => {
+  test.each([true, false])('strips legal comments, which Bun keeps (module: %p)', async (module) => {
+    const source = '/*! Copyright Someone. @license MIT */\nglobalThis.a = 1;\n';
+
+    const [out] = await minifyJsChunks([{ fileName: 'legal.js', code: source }], { module });
+
+    expect(out!).not.toContain('Copyright Someone');
+    expect(out!).toContain('globalThis.a=1');
+  });
+});
+
 // Regressions for the classic-script and option-parity bugs the browser sweep turned up. Each of these is a way the
 // second pass could change behaviour rather than just size.
 describe('oxc option parity with Bun', () => {
-  test('keeps legal comments, which oxc drops by default', async () => {
-    const source = '/*! Copyright Someone. @license MIT */\nexport const a = 1;\n';
-
-    const [out] = await minifyJsChunks([{ fileName: 'legal.js', code: source }]);
-
-    expect(out!).toContain('@license MIT');
-  });
-
   test('keeps `debugger`, which oxc drops by default and Bun preserves', async () => {
     const source = 'export function f() { debugger; return 1; }';
 
@@ -298,7 +310,7 @@ describe('clientBundleNaming', () => {
   });
 
   test('the tag changes with the oxc options', () => {
-    expect(oxcOutputTag('0.151.0', { module: true, codegen: { legalComments: 'none' } })).not.toBe(oxcOutputTag('0.151.0'));
+    expect(oxcOutputTag('0.151.0', { module: true, codegen: { legalComments: 'inline' } })).not.toBe(oxcOutputTag('0.151.0'));
   });
 });
 // The pinned options only help if they actually reach oxc. This asserts the one that matters most is load-bearing:

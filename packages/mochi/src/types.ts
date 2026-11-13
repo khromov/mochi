@@ -729,7 +729,7 @@ export interface MochiServeOptions {
    * `'oxc'` takes roughly another 3–4% off the island bundle for a few tens of milliseconds of build time. It covers
    * the hydration bundle, the debug-bar bundle and the inline web-component scripts; CSS, static assets and the SSR
    * build are untouched either way. Its chunk names carry a tag of the `oxc-minify` version and options, so switching
-   * or upgrading changes every URL. `mochi-framework build` reads this straight from your entry's `Mochi.serve()` call.
+   * or upgrading changes every URL. Unlike Bun, `'oxc'` strips legal (`/*!`, `@license`) comments. `mochi-framework build` reads this straight from your entry's `Mochi.serve()` call.
    *
    * Precedence: `mochi-framework build --minifier`, then `MOCHI_MINIFIER`, then this option. Unknown values throw.
    *
