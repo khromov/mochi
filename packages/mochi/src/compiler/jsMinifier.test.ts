@@ -178,6 +178,44 @@ describe('oxc option parity with Bun', () => {
   });
 });
 
+// oxc has no option to keep an unused call to a coercing built-in (`String(o)`, `isNaN(o)`, …), which the docs call out;
+// these are the dependency-tracking statements the docs recommend instead, so none of them may ever join that list.
+describe('unused expressions a Svelte $effect can track a dependency with', () => {
+  test.each([
+    'o.length;',
+    'o[k];',
+    'k in o;',
+    '`${o}`;',
+    '[...o];',
+    '({ ...o });',
+    'JSON.stringify(o);',
+    'Object.keys(o);',
+    'Object.values(o);',
+    'Object.entries(o);',
+    'structuredClone(o);',
+    'for (const _ of o);',
+  ])('keeps %p', async (statement) => {
+    const empty = 'export function track(o, k, run) { run(); }';
+    const source = `export function track(o, k, run) { ${statement} run(); }`;
+
+    const [baseline, out] = await minifyJsChunks([
+      { fileName: 'empty.js', code: empty },
+      { fileName: 'tracked.js', code: source },
+    ]);
+
+    expect(out!.length).toBeGreaterThan(baseline!.length);
+  });
+
+  test('the documented exception: an unused coercing built-in call is dropped', async () => {
+    const [baseline, out] = await minifyJsChunks([
+      { fileName: 'empty.js', code: 'export function track(o, run) { run(); }' },
+      { fileName: 'coerced.js', code: 'export function track(o, run) { String(o); isNaN(o); run(); }' },
+    ]);
+
+    expect(out!).toBe(baseline!);
+  });
+});
+
 describe('classic-script mode', () => {
   const source = 'const unusedTopLevelGlobal = 1;\nclass SomeWidget extends HTMLElement {}\ncustomElements.define("x-y", SomeWidget);\n';
 

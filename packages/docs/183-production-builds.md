@@ -135,6 +135,8 @@ With `'oxc'`, every chunk name carries a tag derived from the installed `oxc-min
 
 Behaviour is pinned to match the Bun pass: legal (`/*!`, `@license`) comments are preserved, `debugger` and `console.*` are kept, property reads are always treated as side-effecting so a bare `obj.prop` dependency read survives, and nothing is downlevelled. The two inline classic scripts are built as IIFEs and minified in script mode, the goal the browser parses them with.
 
+One difference from Bun remains, and no oxc option turns it off. oxc removes a call to a built-in that only converts its argument when the result is unused: `String(x)`, `parseInt(x)`, `isNaN(x)`, `Math.abs(x)`, `encodeURIComponent(x)`. Bun keeps the call. The conversion reads a `$state` proxy, so an `$effect` that tracks a dependency with a bare `String(items)` stops re-running under `'oxc'`. Track with a property read, `items.length`, `JSON.stringify(items)` or `Object.keys(items)` instead; those survive both minifiers.
+
 <Callout type="info">
 
 `oxc-minify` is an optional peer dependency. With `minifier: 'oxc'` set and the package missing, the build fails with install instructions rather than quietly falling back, so deployed bundle sizes always match the mode you asked for.
