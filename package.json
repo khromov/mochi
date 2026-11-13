@@ -58,17 +58,17 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@memlab/api": "^2.0.4",
+    "@memlab/api": "^2.0.6",
     "@types/bun": "1.4.4",
-    "eslint": "^10.8.0",
+    "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-svelte": "^3.22.0",
-    "oxlint": "^1.80.0",
-    "prettier": "^3.9.6",
+    "eslint-plugin-svelte": "^3.24.1",
+    "oxlint": "^1.93.0",
+    "prettier": "^3.10.1",
     "prettier-plugin-svelte": "^4.1.1",
-    "syncpack": "^15.3.2",
+    "syncpack": "^15.3.3",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.65.0"
+    "typescript-eslint": "^8.72.2"
   },
   "overrides": {
     "basic-ftp": "^6.2.1",
