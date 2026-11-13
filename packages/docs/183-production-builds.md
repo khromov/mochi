@@ -135,7 +135,22 @@ With `'oxc'`, every chunk name carries a tag derived from the installed `oxc-min
 
 Behaviour is pinned to match the Bun pass: legal (`/*!`, `@license`) comments are preserved, `debugger` and `console.*` are kept, property reads are always treated as side-effecting so a bare `obj.prop` dependency read survives, and nothing is downlevelled. The two inline classic scripts are built as IIFEs and minified in script mode, the goal the browser parses them with.
 
-One difference from Bun remains, and no oxc option turns it off. oxc removes a call to a built-in that only converts its argument when the result is unused: `String(x)`, `parseInt(x)`, `isNaN(x)`, `Math.abs(x)`, `encodeURIComponent(x)`. Bun keeps the call. The conversion reads a `$state` proxy, so an `$effect` that tracks a dependency with a bare `String(items)` stops re-running under `'oxc'`. Track with a property read, `items.length`, `JSON.stringify(items)` or `Object.keys(items)` instead; those survive both minifiers.
+One difference from Bun remains: oxc deletes a bare call to a coercing built-in such as `String(x)`, `parseInt(x)`, `isNaN(x)`, `Math.abs(x)` or `encodeURIComponent(x)`. Inside an `$effect`, `$effect.pre` or `$derived.by` that call can be the only read of a `$state` proxy, so the effect stops re-running. Mochi warns at compile time, with the file, line and a replacement:
+
+```svelte
+<script>
+  let filters = $state(['red']);
+  let page = $state(1);
+
+  $effect(() => {
+    String(filters); // ❌ removed by 'oxc'
+    `${filters}`; // ✅ same reads, survives
+    page = 1;
+  });
+</script>
+```
+
+`JSON.stringify(filters)`, `$state.snapshot(filters)` and a property read such as `filters.length` survive too. For a numeric coercion (`isNaN`, `Math.*`) the warning suggests `Number(x)`.
 
 <Callout type="info">
 

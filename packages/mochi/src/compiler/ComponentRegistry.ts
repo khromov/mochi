@@ -54,6 +54,7 @@ import type { LocalImageAsset } from '../image/types';
 import { freshImport } from './freshImport';
 import { resolveSvelteShaker } from './svelteShaker';
 import { clientBundleNaming, minifyBuildOutputs, parseJsMinifier, resolveJsMinifier, resolveOxcMinify, type MochiJsMinifier } from './jsMinifier';
+import { findOxcDroppedCalls, formatOxcDroppedCall } from './oxcDroppedCalls';
 import prettyBytes from '../vendor/pretty-bytes';
 
 // The `compile:preprocessors` filter is sync; only applying its preprocessors through Svelte's `preprocess()` is async.
@@ -455,6 +456,7 @@ export class ComponentRegistry {
   /** Packages already warned about this process, so the warning fires once, not on every rebuild. */
   private readonly warnedBarrels = new Set<string>();
   private readonly warnedRetainedStubs = new Set<string>();
+  private readonly warnedOxcDroppedCalls = new Set<string>();
   /** Buffer used when `bufferBarrelWarnings` is on: barrels collected across the build, flushed as one grouped summary by `flushBarrelWarnings()`. */
   private pendingBarrels: HeavyBarrel[] = [];
   /** absPath → slimmed `.svelte` source from the last `prepareShake()`; empty when shaking is off. */
@@ -646,6 +648,16 @@ export class ComponentRegistry {
         );
       }
       return 'bun';
+    }
+  }
+
+  private warnOxcDroppedCalls(filePath: string, source: string, compiled: string): void {
+    for (const dropped of findOxcDroppedCalls(source, filePath, compiled)) {
+      const line = formatOxcDroppedCall(relForDisplay(filePath), dropped);
+      if (!this.warnedOxcDroppedCalls.has(line)) {
+        this.warnedOxcDroppedCalls.add(line);
+        logger.warn(line);
+      }
     }
   }
 
@@ -1273,6 +1285,10 @@ export class ComponentRegistry {
 
     const prerenderModuleLoader = createPrerenderModuleLoader(this.prerenderContext(evaluations));
 
+    const minifier = await this.clientMinifier();
+    // Only the client bundle goes through oxc, and only what oxc deletes is worth a warning.
+    const onCompiled = minifier === 'oxc' ? (filePath: string, source: string, compiled: string) => this.warnOxcDroppedCalls(filePath, source, compiled) : undefined;
+
     const clientPlugin: BunPlugin = {
       name: 'svelte-client',
       setup(build) {
@@ -1319,11 +1335,15 @@ export class ComponentRegistry {
           path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
         }));
         registerEsmEnvStrip(build);
-        registerSvelteModuleLoader(build, backend, mergeCompilerOptions(userCompilerOptions, { generate: 'client', dev: development }));
+        registerSvelteModuleLoader(build, backend, mergeCompilerOptions(userCompilerOptions, { generate: 'client', dev: development }), onCompiled);
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
-          const source = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
+          const shaken = shakenSources.get(args.path);
+          const source = shaken ?? (await Bun.file(args.path).text());
+          // Line numbers must be the author's, which a shaken source no longer has.
+          const reportCompiled = async (compiled: string) => onCompiled?.(args.path, shaken === undefined ? source : await Bun.file(args.path).text(), compiled);
           const cached = compileCache.get('client', args.path, source, clientFingerprint, compileCacheStats);
           if (cached) {
+            await reportCompiled(cached.js);
             return { contents: cached.js, loader: 'js' };
           }
           const preprocessed = await applyUserPreprocessors(source, args.path, 'client', development);
@@ -1342,6 +1362,7 @@ export class ComponentRegistry {
             serverIslands: [],
             preprocessErrors: [],
           });
+          await reportCompiled(js.code);
           return { contents: js.code, loader: 'js' };
         });
         if (markdown) {
@@ -1353,7 +1374,6 @@ export class ComponentRegistry {
       },
     };
 
-    const minifier = await this.clientMinifier();
     const result = await Bun.build({
       entrypoints,
       files: filesMap,
