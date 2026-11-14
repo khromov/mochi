@@ -27,7 +27,9 @@ describe('scanImportAttributes', () => {
     ]);
   });
 
-  test('skips files that never mention `with` without parsing them', async () => {
+  test('a file without `with {` is never parsed, whatever else it says', async () => {
+    // Unparseable, and mentioning the word: a parse would report null.
+    expect(await scanImportAttributes(`// compatible with everything\nimport './x.css';\nconst = ;`, 'ts')).toEqual([]);
     expect(await scanImportAttributes(`<script>\n  import './x.css';\n<` + `/script>\n<p>{</p>`, 'svelte')).toEqual([]);
     expect(await scanImportAttributes(`import './x.css';\nconst s = 'subset';`, 'ts')).toEqual([]);
   });

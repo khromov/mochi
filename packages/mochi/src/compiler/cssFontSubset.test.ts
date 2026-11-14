@@ -301,6 +301,16 @@ describe('CSS imports — font subsetting via import attributes', () => {
     expect(dev.getClientFile(await stylesheetUrl(dev, pages.svelte))).toBe(builtCss!);
   });
 
+  test('an app that subsets nothing builds no dev glyph check and records no subset state', async () => {
+    const plain = new ComponentRegistry({ development: true, outDir: path.join(tmp, 'out-plain') });
+    await plain.compile(pages.plain);
+    expect(plain.fontSubsetCheckClientJs).toBe('');
+    expect(plain.toManifest().importedCssSubsets).toBeUndefined();
+    expect((await render(plain, pages.plain)).fontSubsetFaces).toBeUndefined();
+    await plain.compile(pages.svelte);
+    expect(plain.fontSubsetCheckClientJs).toContain('font subset for');
+  });
+
   test('several variants of one stylesheet bundle in a single batch', async () => {
     const batch = new ComponentRegistry({ development: false, outDir: path.join(tmp, 'out-batch') });
     const entries = [pages.svelte, pages.script, pages.plain, pages.alike, pages.otherAttributes];

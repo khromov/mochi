@@ -45,6 +45,7 @@ import { registerServerOnlyComponentStubs, SSR_ONLY_COMPONENT_NAMESPACE } from '
 import { cleanInputs, SERVER_ONLY_MODULE_NAMESPACE } from './bundleInputPaths';
 import { renderMochiEnvServer } from './virtualModuleTemplate';
 import { buildDebugBarBundle, type DebugBarBundle } from './buildDebugBarBundle';
+import { buildInlineWebComponent } from './buildInlineWebComponent';
 import { formatBuildMessages } from './formatBuildMessages';
 import { clientBuildDefine, registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
 import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
@@ -452,6 +453,8 @@ export class ComponentRegistry {
   private readonly importedCssSubsets: Map<string, { cssPath: string; groups: FontSubsetGroup[] }> = new Map();
   /** Font-subset warnings already printed, so one that many pages share is reported once. */
   private readonly fontSubsetWarnings: Set<string> = new Set();
+  /** Dev only: the browser-side missing-glyph check, built when the first subsetted stylesheet is bundled so an app without one never builds it. */
+  fontSubsetCheckClientJs = '';
   /** Dev only: maps stylesheet variant → the subsetted faces it declares, for the browser-side missing-glyph check. */
   private readonly importedCssSubsetFaces: Map<string, FontSubsetFace[]> = new Map();
   /** Maps served URL → non-font asset Bun emitted beside a bundled stylesheet; content-hashed by the bundler, so never retired. */
@@ -2301,7 +2304,7 @@ export class ComponentRegistry {
       const fontUrlByMarker = new Map<string, string>();
       for (const font of fontPass.fonts) {
         // A marker the subset pass already replaced needs no full-size copy.
-        if (!cssText.includes(font.ref.markerB64)) {
+        if (groups.length > 0 && !cssText.includes(font.ref.markerB64)) {
           continue;
         }
         const bytes = font.ref.bytes ?? (await Bun.file(font.ref.path).bytes());
@@ -2338,6 +2341,7 @@ export class ComponentRegistry {
       }
       if (subsetFaces.length > 0 && this.development) {
         this.importedCssSubsetFaces.set(variant, subsetFaces);
+        this.fontSubsetCheckClientJs ||= await buildInlineWebComponent('./dev/FontSubsetCheck.ts', this.minifier);
       }
       this.clientFiles.set(urlPath, cssText);
       this.importedCssUrls.set(variant, urlPath);

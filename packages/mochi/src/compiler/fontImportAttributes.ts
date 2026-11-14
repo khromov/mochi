@@ -74,8 +74,8 @@ const PARSE_OPTIONS: acorn.Options = {
  * uses. `null` means a script could not be parsed, so whatever attributes the file carries are unknown.
  */
 export async function scanImportAttributes(source: string, kind: ScriptKind): Promise<ScannedImportAttributes[] | null> {
-  // An attribute list needs the `with` keyword, so a file without the word skips the parse.
-  if (!source.includes('with')) {
+  // An attribute list reads `with {`, so a file without that sequence is never parsed.
+  if (!/\bwith\s*\{/.test(source)) {
     return [];
   }
   const scripts = kind === 'svelte' ? await svelteScripts(source) : [{ content: source, parser: parserFor(kind), lineOffset: 0 }];
