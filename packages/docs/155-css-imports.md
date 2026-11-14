@@ -101,7 +101,16 @@ A font file carries every glyph, and a variable one every weight. When you know 
 | `weight`        | Pins a variable font's `wght` axis to one value.                                               |
 | `layoutClosure` | `'full'` (default) keeps ligatures and alternates the text could trigger; `'none'` drops them. |
 
-To change which glyphs are kept, change the string. Imports of the same stylesheet with the same `weight` merge, so two components asking for different text share one file; a different `weight` gets a file of its own. A shared file drops layout closure only when every import asks for `'none'`. The attributes work from `.ts` and `.js` modules too.
+To change which glyphs are kept, change the string. The attributes work from `.ts` and `.js` modules too.
+
+Each page gets the font its own imports ask for, and pages that ask for the same glyphs share one file. When several components on a page import the same stylesheet:
+
+- Their text merges into one file.
+- A different `weight` gets a file of its own, unless one import leaves `weight` out — then the page keeps one variable font.
+- Layout closure is dropped only when every import asks for `'none'`.
+- An import without `subset` asks for the whole font, so the page ships it unsubsetted.
+
+Mochi logs a warning when imports on one page cannot all be honoured as written: a subset beside an import without one, a pinned `weight` beside an unpinned one, or differing layout closure.
 
 <Callout type="warning">
 

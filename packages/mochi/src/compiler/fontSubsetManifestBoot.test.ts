@@ -40,15 +40,16 @@ describe('font subsetting — production boot from a manifest', () => {
         `import { ComponentRegistry } from ${JSON.stringify(path.join(import.meta.dir, 'ComponentRegistry.ts'))};`,
         `import { requestContext } from ${JSON.stringify(path.join(import.meta.dir, '..', 'runtime', 'requestContext.ts'))};`,
         `import { MochiCookieJar } from ${JSON.stringify(path.join(import.meta.dir, '..', 'runtime', 'cookies.ts'))};`,
-        `const registry = await ComponentRegistry.fromManifest(${JSON.stringify(manifestPath)}, false);`,
+        `const [manifestPath, pagePath] = process.argv.slice(2);`,
+        `const registry = await ComponentRegistry.fromManifest(manifestPath, false);`,
         `const ctx = { requestId: 'boot', request: new Request('http://localhost/'), url: new URL('http://localhost/'), params: {}, locals: {}, isWarmup: false, cookies: new MochiCookieJar(null), islandProps: new Map(), getClientAddress: () => null };`,
-        `const result = await requestContext.run(ctx, () => registry.renderComponent(${JSON.stringify(pagePath)}));`,
+        `const result = await requestContext.run(ctx, () => registry.renderComponent(pagePath));`,
         `const loaded = Object.keys(require.cache).filter((key) => key.includes('subset-font') || key.includes('harfbuzzjs'));`,
         `const font = registry.getFontAsset(result.fontPreloadUrls[0] ?? '');`,
         `console.log(JSON.stringify({ loaded, preloads: result.fontPreloadUrls, fontBytes: font ? Bun.file(font.diskPath).size : null, body: result.body }));`,
       ].join('\n'),
     );
-    const boot = Bun.spawnSync(['bun', bootScript], { cwd: process.cwd(), stdout: 'pipe', stderr: 'pipe' });
+    const boot = Bun.spawnSync(['bun', bootScript, manifestPath, pagePath], { cwd: process.cwd(), stdout: 'pipe', stderr: 'pipe' });
     expect(boot.stderr.toString()).toBe('');
     expect(boot.exitCode).toBe(0);
     const report = JSON.parse(boot.stdout.toString().trim().split('\n').pop()!) as { loaded: string[]; preloads: string[]; fontBytes: number | null; body: string };

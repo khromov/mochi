@@ -33,7 +33,7 @@ describe('font subsetting through Mochi.serve', () => {
     mkdirSync(path.join(tmp, 'files'));
     copyFileSync(FIXTURE, path.join(tmp, 'files', 'caveat-latin-wght-normal.woff2'));
     // One stylesheet per page: requests for a shared stylesheet merge app-wide, which is a registry-level concern.
-    for (const name of ['inlined', 'served']) {
+    for (const name of ['inlined', 'served', 'hosted']) {
       writeFileSync(
         path.join(tmp, `${name}.css`),
         `@font-face {\n  font-family: 'Caveat Variable';\n  font-weight: 400 700;\n  src: url(./files/caveat-latin-wght-normal.woff2) format('woff2-variations');\n}\n`,
@@ -48,12 +48,25 @@ describe('font subsetting through Mochi.serve', () => {
       path.join(tmp, 'Served.svelte'),
       `<script>\n  import './served.css' with { subset: "${TEXT}" };\n<` + `/script>\n<p style="font-family: 'Caveat Variable'">${TEXT}</p>\n`,
     );
+    writeFileSync(
+      path.join(tmp, 'Island.svelte'),
+      `<script>\n  import './hosted.css' with { subset: 'Loaded', weight: '700' };\n<` + `/script>\n<p style="font-family: 'Caveat Variable'; font-weight: 700">Loaded</p>\n`,
+    );
+    writeFileSync(
+      path.join(tmp, 'Host.svelte'),
+      `<script>\n  import Island from './Island.svelte';\n  import './hosted.css' with { subset: 'Hello' };\n<` +
+        `/script>\n<p style="font-family: 'Caveat Variable'">Hello</p>\n<Island mochi:defer />\n`,
+    );
     server = await Mochi.serve({
       port: 0,
       development: true,
       logger: { enabled: false },
       outDir: path.join(tmp, 'out'),
-      routes: { '/inlined': Mochi.page(path.join(tmp, 'Inlined.svelte')), '/served': Mochi.page(path.join(tmp, 'Served.svelte')) },
+      routes: {
+        '/inlined': Mochi.page(path.join(tmp, 'Inlined.svelte')),
+        '/served': Mochi.page(path.join(tmp, 'Served.svelte')),
+        '/host': Mochi.page(path.join(tmp, 'Host.svelte')),
+      },
     });
     base = `http://localhost:${server.port}`;
     inlinedHtml = await (await fetch(`${base}/inlined`)).text();
@@ -91,6 +104,21 @@ describe('font subsetting through Mochi.serve', () => {
     expect(font.status).toBe(200);
     expect(font.headers.get('content-type')).toContain('font/woff2');
     expect((await font.bytes()).length).toBe(8160);
+  });
+
+  test('a deferred island adds no second variant of the family: the host page already links one holding its glyphs', async () => {
+    const hostHtml = await (await fetch(`${base}/host`)).text();
+    const face = parseCss(await stylesheet(hostHtml))!.fontFaces;
+    expect(face).toHaveLength(1);
+    // Both texts in one face, kept variable because the host's own import pins no weight.
+    expect(hostHtml).toContain('window.__mochi_font_subsets={"caveat variable":[[72,72],[76,76],[97,97],[100,101],[108,108],[111,111]]}');
+
+    const wrapper = hostHtml.match(/<mochi-server-island\b[^>]*>/)![0];
+    const name = wrapper.match(/component-name="([^"]+)"/)![1]!;
+    const props = wrapper.match(/signed-props="([^"]+)"/)![1]!;
+    const fragment = await (await fetch(`${base}/_mochi/island/${name}?props=${encodeURIComponent(props)}`)).text();
+    expect(fragment).toContain('Loaded');
+    expect(fragment).not.toContain('/import-css/');
   });
 
   test('dev pages carry the browser-side missing-glyph check with the page family ranges', () => {

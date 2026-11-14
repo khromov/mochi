@@ -1,7 +1,7 @@
 import path from 'node:path';
 import * as acorn from 'acorn';
 import { tsPlugin } from '@sveltejs/acorn-typescript';
-import { parse as parseSvelte } from 'svelte/compiler';
+import { preprocess } from 'svelte/compiler';
 import type { CodepointRange } from './cssAst';
 
 /** What one `import '…' with { subset: … }` asks the font pipeline to keep. */
@@ -55,13 +55,13 @@ export function scriptKindOf(filePath: string): ScriptKind | null {
 }
 
 // The parsers Svelte itself builds for `<script>` blocks (svelte/src/compiler/phases/1-parse/acorn.js), so a module and
-// a component script read identically; ecmaVersion 16 is where acorn admits import attributes.
+// a component script read identically; the latest ecmaVersion keeps pace with the syntax Bun itself compiles.
 const JS_PARSER = acorn.Parser;
 const TS_PARSER = JS_PARSER.extend(tsPlugin());
 const JSX_PARSER = JS_PARSER.extend(tsPlugin({ jsx: true }));
 const PARSE_OPTIONS: acorn.Options = {
   sourceType: 'module',
-  ecmaVersion: 16,
+  ecmaVersion: 'latest',
   locations: true,
   allowAwaitOutsideFunction: true,
   allowReturnOutsideFunction: true,
@@ -70,23 +70,23 @@ const PARSE_OPTIONS: acorn.Options = {
 
 /**
  * Bun's bundler accepts unknown import attributes but strips them before any plugin hook runs, and its transpiler's
- * `scanImports()` drops them too, so the only place they can be read is the source: `.svelte` files through Svelte's
- * parser, scripts through the same acorn it uses. A file that can't parse yields nothing — the syntax error is the
- * compiler's to report.
+ * `scanImports()` drops them too, so the only place they can be read is the source, through the acorn Svelte itself
+ * uses. `null` means a script could not be parsed, so whatever attributes the file carries are unknown.
  */
-export function scanImportAttributes(source: string, kind: ScriptKind): ScannedImportAttributes[] {
+export async function scanImportAttributes(source: string, kind: ScriptKind): Promise<ScannedImportAttributes[] | null> {
   // An attribute list needs the `with` keyword, so a file without the word skips the parse.
   if (!source.includes('with')) {
     return [];
   }
-  let bodies: acorn.Program['body'][];
-  try {
-    bodies = kind === 'svelte' ? svelteScriptBodies(source) : [parserFor(kind).parse(source, PARSE_OPTIONS).body];
-  } catch {
-    return [];
-  }
+  const scripts = kind === 'svelte' ? await svelteScripts(source) : [{ content: source, parser: parserFor(kind), lineOffset: 0 }];
   const found: ScannedImportAttributes[] = [];
-  for (const body of bodies) {
+  for (const { content, parser, lineOffset } of scripts) {
+    let body: acorn.Program['body'];
+    try {
+      body = parser.parse(content, PARSE_OPTIONS).body;
+    } catch {
+      return null;
+    }
     for (const node of body) {
       // acorn leaves `attributes` off an import that has no `with` clause (and off TypeScript's `import type`).
       if (node.type !== 'ImportDeclaration' || typeof node.source.value !== 'string' || !node.attributes?.length) {
@@ -99,7 +99,7 @@ export function scanImportAttributes(source: string, kind: ScriptKind): ScannedI
           attributes[key] = attribute.value.value;
         }
       }
-      found.push({ specifier: node.source.value, attributes, line: node.loc!.start.line });
+      found.push({ specifier: node.source.value, attributes, line: node.loc!.start.line + lineOffset });
     }
   }
   return found;
@@ -117,10 +117,21 @@ function parserFor(kind: Exclude<ScriptKind, 'svelte'>): typeof acorn.Parser {
   }
 }
 
-// Svelte parses its scripts with acorn too, so the bodies are the same node shapes with file-relative locations.
-function svelteScriptBodies(source: string): acorn.Program['body'][] {
-  const ast = parseSvelte(source, { modern: true });
-  return [ast.module, ast.instance].flatMap((script) => (script ? [(script.content as unknown as acorn.Program).body] : []));
+// The script blocks come from Svelte's own preprocessor tag extraction rather than its parser, which fails the whole
+// file on a `<style lang="scss">` or any other block that only a preprocessor can read.
+async function svelteScripts(source: string): Promise<{ content: string; parser: typeof acorn.Parser; lineOffset: number }[]> {
+  const scripts: { content: string; parser: typeof acorn.Parser; lineOffset: number }[] = [];
+  await preprocess(source, {
+    script: ({ content, attributes }) => {
+      // A typed block in the markup (JSON-LD, a template) is data, not a component script.
+      if (typeof attributes.type === 'string' && attributes.type !== 'module') {
+        return;
+      }
+      const lineOffset = source.slice(0, source.indexOf(content)).split('\n').length - 1;
+      scripts.push({ content, parser: attributes.lang === 'ts' ? TS_PARSER : JS_PARSER, lineOffset });
+    },
+  });
+  return scripts;
 }
 
 /**
@@ -217,12 +228,17 @@ function hex(cp: number): string {
  * a family apart, so sites that agree on it share a face. That face drops layout closure only when all of them ask to.
  */
 export function mergeFontSubsetSpecs(specs: Iterable<FontSubsetSpec>): FontSubsetGroup[] {
+  const all = [...specs];
+  // A face pinned to one weight wins that weight outright in the browser, hiding the text an unpinned face holds, so
+  // one unpinned site keeps every site's text in a single variable face.
+  const pinned = all.every((spec) => spec.weight !== null);
   const groups = new Map<number | null, { text: string; layoutClosure: boolean }>();
-  for (const spec of specs) {
-    const group = groups.get(spec.weight) ?? { text: '', layoutClosure: false };
+  for (const spec of all) {
+    const weight = pinned ? spec.weight : null;
+    const group = groups.get(weight) ?? { text: '', layoutClosure: false };
     group.text += spec.text;
     group.layoutClosure ||= spec.layoutClosure;
-    groups.set(spec.weight, group);
+    groups.set(weight, group);
   }
   // Sorted so the result, and the fingerprint taken from it, doesn't depend on the order the importers were built in.
   return [...groups.entries()].sort(([a], [b]) => (a ?? 0) - (b ?? 0)).map(([weight, group]) => ({ weight, layoutClosure: group.layoutClosure, ranges: textToRanges(group.text) }));

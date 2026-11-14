@@ -16,28 +16,40 @@ const IMPORT = `import './x.css' with { subset: 'ok' };`;
 const found = (line: number) => [{ specifier: './x.css', attributes: { subset: 'ok' }, line }];
 
 describe('scanImportAttributes', () => {
-  test('reads attributes off instance and module script imports in a .svelte file', () => {
+  test('reads attributes off instance and module script imports in a .svelte file', async () => {
     const source =
       `<script module>\n  import './shared.css' with { subset: 'abc' };\n<` +
       `/script>\n<script lang="ts">\n  import '@fontsource-variable/caveat' with { subset: "It's animated!", weight: '500' };\n  import Other from './Other.svelte';\n  let n: number = 1;\n<` +
       `/script>\n<p>{n}</p>\n`;
-    expect(scanImportAttributes(source, 'svelte')).toEqual([
+    expect(await scanImportAttributes(source, 'svelte')).toEqual([
       { specifier: './shared.css', attributes: { subset: 'abc' }, line: 2 },
       { specifier: '@fontsource-variable/caveat', attributes: { subset: "It's animated!", weight: '500' }, line: 5 },
     ]);
   });
 
-  test('skips files that never mention `with` without parsing them', () => {
-    expect(scanImportAttributes(`<script>\n  import './x.css';\n<` + `/script>\n<p>{</p>`, 'svelte')).toEqual([]);
-    expect(scanImportAttributes(`import './x.css';\nconst s = 'subset';`, 'ts')).toEqual([]);
+  test('skips files that never mention `with` without parsing them', async () => {
+    expect(await scanImportAttributes(`<script>\n  import './x.css';\n<` + `/script>\n<p>{</p>`, 'svelte')).toEqual([]);
+    expect(await scanImportAttributes(`import './x.css';\nconst s = 'subset';`, 'ts')).toEqual([]);
   });
 
-  test('a file that fails to parse yields nothing rather than throwing', () => {
-    expect(scanImportAttributes(`<script>\n  ${IMPORT}\n  const = ;\n<` + `/script>`, 'svelte')).toEqual([]);
-    expect(scanImportAttributes(`${IMPORT}\nconst = ;`, 'ts')).toEqual([]);
+  test('a script that fails to parse reports its attributes as unknown rather than as absent', async () => {
+    expect(await scanImportAttributes(`<script>\n  ${IMPORT}\n  const = ;\n<` + `/script>`, 'svelte')).toBeNull();
+    expect(await scanImportAttributes(`${IMPORT}\nconst = ;`, 'ts')).toBeNull();
   });
 
-  test('imports inside strings, comments and templates are not imports', () => {
+  test('syntax newer than import attributes still parses', async () => {
+    expect(await scanImportAttributes(`${IMPORT}\n{ using lock = acquire(); }\n{ await using handle = open(); }`, 'ts')).toEqual(found(1));
+  });
+
+  test('a block only a preprocessor can read does not hide the scripts', async () => {
+    const source =
+      `<script lang="ts">\n  ${IMPORT}\n  let n: number = 1;\n<` +
+      `/script>\n<svelte:head><script type="application/ld+json">{ "with": 1, }<` +
+      `/script></svelte:head>\n<p>{n}</p>\n<style lang="scss">$c: red; .a { .b { color: $c } }</style>\n`;
+    expect(await scanImportAttributes(source, 'svelte')).toEqual(found(2));
+  });
+
+  test('imports inside strings, comments and templates are not imports', async () => {
     const source = [
       `// ${IMPORT}`,
       `/* ${IMPORT} */`,
@@ -48,27 +60,27 @@ describe('scanImportAttributes', () => {
       `import '@fontsource-variable/caveat'with{subset:"x",layoutClosure:'none'}`,
       `export const done = true;`,
     ].join('\n');
-    expect(scanImportAttributes(source, 'ts')).toEqual([
+    expect(await scanImportAttributes(source, 'ts')).toEqual([
       { specifier: './yes.css', attributes: { subset: "It's", weight: '700' }, line: 6 },
       { specifier: '@fontsource-variable/caveat', attributes: { subset: 'x', layoutClosure: 'none' }, line: 7 },
     ]);
   });
 
-  test('a regex literal holding a quote or backtick before an attributed import does not confuse the parser', () => {
+  test('a regex literal holding a quote or backtick before an attributed import does not confuse the parser', async () => {
     for (const regex of [`/'/`, `/"/`, '/`/', `/[/'"\`]+/g`, `/\\/'/`]) {
-      expect(scanImportAttributes(`const re = ${regex}; ${IMPORT}`, 'ts')).toEqual(found(1));
-      expect(scanImportAttributes(`const re = ${regex};\n${IMPORT}`, 'js')).toEqual(found(2));
+      expect(await scanImportAttributes(`const re = ${regex}; ${IMPORT}`, 'ts')).toEqual(found(1));
+      expect(await scanImportAttributes(`const re = ${regex};\n${IMPORT}`, 'js')).toEqual(found(2));
       const contexts = [`const a = ${regex}.test(s) ? f(${regex}, [${regex}]) : null;`, `function g() { return ${regex}; }`, `${regex}.lastIndex = 0;`, IMPORT].join('\n');
-      expect(scanImportAttributes(contexts, 'ts')).toEqual(found(4));
+      expect(await scanImportAttributes(contexts, 'ts')).toEqual(found(4));
     }
   });
 
-  test('division is division', () => {
+  test('division is division', async () => {
     const source = [`const half = total / 2;`, `const ratio = (a) / b / c.length / 'x'.length;`, `const perLine = list[0] / lines / (1 + n);`, IMPORT].join('\n');
-    expect(scanImportAttributes(source, 'js')).toEqual(found(4));
+    expect(await scanImportAttributes(source, 'js')).toEqual(found(4));
   });
 
-  test('TypeScript-only syntax parses under the ts kind, and JSX under tsx/jsx', () => {
+  test('TypeScript-only syntax parses under the ts kind, and JSX under tsx/jsx', async () => {
     const ts = [
       `import type { A } from './a';`,
       `export type B = A;`,
@@ -81,14 +93,14 @@ describe('scanImportAttributes', () => {
       `await Promise.resolve();`,
       IMPORT,
     ].join('\n');
-    expect(scanImportAttributes(ts, 'ts')).toEqual(found(10));
-    expect(scanImportAttributes(`const el = <p className="x">It's "quoted"</p>;\n${IMPORT}`, 'tsx')).toEqual(found(2));
-    expect(scanImportAttributes(`const el = <p>Don't</p>;\n${IMPORT}`, 'jsx')).toEqual(found(2));
+    expect(await scanImportAttributes(ts, 'ts')).toEqual(found(10));
+    expect(await scanImportAttributes(`const el = <p className="x">It's "quoted"</p>;\n${IMPORT}`, 'tsx')).toEqual(found(2));
+    expect(await scanImportAttributes(`const el = <p>Don't</p>;\n${IMPORT}`, 'jsx')).toEqual(found(2));
   });
 
-  test('string escapes arrive decoded', () => {
+  test('string escapes arrive decoded', async () => {
     const source = `import './x.css' with { subset: "\\u00e9\\u{1F600}\\n\\t\\"" };`;
-    expect(scanImportAttributes(source, 'ts')[0]!.attributes.subset).toBe('é😀\n\t"');
+    expect((await scanImportAttributes(source, 'ts'))![0]!.attributes.subset).toBe('é😀\n\t"');
   });
 
   test('scriptKindOf maps extensions and rejects non-scripts', () => {
@@ -207,11 +219,25 @@ describe('mergeFontSubsetSpecs', () => {
     ]);
   });
 
-  test('a different weight becomes its own group, the unpinned one first, whatever the order of the sites', () => {
-    const unpinned = { text: 'abc', weight: null, layoutClosure: true };
-    const groups = mergeFontSubsetSpecs([c, a, unpinned]);
-    expect(groups.map((g) => g.weight)).toEqual([null, 500, 700]);
-    expect(groups).toEqual(mergeFontSubsetSpecs([unpinned, a, c]));
+  test('a different weight becomes its own group, whatever the order of the sites', () => {
+    const groups = mergeFontSubsetSpecs([c, a]);
+    expect(groups.map((g) => g.weight)).toEqual([500, 700]);
+    expect(groups).toEqual(mergeFontSubsetSpecs([a, c]));
+  });
+
+  test('one unpinned site keeps every site in a single variable face, since a pinned face would hide its text at that weight', () => {
+    const unpinned = { text: 'mn', weight: null, layoutClosure: true };
+    expect(mergeFontSubsetSpecs([c, unpinned, b])).toEqual([
+      {
+        weight: null,
+        layoutClosure: true,
+        ranges: [
+          { lo: 0x61, hi: 0x63 },
+          { lo: 0x6d, hi: 0x6e },
+          { lo: 0x78, hi: 0x7a },
+        ],
+      },
+    ]);
   });
 
   test('a face drops layout closure only when every site sharing it asks to', () => {
