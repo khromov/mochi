@@ -1,15 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  fontSubsetFingerprint,
   formatRanges,
   intersectRanges,
   mergeFontSubsetSpecs,
-  normalizeRanges,
+  mergeRanges,
   parseFontSubsetSpec,
   rangesByFamily,
   rangesToText,
   scanImportAttributes,
   scriptKindOf,
+  textToRanges,
 } from './fontImportAttributes';
 
 const IMPORT = `import './x.css' with { subset: 'ok' };`;
@@ -111,51 +111,42 @@ describe('scanImportAttributes', () => {
 });
 
 describe('parseFontSubsetSpec', () => {
-  test('text, ranges, weight, axes and closure', () => {
-    expect(parseFontSubsetSpec({ subset: 'Hi', unicodeRange: 'U+0020-007E, U+00A0', weight: '500', axes: 'wdth=87.5, slnt=-10', layoutClosure: 'none' })).toEqual({
-      spec: {
-        text: 'Hi',
-        unicodeRanges: [
-          { lo: 0x20, hi: 0x7e },
-          { lo: 0xa0, hi: 0xa0 },
-        ],
-        axes: { wght: 500, wdth: 87.5, slnt: -10 },
-        layoutClosure: false,
-      },
-      error: null,
-    });
+  test('text, weight and closure', () => {
+    expect(parseFontSubsetSpec({ subset: 'Hi', weight: '500', layoutClosure: 'none' })).toEqual({ spec: { text: 'Hi', weight: 500, layoutClosure: false }, error: null });
+    expect(parseFontSubsetSpec({ type: 'css', subset: 'Hi' })).toEqual({ spec: { text: 'Hi', weight: null, layoutClosure: true }, error: null });
   });
 
-  test('an import with no font keys is not a request', () => {
+  test('a stylesheet import with no font keys is not a request', () => {
     expect(parseFontSubsetSpec({ type: 'css' })).toEqual({ spec: null, error: null });
     expect(parseFontSubsetSpec({})).toEqual({ spec: null, error: null });
   });
 
   test('rejects typos and unusable values instead of ignoring them', () => {
     expect(parseFontSubsetSpec({ subset: 'a', wieght: '500' }).error).toContain('unknown import attribute "wieght"');
+    expect(parseFontSubsetSpec({ subst: 'a' }).error).toContain('unknown import attribute "subst"');
     expect(parseFontSubsetSpec({ weight: '500' }).error).toContain('nothing to keep');
     expect(parseFontSubsetSpec({ subset: 'a', weight: 'bold' }).error).toContain('weight "bold"');
     expect(parseFontSubsetSpec({ subset: 'a', weight: '' }).error).toContain('weight ""');
-    expect(parseFontSubsetSpec({ subset: 'a', unicodeRange: '0020-007E' }).error).toContain('unicodeRange "0020-007E"');
-    expect(parseFontSubsetSpec({ subset: 'a', unicodeRange: 'U+0020; color: red' }).error).toContain('unicodeRange');
-    expect(parseFontSubsetSpec({ subset: 'a', axes: 'wdth' }).error).toContain('axes entry "wdth"');
-    expect(parseFontSubsetSpec({ subset: 'a', axes: 'toolong=1' }).error).toContain('axes entry "toolong=1"');
-    expect(parseFontSubsetSpec({ subset: 'a', axes: 'wdth=' }).error).toContain('axes entry "wdth="');
     expect(parseFontSubsetSpec({ subset: 'a', layoutClosure: 'off' }).error).toContain('layoutClosure "off"');
   });
 });
 
 describe('range helpers', () => {
-  test('normalizeRanges merges text and ranges into sorted, disjoint runs', () => {
-    expect(
-      normalizeRanges('cab', [
-        { lo: 0x64, hi: 0x66 },
-        { lo: 0x61, hi: 0x61 },
-      ]),
-    ).toEqual([{ lo: 0x61, hi: 0x66 }]);
-    expect(normalizeRanges('😀a', [])).toEqual([
+  test('textToRanges and mergeRanges produce sorted, disjoint runs', () => {
+    expect(textToRanges('cabca')).toEqual([{ lo: 0x61, hi: 0x63 }]);
+    expect(textToRanges('😀a')).toEqual([
       { lo: 0x61, hi: 0x61 },
       { lo: 0x1f600, hi: 0x1f600 },
+    ]);
+    expect(
+      mergeRanges([
+        { lo: 0x64, hi: 0x66 },
+        { lo: 0x61, hi: 0x63 },
+        { lo: 0x70, hi: 0x70 },
+      ]),
+    ).toEqual([
+      { lo: 0x61, hi: 0x66 },
+      { lo: 0x70, hi: 0x70 },
     ]);
   });
 
@@ -199,17 +190,16 @@ describe('range helpers', () => {
 });
 
 describe('mergeFontSubsetSpecs', () => {
-  const a = { text: 'abc', unicodeRanges: [], axes: { wght: 500 }, layoutClosure: true };
-  const b = { text: 'xyz', unicodeRanges: [{ lo: 0x30, hi: 0x39 }], axes: { wght: 500 }, layoutClosure: true };
-  const c = { text: 'abc', unicodeRanges: [], axes: { wght: 700 }, layoutClosure: true };
+  const a = { text: 'abc', weight: 500, layoutClosure: true };
+  const b = { text: 'xyz', weight: 500, layoutClosure: true };
+  const c = { text: 'abc', weight: 700, layoutClosure: true };
 
-  test('sites agreeing on axes and closure share one group with the union of their glyphs', () => {
+  test('sites agreeing on weight share one group with the union of their glyphs', () => {
     expect(mergeFontSubsetSpecs([a, b])).toEqual([
       {
-        axes: { wght: 500 },
+        weight: 500,
         layoutClosure: true,
         ranges: [
-          { lo: 0x30, hi: 0x39 },
           { lo: 0x61, hi: 0x63 },
           { lo: 0x78, hi: 0x7a },
         ],
@@ -217,14 +207,19 @@ describe('mergeFontSubsetSpecs', () => {
     ]);
   });
 
-  test('a different pin becomes its own group, in a stable order', () => {
-    const groups = mergeFontSubsetSpecs([c, a]);
-    expect(groups.map((g) => g.axes.wght)).toEqual([500, 700]);
-    expect(fontSubsetFingerprint(groups)).toBe(fontSubsetFingerprint(mergeFontSubsetSpecs([a, c])));
-    expect(fontSubsetFingerprint(groups)).not.toBe(fontSubsetFingerprint(mergeFontSubsetSpecs([a])));
+  test('a different weight becomes its own group, the unpinned one first, whatever the order of the sites', () => {
+    const unpinned = { text: 'abc', weight: null, layoutClosure: true };
+    const groups = mergeFontSubsetSpecs([c, a, unpinned]);
+    expect(groups.map((g) => g.weight)).toEqual([null, 500, 700]);
+    expect(groups).toEqual(mergeFontSubsetSpecs([unpinned, a, c]));
   });
 
-  test('no specs fingerprint the same as no request', () => {
-    expect(fontSubsetFingerprint(mergeFontSubsetSpecs([]))).toBe(fontSubsetFingerprint([]));
+  test('a face drops layout closure only when every site sharing it asks to', () => {
+    const none = { text: 'abc', weight: 500, layoutClosure: false };
+    expect(mergeFontSubsetSpecs([none, { ...none, text: 'xyz' }])[0]!.layoutClosure).toBe(false);
+    expect(mergeFontSubsetSpecs([none, b])).toHaveLength(1);
+    expect(mergeFontSubsetSpecs([none, b])[0]!.layoutClosure).toBe(true);
+    // A different weight is a face of its own, so its closure is its own too.
+    expect(mergeFontSubsetSpecs([none, c]).map((g) => g.layoutClosure)).toEqual([false, true]);
   });
 });

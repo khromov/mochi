@@ -95,23 +95,19 @@ A font file carries every glyph, and a variable one every weight. When you know 
 <p class="note">It's animated!</p>
 ```
 
-| Attribute       | Keeps                                                                                          |
+| Attribute       | Effect                                                                                         |
 | --------------- | ---------------------------------------------------------------------------------------------- |
-| `subset`        | The characters of this text.                                                                   |
-| `unicodeRange`  | Codepoint ranges in CSS syntax: `'U+0020-007E, U+00A0-00FF'`.                                  |
+| `subset`        | Required. Keeps the characters of this text.                                                   |
 | `weight`        | Pins a variable font's `wght` axis to one value.                                               |
-| `axes`          | Pins other axes: `'wdth=87.5, slnt=-10'`.                                                      |
 | `layoutClosure` | `'full'` (default) keeps ligatures and alternates the text could trigger; `'none'` drops them. |
 
-To change which glyphs are kept, change the string. Imports of the same stylesheet merge, so two components asking for different text share one file. The attribute works from `.ts` and `.js` modules too.
+To change which glyphs are kept, change the string. Imports of the same stylesheet with the same `weight` merge, so two components asking for different text share one file; a different `weight` gets a file of its own. A shared file drops layout closure only when every import asks for `'none'`. The attributes work from `.ts` and `.js` modules too.
 
 <Callout type="warning">
 
 The limitation is that you must know the text at build time. A character the subset lacks renders in the next font of the stack; in dev, Mochi checks the rendered page after fonts load and warns in the console with the missing characters.
 
 </Callout>
-
-`fonts: { subset: false }` ignores the attributes and ships the full fonts.
 
 ### Dev mode
 

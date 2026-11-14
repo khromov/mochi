@@ -7,7 +7,6 @@ import { MochiCookieJar } from '../runtime/cookies';
 import { requestContext } from '../runtime/requestContext';
 
 const FIXTURE = path.join(import.meta.dir, '..', '__fixtures__', 'fonts', 'caveat-latin-wght-normal.woff2');
-const SOURCE_SIZE = 74932;
 const TEXT = "It's animated!";
 
 // Mirrors the shape @fontsource-variable ships: one face per script, ranged, variable, with the `-variations` hint.
@@ -52,7 +51,7 @@ describe('CSS imports — font subsetting via import attributes', () => {
   let tmp: string;
   let outDir: string;
   let registry: ComponentRegistry;
-  const pages = { svelte: '', script: '', noClosure: '', invalid: '' };
+  const pages = { svelte: '', script: '', noClosure: '', invalid: '', otherAttributes: '' };
 
   function bundledCss(): { css: string; document: CssDocument } {
     const urls = registry.toManifest().importedCssUrls ?? {};
@@ -86,6 +85,14 @@ describe('CSS imports — font subsetting via import attributes', () => {
     pages.invalid = path.join(tmp, 'InvalidPage.svelte');
     writeFileSync(pages.invalid, page(`<p>x</p>`, `  import './caveat.css' with { subset: 'x', wieght: '500' };`));
 
+    // Bun's own attributes on a non-stylesheet import, in a module that also subsets a font.
+    writeFileSync(path.join(tmp, 'data.json'), '{"ok":true}');
+    pages.otherAttributes = path.join(tmp, 'OtherAttributesPage.svelte');
+    writeFileSync(
+      pages.otherAttributes,
+      page(`<p>{data.ok}</p>`, `  import './caveat.css' with { subset: 'Hello', weight: '500' };\n  import data from './data.json' with { type: 'json', embed: 'true' };`),
+    );
+
     registry = new ComponentRegistry({ development: true, outDir });
     await registry.compile(pages.svelte);
   });
@@ -104,7 +111,6 @@ describe('CSS imports — font subsetting via import attributes', () => {
     const [url, asset] = [...registry.getFontAssets()][0]!;
     expect(url.startsWith('/_mochi/fonts/caveat-latin-wght-normal-')).toBe(true);
     expect(url.endsWith('.woff2')).toBe(true);
-    expect(asset.subsetOf).toBe(SOURCE_SIZE);
     expect(readFileSync(asset.diskPath).length).toBe(5388);
     expect(source!.url!.value).toBe(url);
   });
@@ -125,9 +131,7 @@ describe('CSS imports — font subsetting via import attributes', () => {
     const newUrl = (await render(registry, pages.svelte)).fontPreloadUrls[0]!;
     expect(newUrl).not.toBe(oldFontUrl);
     expect((await render(registry, pages.script)).fontPreloadUrls).toEqual([newUrl]);
-    const asset = registry.getFontAsset(newUrl)!;
-    expect(asset.subsetOf).toBe(SOURCE_SIZE);
-    expect(readFileSync(asset.diskPath).length).toBeGreaterThan(5388);
+    expect(readFileSync(registry.getFontAsset(newUrl)!.diskPath).length).toBeGreaterThan(5388);
     expect(registry.getFontAsset(oldFontUrl)).toBeDefined();
   });
 
@@ -137,14 +141,16 @@ describe('CSS imports — font subsetting via import attributes', () => {
     expect(registry.toManifest().importedCssUrls!).toEqual(before);
   });
 
-  test('a site dropping layout closure gets its own face, small enough to inline, beside the shared one', async () => {
+  test('a site dropping layout closure shares the face of the sites that keep it, rather than adding one the browser cannot tell apart', async () => {
+    const before = registry.toManifest().importedCssUrls!;
     await registry.compile(pages.noClosure);
-    const { document } = bundledCss();
-    expect(document.fontFaces).toHaveLength(2);
-    expect(document.urls.filter((url) => url.value.startsWith('data:font/woff2;base64,'))).toHaveLength(1);
-    expect(document.urls.filter((url) => url.value.startsWith('/_mochi/fonts/'))).toHaveLength(1);
-    const result = await render(registry, pages.noClosure);
-    expect(result.fontPreloadUrls).toHaveLength(1);
+    expect(registry.toManifest().importedCssUrls!).toEqual(before);
+    expect(bundledCss().document.fontFaces).toHaveLength(1);
+  });
+
+  test('attributes on an import that is not a stylesheet are left to the runtime', async () => {
+    await registry.compile(pages.otherAttributes);
+    expect(registry.getErrors()).toEqual([]);
   });
 
   test('a typo in an attribute is a compile error naming the file and line, not a silently full-size font', async () => {
@@ -156,30 +162,5 @@ describe('CSS imports — font subsetting via import attributes', () => {
     writeFileSync(pages.invalid, page(`<p>x</p>`, `  import './caveat.css' with { subset: 'x', weight: '500' };`));
     await registry.compile(pages.invalid, { force: true });
     expect(registry.getErrors().find((e) => e.kind === 'font-subset-invalid')).toBeUndefined();
-  });
-
-  test('the manifest carries the subset provenance and restores it', async () => {
-    const manifest = registry.toManifest();
-    const entries = Object.entries(manifest.fontAssets ?? {});
-    expect(entries.length).toBeGreaterThan(0);
-    for (const [, asset] of entries) {
-      expect(asset.subsetOf).toBe(SOURCE_SIZE);
-    }
-    const manifestPath = path.join(outDir, 'manifest.json');
-    await Bun.write(manifestPath, JSON.stringify(manifest));
-    const restored = await ComponentRegistry.fromManifest(manifestPath, false);
-    expect(restored.getFontAsset(entries[0]![0])?.subsetOf).toBe(SOURCE_SIZE);
-  });
-
-  test('fonts.subset: false ships the full font and ignores the attributes', async () => {
-    const off = new ComponentRegistry({ development: true, outDir: path.join(tmp, 'out-off'), fonts: { subset: false } });
-    await off.compile(pages.svelte);
-    const fonts = [...off.getFontAssets()];
-    expect(fonts).toHaveLength(2);
-    for (const [, asset] of fonts) {
-      expect(asset.subsetOf).toBeUndefined();
-      expect(readFileSync(asset.diskPath).length).toBe(SOURCE_SIZE);
-    }
-    expect((await render(off, pages.svelte)).fontSubsetFaces).toBeUndefined();
   });
 });

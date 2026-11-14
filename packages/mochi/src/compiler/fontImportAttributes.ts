@@ -2,18 +2,13 @@ import path from 'node:path';
 import * as acorn from 'acorn';
 import { tsPlugin } from '@sveltejs/acorn-typescript';
 import { parse as parseSvelte } from 'svelte/compiler';
-import { parseUnicodeRangeList, type CodepointRange } from './cssAst';
+import type { CodepointRange } from './cssAst';
 
-/**
- * What one `import '…' with { subset: … }` asks the font pipeline to keep. Every field is a union-friendly shape: two
- * sites naming the same stylesheet merge by concatenating `text` / `unicodeRanges` when their `axes` and
- * `layoutClosure` agree, and otherwise become separate `@font-face` variants.
- */
+/** What one `import '…' with { subset: … }` asks the font pipeline to keep. */
 export interface FontSubsetSpec {
   text: string;
-  unicodeRanges: CodepointRange[];
-  /** Variation axes pinned to one value (`{ wght: 500 }`), instancing the variable font down to a static face. */
-  axes: Record<string, number>;
+  /** Pins a variable font's `wght` axis to one value, instancing it down to a static face. */
+  weight: number | null;
   /** Keep glyphs only reachable through GSUB (ligatures, contextual alternates). `false` drops them, which is smaller but changes the rendering. */
   layoutClosure: boolean;
 }
@@ -25,15 +20,15 @@ export interface ScannedImportAttributes {
   line: number;
 }
 
-/** A merged set of specs sharing axes and closure — one `@font-face` variant per group. */
+/** Every spec of a stylesheet that names the same weight, merged — one `@font-face` variant per group. */
 export interface FontSubsetGroup {
-  axes: Record<string, number>;
+  weight: number | null;
   layoutClosure: boolean;
   /** Sorted, disjoint. */
   ranges: CodepointRange[];
 }
 
-export const FONT_SUBSET_ATTRIBUTE_KEYS = ['subset', 'unicodeRange', 'weight', 'axes', 'layoutClosure'] as const;
+export const FONT_SUBSET_ATTRIBUTE_KEYS = ['subset', 'weight', 'layoutClosure'] as const;
 
 export type ScriptKind = 'svelte' | 'js' | 'jsx' | 'ts' | 'tsx';
 
@@ -80,7 +75,7 @@ const PARSE_OPTIONS: acorn.Options = {
  * compiler's to report.
  */
 export function scanImportAttributes(source: string, kind: ScriptKind): ScannedImportAttributes[] {
-  // An attribute list needs the `with` keyword, so the many files without the word skip the parse.
+  // An attribute list needs the `with` keyword, so a file without the word skips the parse.
   if (!source.includes('with')) {
     return [];
   }
@@ -129,93 +124,43 @@ function svelteScriptBodies(source: string): acorn.Program['body'][] {
 }
 
 /**
- * Read a subset spec off an import's attributes, or `null` when none of the font keys are present (so an unrelated
- * `with { type: … }` passes through untouched). A font key with a value that can't be honoured is an error rather
- * than a silent no-op: a typo in `weight` would otherwise ship the full variable file without a word.
+ * Read a subset spec off a stylesheet import's attributes, or `null` when it carries none. A key or value that can't be
+ * honoured is an error rather than a silent no-op: a typo in `weight` would otherwise ship the full variable file
+ * without a word. Only stylesheet imports may be passed in, since attributes on any other import belong to the runtime.
  */
 export function parseFontSubsetSpec(attributes: Record<string, string>): { spec: FontSubsetSpec | null; error: string | null } {
-  const keys = Object.keys(attributes);
-  const fontKeys = keys.filter((key) => (FONT_SUBSET_ATTRIBUTE_KEYS as readonly string[]).includes(key));
-  const unknown = keys.filter((key) => key !== 'type' && !fontKeys.includes(key));
+  const keys = Object.keys(attributes).filter((key) => key !== 'type');
+  const unknown = keys.filter((key) => !(FONT_SUBSET_ATTRIBUTE_KEYS as readonly string[]).includes(key));
   if (unknown.length > 0) {
     return {
       spec: null,
       error: `unknown import attribute${unknown.length === 1 ? '' : 's'} ${unknown.map((key) => `"${key}"`).join(', ')}. Font subsetting understands ${FONT_SUBSET_ATTRIBUTE_KEYS.join(', ')}.`,
     };
   }
-  if (fontKeys.length === 0) {
+  if (keys.length === 0) {
     return { spec: null, error: null };
   }
   const text = attributes.subset ?? '';
-  let unicodeRanges: CodepointRange[] = [];
-  if (attributes.unicodeRange !== undefined) {
-    const ranges = parseUnicodeRangeList(attributes.unicodeRange);
-    if (!ranges) {
-      return { spec: null, error: `unicodeRange "${attributes.unicodeRange}" is not a list of CSS unicode-range values like U+0020-007E.` };
-    }
-    unicodeRanges = ranges;
+  if (text.length === 0) {
+    return { spec: null, error: 'nothing to keep — give the text in `subset`.' };
   }
-  if (text.length === 0 && unicodeRanges.length === 0) {
-    return { spec: null, error: 'nothing to keep — give the text in `subset` and/or codepoints in `unicodeRange`.' };
-  }
-  const axes: Record<string, number> = {};
+  let weight: number | null = null;
   if (attributes.weight !== undefined) {
-    const weight = Number(attributes.weight);
+    weight = Number(attributes.weight);
     if (attributes.weight.trim() === '' || !Number.isFinite(weight) || weight <= 0) {
       return { spec: null, error: `weight "${attributes.weight}" is not a number.` };
     }
-    axes.wght = weight;
   }
-  if (attributes.axes !== undefined) {
-    for (const entry of attributes.axes.split(',')) {
-      const pair = entry.trim();
-      if (pair === '') {
-        continue;
-      }
-      const equals = pair.indexOf('=');
-      const tag = equals === -1 ? '' : pair.slice(0, equals).trim();
-      const valueText = equals === -1 ? '' : pair.slice(equals + 1).trim();
-      const value = Number(valueText);
-      if (!isAxisTag(tag) || valueText === '' || !Number.isFinite(value)) {
-        return { spec: null, error: `axes entry "${pair}" is not tag=value (e.g. "wdth=100, slnt=-10").` };
-      }
-      axes[tag] = value;
-    }
+  if (attributes.layoutClosure !== undefined && attributes.layoutClosure !== 'full' && attributes.layoutClosure !== 'none') {
+    return { spec: null, error: `layoutClosure "${attributes.layoutClosure}" must be "full" (default) or "none".` };
   }
-  let layoutClosure = true;
-  if (attributes.layoutClosure !== undefined) {
-    if (attributes.layoutClosure !== 'full' && attributes.layoutClosure !== 'none') {
-      return { spec: null, error: `layoutClosure "${attributes.layoutClosure}" must be "full" (default) or "none".` };
-    }
-    layoutClosure = attributes.layoutClosure === 'full';
-  }
-  return { spec: { text, unicodeRanges, axes, layoutClosure }, error: null };
+  return { spec: { text, weight, layoutClosure: attributes.layoutClosure !== 'none' }, error: null };
 }
 
-// An OpenType axis tag: one to four printable ASCII characters.
-function isAxisTag(tag: string): boolean {
-  if (tag.length === 0 || tag.length > 4) {
-    return false;
-  }
-  for (const ch of tag) {
-    const code = ch.charCodeAt(0);
-    if (code < 0x21 || code > 0x7e) {
-      return false;
-    }
-  }
-  return true;
-}
-
-/** Sorted, disjoint ranges covering every codepoint in `text` and `ranges`. */
-export function normalizeRanges(text: string, ranges: CodepointRange[]): CodepointRange[] {
-  const all: CodepointRange[] = ranges.map((range) => ({ lo: Math.min(range.lo, range.hi), hi: Math.max(range.lo, range.hi) }));
-  for (const ch of text) {
-    const cp = ch.codePointAt(0)!;
-    all.push({ lo: cp, hi: cp });
-  }
-  all.sort((a, b) => a.lo - b.lo || a.hi - b.hi);
+/** Sorted, disjoint ranges covering the same codepoints as `ranges`. */
+export function mergeRanges(ranges: CodepointRange[]): CodepointRange[] {
   const merged: CodepointRange[] = [];
-  for (const range of all) {
+  for (const range of ranges.toSorted((a, b) => a.lo - b.lo || a.hi - b.hi)) {
     const last = merged[merged.length - 1];
     if (last && range.lo <= last.hi + 1) {
       last.hi = Math.max(last.hi, range.hi);
@@ -224,6 +169,10 @@ export function normalizeRanges(text: string, ranges: CodepointRange[]): Codepoi
     }
   }
   return merged;
+}
+
+export function textToRanges(text: string): CodepointRange[] {
+  return mergeRanges(Array.from(text, (ch) => ({ lo: ch.codePointAt(0)!, hi: ch.codePointAt(0)! })));
 }
 
 export function intersectRanges(a: CodepointRange[], b: CodepointRange[]): CodepointRange[] {
@@ -249,10 +198,7 @@ export function rangesToText(ranges: CodepointRange[]): string {
   let text = '';
   for (const range of ranges) {
     for (let cp = range.lo; cp <= range.hi; cp++) {
-      // Surrogate codepoints are not characters; a range straddling them (a wide `U+D000-E000`) skips that gap.
-      if (cp < 0xd800 || cp > 0xdfff) {
-        text += String.fromCodePoint(cp);
-      }
+      text += String.fromCodePoint(cp);
     }
   }
   return text;
@@ -266,31 +212,20 @@ function hex(cp: number): string {
   return cp.toString(16).toUpperCase().padStart(4, '0');
 }
 
-export function axesKey(axes: Record<string, number>): string {
-  return Object.keys(axes)
-    .sort()
-    .map((tag) => `${tag}=${axes[tag]}`)
-    .join(',');
-}
-
-/** Merge specs into one group per (axes, closure), so sites that agree share a face and ones that don't get their own. */
+/**
+ * Merge specs into one group per weight: `font-weight` is the only descriptor that lets the browser tell two subsets of
+ * a family apart, so sites that agree on it share a face. That face drops layout closure only when all of them ask to.
+ */
 export function mergeFontSubsetSpecs(specs: Iterable<FontSubsetSpec>): FontSubsetGroup[] {
-  const groups = new Map<string, { axes: Record<string, number>; layoutClosure: boolean; text: string; ranges: CodepointRange[] }>();
+  const groups = new Map<number | null, { text: string; layoutClosure: boolean }>();
   for (const spec of specs) {
-    const key = `${axesKey(spec.axes)}|${spec.layoutClosure}`;
-    const group = groups.get(key) ?? { axes: { ...spec.axes }, layoutClosure: spec.layoutClosure, text: '', ranges: [] };
+    const group = groups.get(spec.weight) ?? { text: '', layoutClosure: false };
     group.text += spec.text;
-    group.ranges.push(...spec.unicodeRanges);
-    groups.set(key, group);
+    group.layoutClosure ||= spec.layoutClosure;
+    groups.set(spec.weight, group);
   }
-  return [...groups.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([, group]) => ({ axes: group.axes, layoutClosure: group.layoutClosure, ranges: normalizeRanges(group.text, group.ranges) }));
-}
-
-/** Stable identity of a stylesheet's merged subset request, so a changed attribute re-bundles and an unchanged one doesn't. */
-export function fontSubsetFingerprint(groups: FontSubsetGroup[]): string {
-  return JSON.stringify(groups.map((group) => [axesKey(group.axes), group.layoutClosure, group.ranges.map((range) => [range.lo, range.hi])]));
+  // The unpinned face goes first, so a pinned one declared after it wins the characters both can draw.
+  return [...groups.entries()].sort(([a], [b]) => (a ?? 0) - (b ?? 0)).map(([weight, group]) => ({ weight, layoutClosure: group.layoutClosure, ranges: textToRanges(group.text) }));
 }
 
 /** The kept codepoints of every subsetted face on a page, by lowercased family, in the shape the dev-mode browser check reads. */
@@ -302,7 +237,7 @@ export function rangesByFamily(faces: { family: string; ranges: CodepointRange[]
   }
   const out: Record<string, [number, number][]> = {};
   for (const [family, ranges] of collected) {
-    out[family] = normalizeRanges('', ranges).map((range) => [range.lo, range.hi]);
+    out[family] = mergeRanges(ranges).map((range) => [range.lo, range.hi]);
   }
   return out;
 }

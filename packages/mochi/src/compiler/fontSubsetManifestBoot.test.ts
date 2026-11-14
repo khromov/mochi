@@ -45,16 +45,16 @@ describe('font subsetting — production boot from a manifest', () => {
         `const result = await requestContext.run(ctx, () => registry.renderComponent(${JSON.stringify(pagePath)}));`,
         `const loaded = Object.keys(require.cache).filter((key) => key.includes('subset-font') || key.includes('harfbuzzjs'));`,
         `const font = registry.getFontAsset(result.fontPreloadUrls[0] ?? '');`,
-        `console.log(JSON.stringify({ loaded, preloads: result.fontPreloadUrls, subsetOf: font?.subsetOf, body: result.body }));`,
+        `console.log(JSON.stringify({ loaded, preloads: result.fontPreloadUrls, fontBytes: font ? Bun.file(font.diskPath).size : null, body: result.body }));`,
       ].join('\n'),
     );
     const boot = Bun.spawnSync(['bun', bootScript], { cwd: process.cwd(), stdout: 'pipe', stderr: 'pipe' });
     expect(boot.stderr.toString()).toBe('');
     expect(boot.exitCode).toBe(0);
-    const report = JSON.parse(boot.stdout.toString().trim().split('\n').pop()!) as { loaded: string[]; preloads: string[]; subsetOf?: number; body: string };
+    const report = JSON.parse(boot.stdout.toString().trim().split('\n').pop()!) as { loaded: string[]; preloads: string[]; fontBytes: number | null; body: string };
     expect(report.loaded).toEqual([]);
     expect(report.preloads).toHaveLength(1);
-    expect(report.subsetOf).toBe(74932);
+    expect(report.fontBytes).toBe(8160);
     expect(report.body).toContain("It's animated!");
   });
 });
