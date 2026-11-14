@@ -224,7 +224,7 @@ export function mergeFontSubsetSpecs(specs: Iterable<FontSubsetSpec>): FontSubse
     group.layoutClosure ||= spec.layoutClosure;
     groups.set(spec.weight, group);
   }
-  // The unpinned face goes first, so a pinned one declared after it wins the characters both can draw.
+  // Sorted so the result, and the fingerprint taken from it, doesn't depend on the order the importers were built in.
   return [...groups.entries()].sort(([a], [b]) => (a ?? 0) - (b ?? 0)).map(([weight, group]) => ({ weight, layoutClosure: group.layoutClosure, ranges: textToRanges(group.text) }));
 }
 

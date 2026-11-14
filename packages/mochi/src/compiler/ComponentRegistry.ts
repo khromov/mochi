@@ -2367,26 +2367,29 @@ export class ComponentRegistry {
    * before any plugin hook runs, so the metafile names the user modules importing a stylesheet and those are parsed at source.
    */
   private async recordFontSubsetRequests(inputs: Record<string, { imports: { path: string; original?: string }[] }>): Promise<void> {
-    const built = new Set(Object.keys(inputs).map((key) => path.resolve(key)));
+    const modules = await Promise.all(
+      Object.entries(inputs).map(async ([key, meta]) => {
+        const importer = path.resolve(key);
+        const kind = scriptKindOf(importer);
+        const stylesheets = new Map(meta.imports.filter((imp) => imp.path.endsWith('.css')).map((imp) => [imp.original ?? imp.path, path.resolve(imp.path)]));
+        const scannable = kind && stylesheets.size > 0 && !importer.includes(`${path.sep}node_modules${path.sep}`);
+        return { importer, stylesheets, found: scannable ? scanImportAttributes(await Bun.file(importer).text(), kind) : [] };
+      }),
+    );
+    // Applied without awaiting, so a stylesheet bundling for a concurrent compile never sees a module's request half-replaced.
+    const built = new Set(modules.map((module) => module.importer));
     this.errors = this.errors.filter((e) => !(e.kind === 'font-subset-invalid' && built.has(e.filePath)));
-    for (const [key, meta] of Object.entries(inputs)) {
-      const importer = path.resolve(key);
-      this.fontSubsetsByImporter.delete(importer);
-      const kind = scriptKindOf(importer);
-      const stylesheets = new Map(meta.imports.filter((imp) => imp.path.endsWith('.css')).map((imp) => [imp.original ?? imp.path, path.resolve(imp.path)]));
-      if (!kind || stylesheets.size === 0 || importer.includes(`${path.sep}node_modules${path.sep}`)) {
-        continue;
-      }
+    for (const { importer, stylesheets, found } of modules) {
       const specs = new Map<string, FontSubsetSpec[]>();
-      for (const found of scanImportAttributes(await Bun.file(importer).text(), kind)) {
+      for (const { specifier, attributes, line } of found) {
         // Attributes on any other import (`type: 'json'`, Bun's `embed`) belong to the runtime.
-        const cssPath = stylesheets.get(found.specifier);
+        const cssPath = stylesheets.get(specifier);
         if (!cssPath) {
           continue;
         }
-        const { spec, error } = parseFontSubsetSpec(found.attributes);
+        const { spec, error } = parseFontSubsetSpec(attributes);
         if (error) {
-          const compileError: MochiCompileError = { kind: 'font-subset-invalid', filePath: importer, specifier: found.specifier, line: found.line, message: error };
+          const compileError: MochiCompileError = { kind: 'font-subset-invalid', filePath: importer, specifier, line, message: error };
           this.errors.push(compileError);
           logger.error(`\n${formatCompileError(compileError)}\n`);
         } else if (spec) {
@@ -2395,6 +2398,8 @@ export class ComponentRegistry {
       }
       if (specs.size > 0) {
         this.fontSubsetsByImporter.set(importer, specs);
+      } else {
+        this.fontSubsetsByImporter.delete(importer);
       }
     }
   }
