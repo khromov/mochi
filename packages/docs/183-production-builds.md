@@ -99,3 +99,71 @@ A plain `docker run -v image-cache:/data/image-cache your-app` mounts the same v
 Keep `MOCHI_KEY` stable across restarts. Image URLs are signed with a key derived from it, so a changed key invalidates already-minted links even though the cached bytes are still on disk.
 
 </Callout>
+
+## JavaScript minifier
+
+<VersionNote since="0.10.0" message="The minifier option was added in 0.10.0. Earlier versions always use Bun's minifier." />
+
+Client JavaScript is minified by Bun's bundler. Set `minifier: 'oxc'` to run a second [oxc](https://oxc.rs/docs/guide/usage/minifier) pass over the chunks Bun emitted, which takes roughly another **3–4%** off the bundle.
+
+<Callout type="warning">
+
+**Experimental.** The oxc minifier is opt-in: Mochi uses Bun's minifier unless you set `minifier: 'oxc'`. If you hit a problem with it, please [open an issue](https://github.com/khromov/mochi/issues).
+
+</Callout>
+
+Install `oxc-minify` and set the option:
+
+```sh
+bun add -d oxc-minify
+```
+
+```ts
+// src/index.ts
+await Mochi.serve({
+  minifier: 'oxc',
+  routes: {
+    '/': Mochi.page('./src/Home.svelte'),
+  },
+});
+```
+
+`mochi-framework build` reads the option from your entry. Override it per build with `--minifier <bun|oxc>`, or for any process — including the dev server, which has no build step — with `MOCHI_MINIFIER`:
+
+```sh
+mochi-framework build --minifier oxc
+MOCHI_MINIFIER=oxc bun run dev
+```
+
+Precedence is `--minifier`, then `MOCHI_MINIFIER`, then the `Mochi.serve()` option, then `'bun'`. An unknown value from any of them is an error, even one a higher source overrides.
+
+The pass covers the hydration bundle, the debug-bar bundle and the inline web-component scripts. CSS, static assets and the SSR build are untouched. Bun's own minifier keeps running first — it mangles identifiers across the whole split graph, which oxc cannot redo one chunk at a time — so oxc is purely additive.
+
+With `'oxc'`, every chunk name carries a tag derived from the installed `oxc-minify` version and its options — `PageA-k3v9x2mq-o9f8e7d6c.js` rather than `PageA-a1b2c3d4.js`. Chunks are served `immutable`, so switching minifier or upgrading `oxc-minify` changes every URL and no browser or CDN keeps stale bytes. With `'bun'` the names are unchanged. Source maps are not supported with `'oxc'`; a build that emits one fails.
+
+Legal (`/*!`, `@license`) comments are stripped under `'oxc'`, while Bun's minifier keeps them. If your app must ship third-party licence notices, provide them separately, for example on a licences page or in a file. Otherwise behaviour is pinned to match the Bun pass: `debugger` and `console.*` are kept, property reads are always treated as side-effecting so a bare `obj.prop` dependency read survives, and nothing is downlevelled. The two inline classic scripts are built as IIFEs and minified in script mode, the goal the browser parses them with.
+
+One difference from Bun remains: oxc deletes a bare call to a coercing built-in such as `String(x)`, `parseInt(x)`, `isNaN(x)`, `Math.abs(x)` or `encodeURIComponent(x)`. Inside an `$effect`, `$effect.pre` or `$derived.by` that call can be the only read of a `$state` proxy, so the effect stops re-running. Mochi warns at compile time, with the file, line and a replacement:
+
+```svelte
+<script>
+  let filters = $state(['red']);
+  let page = $state(1);
+
+  $effect(() => {
+    String(filters); // ❌ removed by 'oxc'
+    `${filters}`; // ✅ same reads, survives
+    page = 1;
+  });
+</script>
+```
+
+`JSON.stringify(filters)`, `$state.snapshot(filters)` and a property read such as `filters.length` survive too. For a numeric coercion (`isNaN`, `Math.*`) the warning suggests `Number(x)`.
+
+<Callout type="info">
+
+`oxc-minify` is an optional peer dependency. With `minifier: 'oxc'` set and the package missing, the build fails with install instructions rather than quietly falling back, so deployed bundle sizes always match the mode you asked for.
+
+The manifest records the minifier the build used, and a prebuilt server keeps it whatever `Mochi.serve()` or `MOCHI_MINIFIER` says. The server only minifies again when a component is missing from the manifest. If `oxc-minify` isn't installed then, for example after `bun install --production`, the server logs a warning and uses Bun's minifier for that rebuild.
+
+</Callout>
