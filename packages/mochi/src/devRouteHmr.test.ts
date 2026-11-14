@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import type { Subprocess } from 'bun';
+import type { Server, Subprocess } from 'bun';
 
 // A child process, not an in-process Mochi.serve(): the dev watcher reads its entry from `Bun.main`, so route HMR can
 // only be exercised by an app the test actually launches from its own entry file.
@@ -11,11 +11,14 @@ describe('route HMR during a dev session', () => {
   let proc: Subprocess<'ignore', 'pipe', 'pipe'>;
   let base: string;
   let output = '';
+  let upstream: Server<undefined>;
+  let imageSrc: string;
 
   const ROUTES_MARKER = '    // ROUTES';
+  const IMAGE_CONFIG = `allowedHosts: ['example.com'], sizes: {}`;
 
   const entrySource = (routes: string[]): string =>
-    `import { Mochi } from 'mochi-framework';\n` +
+    `import { Mochi, getImageUrl } from 'mochi-framework';\n` +
     // The regression this guards: the entry-HMR build emitted its JS and its CSS under one extension-less naming
     // template, so any CSS in the entry graph collided and failed the whole build.
     `import './app.css';\n` +
@@ -26,8 +29,10 @@ describe('route HMR during a dev session', () => {
     `  logger: { enabled: false },\n` +
     `  outDir: '.mochi-out',\n` +
     `  trailingSlash: 'always',\n` +
+    `  image: { blockPrivateNetworks: false, ${IMAGE_CONFIG} },\n` +
     `  routes: {\n` +
     `    '/': Mochi.page('./src/Page.svelte', { serverProps: () => ({ label: 'home' }) }),\n` +
+    `    '/mint': Mochi.api(() => Response.json({ url: getImageUrl(${JSON.stringify(imageSrc)}, 'thumb') })),\n` +
     routes.map((r) => `    ${r}\n`).join('') +
     `${ROUTES_MARKER}\n` +
     `  },\n` +
@@ -65,6 +70,9 @@ describe('route HMR during a dev session', () => {
   };
 
   beforeAll(async () => {
+    const png = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
+    upstream = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: () => new Response(png, { headers: { 'Content-Type': 'image/png' } }) });
+    imageSrc = `http://127.0.0.1:${upstream.port}/photo.png`;
     appDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-dev-route-hmr-'));
     mkdirSync(path.join(appDir, 'src'));
     entryFile = path.join(appDir, 'src', 'index.ts');
@@ -106,6 +114,7 @@ describe('route HMR during a dev session', () => {
   }, 90_000);
 
   afterAll(async () => {
+    upstream?.stop(true);
     proc?.kill();
     // kill() only signals — the dev server still holds handles on its outDir until it actually exits, and Windows
     // refuses to remove a directory that anything has open. Same best-effort retry as the queue suites: never fail
@@ -181,5 +190,28 @@ describe('route HMR during a dev session', () => {
         (s) => s === 404,
       ),
     ).toBe(404);
+  }, 60_000);
+
+  test('an edited image config applies without a restart', async () => {
+    const mint = async (): Promise<string> => {
+      try {
+        return ((await (await fetch(base + '/mint')).json()) as { url: string }).url;
+      } catch {
+        return '';
+      }
+    };
+
+    const before = await mint();
+    expect(before).toContain('-original.');
+    expect(await status(before)).toBe(400);
+
+    const src = await Bun.file(entryFile).text();
+    await Bun.write(entryFile, src.replace(IMAGE_CONFIG, `allowedHosts: ['example.com', '127.0.0.1'], sizes: { thumb: { width: 2, height: 2, fit: 'fill' } }`));
+
+    const after = await waitFor(mint, (url) => url.includes('-thumb.'));
+    expect(after).toContain('-thumb.webp');
+    const res = await fetch(base + after);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('image/webp');
   }, 60_000);
 });

@@ -60,7 +60,7 @@ type NodemailerTransporter = {
 };
 
 // Typing against a local interface rather than `typeof import('nodemailer')` spares consumers from resolving
-// nodemailer's types, which it ships none of, since mochi publishes source they type-check.
+// nodemailer's types (absent before v10, and `@types/nodemailer` is no runtime dep), since mochi publishes source they type-check.
 type NodemailerModule = { createTransport(opts: unknown): NodemailerTransporter };
 
 /** Delivers over SMTP. nodemailer is imported lazily on first send. */
@@ -90,7 +90,7 @@ class SmtpTransport implements EmailTransport {
     let nodemailer: NodemailerModule;
     try {
       // Consumers type-check this file, since mochi publishes source, and a *literal* `import('nodemailer')` would make
-      // their tsc/svelte-check demand nodemailer's absent types (TS7016). An indirect specifier keeps the runtime
+      // their tsc/svelte-check resolve nodemailer's types (TS7016 wherever they're absent). An indirect specifier keeps the runtime
       // import intact while opting this line out of static module-type resolution.
       const nodemailerSpecifier = 'nodemailer';
       nodemailer = (await import(nodemailerSpecifier)) as unknown as NodemailerModule;

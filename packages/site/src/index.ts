@@ -162,6 +162,7 @@ const speculationRules: SpeculationRules = {
 
 await Mochi.serve({
   port: PORT,
+  minifier: 'oxc',
   liveReload: process.env.MOCHI_LIVE_RELOAD === 'false' ? false : undefined,
   htmlShell: './src/shell.html',
   // `maxPayloadLength` is the only inbound bound running before Bun buffers a frame, and `idleTimeout` keeps Bun's

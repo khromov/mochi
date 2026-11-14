@@ -5,6 +5,8 @@ import path from 'node:path';
 import { ComponentRegistry, formatCompileErrors } from './compiler/ComponentRegistry';
 import type { RenderResult } from './compiler/ComponentRegistry';
 import { loadSvelteConfig } from './compiler/svelteConfig';
+import { MINIFIER_ENV_VAR, resolveJsMinifier } from './compiler/jsMinifier';
+import { resolveOutDir } from './compiler/resolveOutDir';
 import { buildInlineWebComponent } from './compiler/buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './dev/clientStatsRoutes';
 import { buildEmailViewerRoutes, EMAIL_VIEWER_COMPONENT } from './dev/emailViewerRoutes';
@@ -321,7 +323,7 @@ export class Mochi {
     const cssStylePrefix = `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty, mochi-hydratable-island[hydrate-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
       registry.development ? ISLAND_FAILURE_DEV_CSS : ''
     }</style>\n`;
-    const serverIslandScript = `<script>(()=>{${serverIslandClientJs}})()</script>`;
+    const serverIslandScript = `<script>${serverIslandClientJs}</script>`;
     const liveReloadTail = liveReloadClientJs ? `<script>${liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : '';
     const toolbarDiv = registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : '';
     const assetPrefixJson = JSON.stringify(registry.assetPrefix);
@@ -504,7 +506,7 @@ export class Mochi {
     const liveReloadEnabled = options.liveReload ?? development;
     const middleware = options.handle;
     const protectionEnabled = options.protection?.enabled === true;
-    const baseOutDir = options.outDir ?? './.mochi';
+    const baseOutDir = resolveOutDir(options.outDir ?? './.mochi');
     // Nesting dev artifacts keeps a stale prod manifest and dev chunks apart across a later `start`, while prod stays at
     // the root so Docker and deploys are unaffected.
     const outDir = development ? path.join(baseOutDir, 'dev') : baseOutDir;
@@ -554,17 +556,26 @@ export class Mochi {
 
     logger.info(`Starting in ${development ? 'development' : 'production'} mode`);
 
+    const minifier = resolveJsMinifier({ configured: options.minifier });
+
     // In production, load prebuilt assets from manifest if available
     const manifestPath = options.manifest ?? `${outDir}/manifest.json`;
     let registry: ComponentRegistry;
     if (!development && existsSync(manifestPath)) {
-      logger.info(`Loading prebuilt manifest from ${manifestPath}`);
+      logger.info(`Loading prebuilt manifest from ${relForDisplay(manifestPath)}`);
       // The registry takes its outDir from the manifest's own directory, so an explicit `manifest` pointing elsewhere
       // relocates on-demand island compiles along with it.
       registry = await ComponentRegistry.fromManifest(manifestPath, development, { fonts: options.fonts });
       if (options.assetPrefix !== undefined && options.assetPrefix !== registry.assetPrefix) {
         logger.warn(
           `assetPrefix in Mochi.serve() (${JSON.stringify(options.assetPrefix)}) differs from the manifest (${JSON.stringify(registry.assetPrefix)}). Using the manifest value — URLs are baked in at build time.`,
+        );
+      }
+      // Only an explicit setting can disagree: `--minifier` never reaches the server, so an unset one is the normal case.
+      const minifierSet = options.minifier !== undefined || !!process.env[MINIFIER_ENV_VAR];
+      if (minifierSet && minifier !== registry.minifier) {
+        logger.warn(
+          `minifier ${JSON.stringify(minifier)} from Mochi.serve() or ${MINIFIER_ENV_VAR} differs from the manifest (${JSON.stringify(registry.minifier)}). Using the manifest value — the client bundle was minified at build time.`,
         );
       }
     } else {
@@ -578,6 +589,7 @@ export class Mochi {
         svelteCompiler: options.svelteCompiler,
         markdown: options.markdown,
         optimize: options.optimize,
+        minifier,
         barrelWarnings: options.barrelWarnings,
         fonts: options.fonts,
       });
@@ -595,7 +607,7 @@ export class Mochi {
         // Production without a prebuilt manifest is valid but much slower, compiling components at boot and server islands
         // on the request path; the error level keeps a forgotten build from masquerading as a healthy deploy.
         logger.error(
-          `Running in production without a prebuilt manifest (${manifestPath} not found). ` +
+          `Running in production without a prebuilt manifest (${relForDisplay(manifestPath)} not found). ` +
             `This is an unsupported configuration and is not recommended: components compile at startup ` +
             `and server islands compile on the first request, making cold starts and initial responses ` +
             `much slower. Run \`mochi-framework build\` before \`start\` to precompile and bake the manifest.`,
@@ -688,9 +700,9 @@ export class Mochi {
 
     // Prod-with-manifest restores this from disk (baked by `build()`); otherwise
     // build it on demand. LiveReload is dev-only, so it's never prebuilt.
-    const serverIslandClientJs = registry.serverIslandClientJs ?? (await buildInlineWebComponent('./web-components/ServerIsland.ts'));
-    const liveReloadClientJs = liveReloadEnabled ? await buildInlineWebComponent('./web-components/LiveReload.ts') : '';
-    const fontSubsetCheckClientJs = registry.development ? await buildInlineWebComponent('./dev/FontSubsetCheck.ts') : '';
+    const serverIslandClientJs = registry.serverIslandClientJs ?? (await buildInlineWebComponent('./web-components/ServerIsland.ts', registry.minifier));
+    const liveReloadClientJs = liveReloadEnabled ? await buildInlineWebComponent('./web-components/LiveReload.ts', registry.minifier) : '';
+    const fontSubsetCheckClientJs = registry.development ? await buildInlineWebComponent('./dev/FontSubsetCheck.ts', registry.minifier) : '';
 
     // Precompute request-invariant shell fragments once; `getTemplate` reads the
     // live `shellTemplate` so dev shell edits (reloadShell) are picked up.
@@ -1871,7 +1883,7 @@ export class Mochi {
         if (assetContent !== undefined) {
           // `getClientFile()` returns only registered `.js` or `.css`, so extension alone decides and this branch stays
           // independent of the asset prefix.
-          const contentType = url.pathname.endsWith('.css') ? 'text/css' : 'application/javascript';
+          const contentType = url.pathname.endsWith('.css') ? 'text/css; charset=utf-8' : 'application/javascript; charset=utf-8';
           const headers: Record<string, string> = { 'Content-Type': contentType, 'X-Content-Type-Options': 'nosniff' };
           // Content-hashed filenames change URL whenever bytes change, so prod can mark them immutable; dev skips it to
           // keep live-reload edits out of the browser cache.

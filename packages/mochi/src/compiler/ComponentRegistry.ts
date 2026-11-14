@@ -38,6 +38,7 @@ import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { backendId, resolveSvelteCompiler, type MochiSvelteCompiler, type SvelteCompilerBackend } from './svelteCompilerBackend';
 import { applyFilter } from '../extensions';
 import { decodeSourcePath, encodeSourcePath } from './manifestPaths';
+import { resolveOutDir } from './resolveOutDir';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
 import { serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { registerServerOnlyComponentStubs, SSR_ONLY_COMPONENT_NAMESPACE } from './serverOnlyComponents';
@@ -53,6 +54,8 @@ import { registerLocalImageAsset } from '../image/localAssetRegistry';
 import type { LocalImageAsset } from '../image/types';
 import { freshImport } from './freshImport';
 import { resolveSvelteShaker } from './svelteShaker';
+import { clientBundleNaming, minifyBuildOutputs, parseJsMinifier, resolveJsMinifier, resolveOxcMinify, type MochiJsMinifier } from './jsMinifier';
+import { findOxcDroppedCalls, formatOxcDroppedCall } from './oxcDroppedCalls';
 import prettyBytes from '../vendor/pretty-bytes';
 import { formatRanges, mergeFontSubsetSpecs, parseFontSubsetSpec, scanImportAttributes, scriptKindOf, type FontSubsetGroup, type FontSubsetSpec } from './fontImportAttributes';
 import { applyFontSubsets } from './fontSubset';
@@ -106,7 +109,7 @@ const builtinTsPreprocessor: PreprocessorGroup = {
 const SRC_DIR = path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..');
 
 /** Manifest schema version this runtime writes; see `MochiManifest.version` for the path families it implies. */
-const MANIFEST_VERSION = 3;
+const MANIFEST_VERSION = 4;
 
 const MARKDOWN_EXTENSIONS = ['.md', '.svx'];
 const MARKDOWN_FILE_FILTER = /\.(md|svx)$/;
@@ -329,6 +332,8 @@ export interface ComponentRegistryOptions {
   markdown?: MarkdownConfig;
   /** Run the whole-program svelte-shaker pass before compiling. Production only — `prepareShake()` is a no-op in dev. */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /** Which minifier prints the client bundle. `'oxc'` (experimental) needs the optional `oxc-minify` package. Default: `'bun'`. */
+  minifier?: MochiJsMinifier;
   /** See `MochiServeOptions.barrelWarnings`. */
   barrelWarnings?: boolean | MochiBarrelWarningOptions;
   /** See `MochiServeOptions.fonts`. */
@@ -467,6 +472,8 @@ export class ComponentRegistry {
   private readonly svelteCompiler: MochiSvelteCompiler | undefined;
   readonly markdown: MarkdownConfig | undefined;
   readonly optimize: boolean | MochiSvelteShakerOptions;
+  readonly minifier: MochiJsMinifier;
+  private warnedOxcFallback = false;
   private readonly fontInlineThreshold: number;
   private readonly fontDropLegacyWoff: boolean;
   private readonly barrelWarningsEnabled: boolean;
@@ -476,6 +483,7 @@ export class ComponentRegistry {
   /** Packages already warned about this process, so the warning fires once, not on every rebuild. */
   private readonly warnedBarrels = new Set<string>();
   private readonly warnedRetainedStubs = new Set<string>();
+  private readonly warnedOxcDroppedCalls = new Set<string>();
   /** Buffer used when `bufferBarrelWarnings` is on: barrels collected across the build, flushed as one grouped summary by `flushBarrelWarnings()`. */
   private pendingBarrels: HeavyBarrel[] = [];
   /** absPath → slimmed `.svelte` source from the last `prepareShake()`; empty when shaking is off. */
@@ -514,12 +522,13 @@ export class ComponentRegistry {
     // A relative outDir resolves against whoever's cwd asks, and compile and `toManifest()` ask at different moments, so
     // a `process.chdir()` in between would make every artifact look like it escaped the out-dir and bake absolute paths
     // into an otherwise relocatable build.
-    this.outDir = path.resolve(opts.outDir ?? './.mochi');
+    this.outDir = resolveOutDir(opts.outDir ?? './.mochi');
     this.assetPrefix = normalizeAssetPrefix(opts.assetPrefix);
     this.svelteConfig = opts.svelteConfig ?? {};
     this.svelteCompiler = opts.svelteCompiler;
     this.markdown = opts.markdown;
     this.optimize = opts.optimize ?? false;
+    this.minifier = opts.minifier === undefined ? resolveJsMinifier() : parseJsMinifier(opts.minifier, 'ComponentRegistry({ minifier })');
     this.fontInlineThreshold = opts.fonts?.inlineThreshold ?? 4096;
     this.fontDropLegacyWoff = opts.fonts?.dropLegacyWoff ?? true;
     const bw = opts.barrelWarnings;
@@ -643,6 +652,40 @@ export class ComponentRegistry {
   /** Emitted assets for locally-imported images, keyed by served URL. */
   getLocalImageAssets(): Map<string, LocalImageAsset> {
     return this.localImageAssets;
+  }
+
+  /**
+   * The minifier for a client rebuild. A prebuilt deploy only rebuilds on a manifest miss, and its install may have
+   * omitted the `oxc-minify` dev dependency, so there a missing package degrades to Bun instead of failing the request.
+   */
+  private async clientMinifier(): Promise<MochiJsMinifier> {
+    if (this.minifier !== 'oxc' || !this.loadedFromManifest) {
+      return this.minifier;
+    }
+    try {
+      await resolveOxcMinify();
+      return 'oxc';
+    } catch (err) {
+      if (!this.warnedOxcFallback) {
+        this.warnedOxcFallback = true;
+        logger.warn(
+          `This build was minified with oxc, but oxc-minify can't be loaded at runtime, so the client bundle rebuilt for the manifest miss uses Bun's minifier. ` +
+            `Bundle sizes and chunk URLs will differ from the build until the next deploy. Fix the manifest miss, or install oxc-minify as a regular dependency. ` +
+            `(${err instanceof Error ? err.message : String(err)})`,
+        );
+      }
+      return 'bun';
+    }
+  }
+
+  private warnOxcDroppedCalls(filePath: string, source: string, compiled: string): void {
+    for (const dropped of findOxcDroppedCalls(source, filePath, compiled)) {
+      const line = formatOxcDroppedCall(relForDisplay(filePath), dropped);
+      if (!this.warnedOxcDroppedCalls.has(line)) {
+        this.warnedOxcDroppedCalls.add(line);
+        logger.warn(line);
+      }
+    }
   }
 
   /** Record the prebuilt ServerIsland inline script (content + disk path for the manifest). */
@@ -1234,7 +1277,7 @@ export class ComponentRegistry {
     // The debug bar builds standalone (production-mode Svelte, own runtime) and only once per process — framework
     // sources don't change under a running user app, so watcher rebuilds skip it entirely.
     if (debugBarEnabled && !this.debugBarBundle) {
-      this.debugBarBuildPromise ??= buildDebugBarBundle({ development, backend });
+      this.debugBarBuildPromise ??= buildDebugBarBundle({ development, backend, minifier: this.minifier });
       // If the main build below throws before the swap-time await, a rejection here would otherwise go unhandled.
       this.debugBarBuildPromise.catch(() => {});
     }
@@ -1270,6 +1313,10 @@ export class ComponentRegistry {
     });
 
     const prerenderModuleLoader = createPrerenderModuleLoader(this.prerenderContext(evaluations));
+
+    const minifier = await this.clientMinifier();
+    // Only the client bundle goes through oxc, and only what oxc deletes is worth a warning.
+    const onCompiled = minifier === 'oxc' ? (filePath: string, source: string, compiled: string) => this.warnOxcDroppedCalls(filePath, source, compiled) : undefined;
 
     const clientPlugin: BunPlugin = {
       name: 'svelte-client',
@@ -1317,11 +1364,15 @@ export class ComponentRegistry {
           path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
         }));
         registerEsmEnvStrip(build);
-        registerSvelteModuleLoader(build, backend, mergeCompilerOptions(userCompilerOptions, { generate: 'client', dev: development }));
+        registerSvelteModuleLoader(build, backend, mergeCompilerOptions(userCompilerOptions, { generate: 'client', dev: development }), onCompiled);
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
-          const source = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
+          const shaken = shakenSources.get(args.path);
+          const source = shaken ?? (await Bun.file(args.path).text());
+          // Line numbers must be the author's, which a shaken source no longer has.
+          const reportCompiled = async (compiled: string) => onCompiled?.(args.path, shaken === undefined ? source : await Bun.file(args.path).text(), compiled);
           const cached = compileCache.get('client', args.path, source, clientFingerprint, compileCacheStats);
           if (cached) {
+            await reportCompiled(cached.js);
             return { contents: cached.js, loader: 'js' };
           }
           const preprocessed = await applyUserPreprocessors(source, args.path, 'client', development);
@@ -1340,6 +1391,7 @@ export class ComponentRegistry {
             serverIslands: [],
             preprocessErrors: [],
           });
+          await reportCompiled(js.code);
           return { contents: js.code, loader: 'js' };
         });
         if (markdown) {
@@ -1362,7 +1414,7 @@ export class ComponentRegistry {
       define: clientBuildDefine(development),
       minify: true,
       splitting: true,
-      naming: '[name]-[hash].[ext]',
+      naming: await clientBundleNaming(minifier),
       publicPath: `${this.assetPrefix}/client/`,
       outdir: path.resolve(`${this.outDir}/svelte-client`),
       metafile: true,
@@ -1373,9 +1425,18 @@ export class ComponentRegistry {
       throw new Error(`Svelte client build failed:\n${formatBuildMessages(result.logs)}`);
     }
 
+    // Post-bundle, because a plugin can't reach the printed chunks: `onLoad` only sees pre-bundle modules Bun then
+    // re-prints, and `onEnd` returns `void` after `outdir` is already written. Every chunk is minified before any is
+    // swapped in, so a failure can't leave half the bundle re-minified.
+    const reminified = await minifyBuildOutputs(result.outputs, minifier);
+    if (reminified) {
+      // `outdir` above already wrote Bun's version; the manifest boot reads these files back off disk.
+      await Promise.all([...reminified].map(([outPath, code]) => Bun.write(outPath, code)));
+    }
+
     for (const output of result.outputs) {
       const filename = path.basename(output.path);
-      newClientFiles.set(`${this.assetPrefix}/client/${filename}`, await output.text());
+      newClientFiles.set(`${this.assetPrefix}/client/${filename}`, reminified?.get(output.path) ?? (await output.text()));
     }
 
     // Map entry-point outputs back to components using metafile.entryPoint
@@ -1411,9 +1472,13 @@ export class ComponentRegistry {
         }));
         inputs.sort((a, b) => b.size - a.size);
         const imports = (outMeta.imports ?? []).filter((i) => i.kind === 'import-statement').map((i) => path.basename(i.path));
+        const name = path.basename(outPath);
+        // Bun's metafile counts what Bun printed, so an oxc pass leaves it stale — the chunk total is corrected from
+        // the bytes actually written, while the per-input attribution stays Bun's and no longer sums to it.
+        const emitted = newClientFiles.get(`${this.assetPrefix}/client/${name}`);
         return {
-          name: path.basename(outPath),
-          size: outMeta.bytes,
+          name,
+          size: reminified && emitted !== undefined ? Buffer.byteLength(emitted) : outMeta.bytes,
           inputs,
           imports,
         };
@@ -2564,6 +2629,7 @@ export class ComponentRegistry {
     const manifest: MochiManifest = {
       version: MANIFEST_VERSION,
       assetPrefix: this.assetPrefix,
+      minifier: this.minifier,
       bootstrapUrl: this.islandBootstrapUrl,
       componentEntryUrls: Object.fromEntries(this.componentEntryUrls),
       cssFileUrls: Object.fromEntries([...this.cssFileUrls].map(([componentPath, url]) => [encodeSourcePath(componentPath), url])),
@@ -2618,7 +2684,7 @@ export class ComponentRegistry {
     // own directory *is* the build out-dir. Deriving the artifact root from the
     // manifest's own location makes the pairing intrinsic — there's no caller-
     // supplied out-dir that could desync from where the artifacts actually live.
-    const artifactRoot = path.dirname(path.resolve(manifestPath));
+    const artifactRoot = resolveOutDir(path.dirname(manifestPath));
     // Absolute entries are the escape hatch for artifacts that landed outside
     // the out-dir (toManifest() warns when it bakes one) — pass them through.
     const resolveManifestPath = (p: string): string => (path.isAbsolute(p) ? p : path.resolve(artifactRoot, p));
@@ -2628,6 +2694,8 @@ export class ComponentRegistry {
       outDir: artifactRoot,
       assetPrefix: manifest.assetPrefix,
       fonts: options.fonts,
+      // Taken from the build, so a manifest-miss rebuild doesn't swap its chunks for another minifier's names.
+      minifier: parseJsMinifier(manifest.minifier, `${relForDisplay(manifestPath)} minifier`),
     });
     registry.loadedFromManifest = true;
     registry.publicFileCountAtBuild = manifest.publicFileCount ?? 0;
