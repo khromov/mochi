@@ -1668,9 +1668,9 @@ export class Mochi {
           body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
         }
 
-        // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`
-        // tags are prepended here along with side-effect CSS imports; browsers honour a `<link>` assigned via `innerHTML`.
-        // The island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
+        // The page `<head>` links none of this fragment's CSS, so its `<link>` tags lead the body, side-effect CSS imports
+        // included, where the wrapper element finds them and loads them before the swap (see ServerIsland.ts). The
+        // island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
         // A font-subset stylesheet is left to the host page, whose variant holds this island's glyphs because its import
         // graph includes the island; a second variant of the family would hide the page's text at a weight this one pins.
         const ownCss = registry.getComponentCssUrl(componentPath);

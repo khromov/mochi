@@ -337,7 +337,7 @@ export interface MochiManifest {
    *   resolved against the manifest's own directory.
    * - **Sources** used as lookup keys (`components` keys, `hydratables[].resolvedPath`,
    *   `cssComponents`, `cssFileUrls` keys, `serverIslandPaths`, `importedCssUrls` keys,
-   *   `entryImportedCss` keys and values) — POSIX, project-root relative, with framework-owned
+   *   `entryImportedCss` keys and values, `trackedCss`, `islandCss` keys and values) — POSIX, project-root relative, with framework-owned
    *   sources under a `$mochi/` sentinel. Both ends take the root from `process.cwd()`, so
    *   `mochi-framework build` and the server must run from the same working directory.
    * - **`stats.outputs[].inputs[].path`** — build-cwd relative, as Bun's metafile emits it, and diagnostic only.
@@ -384,6 +384,10 @@ export interface MochiManifest {
   importedCssSubsets?: Record<string, { cssPath: string; groups: FontSubsetGroup[] }>;
   /** Maps encoded page entry path (see `version`) → the stylesheet variants it links, likewise encoded. */
   entryImportedCss?: Record<string, string[]>;
+  /** Encoded source paths (see `version`) of components whose SSR output reports itself on render, so their stylesheets are linked only when they rendered. */
+  trackedCss?: string[];
+  /** Maps encoded hydrated island source path (see `version`) → every styled component in its import graph, likewise encoded; all linked whenever that island renders. */
+  islandCss?: Record<string, string[]>;
   /** Prebuilt, minified ServerIsland inline web-component script, emitted by `build()` so production loads it from disk in place of a startup `Bun.build`. */
   serverIslandScript?: string;
   /**

@@ -30,6 +30,8 @@ export interface MochiRequestContext {
    * `renderComponent` clears it at the start of every render so sequential same-ctx renders (an error page after a failed render) don't clobber each other.
    */
   islandProps: Map<string, IslandPropsEntry>;
+  /** Internal per-render record of which styled components initialised (see `markRenderedCss`), so only their stylesheets get linked. Created by `renderComponent`. */
+  renderedCss?: Set<string>;
   /**
    * Internal backing store for the request-scoped cache, created on first use so requests that never touch it allocate nothing.
    * Entries die with the request, so an invalidation between requests is seen immediately. Application code goes through `getRequestCache()`.
