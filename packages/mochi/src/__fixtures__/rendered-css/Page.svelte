@@ -7,10 +7,13 @@
   import Toggle from './Toggle.svelte';
   import Widget from './Widget.svelte';
   import Deferred from './Deferred.svelte';
+  import Loader from './Loader.svelte';
+  import Shared from './Shared.svelte';
   let { variant = 'a', islands = true }: { variant?: string; islands?: boolean } = $props();
 </script>
 
 <Always />
+<Shared />
 {#if variant === 'a'}
   <VariantA />
 {:else}
@@ -20,9 +23,11 @@
 {#if variant === 'never'}
   <Never />
   <Global />
+  <Shared mochi:hydrate />
 {/if}
 {#if islands}
   <Toggle mochi:hydrate />
   <Widget mochi:clientOnly />
+  <Loader mochi:hydrate />
   <Deferred mochi:defer variant="b" />
 {/if}

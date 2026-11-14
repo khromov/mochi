@@ -43,6 +43,33 @@ describe('hasGlobalCss', () => {
     expect(globalOf("@import url('/x.css');")).toBe(true);
     expect(globalOf('@property --x { syntax: "*"; inherits: false }')).toBe(true);
     expect(globalOf('@layer reset, base;')).toBe(true);
+    // Svelte matches at-rule names case-sensitively, so it neither scopes nor drops an upper-case keyframes name.
+    expect(globalOf('@KEYFRAMES spin { to { rotate: 1turn } }')).toBe(true);
+  });
+
+  test('rules on selectors Svelte leaves unscoped are global even where css.hasGlobal misses them', () => {
+    for (const style of [
+      ':root { @media (min-width: 1px) { --x: 1 } }',
+      ':host { @supports (display: grid) { display: block } }',
+      '::view-transition-old(root) { @media (min-width: 1px) { animation: none } }',
+      '@layer base { :root { @media (min-width: 1px) { --x: 1 } } }',
+      ':is(:root) { --x: 1 }',
+      ':where(:root) { --x: 1 }',
+      ':is(:host) { display: block }',
+    ]) {
+      expect(compile(`<div class="a">x</div><style>${style}</style>`, { generate: 'server', filename: FILE }).css?.code).not.toContain('svelte-');
+      expect(globalOf(style)).toBe(true);
+    }
+    // rsvelte reports hasGlobal: false for an unscoped selector listed beside a scoped one.
+    expect(globalOf(':root, .a { --x: 1 }')).toBe(true);
+  });
+
+  test('a selector Svelte scopes through any of its compounds is not global', () => {
+    expect(globalOf(':root[data-theme=dark] .a { color: red }')).toBe(false);
+    expect(globalOf(':is(:root) .a { color: red }')).toBe(false);
+    expect(globalOf(':root:has(.x) .a { color: red }')).toBe(false);
+    expect(globalOf('.a:not(:root) { color: red }')).toBe(false);
+    expect(globalOf('.a { :root & { color: red } }')).toBe(false);
   });
 });
 
@@ -94,6 +121,12 @@ describe('instrumentCssTracking via preprocessHydratable', () => {
     expect(transformed.startsWith('<script>')).toBe(true);
     expect(transformed).toContain('<script module>');
     expect(transformed).toContain(MARK);
+  });
+
+  test('a component whose module script can export a top-level snippet stays untracked', () => {
+    const snippet = `{#snippet fancy()}<p class="a">x</p>{/snippet}\n<style>.a { color: red }</style>`;
+    expect(preprocessHydratable(`<script module>\nexport const table = { fancy };\n</script>\n${snippet}`, FILE).cssMarked).toBe(false);
+    expect(preprocessHydratable(`${snippet}\n{@render fancy()}`, FILE).cssMarked).toBe(true);
   });
 
   test('a legacy-mode component is tracked too', () => {

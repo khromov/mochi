@@ -8,9 +8,33 @@ import type { SvelteCompileOutput } from './svelteCompilerBackend';
 // `@layer` statement, …) is emitted unscoped and so can affect the page without its component rendering.
 const SCOPED_ATRULES = new Set(['media', 'supports', 'container', 'layer', 'scope', 'starting-style', 'keyframes']);
 
+// A compound Svelte emits without the scope class: one holding `:root`/`:host`/`::view-transition*` (or an `:is`/`:where`
+// matching one) and no `:has`. Anything else beside them is ignored, which can only over-link.
+function isRootLikeCompound(relative: AST.CSS.RelativeSelector): boolean {
+  let rootLike = false;
+  for (const sel of relative.selectors) {
+    if (sel.type === 'PseudoClassSelector') {
+      if (sel.name === 'has') {
+        return false;
+      }
+      if (sel.name === 'root' || sel.name === 'host' || ((sel.name === 'is' || sel.name === 'where') && sel.args?.children.some(isUnscopedSelector))) {
+        rootLike = true;
+      }
+    } else if (sel.type === 'PseudoElementSelector' && sel.name.startsWith('view-transition')) {
+      rootLike = true;
+    }
+  }
+  return rootLike;
+}
+
+function isUnscopedSelector(complex: AST.CSS.ComplexSelector): boolean {
+  return complex.children.every(isRootLikeCompound);
+}
+
 /**
- * True when the stylesheet has `:global` or unscoped at-rules, the two page-wide cases Svelte's own `css.hasGlobal` does
- * not reliably report: it skips a `:global` block holding only nested rules and every at-rule but `-global-` keyframes.
+ * True when the stylesheet has `:global`, unscoped at-rules or rules on unscoped selectors, page-wide cases Svelte's own
+ * `css.hasGlobal` does not reliably report: it skips a `:global` block holding only nested rules, every at-rule but
+ * `-global-` keyframes, a `:root` rule whose body is only nested at-rules, and `:is(:root)`/`:where(:root)`.
  */
 export function hasGlobalCss(css: AST.CSS.StyleSheet): boolean {
   let global = false;
@@ -23,8 +47,12 @@ export function hasGlobalCss(css: AST.CSS.StyleSheet): boolean {
         global = true;
         return;
       }
+      if (node.type === 'Rule' && node.prelude.children.some(isUnscopedSelector)) {
+        global = true;
+        return;
+      }
       if (node.type === 'Atrule') {
-        const name = node.name.toLowerCase();
+        const name = node.name;
         if (!SCOPED_ATRULES.has(name) || (name === 'keyframes' && node.prelude.trim().startsWith('-global-')) || (name === 'layer' && node.block === null)) {
           global = true;
           return;
@@ -44,6 +72,11 @@ export function instrumentCssTracking(ast: AST.Root, s: MagicString, filePath: s
   if (!ast.css || hasGlobalCss(ast.css)) {
     return false;
   }
+  // A module script can export a top-level snippet, which then renders this component's scoped markup elsewhere without
+  // the instance script ever running.
+  if (ast.module && ast.fragment.nodes.some((node) => node.type === 'SnippetBlock')) {
+    return false;
+  }
   const prologue = `\nimport { markRenderedCss as __mochi_css__ } from "mochi-framework";\n__mochi_css__(${JSON.stringify(encodeSourcePath(filePath))});`;
   if (ast.instance) {
     s.appendRight((ast.instance.content as unknown as { start: number }).start, prologue);
@@ -54,9 +87,8 @@ export function instrumentCssTracking(ast: AST.Root, s: MagicString, filePath: s
 }
 
 /**
- * Whether a marked component's stylesheet is linked only when it rendered. Svelte's `css.hasGlobal` applies its exact
- * scoping rules (`:root` without `:has`, `:host`, `::view-transition*`, `-global-` keyframes), so they are not mirrored
- * here; a backend that does not report it keeps the always-linked behaviour.
+ * Whether a marked component's stylesheet is linked only when it rendered. Svelte's `css.hasGlobal` is consulted on top of
+ * `hasGlobalCss` as a second opinion; a backend that does not report it keeps the always-linked behaviour.
  */
 export function isCssTracked(cssMarked: boolean, css: SvelteCompileOutput['css']): boolean {
   return cssMarked && css?.hasGlobal === false;

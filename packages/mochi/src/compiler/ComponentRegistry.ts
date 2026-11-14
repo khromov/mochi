@@ -103,6 +103,15 @@ const SRC_DIR = path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..'
 /** Manifest schema version this runtime writes; see `MochiManifest.version` for the path families it implies. */
 const MANIFEST_VERSION = 4;
 
+// `.native` also canonicalises case on a case-insensitive disk, which the JS fallback does not.
+function realpathOrSelf(p: string): string {
+  try {
+    return fs.realpathSync.native(p);
+  } catch {
+    return p;
+  }
+}
+
 const MARKDOWN_EXTENSIONS = ['.md', '.svx'];
 const MARKDOWN_FILE_FILTER = /\.(md|svx)$/;
 
@@ -396,7 +405,7 @@ export class ComponentRegistry {
   private cssFileUrls: Map<string, string> = new Map();
   /** Component path → the key its SSR output reports through `markRenderedCss`; absent for components whose CSS is never pruned (global rules, no styles). */
   private trackedCss: Map<string, string> = new Map();
-  /** Island component path → every styled component in its static import graph, all linked whenever the island renders so a client-only branch stays styled. */
+  /** Hydrated or deferred island path → every styled component in its import graph, all linked whenever the island renders so a client-only branch or a later fragment is styled. */
   private islandCss: Map<string, Set<string>> = new Map();
   /**
    * Last-extracted raw CSS per component path, letting `compileAll`'s write-CSS-files loop decide on content equality
@@ -749,13 +758,9 @@ export class ComponentRegistry {
     const compileCache = this.compileCache;
     const markdown = this.markdown;
     const shakenSources = this.shakenSources;
-    const trackedCss = this.trackedCss;
+    const cssTrackingUpdates = new Map<string, boolean>();
     const recordCssTracking = (filePath: string, tracked: boolean): void => {
-      if (tracked) {
-        trackedCss.set(filePath, encodeSourcePath(filePath));
-      } else {
-        trackedCss.delete(filePath);
-      }
+      cssTrackingUpdates.set(filePath, tracked);
     };
     const imageAssetLoader = createImageAssetLoader({
       outDir: this.outDir,
@@ -1040,7 +1045,7 @@ export class ComponentRegistry {
     // chunk nor the stylesheet, and it ends up attributed to no page at all. The pre-chunking input graph still records
     // the import edge, so CSS is walked there instead. Unbundled specifiers (`svelte`, `node:fs`) appear as edges with
     // no `inputs[]` entry of their own, which is why this compares raw metafile keys rather than resolving every hop.
-    const transitiveSourceInputs = (rootInputKey: string): Set<string> => {
+    const transitiveSourceInputs = (rootInputKey: string, followDynamic = false): Set<string> => {
       const visited = new Set<string>();
       const queue = [rootInputKey];
       while (queue.length > 0) {
@@ -1051,7 +1056,8 @@ export class ComponentRegistry {
         }
         visited.add(key);
         for (const imp of meta.imports) {
-          queue.push(imp.path);
+          // A dynamic import's `path` is the output chunk; its source input is `entryPoint`.
+          queue.push(followDynamic && imp.entryPoint ? imp.entryPoint : imp.path);
         }
       }
       return visited;
@@ -1062,6 +1068,14 @@ export class ComponentRegistry {
     for (const key of Object.keys(inputsMeta)) {
       if (key.endsWith('.css')) {
         cssInputKeyByPath.set(path.resolve(key), key);
+      }
+    }
+
+    // Requests render between the per-entry imports below, so a flag is dropped before the new modules swap in and added
+    // after: either way a stale module meets an always-linked stylesheet rather than a pruned one.
+    for (const [filePath, tracked] of cssTrackingUpdates) {
+      if (!tracked) {
+        this.trackedCss.delete(filePath);
       }
     }
 
@@ -1136,22 +1150,38 @@ export class ComponentRegistry {
       });
     }
 
-    // An island can render, in the browser, components its SSR pass never reached, so its CSS need is the whole static
-    // graph below it. Walked on the pre-chunking input graph like side-effect CSS, keyed by island file since several
-    // entries can share one.
+    for (const [filePath, tracked] of cssTrackingUpdates) {
+      if (tracked) {
+        this.trackedCss.set(filePath, encodeSourcePath(filePath));
+      }
+    }
+
+    // An island can render, in the browser, components its SSR pass never reached, so its CSS need is the whole graph
+    // below it, dynamic imports included. A deferred island's fragment arrives after the page has painted, so its graph
+    // stays in the page head too, sparing the swap a flash of unstyled content. Walked on the pre-chunking input graph
+    // like side-effect CSS, keyed by island file since several entries can share one.
     const inputKeyByPath = new Map<string, string>();
     for (const key of Object.keys(inputsMeta)) {
       inputKeyByPath.set(path.resolve(key), key);
     }
-    for (const islandPath of new Set(allHydratables.map((h) => h.resolvedPath))) {
+    let inputKeyByRealPath: Map<string, string> | undefined;
+    const islandRoots = new Set([...allHydratables.map((h) => h.resolvedPath), ...allServerIslands.map((si) => si.resolvedPath)]);
+    for (const islandPath of islandRoots) {
+      let rootKey = inputKeyByPath.get(islandPath);
+      if (!rootKey) {
+        // The import spelled the path differently from Bun's key (case on a case-insensitive disk, a symlinked folder).
+        inputKeyByRealPath ??= new Map([...inputKeyByPath].map(([abs, key]) => [realpathOrSelf(abs), key]));
+        rootKey = inputKeyByRealPath.get(realpathOrSelf(islandPath));
+      }
+      if (!rootKey) {
+        this.islandCss.set(islandPath, new Set(cssMap.keys()));
+        continue;
+      }
       const css = new Set<string>();
-      const rootKey = inputKeyByPath.get(islandPath);
-      if (rootKey) {
-        for (const key of transitiveSourceInputs(rootKey)) {
-          const abs = path.resolve(key);
-          if (cssMap.has(abs)) {
-            css.add(abs);
-          }
+      for (const key of transitiveSourceInputs(rootKey, true)) {
+        const abs = path.resolve(key);
+        if (cssMap.has(abs)) {
+          css.add(abs);
         }
       }
       this.islandCss.set(islandPath, css);
@@ -1765,6 +1795,7 @@ export class ComponentRegistry {
     // island names, detect server islands, and conditionally strip page-level
     // hydration markers.
     const renderedIslandNames = new Set<string>();
+    const renderedServerIslandNames = new Set<string>();
     let hasServerIslands = false;
     if (hasIslandsOrServerIslands || shouldStrip) {
       let islandDepth = 0;
@@ -1791,6 +1822,10 @@ export class ComponentRegistry {
                 islandDepth--;
               });
               hasServerIslands = true;
+              const raw = el.getAttribute('component-name');
+              if (raw) {
+                renderedServerIslandNames.add(raw);
+              }
             },
           });
       }
@@ -1875,12 +1910,16 @@ export class ComponentRegistry {
       }
     }
 
-    // Every styled component below a rendered island stays linked whether or not SSR reached it.
+    // Every styled component below a rendered island or deferred-island placeholder stays linked whether or not SSR
+    // reached it.
     let islandCssNeeds: Set<string> | undefined;
     if (renderedCss) {
-      for (const name of renderedIslandNames) {
-        const h = hydratablesByName.get(name);
-        const needs = h && this.islandCss.get(h.resolvedPath);
+      const islandRoots = [
+        ...[...renderedIslandNames].map((name) => hydratablesByName.get(name)?.resolvedPath),
+        ...[...renderedServerIslandNames].map((name) => this.serverIslandPaths.get(name)),
+      ];
+      for (const islandPath of islandRoots) {
+        const needs = islandPath && this.islandCss.get(islandPath);
         if (needs) {
           islandCssNeeds ??= new Set();
           for (const p of needs) {
@@ -1899,17 +1938,16 @@ export class ComponentRegistry {
       if (lazyIslandPaths.has(componentPath)) {
         continue;
       }
-      if (islandPaths.has(componentPath)) {
+      const trackedKey = renderedCss ? this.trackedCss.get(componentPath) : undefined;
+      const rendered = trackedKey !== undefined && renderedCss!.has(trackedKey);
+      if (islandPaths.has(componentPath) && !rendered) {
         const hs = hydratablesByPath.get(componentPath);
         if (hs && hs.every((h) => !renderedIslandNames.has(h.name))) {
           continue;
         }
       }
-      if (renderedCss) {
-        const key = this.trackedCss.get(componentPath);
-        if (key !== undefined && !renderedCss.has(key) && !islandCssNeeds?.has(componentPath)) {
-          continue;
-        }
+      if (trackedKey !== undefined && !rendered && !islandCssNeeds?.has(componentPath)) {
+        continue;
       }
       cssUrls.push(cssUrl);
     }

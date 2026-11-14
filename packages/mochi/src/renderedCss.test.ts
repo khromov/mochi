@@ -52,6 +52,12 @@ describe('rendered-only CSS links (dev)', () => {
     expect(linkedCss(await (await fetch(`${base}/?variant=b`)).text())).toContain('VariantB');
   });
 
+  test('a component rendered plainly stays linked although its island use elsewhere on the page did not render', async () => {
+    const html = await (await fetch(`${base}/`)).text();
+    expect(html).toContain('data-shared');
+    expect(linkedCss(html)).toContain('Shared');
+  });
+
   test('a component with :global rules stays linked even when it never rendered', async () => {
     const html = await (await fetch(`${base}/`)).text();
     expect(html).not.toContain('data-global');
@@ -67,17 +73,26 @@ describe('rendered-only CSS links (dev)', () => {
     expect(css).toContain('Widget');
   });
 
+  test('a component a hydrated island loads with import() stays linked', async () => {
+    const html = await (await fetch(`${base}/`)).text();
+    expect(html).not.toContain('data-lazy');
+    expect(linkedCss(html)).toEqual(expect.arrayContaining(['Loader', 'Lazy']));
+  });
+
   test('islands that did not render drop their whole subtree from the links', async () => {
     const css = linkedCss(await (await fetch(`${base}/?islands=0`)).text());
     expect(css).not.toContain('Toggle');
     expect(css).not.toContain('Hidden');
     expect(css).not.toContain('Widget');
+    expect(css).not.toContain('Lazy');
+    expect(css).not.toContain('Deferred');
+    expect(css).not.toContain('DeferredB');
   });
 
-  test('a deferred island fragment links only the components it rendered', async () => {
+  test('a deferred island keeps its subtree linked in the page, while its fragment links only what it rendered', async () => {
     const html = await (await fetch(`${base}/`)).text();
-    // The wrapper loads the island's own stylesheet through `css-url`, so the page head skips it.
-    expect(linkedCss(html)).not.toContain('Deferred');
+    // The fragment is swapped in after the page has painted, so its stylesheets are already in the head.
+    expect(linkedCss(html)).toEqual(expect.arrayContaining(['Deferred', 'DeferredA', 'DeferredB', 'DeferredNever']));
     const wrapper = html.match(/<mochi-server-island component-name="(Deferred_\w+)" signed-props="([^"]+)"[^>]*css-url="([^"]+)"/);
     expect(wrapper).not.toBeNull();
     const [, key, token, cssUrl] = wrapper!;
@@ -86,7 +101,7 @@ describe('rendered-only CSS links (dev)', () => {
     const res = await fetch(`${base}/_mochi/island/${key}?props=${encodeURIComponent(token!)}`);
     expect(res.status).toBe(200);
     const fragment = await res.text();
-    expect(fragment).toContain('data-variant="b"');
-    expect(linkedCss(fragment)).toEqual(['VariantB']);
+    expect(fragment).toContain('data-deferred-b');
+    expect(linkedCss(fragment)).toEqual(['DeferredB']);
   });
 });

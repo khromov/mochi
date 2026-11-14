@@ -79,6 +79,19 @@ describe('rendered-only CSS links survive HMR recompiles', () => {
     expect(await render()).toContain('Never');
   });
 
+  test('a failed rebuild leaves the live modules linked as before', async () => {
+    const sibling = path.join(src, 'VariantB.svelte');
+    const original = await Bun.file(sibling).text();
+    writeFileSync(sibling, `${original}\n{#if true}<p>unclosed`);
+    writeFileSync(path.join(src, 'Global.svelte'), `<p data-global>global</p>\n\n<style>\n  [data-global] {\n    margin: 0;\n  }\n</style>\n`);
+    await registry.recompileChanged(path.join(src, 'Global.svelte'));
+    // The old Global module never reports its render, so it stays linked until a build actually swaps it out.
+    expect(await render()).toContain('Global');
+    writeFileSync(sibling, original);
+    await registry.recompileChanged(sibling);
+    expect(await render()).not.toContain('Global');
+  });
+
   test('a child dropped from an island leaves the island links after the rebuild', async () => {
     writeFileSync(path.join(src, 'Toggle.svelte'), `<button data-toggle>toggle</button>\n\n<style>\n  [data-toggle] {\n    color: darkgreen;\n  }\n</style>\n`);
     await registry.recompileChanged(path.join(src, 'Toggle.svelte'));

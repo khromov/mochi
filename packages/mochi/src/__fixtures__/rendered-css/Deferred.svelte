@@ -1,18 +1,18 @@
 <script lang="ts">
-  import VariantA from './VariantA.svelte';
-  import VariantB from './VariantB.svelte';
-  import Never from './Never.svelte';
+  import DeferredA from './DeferredA.svelte';
+  import DeferredB from './DeferredB.svelte';
+  import DeferredNever from './DeferredNever.svelte';
   let { variant }: { variant: string } = $props();
 </script>
 
 <div data-deferred>
   {#if variant === 'a'}
-    <VariantA />
+    <DeferredA />
   {:else}
-    <VariantB />
+    <DeferredB />
   {/if}
   {#if variant === 'never'}
-    <Never />
+    <DeferredNever />
   {/if}
 </div>
 

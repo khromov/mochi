@@ -49,6 +49,8 @@ describe('rendered-only CSS links (prebuilt manifest)', () => {
     expect(manifest.trackedCss).not.toContain(key('Global.svelte'));
     expect(manifest.islandCss?.[key('Toggle.svelte')]?.sort()).toEqual([key('Hidden.svelte'), key('Toggle.svelte')]);
     expect(manifest.islandCss?.[key('Widget.svelte')]).toEqual([key('Widget.svelte')]);
+    expect(manifest.islandCss?.[key('Loader.svelte')]?.sort()).toEqual([key('Lazy.svelte'), key('Loader.svelte')]);
+    expect(manifest.islandCss?.[key('Deferred.svelte')]?.sort()).toEqual(['Deferred.svelte', 'DeferredA.svelte', 'DeferredB.svelte', 'DeferredNever.svelte'].map(key).sort());
     // Guards against a vacuous pass below: the pruned components are in the page's static graph.
     expect(manifest.components[key('Page.svelte')]?.cssComponents).toContain(key('Never.svelte'));
     for (const p of manifest.trackedCss ?? []) {
@@ -58,10 +60,9 @@ describe('rendered-only CSS links (prebuilt manifest)', () => {
 
   test('the page prunes like dev, from the manifest alone', async () => {
     const css = linkedCss(await (await fetch(`${base}/?variant=b`)).text());
-    expect(css).toEqual(expect.arrayContaining(['Always', 'VariantB', 'Global', 'Toggle', 'Hidden', 'Widget']));
+    expect(css).toEqual(expect.arrayContaining(['Always', 'Shared', 'VariantB', 'Global', 'Toggle', 'Hidden', 'Widget', 'Loader', 'Lazy', 'Deferred', 'DeferredB']));
     expect(css).not.toContain('VariantA');
     expect(css).not.toContain('Never');
-    expect(css).not.toContain('Deferred');
     expect(compiled.filter((p) => p.startsWith(FIXTURES))).toEqual([]);
   });
 
@@ -70,6 +71,6 @@ describe('rendered-only CSS links (prebuilt manifest)', () => {
     const wrapper = html.match(/<mochi-server-island component-name="(Deferred_\w+)" signed-props="([^"]+)"/);
     expect(wrapper).not.toBeNull();
     const fragment = await (await fetch(`${base}/_mochi/island/${wrapper![1]}?props=${encodeURIComponent(wrapper![2]!)}`)).text();
-    expect(linkedCss(fragment)).toEqual(['VariantB']);
+    expect(linkedCss(fragment)).toEqual(['DeferredB']);
   });
 });
