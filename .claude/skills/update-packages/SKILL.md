@@ -103,7 +103,7 @@ Green tests are necessary but nowhere near sufficient. Work down this list; the 
 
 1. **`bun run syncpack`** — cross-workspace version agreement. Peer ranges are checked too, so if a dep's new version raises a peer requirement, update the corresponding `peerDependencies` entry in `packages/mochi/package.json` to match.
 
-2. **`bun run checks`** — lint:fix + format + typecheck + test. Per CLAUDE.md, delegate to a Sonnet sub-agent that reports only pass/fail plus failures. **It can run well past 10 minutes** — the framework's per-file test isolation (`run-tests.ts` spawns one `bun test` process per file) is the long pole. A single foreground `Bash` call caps at the 10-minute tool max, so a sub-agent that runs `bun run checks 2>&1 | tail` foreground will hit that ceiling and "complete" with no verdict while the process keeps running detached. Instead have the sub-agent **run it in the background** (tee to a log) and **poll the log for the final `Exited with code N`** on a ~20-minute budget before reporting. Don't launch a second `checks` run while one is still alive (`pgrep -f "bun run checks"`).
+2. **`bun run checks`** — lint:fix + format + typecheck + test. Delegate to a Sonnet sub-agent per CLAUDE.md (background run, poll the log); after a dependency sweep, give it a ~20-minute budget before reporting.
 
 3. **`bun run build`** — full workspace prebuild. **Capture the summary lines and compare them against the same build before the update.** Watch for:
    - page / client-file / island counts moving unexpectedly

@@ -19,11 +19,11 @@
     "@nprapps/sidechain": "^1.1.5",
     "mochi-framework": "workspace:*",
     "mochi-shared": "workspace:*",
-    "svelte": "^5.56.8"
+    "svelte": "^5.57.3"
   },
   "devDependencies": {
-    "@types/bun": "1.4.1",
-    "devalue": "^5.9.0",
+    "@types/bun": "1.4.4",
+    "devalue": "^5.9.4",
     "svelte-check": "4.7.4",
     "typescript": "^6.0.3"
   },

@@ -5,6 +5,7 @@ import chokidar from 'chokidar';
 import debounce from '../vendor/debounce/index';
 import type { ComponentRegistry } from '../compiler/ComponentRegistry';
 import { resetPrerenderEvaluationCache } from '../compiler/prerenderModules';
+import { resolveOutDir } from '../compiler/resolveOutDir';
 import { mochiEvents } from '../events';
 import type { MochiFileChangeType } from '../events';
 import { logger } from '../utils/log';
@@ -12,6 +13,8 @@ import { evictPreprocessCacheEntry } from '../compiler/preprocessCache';
 import { extractServeOptions } from '../cli/extractServeOptions';
 import { startCronRuntime, stopCronRuntime } from '../queue';
 import { cronSignature, type MochiCronJob } from '../cron';
+import { reloadImageOptions } from '../image/config';
+import type { MochiImageOptions } from '../image/types';
 import type { MochiQueueStorage } from '../queue';
 import { buildPublicUrl } from '../runtime/proxy';
 import { resolvePublicFiles, registerPublicRoutes, type PublicRouteGuard } from '../runtime/publicDir';
@@ -343,6 +346,7 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     }
     reloadSpeculationRules?.(serveOptions.speculationRules);
     await reconcileCron(serveOptions as { cron?: MochiCronJob[]; cronStorage?: MochiQueueStorage; queueShutdownTimeout?: number });
+    reloadImage(serveOptions.image);
     const freshRoutes = serveOptions.routes as Record<string, unknown>;
 
     const newComponentPaths = new Set<string>();
@@ -380,6 +384,18 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
       logger.info(`[cron] re-registered ${cron.length} job(s) after edit`);
     } catch (err) {
       logger.warn(`[cron] reload failed — no schedule is running; fix the error and save again: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  function reloadImage(image: MochiImageOptions | undefined): void {
+    try {
+      const restartFields = reloadImageOptions(image);
+      if (restartFields.length > 0) {
+        const fields = restartFields.map((f) => `image.${f}`).join(', ');
+        logger.warn(`[image] ${fields} changed — restart the dev server to apply ${restartFields.length > 1 ? 'them' : 'it'}`);
+      }
+    } catch (err) {
+      logger.warn(`[image] reload failed — keeping the previous image config: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -661,9 +677,17 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
   });
 
   const finalWatchPaths = watchPaths.filter((p) => existsSync(p));
-  const outDirAbs = path.resolve(outDir);
+  const outDirAbs = resolveOutDir(outDir);
+  // Both sides go through the same canonicalisation, or a project root reached through a symlink spells the watched
+  // file one way and the out-dir another, and artifacts we just wrote look like user edits.
   const isInsideOutDir = (filePath: string): boolean => {
-    const abs = path.resolve(filePath);
+    let abs: string;
+    try {
+      abs = resolveOutDir(filePath);
+    } catch {
+      // An unreadable watched path must not take the watcher down, and it is not an artifact we wrote.
+      abs = path.resolve(filePath);
+    }
     return abs === outDirAbs || abs.startsWith(outDirAbs + path.sep);
   };
   const watcher = chokidar.watch(finalWatchPaths, {

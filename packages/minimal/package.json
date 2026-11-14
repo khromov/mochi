@@ -15,10 +15,10 @@
   },
   "dependencies": {
     "mochi-framework": "workspace:*",
-    "svelte": "^5.56.8"
+    "svelte": "^5.57.3"
   },
   "devDependencies": {
-    "@types/bun": "1.4.1",
+    "@types/bun": "1.4.4",
     "svelte-check": "4.7.4",
     "typescript": "^6.0.3"
   },

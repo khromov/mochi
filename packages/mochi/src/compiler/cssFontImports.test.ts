@@ -2,7 +2,26 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { ComponentRegistry } from './ComponentRegistry';
+import { parseCss, type CssDocument } from './cssAst';
 import { fontContentHash } from './cssFontAssets';
+
+// Read bundled output through the same css-tree AST production uses, which decodes quoting, so these assertions don't
+// depend on how Bun prints a url() or format().
+function parsed(css: string): CssDocument {
+  const doc = parseCss(css);
+  if (!doc) {
+    throw new Error(`css-tree could not parse the bundled stylesheet:\n${css}`);
+  }
+  return doc;
+}
+
+function urlValues(css: string): string[] {
+  return parsed(css).urls.map((url) => url.value);
+}
+
+function relativePng(css: string, stem: string): string | undefined {
+  return urlValues(css).find((value) => !value.startsWith('data:') && value.includes(stem) && value.endsWith('.png'));
+}
 
 function fakeFont(size: number, seed: number): Uint8Array {
   const bytes = new Uint8Array(size);
@@ -76,14 +95,16 @@ describe('CSS imports — font asset extraction', () => {
   }
 
   test('rewrites the large woff2 to a served font URL and drops the base64 payload', () => {
-    const css = bundledCss();
-    // Bun unquotes the plain `woff2` format keyword — both forms are valid CSS.
-    expect(css).toMatch(new RegExp(`url\\(/_mochi/fonts/demo-latin-400-normal-${fontContentHash(woff2)}\\.woff2\\)\\s*format\\(["']?woff2["']?\\)`));
+    const sources = parsed(bundledCss()).fontFaces.flatMap((face) => face.sources);
+    const served = sources.find((source) => source.url?.value === `/_mochi/fonts/demo-latin-400-normal-${fontContentHash(woff2)}.woff2`);
+    expect(served?.format).toBe('woff2');
   });
 
   test('drops the legacy woff source entirely', () => {
     const css = bundledCss();
-    expect(css).not.toMatch(/format\(["']?woff["']?\)/);
+    const sources = parsed(css).fontFaces.flatMap((face) => face.sources);
+    expect(sources.length).toBeGreaterThan(0);
+    expect(sources.filter((source) => source.format === 'woff')).toEqual([]);
     expect(css).not.toContain('data:font/woff;');
   });
 
@@ -278,7 +299,7 @@ describe('CSS imports — fonts across Bun’s 128 kB copy threshold', () => {
     expect(css).toContain(largeUrl);
     expect(css).toContain(smallUrl);
     expect(css).not.toContain('data:font');
-    expect(css).not.toMatch(/url\(["']?\.?\.?\/?[\w-]+\.woff2["']?\)/);
+    expect(urlValues(css).filter((value) => value.endsWith('.woff2') && !value.startsWith('/_mochi/fonts/'))).toEqual([]);
     expectServed(registry, largeUrl, largeBytes);
     expectServed(registry, smallUrl, smallBytes);
     // Nothing of Bun's own making is left beside the stylesheet, where no route would serve it.
@@ -364,7 +385,7 @@ describe('CSS imports — non-font assets Bun emits', () => {
 
   test('serves the large image at the URL the stylesheet resolves to', () => {
     const css = registry.getClientFile(cssUrl)!;
-    const relative = css.match(/url\(["']?([^"')]*large[^"')]*\.png)["']?\)/)?.[1];
+    const relative = relativePng(css, 'large');
     expect(relative).toBeDefined();
 
     const resolved = new URL(relative!, `http://localhost${cssUrl}`).pathname;
@@ -377,13 +398,13 @@ describe('CSS imports — non-font assets Bun emits', () => {
   test('leaves the small image inlined, with nothing to serve', () => {
     const css = registry.getClientFile(cssUrl)!;
     expect(css).toContain(`data:image/png;base64,${Buffer.from(smallBytes).toString('base64')}`);
-    expect(css).not.toMatch(/url\(["']?[^"')]*small[^"')]*\.png["']?\)/);
+    expect(relativePng(css, 'small')).toBeUndefined();
     expect(readdirSync(path.join(outDir, 'import-css')).filter((f) => f.endsWith('.png'))).toHaveLength(1);
   });
 
   test('round-trips through the manifest', async () => {
     const css = registry.getClientFile(cssUrl)!;
-    const resolved = new URL(css.match(/url\(["']?([^"')]*large[^"')]*\.png)["']?\)/)![1]!, `http://localhost${cssUrl}`).pathname;
+    const resolved = new URL(relativePng(css, 'large')!, `http://localhost${cssUrl}`).pathname;
     const manifestPath = path.join(outDir, 'manifest.json');
     await Bun.write(manifestPath, JSON.stringify(registry.toManifest()));
     const restored = await ComponentRegistry.fromManifest(manifestPath, false);
@@ -436,7 +457,7 @@ describe('CSS imports — an emitted asset shared by two stylesheets', () => {
 
     for (const [url, css] of sheets) {
       expect(css).toContain(fontUrl);
-      const relative = css.match(/url\(["']?([^"')]*shared[^"')]*\.png)["']?\)/)?.[1];
+      const relative = relativePng(css, 'shared');
       expect(relative).toBeDefined();
       expect(registry.getImportedCssAsset(new URL(relative!, `http://localhost${url}`).pathname)).toBeDefined();
     }
@@ -463,7 +484,7 @@ describe('CSS imports — an emitted asset shared by two stylesheets', () => {
     expect(pngRows).toHaveLength(1);
 
     const [url, css] = [...registry.getClientFiles().entries()].find(([u]) => u.includes('/import-css/') && u.endsWith('.css'))!;
-    const relative = css.match(/url\(["']?([^"')]*shared[^"')]*\.png)["']?\)/)?.[1];
+    const relative = relativePng(css, 'shared');
     const asset = registry.getImportedCssAsset(new URL(relative!, `http://localhost${url}`).pathname);
     expect(asset).toBeDefined();
     expect(readFileSync(asset!.diskPath).equals(imageBytes)).toBe(true);
@@ -526,7 +547,14 @@ describe('CSS imports — concurrent bundles sharing an emitted asset', () => {
 
   test('the shared non-font copy lands on one canonical name across every bundle', () => {
     const sheets = [...registry.getClientFiles().entries()].filter(([u]) => u.includes('/import-css/') && u.endsWith('.css'));
-    const names = new Set(sheets.map(([, css]) => /url\(\.\/([^)"']+\.png)\)/.exec(css)?.[1]));
+    // The AST yields each url() value with its quotes decoded, as production reads it, so Bun 1.4.4's bare
+    // `url(./x.png)` and later versions' quoted form (oven-sh/bun#47025) give the same value.
+    const names = new Set(
+      sheets.map(([, css]) => {
+        const pngs = urlValues(css).filter((value) => value.endsWith('.png'));
+        return pngs.length === 1 && pngs[0]!.startsWith('./') ? pngs[0]!.slice('./'.length) : undefined;
+      }),
+    );
 
     // One name, not one per bundle: a per-build suffix surviving into the served name would point each stylesheet at
     // its own copy of identical bytes, and change that name on every rebuild.

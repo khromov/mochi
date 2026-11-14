@@ -66,6 +66,9 @@ declare module 'mochi-framework' {
    */
   export function emitIslandProps(value: unknown): string;
 
+  /** Internal: `<Image>`'s served `width`/`height` once the variant is cached, else `null`. The client virtual module stubs it with `null`. */
+  export function cachedImageDimensions(src: string, size: string): Promise<{ width: number; height: number } | null>;
+
   /**
    * Svelte attachment that progressively enhances a `<form method="POST">`. The server's action handler runs as usual
    * while the response becomes a JSON envelope (`MochiEnhanceResult`) in place of a re-rendered HTML page.
