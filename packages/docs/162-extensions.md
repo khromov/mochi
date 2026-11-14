@@ -206,6 +206,24 @@ await Mochi.serve({
 
 Default is `DEFAULT_INLINE_BUDGET` (32). Return `0` to send every nested island of that fetch down the placeholder path — the same as `inlineNestedIslands: false` for that fetch.
 
+#### `serverIsland:groupUrlBudget`
+
+<VersionNote since="0.10.0" message="Island groups (and the serverIsland:groupUrlBudget filter with DEFAULT_GROUP_URL_BUDGET) ship in the next Mochi release (0.10.0). This section describes the upcoming API." />
+
+The longest `/_mochi/island-group/…?g=` URL Mochi will mint before splitting a [group](/docs/server-islands/#grouping-server-islands) into several requests. Resolved once per render that collected a grouped island. Sync.
+
+```ts
+import { DEFAULT_GROUP_URL_BUDGET } from 'mochi-framework';
+
+await Mochi.serve({
+  // Behind a proxy with a larger request-line limit, fewer splits.
+  filters: { 'serverIsland:groupUrlBudget': () => 6000 },
+  routes,
+});
+```
+
+Default is `DEFAULT_GROUP_URL_BUDGET` (1800). Raise it only if you control every proxy and CDN in front of the app; lower it if one of them is stricter.
+
 #### `payload:compressMinBytes`
 
 The minimum size (bytes) a server-island-prop or image payload must reach before Mochi deflates it ahead of encryption. Evaluated per payload. The filter receives the pre-encryption `payload` bytes. Sync. Default `DEFAULT_COMPRESS_MIN_BYTES` (80). Return `Infinity` to disable compression for a payload.

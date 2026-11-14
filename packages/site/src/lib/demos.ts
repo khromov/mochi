@@ -34,6 +34,7 @@ import { files as islandDepth } from '../demos/island-depth/files.ts';
 import { files as islandProps } from '../demos/island-props/files.ts';
 import { files as lazy } from '../demos/lazy/files.ts';
 import { files as lazyServerIsland } from '../demos/lazy-server-island/files.ts';
+import { files as islandGroups } from '../demos/island-groups/files.ts';
 import { files as login } from '../demos/login/files.ts';
 import { files as mdsvex } from '../demos/mdsvex/files.ts';
 import { files as nestedComponents } from '../demos/nested-components/files.ts';
@@ -365,6 +366,14 @@ export const demos: Demo[] = [
     files: lazyServerIsland,
     title: 'Lazy Server Islands',
     hook: 'How lazy server islands work — server islands marked mochi:defer:visible only fetch when the wrapper scrolls into view.',
+    category: 'hydration',
+  },
+  {
+    href: '/demos/island-groups/',
+    slug: 'island-groups',
+    files: islandGroups,
+    title: 'Grouped Server Islands',
+    hook: 'How island groups work — mochi:defer islands sharing a group name are sealed into one token and fetched in a single request.',
     category: 'hydration',
   },
   {

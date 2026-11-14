@@ -54,6 +54,7 @@ import { routes as hydrationRoutes } from './demos/hydration/routes';
 import { routes as islandPropsRoutes } from './demos/island-props/routes';
 import { routes as lazyRoutes } from './demos/lazy/routes';
 import { routes as lazyServerIslandRoutes } from './demos/lazy-server-island/routes';
+import { routes as islandGroupsRoutes } from './demos/island-groups/routes';
 import { routes as leakTestRoutes } from './leak-test/routes';
 import { routes as islandDepthRoutes } from './demos/island-depth/routes';
 import { routes as loginRoutes } from './demos/login/routes';
@@ -382,6 +383,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...islandPropsRoutes,
   ...lazyRoutes,
   ...lazyServerIslandRoutes,
+  ...islandGroupsRoutes,
   ...(DEVELOPMENT ? leakTestRoutes : {}),
   ...islandDepthRoutes,
   ...loginRoutes,

@@ -62,6 +62,7 @@ import Table from '@lucide/svelte/icons/table';
 import SunMoon from '@lucide/svelte/icons/sun-moon';
 import CalendarClock from '@lucide/svelte/icons/calendar-clock';
 import FolderOpen from '@lucide/svelte/icons/folder-open';
+import Combine from '@lucide/svelte/icons/combine';
 
 export interface DemoIconMeta {
   icon: Component;
@@ -94,6 +95,7 @@ export const demoIconFor: Record<string, DemoIconMeta> = {
   'Client-only Islands': { icon: MonitorSmartphone, label: 'No SSR — mounts in the browser' },
   'Lazy Islands': { icon: Telescope, label: 'Hydrate when visible' },
   'Lazy Server Islands': { icon: Eye, label: 'Fetch server island when visible' },
+  'Grouped Server Islands': { icon: Combine, label: 'Many mochi:defer islands in one request' },
   'Font loading': { icon: Type, label: 'Bundle fontsource + standalone fonts' },
   'Crossing the server-client boundary with props': { icon: Package2, label: 'Props serialized into the island — every devalue type' },
   'HTML Entities in Props': { icon: Ampersand, label: 'HTML entities in static island props decode across SSR + hydration' },

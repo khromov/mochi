@@ -6,12 +6,16 @@ export interface MochiDeferOptions {
   retries?: number;
   name?: string;
   inline?: boolean;
+  /** Fetch every `mochi:defer` island sharing this group name on the page in one request. */
+  group?: string;
 }
 
 export interface MochiDeferVisibleOptions {
   rootMargin?: string;
   retries?: number;
   name?: string;
+  /** Fetch every `mochi:defer` island sharing this group name on the page in one request. */
+  group?: string;
 }
 
 export interface MochiClientOnlyVisibleOptions {

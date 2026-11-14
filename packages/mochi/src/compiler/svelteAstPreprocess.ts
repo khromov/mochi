@@ -288,6 +288,12 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         const childrenSource = comp.fragment.nodes.map((n) => source.slice(n.start, n.end)).join('');
         const alsoHydrateAttrs = directives.hydrate ? ` also-hydrate="${alsoHydrateMode}" component-url="__MOCHI_COMPONENT_URL__${islandKey}__"` : '';
 
+        // A `{ group }` can only come from a directive-options object, so option-less call sites keep sealing their token
+        // inline — the grouping helper's `{@const}` and attribute indirection only appear where a group is possible.
+        const groupAttrs = serverOptionsExpr ? ` signed-props={__mochi_gi__.token} server-group={__mochi_gi__.groupId} group-member={__mochi_gi__.member}` : null;
+        const groupConst = (propsJsonExpr: string) =>
+          `{@const __mochi_gi__ = __mochi_island_attrs__(__mochi_sopts__, ${JSON.stringify(islandKey)}, ${propsJsonExpr}, __mochi_iid, ${isServerVisible})}`;
+
         let replacement: string;
         if (isServerVisible) {
           // `mochi:defer:visible` defers the fetch until the wrapper enters the viewport (`rootMargin` rides inside the
@@ -297,12 +303,17 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           // Server islands always emit signed-props, since islandId is always injected and every prop must be encrypted
           // against reads and tampering via query parameters. The component name is bound as AAD, so a token sealed for
           // one component can't be replayed against another.
-          let attrs = `component-name="${islandKey}" signed-props={__mochi_encrypt_props__(__mochi_stringify__(${propsExpr}), ${JSON.stringify(islandKey)})} css-url="__MOCHI_SERVER_CSS_URL__${islandKey}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__" defer-on="visible"`;
+          let attrs = `component-name="${islandKey}"`;
+          attrs += groupAttrs ?? ` signed-props={__mochi_encrypt_props__(__mochi_stringify__(${propsExpr}), ${JSON.stringify(islandKey)})}`;
+          attrs += ` css-url="__MOCHI_SERVER_CSS_URL__${islandKey}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__" defer-on="visible"`;
           if (serverOptionsExpr) {
-            attrs += ` server-options={JSON.stringify(${serverOptionsExpr})}`;
+            attrs += ` server-options={__mochi_gi__.options}`;
           }
           attrs += alsoHydrateAttrs;
-          replacement = `{#if true}{@const __mochi_iid = \`\${${pid}}-\${__mochi_uid__++}\`}<mochi-server-island ${attrs}>${childrenSource}</mochi-server-island>{/if}`;
+          const consts =
+            `{@const __mochi_iid = \`\${${pid}}-\${__mochi_uid__++}\`}` +
+            (serverOptionsExpr ? `{@const __mochi_sopts__ = (${serverOptionsExpr})}${groupConst(`__mochi_stringify__(${propsExpr})`)}` : '');
+          replacement = `{#if true}${consts}<mochi-server-island ${attrs}>${childrenSource}</mochi-server-island>{/if}`;
         } else {
           // Non-visible defer sites branch at render time: inside an island-endpoint render (`shouldInlineIsland`), the
           // child renders in-process instead of emitting another fetch placeholder — the props are the same values the
@@ -315,12 +326,16 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           // against reads and tampering via query parameters. The component name is bound as AAD, so a token sealed for
           // one component can't be replayed against another. Spreading `__mochi_props__` first keeps the envelope's key
           // order — and with it the deterministic encrypted token — byte-identical to the pre-inlining emission.
-          let attrs = `component-name="${islandKey}" signed-props={__mochi_encrypt_props__(__mochi_stringify__(${envelope}), ${JSON.stringify(islandKey)})} css-url="__MOCHI_SERVER_CSS_URL__${islandKey}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__"`;
+          let attrs = `component-name="${islandKey}"`;
+          attrs += groupAttrs ?? ` signed-props={__mochi_encrypt_props__(__mochi_stringify__(${envelope}), ${JSON.stringify(islandKey)})}`;
+          attrs += ` css-url="__MOCHI_SERVER_CSS_URL__${islandKey}__" data-asset-prefix="__MOCHI_ASSET_PREFIX__"`;
           if (optsRef) {
-            attrs += ` server-options={JSON.stringify(${optsRef})}`;
+            attrs += ` server-options={__mochi_gi__.options}`;
           }
           attrs += alsoHydrateAttrs;
-          const placeholder = `<mochi-server-island ${attrs}>${childrenSource}</mochi-server-island>`;
+          // The grouping helper registers the island with its group, so it must run only where the placeholder actually
+          // renders — inside each branch, not alongside the eager `{@const}`s the inline branch also evaluates.
+          const placeholder = `${groupAttrs ? groupConst(`__mochi_stringify__(${envelope})`) : ''}<mochi-server-island ${attrs}>${childrenSource}</mochi-server-island>`;
 
           let inlineBody: string;
           if (directives.hydrate) {
@@ -463,7 +478,8 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
       }
     }
     if (needsSignProps) {
-      imports += '\nimport { encryptProps as __mochi_encrypt_props__, shouldInlineIsland as __mochi_inline_island__ } from "mochi-server-island-runtime";';
+      imports +=
+        '\nimport { encryptProps as __mochi_encrypt_props__, shouldInlineIsland as __mochi_inline_island__, serverIslandAttrs as __mochi_island_attrs__ } from "mochi-server-island-runtime";';
     }
     s.appendRight(contentStart, imports);
   }

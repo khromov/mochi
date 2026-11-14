@@ -43,9 +43,15 @@
     eager: ' + mochi:hydrate',
   };
 
-  function describeServerIslandMode(deferOn: string | null, alsoHydrate: string | null): string {
+  function describeServerIslandMode(element: Element): string {
+    // A grouped member never fetches for itself, so its own `defer-on` is meaningless — the group’s coordinator
+    // holds the trigger. Read both from there.
+    const groupId = element.getAttribute('server-group');
+    const coordinator = groupId ? document.querySelector(`mochi-island-group[group-id="${groupId}"]`) : null;
+    const deferOn = (coordinator ?? element).getAttribute('defer-on');
     const base = deferOn === 'visible' ? 'mochi:defer:visible' : 'mochi:defer';
-    return base + (HYDRATE_SUFFIX[alsoHydrate ?? ''] ?? '');
+    const group = coordinator ? ` (group "${coordinator.getAttribute('group')}")` : '';
+    return base + group + (HYDRATE_SUFFIX[element.getAttribute('also-hydrate') ?? ''] ?? '');
   }
 
   // Island `component-name`s are `<localName>_<base36 hash of resolved path>` (see `islandIdentity` in
@@ -92,6 +98,7 @@
         propsSize,
         rawProps,
         signedProps: null,
+        propsKey: null,
         propsRef,
         shared,
         serverOptions: null,
@@ -100,8 +107,11 @@
 
     server.forEach((element) => {
       const name = element.getAttribute('component-name') ?? 'unknown';
-      const mode = describeServerIslandMode(element.getAttribute('defer-on'), element.getAttribute('also-hydrate'));
+      const mode = describeServerIslandMode(element);
       const signedProps = element.getAttribute('signed-props');
+      // A grouped island carries no token of its own — its props ride in the shared group token, so the SSR snapshot
+      // was recorded under its wrapper id instead.
+      const propsKey = signedProps ?? element.getAttribute('group-member');
       const propsSize = signedProps?.length ?? 0;
       result.push({
         element: element as HTMLElement,
@@ -112,6 +122,7 @@
         propsSize,
         rawProps: null,
         signedProps,
+        propsKey,
         propsRef: null,
         shared: false,
         serverOptions: element.getAttribute('server-options'),

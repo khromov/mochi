@@ -165,6 +165,94 @@ Size the fallback to match the loaded content, or the swap shifts the page. The 
 }
 ```
 
+### Grouping server islands
+
+<VersionNote since="0.10.0" message="Island groups were added in 0.10.0." />
+
+Give several `mochi:defer` islands the same `group` name and Mochi fetches all of them in **one** request instead of one per island. Use it for a list that repeats the same small island — star badges on project cards, price tags on a product grid, presence dots on a member list.
+
+```svelte
+{#each projects as project (project.repo)}
+  <article>
+    <h3>{project.name}</h3>
+    <RepoStars mochi:defer={{ group: 'stars' }} repo={project.repo}>
+      <span class="skeleton"></span>
+    </RepoStars>
+  </article>
+{/each}
+```
+
+Twelve cards, one `/_mochi/island-group/stars` request.
+
+Islands in a group do not have to be the same component. Anything on the page sharing the name travels together:
+
+```svelte
+<RepoStars mochi:defer={{ group: 'sidebar' }} repo="sveltejs/svelte" />
+<ActivityFeed mochi:defer={{ group: 'sidebar' }} limit={5} />
+```
+
+A `group` must be a non-empty string — anything else warns and leaves the island ungrouped, the same way `name` does. A group of one is legal and behaves like an ordinary defer.
+
+#### How it works
+
+During SSR each grouped call site registers its props instead of sealing its own token. After the page renders, Mochi seals the whole group into one encrypted token — component names deduplicated into an index, then deflated before encryption — and emits a `<mochi-island-group>` element after the last member. That element fetches the group, and Mochi swaps each member's HTML into its own wrapper.
+
+Sealing once is what makes the request small. The repetitive part of the payload is the plaintext, so compressing before encrypting shrinks it far more than packing N already-encrypted tokens into one URL:
+
+| Islands, props `{ repo }` | Plain `mochi:defer` | N tokens in one URL     | Grouped                      |
+| ------------------------- | ------------------- | ----------------------- | ---------------------------- |
+| 12                        | 12 requests         | 1 request, 1 526 chars  | **1 request, 407 chars**     |
+| 30                        | 30 requests         | 1 request, 3 830 chars  | **1 request, 721 chars**     |
+| 100                       | 100 requests        | 1 request, 12 790 chars | **2 requests, ≤1 092 chars** |
+
+<Callout type="warning">
+
+**A group splits automatically when its URL would get too long.** Mochi caps each group URL at 1 800 characters — comfortably under the ~2 000 every browser accepts and the 8 kB request line nginx and most CDNs allow by default — and seals an oversized group into as many tokens as it takes, one request each. A hundred islands become two requests instead of a hundred, or one 414. Tune the cap with the `serverIsland:groupUrlBudget` filter (see [Extensions](/docs/extensions/)).
+
+Compression only helps when the props repeat. Keep passing identifiers and fetching data inside the island, and even large groups stay in one request.
+
+</Callout>
+
+#### Failure isolation
+
+A member whose render throws answers with the same failure stub a lone island would, and its siblings render normally — one bad island never blanks the group. Author `<svelte:boundary>` inside the component to degrade more gracefully.
+
+A failed **request** is different: the group is the fetch unit, so it retries as a whole with the usual backoff. Set `retries` on any member and it applies to the group.
+
+#### Reloading a group
+
+The group name is itself a reload handle:
+
+```ts
+await reloadDeferredIsland('stars'); // re-fetches every member, in one request
+```
+
+`name` still works on individual members, but **a reload of any member reloads its whole group** — there is no per-member request to re-issue. Reloads are coalesced, so naming twelve members and calling `reloadDeferredIsland('cart')` still costs one request.
+
+`deferReloadState(name)` works under either handle. Its `reloading` flag tracks the group under both; `count` and `lastReloadOk` record the rounds started through the handle you read.
+
+#### Lazy groups
+
+`mochi:defer:visible` works with `group`, but laziness applies to the group, not the member: the group waits until **any** member scrolls into view, then fetches every member at once. A group is lazy only when _every_ member is `mochi:defer:visible` — mix in one eager `mochi:defer` and the whole group fetches eagerly.
+
+```svelte
+{#each projects as project (project.repo)}
+  <RepoStars mochi:defer:visible={{ group: 'stars', rootMargin: '200px' }} repo={project.repo} />
+{/each}
+```
+
+#### Combining with the rest
+
+- **`mochi:hydrate`** behaves exactly as it does for a lone island: the member comes back wrapped for hydration, with its props echoed back in plaintext. The same warning applies — don't pass secrets to an island you also hydrate.
+- **Nested islands** inside a grouped member still [inline](#nesting-islands-inside-a-server-island) into the group's render, and a nested group of its own is fetched from the swapped-in fragment.
+- **CSS** for every member is delivered with the group response, deduplicated across the whole group.
+
+<Callout type="info">
+
+**The group waits for the page to finish parsing.** The coordinator element sits after the last member, so the request starts once the browser has seen all of them. That is a few milliseconds on a normal page, and it is what makes one request possible — but it does mean a grouped island starts slightly later than an ungrouped one, and the group's content arrives at the speed of its slowest member. Leave a slow island out of the group — without `group` it keeps its own fetch and paints as soon as it is ready.
+
+</Callout>
+
 ### Nesting islands inside a server island
 
 A server island's content is a full render, so it can contain `mochi:hydrate` islands and further `mochi:defer` server islands. Hydratable children hydrate once the deferred HTML lands.
@@ -257,5 +345,6 @@ demos={[
 { href: "/demos/defer-invalidation/", title: "Invalidate mochi:defer islands", hook: "How to reload server islands on demand — name a mochi:defer island and call reloadDeferredIsland(name) from the browser to re-fetch its server HTML." },
 { href: "/demos/nested-islands/", title: "Nested Islands", hook: "How nested islands work — a mochi:defer server island wrapping mochi:hydrate components, and server islands nesting more server islands." },
 { href: "/demos/lazy-server-island/", title: "Lazy Server Islands", hook: "How lazy server islands work — server islands marked mochi:defer:visible only fetch when the wrapper scrolls into view." },
+{ href: "/demos/island-groups/", title: "Grouped Server Islands", hook: "How island groups work — mochi:defer islands sharing a group name are sealed into one token and fetched in a single request." },
 ]}
 />

@@ -26,20 +26,28 @@ function jsonSafeReplacer(_key: string, value: unknown): unknown {
   return value;
 }
 
+/**
+ * Record a decoded props snapshot for the debug bar under the key its wrapper exposes — the `signed-props` token for a
+ * lone island, the `group-member` id for one sealed into a group. Best-effort: failures never break a render.
+ */
+export function recordServerProps(key: string, propsJson: string): void {
+  try {
+    const ctx = requestContext.getStore();
+    if (ctx?.debugBarData?.serverProps) {
+      ctx.debugBarData.serverProps[key] = JSON.stringify(devalParse(propsJson), jsonSafeReplacer, 2);
+    }
+  } catch {
+    // Debug recording is best-effort; ignore failures.
+  }
+}
+
 export function encryptProps(propsJson: string, componentName: string): string {
   const { options } = getMochiConfig();
   const token = encryptPayload(propsJson, { aad: componentName, compress: options.compressServerIslandProps ?? true });
 
   // Encrypted props are opaque on the wire, so the debug bar reads this decoded snapshot instead, keyed by the token
-  // the client sees in `signed-props`. Best-effort: failures are ignored so encryption never depends on it.
-  try {
-    const ctx = requestContext.getStore();
-    if (ctx?.debugBarData?.serverProps) {
-      ctx.debugBarData.serverProps[token] = JSON.stringify(devalParse(propsJson), jsonSafeReplacer, 2);
-    }
-  } catch {
-    // Debug recording is best-effort; ignore failures.
-  }
+  // the client sees in `signed-props`.
+  recordServerProps(token, propsJson);
 
   return token;
 }

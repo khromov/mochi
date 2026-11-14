@@ -28,13 +28,13 @@
 
   async function buildDisplay(): Promise<PropsDisplay> {
     if (island.type === 'server') {
-      if (!island.signedProps) {
+      if (!island.propsKey) {
         return { text: '(no props)' };
       }
       // Server-island props are encrypted (opaque on the wire), so they can't be
       // decoded client-side. The SSR pass records the decoded snapshot keyed by
-      // the token; look it up by the token in the `signed-props` attribute.
-      const recorded = window.__mochi_debug?.serverProps?.[island.signedProps];
+      // the `signed-props` token, or by the `group-member` id for a grouped island.
+      const recorded = window.__mochi_debug?.serverProps?.[island.propsKey];
       if (recorded) {
         try {
           const { islandId, ...rest } = JSON.parse(recorded) as Record<string, unknown>;
@@ -46,7 +46,7 @@
           // Fall through to the opaque-size fallback.
         }
       }
-      return { text: `(encrypted props, ${island.propsSize} bytes)` };
+      return island.signedProps ? { text: `(encrypted props, ${island.propsSize} bytes)` } : { text: `(props sealed into the island group)` };
     }
     if (!island.rawProps) {
       return { text: '(no props)' };

@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { MochiCookieJar } from './cookies';
+import type { IslandGroupState } from '../islands/islandGroups';
 import type { IslandPropsEntry } from '../islands/islandPropsRegistry';
 import type { MochiFormResult } from '../types';
 import type { MochiRateLimitInfo } from './rateLimit';
@@ -55,6 +56,12 @@ export interface MochiRequestContext {
    * expansions per request so recursive island chains degrade to placeholders instead of looping.
    */
   islandInline?: { budget: number };
+  /**
+   * Per-render collector for `mochi:defer={{ group }}` call sites, armed by `renderComponent` and drained into the
+   * `<mochi-island-group>` coordinators it appends after the body. Absent outside a render, which is what makes a
+   * grouped island fall back to an ordinary defer in email/static renders.
+   */
+  islandGroups?: Map<string, IslandGroupState>;
 }
 
 export interface BundleInfo {
@@ -103,7 +110,7 @@ export interface DebugBarData {
   /** Images produced via `getImageUrl()` / `<Image>` / `getImage()` during this request, with decoded params. */
   images?: ImageDebugEntry[];
   requestCache?: RequestCacheStats;
-  /** Decoded server-island props keyed by the encrypted `signed-props` token, since the client sees only the opaque token. */
+  /** Decoded server-island props keyed by the wrapper's `signed-props` token — or its `group-member` id for a grouped island, whose props ride in the shared group token. */
   serverProps?: Record<string, string>;
   mochiVersion?: string;
   svelteVersion?: string;

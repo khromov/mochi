@@ -14,6 +14,8 @@ import {
   toCompileErrorLogs,
   toPosixPath,
 } from '../utils';
+import { DEFAULT_GROUP_URL_BUDGET, renderIslandGroupMarkup } from '../islands/islandGroups';
+import type { IslandGroupState } from '../islands/islandGroups';
 import { injectIslandPropsBlock } from '../islands/islandPropsRegistry';
 import { requestContext, renderDetached } from '../runtime/requestContext';
 import type { DebugBarData } from '../runtime/requestContext';
@@ -804,7 +806,8 @@ export class ComponentRegistry {
           contents: [
             `import { encryptProps } from "${toPosixPath(path.join(SRC_DIR, 'islands/serverIslandCrypto.ts'))}";`,
             `import { shouldInlineIsland } from "${toPosixPath(path.join(SRC_DIR, 'islands/inlineServerIslands.ts'))}";`,
-            `export { encryptProps, shouldInlineIsland };`,
+            `import { serverIslandAttrs } from "${toPosixPath(path.join(SRC_DIR, 'islands/islandGroups.ts'))}";`,
+            `export { encryptProps, shouldInlineIsland, serverIslandAttrs };`,
           ].join('\n'),
           loader: 'js',
         }));
@@ -1703,13 +1706,29 @@ export class ComponentRegistry {
     const ctx = requestContext.getStore();
     ctx?.islandProps.clear();
 
+    // Armed for the duration of this render so grouped `mochi:defer` call sites collect instead of sealing their own
+    // token; the outer value is restored afterwards, since an error page rendered after a failed render shares the ctx.
+    const outerGroups = ctx?.islandGroups;
+    const islandGroups = new Map<string, IslandGroupState>();
+    if (ctx) {
+      ctx.islandGroups = islandGroups;
+    }
+
     const component = opts?.exportName && opts.exportName !== 'default' ? mod[opts.exportName] : mod.default;
     if (!component) {
       throw new Error(
         `renderComponent: ${filename} has no export "${opts?.exportName ?? 'default'}" — the compiled module and the island registry disagree (stale manifest or removed export).`,
       );
     }
-    const { body, head } = await render(component, renderOptions);
+    let body: string;
+    let head: string | undefined;
+    try {
+      ({ body, head } = await render(component, renderOptions));
+    } finally {
+      if (ctx) {
+        ctx.islandGroups = outerGroups;
+      }
+    }
 
     let output = body;
 
@@ -1795,6 +1814,13 @@ export class ComponentRegistry {
         });
       }
       output = rewriter.transform(output);
+    }
+
+    // After the rewriter so the coordinators land at the very end of this render's output — each one must upgrade only
+    // once every wrapper it drives has been parsed, which is what lets one fetch cover the whole group.
+    if (islandGroups.size > 0) {
+      output += renderIslandGroupMarkup(islandGroups, this.assetPrefix, applyFilter('serverIsland:groupUrlBudget', DEFAULT_GROUP_URL_BUDGET, { assetPrefix: this.assetPrefix }));
+      hasServerIslands = true;
     }
 
     let debugBarData: RenderResult['debugBarData'];

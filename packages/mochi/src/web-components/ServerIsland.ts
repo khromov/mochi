@@ -4,6 +4,7 @@
 import '../debug-bar/types';
 import { BOOTSTRAP_MARKER_ATTR } from '../islands/bootstrapMarker';
 import { isReloadableIslandName, notifyDeferredIslandChange, registerDeferredIsland, unregisterDeferredIsland } from '../islands/deferInvalidation';
+import { findIslandGroup, registerGroupMember, unregisterGroupMember } from './IslandGroup';
 
 // Key must match sharedCssTracker.ts for cross-bundle dedup with HydratableIsland.
 const _css: Set<string> = ((globalThis as unknown as Record<string, unknown>).__mochi_loaded_css__ ??= new Set()) as Set<string>;
@@ -14,6 +15,7 @@ class ServerIsland extends HTMLElement {
   _name: string | null = null;
   _inflight: Promise<boolean> | null = null;
   _everLoaded = false;
+  _groupId: string | null = null;
 
   connectedCallback() {
     if (this._loaded) {
@@ -21,6 +23,9 @@ class ServerIsland extends HTMLElement {
       // reachable by `reloadDeferredIsland` even if `server-options` was mangled in transit.
       if (this._name) {
         registerDeferredIsland(this._name, this);
+      }
+      if (this._groupId) {
+        registerGroupMember(this._groupId, this);
       }
       return;
     }
@@ -35,6 +40,15 @@ class ServerIsland extends HTMLElement {
       registerDeferredIsland(options.name, this);
     } else if (options.name !== undefined) {
       window.__mochi_warn?.(`[mochi] mochi:defer name must be a non-empty string; got ${JSON.stringify(options.name)} — the island will not be reloadable.`);
+    }
+
+    // A grouped island never fetches for itself — the `<mochi-island-group>` coordinator that follows it in the
+    // document fetches the whole group at once and swaps each member's fragment in. Its own `defer-on` is ignored:
+    // the group is the fetch unit, and it is lazy only when every member is.
+    this._groupId = this.getAttribute('server-group');
+    if (this._groupId) {
+      registerGroupMember(this._groupId, this);
+      return;
     }
 
     if (this.getAttribute('defer-on') === 'visible') {
@@ -64,6 +78,9 @@ class ServerIsland extends HTMLElement {
   disconnectedCallback() {
     if (this._name) {
       unregisterDeferredIsland(this._name, this);
+    }
+    if (this._groupId) {
+      unregisterGroupMember(this._groupId, this);
     }
   }
 
@@ -103,10 +120,54 @@ class ServerIsland extends HTMLElement {
     return tracked;
   }
 
+  /**
+   * Swap the fetched fragment in, loading the island's own scoped CSS alongside it and running any hydration bootstrap
+   * the fragment names. Shared with the group coordinator, which hands each member the bytes the single endpoint would
+   * have returned for it.
+   */
+  _applyHtml(html: string): void {
+    const cssUrl = this.getAttribute('css-url');
+    if (cssUrl && !_css.has(cssUrl)) {
+      _css.add(cssUrl);
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = cssUrl;
+      document.head.appendChild(link);
+    }
+
+    this._unmountChildren();
+
+    // SAFETY: HTML comes from our own same-origin server-island endpoint with encrypted props.
+    // If the island endpoint ever returns user-controlled content, this must be sanitized.
+    this.innerHTML = html;
+    this._everLoaded = true;
+
+    // A `<script>` set via innerHTML never runs, so the endpoint names the bootstrap in a leading marker instead.
+    // The module map dedupes this import against a bootstrap the page already shipped.
+    const marker = this.firstElementChild;
+    const bootstrapUrl = marker?.getAttribute(BOOTSTRAP_MARKER_ATTR);
+    if (marker && bootstrapUrl) {
+      marker.remove();
+      import(new URL(bootstrapUrl, document.baseURI).href).catch((err) => {
+        const msg = `[mochi] Server island "${this.getAttribute('component-name')}" failed to load the hydration bootstrap ${bootstrapUrl}: ${err}`;
+        if (window.__mochi_log_level !== 'silent') {
+          console.error(msg);
+        }
+        window.__mochi_warn?.(msg);
+      });
+    }
+  }
+
   // Queued behind any fetch already running rather than sharing it, so a reload issued after a
   // mutation observes it and a late-landing fetch cannot clobber newer content. The outcome
   // travels through the returned promise; `reloadDeferredIsland` aggregates it per round.
   reload(): Promise<boolean> {
+    // A grouped member has no request of its own, so a reload of any member reloads the group — coalesced, so naming
+    // twelve members still costs one request.
+    const group = this._groupId ? findIslandGroup(this._groupId) : undefined;
+    if (group) {
+      return group.reload();
+    }
     return this._track((this._inflight ?? Promise.resolve(true)).then(() => this._reload()));
   }
 
@@ -124,7 +185,8 @@ class ServerIsland extends HTMLElement {
   }
 
   isReloading(): boolean {
-    return this._inflight !== null;
+    const group = this._groupId ? findIslandGroup(this._groupId) : undefined;
+    return group ? group.isReloading() : this._inflight !== null;
   }
 
   async _fetchContent(options: Record<string, unknown> = {}): Promise<boolean> {
@@ -171,36 +233,7 @@ class ServerIsland extends HTMLElement {
           console.log(`${tag} loaded (attempt ${attempt}, ${(html.length / 1024).toFixed(1)}kB, alsoHydrate=${alsoHydrate || 'none'})`);
         }
 
-        const cssUrl = g('css-url');
-        if (cssUrl && !_css.has(cssUrl)) {
-          _css.add(cssUrl);
-          const link = document.createElement('link');
-          link.rel = 'stylesheet';
-          link.href = cssUrl;
-          document.head.appendChild(link);
-        }
-
-        this._unmountChildren();
-
-        // SAFETY: HTML comes from our own same-origin server-island endpoint with encrypted props.
-        // If the island endpoint ever returns user-controlled content, this must be sanitized.
-        this.innerHTML = html;
-        this._everLoaded = true;
-
-        // A `<script>` set via innerHTML never runs, so the endpoint names the bootstrap in a leading marker instead.
-        // The module map dedupes this import against a bootstrap the page already shipped.
-        const marker = this.firstElementChild;
-        const bootstrapUrl = marker?.getAttribute(BOOTSTRAP_MARKER_ATTR);
-        if (marker && bootstrapUrl) {
-          marker.remove();
-          import(new URL(bootstrapUrl, document.baseURI).href).catch((err) => {
-            const msg = `${tag} failed to load the hydration bootstrap ${bootstrapUrl}: ${err}`;
-            if (ll !== 'silent') {
-              console.error(msg);
-            }
-            window.__mochi_warn?.(msg);
-          });
-        }
+        this._applyHtml(html);
         return true;
       } catch (err) {
         lastErr = err;
