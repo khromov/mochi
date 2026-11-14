@@ -13,6 +13,7 @@ import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions, Moc
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
 import type { MochiJsMinifier } from './compiler/jsMinifier';
+import type { FontSubsetGroup } from './compiler/fontImportAttributes';
 import type { SpeculationRules } from './runtime/speculationRules';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | MochiRedirect | Promise<Record<string, unknown> | MochiRedirect>;
@@ -371,15 +372,17 @@ export interface MochiManifest {
   serverIslandExports?: Record<string, string>;
   /** Maps served asset URL → emitted asset details for locally-imported images (`import x from './x.png'`). `diskPath` is outDir-relative. */
   localImageAssets?: Record<string, LocalImageAsset>;
-  /** Maps encoded CSS-import source path (see `version`) → served URL (e.g. /import-css/inter-<hash>.css) */
+  /** Maps encoded stylesheet variant (see `version`) → served URL (e.g. /import-css/inter-<hash>.css). A variant is a CSS-import source path, with `#<hash>` appended when it was bundled for a font-subset request. */
   importedCssUrls?: Record<string, string>;
   /** Maps served font URL → binary font extracted from imported CSS. `diskPath` is outDir-relative. */
   fontAssets?: Record<string, { diskPath: string; contentType: string }>;
   /** Maps served URL → non-font asset the bundler emitted beside a stylesheet. `diskPath` is outDir-relative. */
   importCssAssets?: Record<string, { diskPath: string; contentType: string }>;
-  /** Maps encoded CSS-import source path (see `version`) → served URLs of its preload-worthy extracted fonts. */
+  /** Maps encoded stylesheet variant (see `version`) → served URLs of its preload-worthy extracted fonts. */
   importedCssFontPreloads?: Record<string, string[]>;
-  /** Maps encoded page entry path (see `version`) → the CSS-import paths reachable from it, likewise encoded. */
+  /** Maps encoded subsetted stylesheet variant → the stylesheet it bundles, likewise encoded, and the merged font-subset request it was built for. */
+  importedCssSubsets?: Record<string, { cssPath: string; groups: FontSubsetGroup[] }>;
+  /** Maps encoded page entry path (see `version`) → the stylesheet variants it links, likewise encoded. */
   entryImportedCss?: Record<string, string[]>;
   /** Prebuilt, minified ServerIsland inline web-component script, emitted by `build()` so production loads it from disk in place of a startup `Bun.build`. */
   serverIslandScript?: string;

@@ -80,6 +80,44 @@ await Mochi.serve({
 - **`preload`** — separately-fetched fonts are only discovered after the CSS arrives; preloading from the `<head>` closes that gap. Faces whose `unicode-range` excludes latin are skipped, and at most 8 fonts are preloaded per page.
 - **`inlineThreshold`** — Bun writes any `url()` asset of 128 kB or more to a file of its own, so fonts that large are always served separately whatever this is set to. That 128 kB cutoff is hardcoded in Bun and cannot currently be configured. Non-font assets over it (a background image, say) are served alongside the stylesheet; smaller ones stay inlined.
 
+### Font subsetting
+
+<VersionNote since="0.10.0" message="Earlier versions ignore import attributes on CSS imports and ship the full font." />
+
+A font file carries every glyph, and a variable one every weight. When you know the text a font renders, put it on the import and Mochi strips the file down to those glyphs — a 75 kB file becomes a few kB, small enough to inline:
+
+```svelte
+<!-- file: src/Hero.svelte -->
+<script>
+  import '@fontsource-variable/caveat' with { subset: "It's animated!", weight: '500' };
+</script>
+
+<p class="note">It's animated!</p>
+```
+
+| Attribute       | Effect                                                                                         |
+| --------------- | ---------------------------------------------------------------------------------------------- |
+| `subset`        | Required. Keeps the characters of this text.                                                   |
+| `weight`        | Pins a variable font's `wght` axis to one value.                                               |
+| `layoutClosure` | `'full'` (default) keeps ligatures and alternates the text could trigger; `'none'` drops them. |
+
+To change which glyphs are kept, change the string. The attributes work from `.ts` and `.js` modules too.
+
+Each page gets the font its own imports ask for, and pages that ask for the same glyphs share one file. When several components on a page import the same stylesheet:
+
+- Their text merges into one file.
+- A different `weight` gets a file of its own, unless one import leaves `weight` out — then the page keeps one variable font.
+- Layout closure is dropped only when every import asks for `'none'`.
+- An import without `subset` asks for the whole font, so the page ships it unsubsetted.
+
+Mochi logs a warning when imports on one page cannot all be honoured as written: a subset beside an import without one, a pinned `weight` beside an unpinned one, or differing layout closure.
+
+<Callout type="warning">
+
+The limitation is that you must know the text at build time. A character the subset lacks renders in the next font of the stack; in dev, Mochi checks the rendered page after fonts load and warns in the console with the missing characters.
+
+</Callout>
+
 ### Dev mode
 
 A `.css` edit triggers a fast rebundle and a page reload, with no SSR recompile. Edits to `.svelte` or `.ts` files go through the full compile path.

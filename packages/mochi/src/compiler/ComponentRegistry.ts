@@ -29,6 +29,7 @@ import {
   fontChangedSinceResolved,
   fontContentHash,
   substituteFontUrls,
+  type FontRef,
 } from './cssFontAssets';
 import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
@@ -44,6 +45,7 @@ import { registerServerOnlyComponentStubs, SSR_ONLY_COMPONENT_NAMESPACE } from '
 import { cleanInputs, SERVER_ONLY_MODULE_NAMESPACE } from './bundleInputPaths';
 import { renderMochiEnvServer } from './virtualModuleTemplate';
 import { buildDebugBarBundle, type DebugBarBundle } from './buildDebugBarBundle';
+import { buildInlineWebComponent } from './buildInlineWebComponent';
 import { formatBuildMessages } from './formatBuildMessages';
 import { clientBuildDefine, registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
 import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
@@ -56,6 +58,15 @@ import { resolveSvelteShaker } from './svelteShaker';
 import { clientBundleNaming, minifyBuildOutputs, parseJsMinifier, resolveJsMinifier, resolveOxcMinify, type MochiJsMinifier } from './jsMinifier';
 import { findOxcDroppedCalls, formatOxcDroppedCall } from './oxcDroppedCalls';
 import prettyBytes from '../vendor/pretty-bytes';
+import { formatRanges, mergeFontSubsetSpecs, parseFontSubsetSpec, scanImportAttributes, scriptKindOf, type FontSubsetGroup, type FontSubsetSpec } from './fontImportAttributes';
+import { applyFontSubsets } from './fontSubset';
+import type { CodepointRange } from './cssAst';
+
+/** A subsetted `@font-face`, as the dev-mode browser check needs it: which family, and which codepoints it can render. */
+export interface FontSubsetFace {
+  family: string;
+  ranges: CodepointRange[];
+}
 
 // The `compile:preprocessors` filter is sync; only applying its preprocessors through Svelte's `preprocess()` is async.
 async function applyUserPreprocessors(source: string, filename: string, target: 'server' | 'client', development: boolean): Promise<string> {
@@ -210,6 +221,13 @@ export type MochiCompileError =
       message: string;
     }
   | {
+      kind: 'font-subset-invalid';
+      filePath: string;
+      specifier: string;
+      line: number;
+      message: string;
+    }
+  | {
       kind: 'unresolved-island';
       component: string;
       directive: string;
@@ -254,6 +272,8 @@ function formatCompileError(e: MochiCompileError): string {
       return `mochi:defer inside a hydratable: <${e.child}> is a server island inside <${e.parent}>, whose subtree re-renders on the client where a server island cannot exist — remove mochi:defer from ${e.child} or the hydrate/clientOnly directive from ${e.parent}`;
     case 'css-bundle-failed':
       return `CSS bundle failed: ${e.cssPath} — ${e.message}`;
+    case 'font-subset-invalid':
+      return `Font subset: \`import '${e.specifier}'\` in ${relForDisplay(e.filePath)}:${e.line} — ${e.message}`;
     case 'unresolved-island':
       return formatUnresolvedIsland(e);
     case 'server-only-island':
@@ -282,6 +302,8 @@ export interface RenderResult {
   cssUrls: string[];
   /** Served URLs of preload-worthy fonts extracted from this entry's CSS imports; the shell may emit `<link rel="preload">` for them. */
   fontPreloadUrls: string[];
+  /** Dev only: subsetted faces this entry's CSS imports declare, so the shell can warn in the browser about glyphs the subset lacks. */
+  fontSubsetFaces?: FontSubsetFace[];
   bootstrapUrl: string | null;
   hasServerIslands: boolean;
   /** Dev-only snapshot of `ctx.debugBarData`, taken at end of render before the per-request bag is cleared and surfaced to the toolbar as `window.__mochi_debug`. */
@@ -391,9 +413,9 @@ export class ComponentRegistry {
    * rather than mere presence in `cssFileUrls` — otherwise an HMR recompile of a child short-circuits and leaves the stale hashed URL.
    */
   private cssRawByPath: Map<string, string> = new Map();
-  /** Maps resolved CSS-import path → served URL (e.g. /import-css/inter-<hash>.css) */
+  /** Maps stylesheet variant → served URL (e.g. /import-css/inter-<hash>.css). A variant is a resolved CSS-import path, with `#<hash>` appended when it was bundled for a font-subset request. */
   private importedCssUrls: Map<string, string> = new Map();
-  /** Maps page entry .svelte path → set of resolved CSS-import paths reachable from it */
+  /** Maps page entry .svelte path → the stylesheet variants it links */
   private entryImportedCss: Map<string, Set<string>> = new Map();
   /**
    * Maps page entry path → every absolute file that contributed to its SSR bundle, taken from Bun's metafile, so the dev
@@ -427,9 +449,17 @@ export class ComponentRegistry {
   private fontAssets: Map<string, { diskPath: string; contentType: string }> = new Map();
   /** Superseded font URLs, kept so dev HTML rendered before a re-bundle keeps resolving them. */
   private readonly devStaleFontAssets: Map<string, { diskPath: string; contentType: string }> = new Map();
+  /** Maps subsetted stylesheet variant → the stylesheet it bundles and the merged request it was built for, which a re-bundle needs to reproduce it. */
+  private readonly importedCssSubsets: Map<string, { cssPath: string; groups: FontSubsetGroup[] }> = new Map();
+  /** Font-subset warnings already printed, so one that many pages share is reported once. */
+  private readonly fontSubsetWarnings: Set<string> = new Set();
+  /** Dev only: the browser-side missing-glyph check, built when the first subsetted stylesheet is bundled so an app without one never builds it. */
+  fontSubsetCheckClientJs = '';
+  /** Dev only: maps stylesheet variant → the subsetted faces it declares, for the browser-side missing-glyph check. */
+  private readonly importedCssSubsetFaces: Map<string, FontSubsetFace[]> = new Map();
   /** Maps served URL → non-font asset Bun emitted beside a bundled stylesheet; content-hashed by the bundler, so never retired. */
   private readonly importCssAssets: Map<string, { diskPath: string; contentType: string }> = new Map();
-  /** Maps resolved CSS-import path → served URLs of its preload-worthy extracted fonts (woff2, latin-visible). */
+  /** Maps stylesheet variant → served URLs of its preload-worthy extracted fonts (woff2, latin-visible). */
   private importedCssFontPreloads: Map<string, string[]> = new Map();
   /** Tail of the serialized `bundleImportedCss` chain; see the comment there for why batches may not overlap. */
   private importedCssBatches: Promise<unknown> = Promise.resolve();
@@ -1044,6 +1074,9 @@ export class ComponentRegistry {
       }
     }
 
+    const subsetRequests = await this.scanFontSubsetRequests(inputsMeta);
+    const attributedCss = new Set<string>();
+
     const compileDuration = performance.now() - compileStart;
     for (const filename of todo) {
       const outKey = entryToOutKey.get(filename);
@@ -1069,10 +1102,18 @@ export class ComponentRegistry {
       for (const p of importedCssPaths) {
         const cssKey = cssInputKeyByPath.get(path.resolve(p));
         if (cssKey && entrySourceInputs.has(cssKey)) {
-          entryCss.add(p);
+          attributedCss.add(p);
+          entryCss.add(this.cssVariantFor(p, filename, entrySourceInputs, subsetRequests));
         }
       }
       this.entryImportedCss.set(filename, entryCss);
+      // A module holding only a stylesheet import compiles to nothing and drops out of the output graph, so it is added
+      // here for an edit to its import attributes to recompile the page.
+      for (const key of subsetRequests.keys()) {
+        if (entrySourceInputs.has(key)) {
+          entryInputs.add(path.resolve(key));
+        }
+      }
 
       // Dev-watcher dep tracking: every absolute file path that contributed
       // to this entry's bundle (via its own output and any shared chunks).
@@ -1117,7 +1158,7 @@ export class ComponentRegistry {
 
     // The build's entrypoints are exactly `todo`, so every stylesheet the plugin loaded must belong to at least one of
     // them; one that belongs to none is bundled and served but linked by nothing, which only shows up as an unstyled page.
-    const unattributedCss = [...importedCssPaths].filter((p) => !todo.some((f) => this.entryImportedCss.get(f)?.has(p)));
+    const unattributedCss = [...importedCssPaths].filter((p) => !attributedCss.has(p));
     if (unattributedCss.length > 0) {
       logger.warn(
         `${unattributedCss.length} imported stylesheet(s) could not be attributed to any page, so nothing will link them:\n` +
@@ -1189,7 +1230,7 @@ export class ComponentRegistry {
     }
 
     if (importedCssPaths.size > 0) {
-      await this.bundleImportedCss(importedCssPaths);
+      await this.bundleImportedCss(new Set([...todo.flatMap((f) => [...(this.entryImportedCss.get(f) ?? [])]), ...unattributedCss]));
     }
 
     // Register server island component paths
@@ -1848,6 +1889,7 @@ export class ComponentRegistry {
     // Deduped: two CSS imports sharing a font produce the same content-hashed URL, and a duplicate would burn one of
     // the FONT_PRELOAD_MAX slots.
     const fontPreloadUrls = new Set<string>();
+    const fontSubsetFaces: FontSubsetFace[] = [];
     const imported = this.entryImportedCss.get(entryKey);
     if (imported) {
       for (const cssPath of imported) {
@@ -1861,6 +1903,7 @@ export class ComponentRegistry {
             fontPreloadUrls.add(preloadUrl);
           }
         }
+        fontSubsetFaces.push(...(this.importedCssSubsetFaces.get(cssPath) ?? []));
       }
     }
 
@@ -1873,6 +1916,7 @@ export class ComponentRegistry {
       head: shouldStrip ? stripHydrationMarkers(headStr) : headStr,
       cssUrls,
       fontPreloadUrls: [...fontPreloadUrls],
+      fontSubsetFaces: fontSubsetFaces.length > 0 ? fontSubsetFaces : undefined,
       // Gated on wrappers actually present in the output — the entry's compile-time hydratables may all sit in branches
       // this render never took.
       bootstrapUrl: renderedIslandNames.size > 0 ? this.islandBootstrapUrl : null,
@@ -2068,6 +2112,9 @@ export class ComponentRegistry {
     this.localImageAssets.clear();
     this.retireFontAssets();
     this.importedCssFontPreloads.clear();
+    this.importedCssSubsets.clear();
+    this.fontSubsetWarnings.clear();
+    this.importedCssSubsetFaces.clear();
   }
 
   /** Dev-only: bridges the async gap during a re-bundle by keeping old hashed font URLs resolvable via `devStaleFontAssets` while the manifest reads only the live map. */
@@ -2081,12 +2128,12 @@ export class ComponentRegistry {
   }
 
   /**
-   * Bundle a set of side-effect CSS import paths in parallel, pushing a `css-bundle-failed` entry into `this.errors` on
+   * Bundle a set of side-effect CSS import variants in parallel, pushing a `css-bundle-failed` entry into `this.errors` on
    * failure so the dev overlay surfaces it. Hashed naming keeps entrypoints sharing a filename — every fontsource package
    * ships `index.css` — from colliding.
    */
-  private bundleImportedCss(cssPaths: Iterable<string>): Promise<void> {
-    return this.serializeCssBundling(() => this.bundleImportedCssBatch(cssPaths));
+  private bundleImportedCss(variants: Iterable<string>): Promise<void> {
+    return this.serializeCssBundling(() => this.bundleImportedCssBatch(variants));
   }
 
   /**
@@ -2126,9 +2173,9 @@ export class ComponentRegistry {
     });
   }
 
-  private async bundleImportedCssBatch(cssPaths: Iterable<string>): Promise<void> {
+  private async bundleImportedCssBatch(variants: Iterable<string>): Promise<void> {
     const importCssOutDir = path.resolve(`${this.outDir}/import-css`);
-    const todo = [...cssPaths].filter((p) => !this.importedCssUrls.has(p));
+    const todo = [...variants].filter((variant) => !this.importedCssUrls.has(variant));
     if (todo.length === 0) {
       return;
     }
@@ -2137,141 +2184,181 @@ export class ComponentRegistry {
     const deadArtifacts = new Set<string>();
     // The same copy can be adopted by one stylesheet and left in place by another, whose url() still names it.
     const liveArtifacts = new Set<string>();
-    await Promise.all(
-      todo.map(async (cssPath) => {
-        // Bun's CSS bundler resolves every url() itself and runs plugin hooks for them, so font discovery rides the
-        // bundler: large fonts become tiny marker data: URIs (see createFontMarkerPlugin) substituted below.
-        const { plugin: fontPlugin, refs: fontRefs } = createFontMarkerPlugin(this.fontInlineThreshold);
-        // Entrypoints bundle in parallel and two importing the same font emit the same content-hashed copy, so without
-        // a per-build suffix they are concurrent writers to one path and a reader can catch it half-written. Stripped
-        // again by reconcileEmittedAssets below, which puts the canonical name back.
-        const token = randomUUID().slice(0, 8);
-        const cssResult = await Bun.build({
-          entrypoints: [cssPath],
-          outdir: importCssOutDir,
-          naming: { entry: '[name]-[hash].[ext]', asset: `[name]-[hash]-${token}.[ext]` },
-          minify: true,
-          plugins: Number.isFinite(this.fontInlineThreshold) ? [fontPlugin] : [],
-          throw: false,
-        });
-        if (!cssResult.success) {
-          const message = `\n${formatBuildMessages(cssResult.logs)}`;
-          logger.error(`Failed to bundle CSS import ${cssPath}:${message}`);
-          this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
-          return;
+    const bundleVariant = async (variant: string): Promise<void> => {
+      const { cssPath, groups } = this.importedCssSubsets.get(variant) ?? { cssPath: variant, groups: [] };
+      // Bun's CSS bundler resolves every url() itself and runs plugin hooks for them, so font discovery rides the
+      // bundler: large fonts become tiny marker data: URIs (see createFontMarkerPlugin) substituted below.
+      const { plugin: fontPlugin, refs: fontRefs } = createFontMarkerPlugin(this.fontInlineThreshold, { markAll: groups.length > 0 });
+      // Entrypoints bundle in parallel and two importing the same font emit the same content-hashed copy, so without
+      // a per-build suffix they are concurrent writers to one path and a reader can catch it half-written. Stripped
+      // again by reconcileEmittedAssets below, which puts the canonical name back.
+      const token = randomUUID().slice(0, 8);
+      const cssResult = await Bun.build({
+        entrypoints: [cssPath],
+        outdir: importCssOutDir,
+        naming: { entry: '[name]-[hash].[ext]', asset: `[name]-[hash]-${token}.[ext]` },
+        minify: true,
+        plugins: Number.isFinite(this.fontInlineThreshold) || groups.length > 0 ? [fontPlugin] : [],
+        throw: false,
+      });
+      if (!cssResult.success) {
+        const message = `\n${formatBuildMessages(cssResult.logs)}`;
+        logger.error(`Failed to bundle CSS import ${cssPath}:${message}`);
+        this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
+        return;
+      }
+      const out = cssResult.outputs.find((o) => o.path.endsWith('.css'));
+      if (!out) {
+        const message = 'bundle produced no .css output';
+        logger.error(`CSS bundle for ${cssPath}: ${message}`);
+        this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
+        return;
+      }
+      // Read from disk: when Bun.build writes via `outdir`, the output's
+      // .text() may return empty — the file on disk is the source of truth.
+      const rawCss = await Bun.file(out.path).text();
+      const suffixed = cssResult.outputs.filter((o) => o !== out).map((o) => o.path);
+      const emitted = this.reconcileEmittedAssets(suffixed, token);
+      let cssText = rawCss;
+      // Exact filenames rather than the bare suffix, which could collide with an unrelated run of the same characters.
+      suffixed.forEach((original, i) => {
+        cssText = cssText.replaceAll(path.basename(original), path.basename(emitted[i]!));
+      });
+      const adopted = await adoptEmittedFontAssets(
+        cssText,
+        emitted.map((path) => ({ path })),
+        fontRefs,
+      );
+      cssText = adopted.css;
+      for (const assetPath of adopted.adopted) {
+        deadArtifacts.add(assetPath);
+      }
+      for (const assetPath of adopted.missing) {
+        const message = `the bundler's copy of ${relForDisplay(assetPath)} vanished before it could be read, so its @font-face still points at a file no route serves. Please report this.`;
+        logger.error(`CSS bundle for ${cssPath}: ${message}`);
+        this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
+      }
+      // Bun printed these relative to the stylesheet, so serving them under its `import-css/` prefix is what makes
+      // the URL it already wrote resolve.
+      for (const assetPath of adopted.otherAssets) {
+        liveArtifacts.add(assetPath);
+        const name = path.basename(assetPath);
+        const file = Bun.file(assetPath);
+        this.importCssAssets.set(`${this.assetPrefix}/import-css/${name}`, { diskPath: assetPath, contentType: file.type });
+        // Deduped against the stats rather than the map, which a dev re-bundle rebuilds while leaving entries in place.
+        const statName = path.posix.join('import-css', name);
+        if (!this.importedCssStats.some((s) => s.name === statName)) {
+          this.importedCssStats.push({ name: statName, size: file.size, inputs: [], imports: [] });
         }
-        const out = cssResult.outputs.find((o) => o.path.endsWith('.css'));
-        if (!out) {
-          const message = 'bundle produced no .css output';
-          logger.error(`CSS bundle for ${cssPath}: ${message}`);
-          this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
-          return;
-        }
-        // Read from disk: when Bun.build writes via `outdir`, the output's
-        // .text() may return empty — the file on disk is the source of truth.
-        const rawCss = await Bun.file(out.path).text();
-        const suffixed = cssResult.outputs.filter((o) => o !== out).map((o) => o.path);
-        const emitted = this.reconcileEmittedAssets(suffixed, token);
-        let cssText = rawCss;
-        // Exact filenames rather than the bare suffix, which could collide with an unrelated run of the same characters.
-        suffixed.forEach((original, i) => {
-          cssText = cssText.replaceAll(path.basename(original), path.basename(emitted[i]!));
-        });
-        const adopted = await adoptEmittedFontAssets(
-          cssText,
-          emitted.map((path) => ({ path })),
-          fontRefs,
-        );
-        cssText = adopted.css;
-        for (const assetPath of adopted.adopted) {
-          deadArtifacts.add(assetPath);
-        }
-        for (const assetPath of adopted.missing) {
-          const message = `the bundler's copy of ${relForDisplay(assetPath)} vanished before it could be read, so its @font-face still points at a file no route serves. Please report this.`;
-          logger.error(`CSS bundle for ${cssPath}: ${message}`);
-          this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
-        }
-        // Bun printed these relative to the stylesheet, so serving them under its `import-css/` prefix is what makes
-        // the URL it already wrote resolve.
-        for (const assetPath of adopted.otherAssets) {
-          liveArtifacts.add(assetPath);
-          const name = path.basename(assetPath);
-          const file = Bun.file(assetPath);
-          this.importCssAssets.set(`${this.assetPrefix}/import-css/${name}`, { diskPath: assetPath, contentType: file.type });
-          // Deduped against the stats rather than the map, which a dev re-bundle rebuilds while leaving entries in place.
-          const statName = path.posix.join('import-css', name);
-          if (!this.importedCssStats.some((s) => s.name === statName)) {
-            this.importedCssStats.push({ name: statName, size: file.size, inputs: [], imports: [] });
-          }
-        }
-        const fontPass = classifyFontAssets(cssText, fontRefs, { dropLegacyWoff: this.fontDropLegacyWoff });
-        cssText = fontPass.css;
-        if (fontPass.parseFailed) {
-          const message = 'the bundled stylesheet could not be parsed, so any extracted font is still a marker where its bytes should be. Please report this.';
-          logger.error(`CSS bundle for ${cssPath}: ${message}`);
-          this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
-        }
-        const preloadUrls: string[] = [];
-        const fontUrlByMarker = new Map<string, string>();
-        for (const font of fontPass.fonts) {
-          const bytes = font.ref.bytes ?? (await Bun.file(font.ref.path).bytes());
-          if (fontChangedSinceResolved(font.ref, bytes)) {
-            const message = `the source font ${relForDisplay(font.ref.path)} was ${font.ref.size} bytes when the bundle resolved it but read back ${bytes.length}, so it changed mid-build. If this persists the file is corrupt.`;
-            logger.error(`CSS bundle for ${cssPath}: ${message}`);
-            this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
-          }
-          const fileName = fontAssetFileName(font.ref, bytes);
-          const diskPath = path.join(this.outDir, 'fonts', fileName);
-          const fontUrl = `${this.assetPrefix}/fonts/${fileName}`;
-          fontUrlByMarker.set(font.markerUri, fontUrl);
-          if (font.preload) {
-            preloadUrls.push(fontUrl);
-          }
-          // Registering before the first await keeps the check-then-set atomic across the concurrently bundling
-          // entrypoints, so a font shared between stylesheets is written and counted in the stats exactly once.
-          if (!this.fontAssets.has(fontUrl)) {
-            this.fontAssets.set(fontUrl, { diskPath, contentType: font.contentType });
-            this.importedCssStats.push({
-              name: path.posix.join('fonts', fileName),
-              size: bytes.length,
-              inputs: [{ path: relForDisplay(font.ref.path), size: bytes.length }],
-              imports: [],
-            });
-            // The content-hashed name means an existing file already holds these exact bytes; skipping the rewrite
-            // keeps a dev-rebundle from truncating a file a concurrent request may be reading.
-            if (!(await Bun.file(diskPath).exists())) {
-              await Bun.write(diskPath, bytes);
+      }
+      const fontPass = classifyFontAssets(cssText, fontRefs, { dropLegacyWoff: this.fontDropLegacyWoff });
+      cssText = fontPass.css;
+      if (fontPass.parseFailed) {
+        const message = 'the bundled stylesheet could not be parsed, so any extracted font is still a marker where its bytes should be. Please report this.';
+        logger.error(`CSS bundle for ${cssPath}: ${message}`);
+        this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
+      }
+      const preloadUrls: string[] = [];
+      const subsetFaces: FontSubsetFace[] = [];
+      let subsetOutcome: 'none' | 'applied' | 'failed' = 'none';
+      if (groups.length > 0 && fontPass.fonts.length > 0) {
+        try {
+          const applied = await applyFontSubsets(cssText, fontPass.fonts, groups, {
+            inlineThreshold: this.fontInlineThreshold,
+            readSource: async (ref) => ref.bytes ?? (await Bun.file(ref.path).bytes()),
+            emit: (ref, bytes, contentType) => this.emitFontAsset(ref, bytes, contentType),
+          });
+          cssText = applied.css;
+          for (const variant of applied.variants) {
+            if (variant.preload && variant.url) {
+              preloadUrls.push(variant.url);
             }
+            if (variant.family) {
+              subsetFaces.push({ family: variant.family, ranges: variant.ranges });
+            }
+            const detail = [
+              formatRanges(variant.ranges),
+              variant.weight !== null && `weight ${variant.weight}`,
+              !variant.layoutClosure && 'no layout closure',
+              variant.inlined ? 'inlined' : 'served',
+            ]
+              .filter(Boolean)
+              .join(', ');
+            logger.info(`font subset: ${path.basename(variant.ref.path)} ${prettyBytes(variant.ref.size)} → ${prettyBytes(variant.bytes.length)} (${detail})`);
           }
-        }
-        cssText = substituteFontUrls(cssText, fontUrlByMarker);
-        for (const font of fontPass.fonts) {
-          if (cssText.includes(font.ref.markerB64)) {
-            const message = `extracted font ${relForDisplay(font.ref.path)} kept its marker after URL substitution — the bundler printed a url() form the substitution missed. Please report this.`;
-            logger.error(`CSS bundle for ${cssPath}: ${message}`);
-            this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
+          if (applied.variants.length > 0 || applied.droppedFaces > 0) {
+            subsetOutcome = 'applied';
           }
+        } catch (e) {
+          subsetOutcome = 'failed';
+          const message = e instanceof Error ? e.message : String(e);
+          logger.error(`CSS bundle for ${cssPath}: ${message}`);
+          this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
         }
-        let outPath = out.path;
-        if (cssText !== rawCss) {
-          // Bun hashed the pre-substitution text, so the served bytes (font URLs carrying font-content hashes,
-          // `dropLegacyWoff` pruning) must re-hash into the immutable filename or a redeploy reuses a stale cached copy.
-          outPath = path.join(importCssOutDir, `${path.basename(out.path, '.css')}-${fontContentHash(Buffer.from(cssText))}.css`);
-          await Bun.write(outPath, cssText);
-          fs.rmSync(out.path, { force: true });
+      }
+      if (groups.length > 0 && subsetOutcome === 'none') {
+        logger.warn(
+          `CSS bundle for ${relForDisplay(cssPath)}: a \`subset\` import attribute names it, but it declares no @font-face source that can be subsetted (woff2, woff, ttf or otf).`,
+        );
+      }
+      const fontUrlByMarker = new Map<string, string>();
+      for (const font of fontPass.fonts) {
+        // A marker the subset pass already replaced needs no full-size copy.
+        if (groups.length > 0 && !cssText.includes(font.ref.markerB64)) {
+          continue;
         }
-        const urlPath = `${this.assetPrefix}/import-css/${path.basename(outPath)}`;
-        if (preloadUrls.length > 0) {
-          this.importedCssFontPreloads.set(cssPath, preloadUrls);
+        const bytes = font.ref.bytes ?? (await Bun.file(font.ref.path).bytes());
+        if (fontChangedSinceResolved(font.ref, bytes)) {
+          const message = `the source font ${relForDisplay(font.ref.path)} was ${font.ref.size} bytes when the bundle resolved it but read back ${bytes.length}, so it changed mid-build. If this persists the file is corrupt.`;
+          logger.error(`CSS bundle for ${cssPath}: ${message}`);
+          this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
         }
-        this.clientFiles.set(urlPath, cssText);
-        this.importedCssUrls.set(cssPath, urlPath);
-        this.importedCssStats.push({
-          name: path.basename(outPath),
-          size: cssText.length,
-          inputs: [{ path: relForDisplay(cssPath), size: cssText.length }],
-          imports: [],
-        });
+        const fontUrl = await this.emitFontAsset(font.ref, bytes, font.contentType);
+        fontUrlByMarker.set(font.markerUri, fontUrl);
+        if (font.preload) {
+          preloadUrls.push(fontUrl);
+        }
+      }
+      cssText = substituteFontUrls(cssText, fontUrlByMarker);
+      for (const font of fontPass.fonts) {
+        if (cssText.includes(font.ref.markerB64)) {
+          const message = `extracted font ${relForDisplay(font.ref.path)} kept its marker after URL substitution — the bundler printed a url() form the substitution missed. Please report this.`;
+          logger.error(`CSS bundle for ${cssPath}: ${message}`);
+          this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
+        }
+      }
+      let outPath = out.path;
+      if (cssText !== rawCss) {
+        // Bun hashed the pre-substitution text, so the served bytes (font URLs carrying font-content hashes,
+        // `dropLegacyWoff` pruning) must re-hash into the immutable filename or a redeploy reuses a stale cached copy.
+        outPath = path.join(importCssOutDir, `${path.basename(out.path, '.css')}-${fontContentHash(Buffer.from(cssText))}.css`);
+        await Bun.write(outPath, cssText);
+        fs.rmSync(out.path, { force: true });
+      }
+      const urlPath = `${this.assetPrefix}/import-css/${path.basename(outPath)}`;
+      if (preloadUrls.length > 0) {
+        this.importedCssFontPreloads.set(variant, preloadUrls);
+      }
+      if (subsetFaces.length > 0 && this.development) {
+        this.importedCssSubsetFaces.set(variant, subsetFaces);
+        this.fontSubsetCheckClientJs ||= await buildInlineWebComponent('./dev/FontSubsetCheck.ts', this.minifier);
+      }
+      this.clientFiles.set(urlPath, cssText);
+      this.importedCssUrls.set(variant, urlPath);
+      this.importedCssStats.push({
+        name: path.basename(outPath),
+        size: cssText.length,
+        inputs: [{ path: relForDisplay(cssPath), size: cssText.length }],
+        imports: [],
+      });
+    };
+    // Variants of one stylesheet share the bundler's entry output path, so they bundle one after another.
+    const bySheet = Map.groupBy(todo, (variant) => this.importedCssSubsets.get(variant)?.cssPath ?? variant);
+    await Promise.all(
+      [...bySheet.values()].map(async (sameSheet) => {
+        for (const variant of sameSheet) {
+          await bundleVariant(variant);
+        }
       }),
     );
     for (const artifact of deadArtifacts) {
@@ -2279,6 +2366,123 @@ export class ComponentRegistry {
         fs.rmSync(artifact, { force: true });
       }
     }
+  }
+
+  /**
+   * What each of this build's modules asks of the stylesheets it imports: subset specs, or `null` for the whole font.
+   * Bun strips import attributes before any plugin hook runs, so the metafile names the importers and those are parsed at source.
+   */
+  private async scanFontSubsetRequests(inputs: Record<string, { imports: { path: string; original?: string }[] }>): Promise<Map<string, Map<string, FontSubsetSpec[] | null>>> {
+    const modules = await Promise.all(
+      Object.entries(inputs).map(async ([key, meta]) => {
+        const importer = path.resolve(key);
+        const kind = scriptKindOf(importer);
+        const stylesheets = new Map(meta.imports.filter((imp) => imp.path.endsWith('.css')).map((imp) => [imp.original ?? imp.path, path.resolve(imp.path)]));
+        const scannable = kind && stylesheets.size > 0 && !importer.includes(`${path.sep}node_modules${path.sep}`);
+        const found = scannable ? await scanImportAttributes(await Bun.file(importer).text(), kind) : [];
+        if (!found) {
+          this.warnOnce(`Font subset: ${relForDisplay(importer)} could not be parsed to read its import attributes, so the stylesheets it imports ship unsubsetted.`);
+        }
+        return { key, importer, stylesheets, found: found ?? [] };
+      }),
+    );
+    const built = new Set(modules.map((module) => module.importer));
+    this.errors = this.errors.filter((e) => !(e.kind === 'font-subset-invalid' && built.has(e.filePath)));
+    const requests = new Map<string, Map<string, FontSubsetSpec[] | null>>();
+    for (const { key, importer, stylesheets, found } of modules) {
+      if (stylesheets.size === 0) {
+        continue;
+      }
+      const byStylesheet = new Map<string, FontSubsetSpec[] | null>([...stylesheets.values()].map((cssPath) => [cssPath, null]));
+      for (const { specifier, attributes, line } of found) {
+        // Attributes on any other import (`type: 'json'`, Bun's `embed`) belong to the runtime.
+        const cssPath = stylesheets.get(specifier);
+        if (!cssPath) {
+          continue;
+        }
+        const { spec, error } = parseFontSubsetSpec(attributes);
+        if (error) {
+          const compileError: MochiCompileError = { kind: 'font-subset-invalid', filePath: importer, specifier, line, message: error };
+          this.errors.push(compileError);
+          logger.error(`\n${formatCompileError(compileError)}\n`);
+        } else if (spec) {
+          byStylesheet.set(cssPath, [...(byStylesheet.get(cssPath) ?? []), spec]);
+        }
+      }
+      requests.set(key, byStylesheet);
+    }
+    return requests;
+  }
+
+  /**
+   * The variant of a stylesheet one entry links: the whole sheet when a module in the entry's graph imports it without a
+   * subset, else the subset those modules' requests merge into. Named after the request, so entries asking alike share it.
+   */
+  private cssVariantFor(cssPath: string, entry: string, entryInputs: Set<string>, requests: Map<string, Map<string, FontSubsetSpec[] | null>>): string {
+    const asked: { importer: string; specs: FontSubsetSpec[] | null }[] = [];
+    for (const [key, byStylesheet] of requests) {
+      const specs = byStylesheet.get(path.resolve(cssPath));
+      if (specs !== undefined && entryInputs.has(key)) {
+        asked.push({ importer: path.resolve(key), specs });
+      }
+    }
+    const whole = asked.some((ask) => ask.specs === null);
+    const specs = asked.flatMap((ask) => ask.specs ?? []);
+    const groups = whole ? [] : mergeFontSubsetSpecs(specs);
+    if (specs.some((spec) => !groups.some((group) => group.weight === spec.weight && group.layoutClosure === spec.layoutClosure))) {
+      const describe = (spec: FontSubsetSpec) => `${spec.weight === null ? 'any weight' : `weight ${spec.weight}`}${spec.layoutClosure ? '' : ', no layout closure'}`;
+      const importers = asked.map((ask) => `${relForDisplay(ask.importer)} (${ask.specs === null ? 'no subset' : ask.specs.map(describe).join(' and ')})`).join(', ');
+      const outcome = whole
+        ? 'the whole font, so the subset has no effect there'
+        : 'one font that satisfies all of them, so a pinned weight or dropped layout closure is not applied there';
+      this.warnOnce(
+        `Font subset: ${relForDisplay(cssPath)} is imported with different subsetting on one page: ${importers}. That page ships ${outcome}.`,
+        ` First seen on ${relForDisplay(entry)}.`,
+      );
+    }
+    if (groups.length === 0) {
+      return cssPath;
+    }
+    const variant = `${cssPath}#${fontContentHash(Buffer.from(JSON.stringify(groups)))}`;
+    this.importedCssSubsets.set(variant, { cssPath, groups });
+    return variant;
+  }
+
+  /** Logs a font-subset warning the first time it comes up; `detail` is appended without counting towards that. */
+  private warnOnce(message: string, detail = ''): void {
+    if (!this.fontSubsetWarnings.has(message)) {
+      this.fontSubsetWarnings.add(message);
+      logger.warn(message + detail);
+    }
+  }
+
+  /** Whether a served stylesheet URL is a variant bundled for a font-subset request. */
+  isFontSubsetStylesheet(urlPath: string): boolean {
+    return [...this.importedCssSubsets.keys()].some((variant) => this.importedCssUrls.get(variant) === urlPath);
+  }
+
+  /** Register a font under its content-hashed served URL, writing the file once, and return that URL. */
+  private async emitFontAsset(ref: FontRef, bytes: Uint8Array, contentType: string): Promise<string> {
+    const fileName = fontAssetFileName(ref, bytes);
+    const diskPath = path.join(this.outDir, 'fonts', fileName);
+    const fontUrl = `${this.assetPrefix}/fonts/${fileName}`;
+    // Registering before the first await keeps the check-then-set atomic across the concurrently bundling
+    // entrypoints, so a font shared between stylesheets is written and counted in the stats exactly once.
+    if (!this.fontAssets.has(fontUrl)) {
+      this.fontAssets.set(fontUrl, { diskPath, contentType });
+      this.importedCssStats.push({
+        name: path.posix.join('fonts', fileName),
+        size: bytes.length,
+        inputs: [{ path: relForDisplay(ref.path), size: ref.size }],
+        imports: [],
+      });
+      // The content-hashed name means an existing file already holds these exact bytes; skipping the rewrite
+      // keeps a dev-rebundle from truncating a file a concurrent request may be reading.
+      if (!(await Bun.file(diskPath).exists())) {
+        await Bun.write(diskPath, bytes);
+      }
+    }
+    return fontUrl;
   }
 
   /** Re-bundles every previously seen side-effect CSS import for the dev watcher's CSS-only fast-path, leaving page modules and entry tracking alone. */
@@ -2309,6 +2513,7 @@ export class ComponentRegistry {
       this.importedCssStats = [];
       this.retireFontAssets();
       this.importedCssFontPreloads.clear();
+      this.importedCssSubsetFaces.clear();
       await this.bundleImportedCssBatch(cssPaths);
     });
   }
@@ -2503,6 +2708,11 @@ export class ComponentRegistry {
     if (this.importedCssFontPreloads.size > 0) {
       manifest.importedCssFontPreloads = Object.fromEntries([...this.importedCssFontPreloads].map(([cssPath, urls]) => [encodeSourcePath(cssPath), urls]));
     }
+    if (this.importedCssSubsets.size > 0) {
+      manifest.importedCssSubsets = Object.fromEntries(
+        [...this.importedCssSubsets].map(([variant, subset]) => [encodeSourcePath(variant), { cssPath: encodeSourcePath(subset.cssPath), groups: subset.groups }]),
+      );
+    }
     if (this.entryImportedCss.size > 0) {
       manifest.entryImportedCss = Object.fromEntries([...this.entryImportedCss].map(([k, v]) => [encodeSourcePath(k), [...v].map((p) => encodeSourcePath(p))]));
     }
@@ -2586,6 +2796,11 @@ export class ComponentRegistry {
     if (manifest.importedCssFontPreloads) {
       for (const [cssPath, urls] of Object.entries(manifest.importedCssFontPreloads)) {
         registry.importedCssFontPreloads.set(decodeSourcePath(cssPath), urls);
+      }
+    }
+    if (manifest.importedCssSubsets) {
+      for (const [variant, subset] of Object.entries(manifest.importedCssSubsets)) {
+        registry.importedCssSubsets.set(decodeSourcePath(variant), { cssPath: decodeSourcePath(subset.cssPath), groups: subset.groups });
       }
     }
     if (manifest.entryImportedCss) {
