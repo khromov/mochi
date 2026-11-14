@@ -405,7 +405,7 @@ export class ComponentRegistry {
   private cssFileUrls: Map<string, string> = new Map();
   /** Component path → the key its SSR output reports through `markRenderedCss`; absent for components whose CSS is never pruned (global rules, no styles). */
   private trackedCss: Map<string, string> = new Map();
-  /** Hydrated or deferred island path → every styled component in its import graph, all linked whenever the island renders so a client-only branch or a later fragment is styled. */
+  /** Hydrated island path → every styled component in its import graph, all linked whenever the island renders so a client-only branch stays styled. */
   private islandCss: Map<string, Set<string>> = new Map();
   /**
    * Last-extracted raw CSS per component path, letting `compileAll`'s write-CSS-files loop decide on content equality
@@ -1056,8 +1056,9 @@ export class ComponentRegistry {
         }
         visited.add(key);
         for (const imp of meta.imports) {
-          // A dynamic import's `path` is the output chunk; its source input is `entryPoint`.
-          queue.push(followDynamic && imp.entryPoint ? imp.entryPoint : imp.path);
+          // A dynamic import's `path` is the output chunk; Bun names its source input on the record only from 1.4.3.
+          const dynamicEntry = followDynamic && imp.kind === 'dynamic-import' ? (imp.entryPoint ?? outputsMeta[imp.path]?.entryPoint) : undefined;
+          queue.push(dynamicEntry ?? imp.path);
         }
       }
       return visited;
@@ -1157,16 +1158,14 @@ export class ComponentRegistry {
     }
 
     // An island can render, in the browser, components its SSR pass never reached, so its CSS need is the whole graph
-    // below it, dynamic imports included. A deferred island's fragment arrives after the page has painted, so its graph
-    // stays in the page head too, sparing the swap a flash of unstyled content. Walked on the pre-chunking input graph
-    // like side-effect CSS, keyed by island file since several entries can share one.
+    // below it, dynamic imports included. Walked on the pre-chunking input graph like side-effect CSS, keyed by island
+    // file since several entries can share one.
     const inputKeyByPath = new Map<string, string>();
     for (const key of Object.keys(inputsMeta)) {
       inputKeyByPath.set(path.resolve(key), key);
     }
     let inputKeyByRealPath: Map<string, string> | undefined;
-    const islandRoots = new Set([...allHydratables.map((h) => h.resolvedPath), ...allServerIslands.map((si) => si.resolvedPath)]);
-    for (const islandPath of islandRoots) {
+    for (const islandPath of new Set(allHydratables.map((h) => h.resolvedPath))) {
       let rootKey = inputKeyByPath.get(islandPath);
       if (!rootKey) {
         // The import spelled the path differently from Bun's key (case on a case-insensitive disk, a symlinked folder).
@@ -1795,7 +1794,6 @@ export class ComponentRegistry {
     // island names, detect server islands, and conditionally strip page-level
     // hydration markers.
     const renderedIslandNames = new Set<string>();
-    const renderedServerIslandNames = new Set<string>();
     let hasServerIslands = false;
     if (hasIslandsOrServerIslands || shouldStrip) {
       let islandDepth = 0;
@@ -1822,10 +1820,6 @@ export class ComponentRegistry {
                 islandDepth--;
               });
               hasServerIslands = true;
-              const raw = el.getAttribute('component-name');
-              if (raw) {
-                renderedServerIslandNames.add(raw);
-              }
             },
           });
       }
@@ -1910,16 +1904,13 @@ export class ComponentRegistry {
       }
     }
 
-    // Every styled component below a rendered island or deferred-island placeholder stays linked whether or not SSR
-    // reached it.
+    // Every styled component below a rendered island stays linked whether or not SSR reached it. A deferred island's
+    // placeholder keeps nothing: its fragment names the stylesheets it rendered, and the wrapper loads them before the swap.
     let islandCssNeeds: Set<string> | undefined;
     if (renderedCss) {
-      const islandRoots = [
-        ...[...renderedIslandNames].map((name) => hydratablesByName.get(name)?.resolvedPath),
-        ...[...renderedServerIslandNames].map((name) => this.serverIslandPaths.get(name)),
-      ];
-      for (const islandPath of islandRoots) {
-        const needs = islandPath && this.islandCss.get(islandPath);
+      for (const name of renderedIslandNames) {
+        const h = hydratablesByName.get(name);
+        const needs = h && this.islandCss.get(h.resolvedPath);
         if (needs) {
           islandCssNeeds ??= new Set();
           for (const p of needs) {
@@ -1940,7 +1931,7 @@ export class ComponentRegistry {
       }
       const trackedKey = renderedCss ? this.trackedCss.get(componentPath) : undefined;
       const rendered = trackedKey !== undefined && renderedCss!.has(trackedKey);
-      if (islandPaths.has(componentPath) && !rendered) {
+      if (islandPaths.has(componentPath) && !rendered && !islandCssNeeds?.has(componentPath)) {
         const hs = hydratablesByPath.get(componentPath);
         if (hs && hs.every((h) => !renderedIslandNames.has(h.name))) {
           continue;

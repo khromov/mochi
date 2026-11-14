@@ -64,6 +64,7 @@ describe('rendered-only CSS links (dev)', () => {
     expect(linkedCss(html)).toContain('Global');
   });
 
+  // `Hidden` is also an island root in an untaken branch, which must not override the rendered island's need for it.
   test('a hydrated island keeps the stylesheets of its client-only branch and a clientOnly island keeps its own', async () => {
     const html = await (await fetch(`${base}/`)).text();
     expect(html).not.toContain('data-hidden');
@@ -85,14 +86,16 @@ describe('rendered-only CSS links (dev)', () => {
     expect(css).not.toContain('Hidden');
     expect(css).not.toContain('Widget');
     expect(css).not.toContain('Lazy');
-    expect(css).not.toContain('Deferred');
-    expect(css).not.toContain('DeferredB');
+    expect(css).not.toContain('DeferredFallback');
   });
 
-  test('a deferred island keeps its subtree linked in the page, while its fragment links only what it rendered', async () => {
+  test('a deferred island leaves only its fallback linked in the page, and its fragment links what it rendered', async () => {
     const html = await (await fetch(`${base}/`)).text();
-    // The fragment is swapped in after the page has painted, so its stylesheets are already in the head.
-    expect(linkedCss(html)).toEqual(expect.arrayContaining(['Deferred', 'DeferredA', 'DeferredB', 'DeferredNever']));
+    // The wrapper element awaits the fragment's stylesheets before the swap, so the page head carries none of them.
+    const pageCss = linkedCss(html);
+    expect(html).toContain('data-deferred-fallback');
+    expect(pageCss).toContain('DeferredFallback');
+    expect(pageCss.filter((name) => name.startsWith('Deferred'))).toEqual(['DeferredFallback']);
     const wrapper = html.match(/<mochi-server-island component-name="(Deferred_\w+)" signed-props="([^"]+)"[^>]*css-url="([^"]+)"/);
     expect(wrapper).not.toBeNull();
     const [, key, token, cssUrl] = wrapper!;

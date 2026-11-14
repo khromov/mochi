@@ -51,7 +51,9 @@ The Svelte compiler handles `<style>` inside a `.svelte` file. Mochi extracts th
 
 <VersionNote since="0.10.0" message="Earlier versions link the stylesheet of every component in the page's import graph." />
 
-Only components that actually rendered get a `<link>`: a component behind an untaken `{#if}`, or one of several variants a parent picks between, ships no CSS on that response. Islands are the exception. A hydrated island can render a component in the browser that never rendered on the server, and a `mochi:defer` island's content arrives after the page has painted. So every styled component in an island's import graph, `import()`s included, stays linked whenever the island is on the page.
+Only components that actually rendered get a `<link>`: a component behind an untaken `{#if}`, or one of several variants a parent picks between, ships no CSS on that response. Hydrated islands are the exception. A hydrated island can render a component in the browser that never rendered on the server, so every styled component in its import graph stays linked whenever the island is on the page.
+
+A `mochi:defer` island adds only the styles of its fallback to the page. Its fragment names the stylesheets it rendered, and the island loads them before it replaces the fallback, so the content never shows unstyled.
 
 <Callout type="info">
 

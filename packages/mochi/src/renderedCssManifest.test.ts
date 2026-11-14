@@ -50,7 +50,8 @@ describe('rendered-only CSS links (prebuilt manifest)', () => {
     expect(manifest.islandCss?.[key('Toggle.svelte')]?.sort()).toEqual([key('Hidden.svelte'), key('Toggle.svelte')]);
     expect(manifest.islandCss?.[key('Widget.svelte')]).toEqual([key('Widget.svelte')]);
     expect(manifest.islandCss?.[key('Loader.svelte')]?.sort()).toEqual([key('Lazy.svelte'), key('Loader.svelte')]);
-    expect(manifest.islandCss?.[key('Deferred.svelte')]?.sort()).toEqual(['Deferred.svelte', 'DeferredA.svelte', 'DeferredB.svelte', 'DeferredNever.svelte'].map(key).sort());
+    // A deferred island is no hydrated island: its fragment names its own stylesheets, so the page keeps no graph for it.
+    expect(manifest.islandCss?.[key('Deferred.svelte')]).toBeUndefined();
     // Guards against a vacuous pass below: the pruned components are in the page's static graph.
     expect(manifest.components[key('Page.svelte')]?.cssComponents).toContain(key('Never.svelte'));
     for (const p of manifest.trackedCss ?? []) {
@@ -60,9 +61,10 @@ describe('rendered-only CSS links (prebuilt manifest)', () => {
 
   test('the page prunes like dev, from the manifest alone', async () => {
     const css = linkedCss(await (await fetch(`${base}/?variant=b`)).text());
-    expect(css).toEqual(expect.arrayContaining(['Always', 'Shared', 'VariantB', 'Global', 'Toggle', 'Hidden', 'Widget', 'Loader', 'Lazy', 'Deferred', 'DeferredB']));
+    expect(css).toEqual(expect.arrayContaining(['Always', 'Shared', 'VariantB', 'Global', 'Toggle', 'Hidden', 'Widget', 'Loader', 'Lazy', 'DeferredFallback']));
     expect(css).not.toContain('VariantA');
     expect(css).not.toContain('Never');
+    expect(css.filter((name) => name.startsWith('Deferred'))).toEqual(['DeferredFallback']);
     expect(compiled.filter((p) => p.startsWith(FIXTURES))).toEqual([]);
   });
 

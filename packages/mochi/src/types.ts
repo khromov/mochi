@@ -383,7 +383,7 @@ export interface MochiManifest {
   entryImportedCss?: Record<string, string[]>;
   /** Encoded source paths (see `version`) of components whose SSR output reports itself on render, so their stylesheets are linked only when they rendered. */
   trackedCss?: string[];
-  /** Maps encoded hydrated or deferred island source path (see `version`) → every styled component in its import graph, likewise encoded; all linked whenever that island renders. */
+  /** Maps encoded hydrated island source path (see `version`) → every styled component in its import graph, likewise encoded; all linked whenever that island renders. */
   islandCss?: Record<string, string[]>;
   /** Prebuilt, minified ServerIsland inline web-component script, emitted by `build()` so production loads it from disk in place of a startup `Bun.build`. */
   serverIslandScript?: string;

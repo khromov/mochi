@@ -1,8 +1,9 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import DeferredA from './DeferredA.svelte';
   import DeferredB from './DeferredB.svelte';
   import DeferredNever from './DeferredNever.svelte';
-  let { variant }: { variant: string } = $props();
+  let { variant }: { variant: string; children?: Snippet } = $props();
 </script>
 
 <div data-deferred>

@@ -68,6 +68,7 @@ describe('hasGlobalCss', () => {
     expect(globalOf(':root[data-theme=dark] .a { color: red }')).toBe(false);
     expect(globalOf(':is(:root) .a { color: red }')).toBe(false);
     expect(globalOf(':root:has(.x) .a { color: red }')).toBe(false);
+    expect(globalOf(':root:has(.x) { --x: 1 }')).toBe(false);
     expect(globalOf('.a:not(:root) { color: red }')).toBe(false);
     expect(globalOf('.a { :root & { color: red } }')).toBe(false);
   });
