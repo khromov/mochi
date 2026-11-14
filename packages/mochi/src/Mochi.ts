@@ -127,6 +127,7 @@ import { installMemoryPressureHandler, removeMemoryPressureHandler } from './run
 import { registerStaticDirRoutes, resolveStaticDirs } from './runtime/staticDirs';
 import { createCronJob, cronSignature, type MochiCronHandler, type MochiCronJob, type MochiCronOptions } from './cron';
 import { startDevWatcher } from './dev/devWatcher';
+import { rangesByFamily } from './compiler/fontImportAttributes';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './dev/pageCacheAdminRoutes';
 import { liveReloadGreeting } from './dev/liveReloadGeneration';
 import { createProtectionRuntime } from './protection/gate';
@@ -358,10 +359,15 @@ export class Mochi {
       const head = logLevelScript + warnShim + speculationRulesScript + result.head;
       const css = cssStylePrefix + cssLinks;
       const body = result.body + debugInfoScript + pageEntryScript + toolbarDiv;
+      const fontSubsetCheck =
+        registry.fontSubsetCheckClientJs && result.fontSubsetFaces
+          ? `<script>window.__mochi_font_subsets=${jsonForHtml(rangesByFamily(result.fontSubsetFaces))}</script><script>${registry.fontSubsetCheckClientJs}</script>`
+          : '';
       const script =
         (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
         (result.hasServerIslands ? serverIslandScript : '') +
         (debugBarUrl ? `<script type="module" src="${debugBarUrl}"></script><script>window.__mochi_asset_prefix=${assetPrefixJson}</script>` : '') +
+        fontSubsetCheck +
         liveReloadTail;
 
       let out = '';
@@ -1665,8 +1671,10 @@ export class Mochi {
         // The page `<head>` links none of this fragment's CSS, so its `<link>` tags lead the body, side-effect CSS imports
         // included, where the wrapper element finds them and loads them before the swap (see ServerIsland.ts). The
         // island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
+        // A font-subset stylesheet is left to the host page, whose variant holds this island's glyphs because its import
+        // graph includes the island; a second variant of the family would hide the page's text at a weight this one pins.
         const ownCss = registry.getComponentCssUrl(componentPath);
-        const extraCss = result.cssUrls.filter((url) => url !== ownCss);
+        const extraCss = result.cssUrls.filter((url) => url !== ownCss && !registry.isFontSubsetStylesheet(url));
         if (extraCss.length > 0) {
           body = extraCss.map(cssLinkTag).join('') + body;
         }
