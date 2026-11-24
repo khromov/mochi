@@ -1,0 +1,27 @@
+# [MEDIUM] CSRF Origin enforcement is warn-only on the deployed site: proxy.origin is configured but never enforced
+
+**File:** [`packages/site/src/index.ts`](https://github.com/khromov/mochi/blob/main/packages/site/src/index.ts#L18-L201) (lines 18, 163, 201)
+**Project:** mochi
+**Severity:** MEDIUM  •  **Confidence:** high  •  **Slug:** `auth-bypass`
+
+## Owners
+
+**Suggested assignee:** `stanislav.khromov+github@gmail.com` _(via last-committer)_
+
+## Finding
+
+`Mochi.serve()` here sets `proxy: { origin, addressHeader: 'x-forwarded-for', xffDepth: 1 }` with a comment explicitly calling it 'the allowed csrf domain', and never passes `development`. `Mochi.ts:479` therefore resolves `development = SEEDED_IS_DEV` = `NODE_ENV === 'development'`, which is **true in the deployed container**: the root `Dockerfile` ENTRYPOINT is `bun run dev:${WORKSPACE}` and `packages/site`'s `dev` script is `NODE_ENV=development bun src/index.ts` (the CI matrix and `lib/debugBarEncode.ts:1` both confirm dev mode in production is deliberate). In `runtime/csrf.ts:160-165`, when the Origin does not match the expected origin and `development` is true, the check logs `logger.warn('… would be blocked in production …')` and `return null` — i.e. it allows the request. So the entire Origin-based CSRF control is inert on mochi.fast: any attacker page can auto-submit a cross-origin form POST (`application/x-www-form-urlencoded`, `multipart/form-data`, or no Content-Type — the three non-preflighted types `isFormContentType` gates) to any `Mochi.page` form action and it executes with the victim's cookies. Reachable targets today include `/demos/login`'s session-issuing action, `/demos/email`'s `send`/`sendPhoto` mail triggers, `/demos/mode-watcher`'s cookie write, and the queue/cron demo actions. Blast radius is currently limited because the dev-mode-deployed apps hold no high-value authenticated state (`packages/support`, the one app with real Basic auth, correctly ships via `Dockerfile.production`) — but the control is silently off, so any future authenticated action on this site inherits a CSRF hole while the config reads as if it were protected. Note `packages/demos/src/index.ts:20` passes `development:` explicitly; this entry does not.
+
+## Recommendation
+
+Separate 'show the debug toolbar' from 'relax security checks': pass `development: false` to `Mochi.serve()` in the deployed container (keeping `debugBar: true` explicitly if the toolbar is wanted), or set `MOCHI_DOCKER`-conditioned `development`. Better, make the framework's `csrfCheck` enforce on origin *mismatch* regardless of mode — the dev ergonomic that matters is the unconfigured-origin branch (csrf.ts:134-140), not silently allowing a known-bad Origin. Add a test that a mismatched Origin gets 403 with `development: true`.
+
+## Revalidation
+
+**Verdict:** true-positive
+
+Confirmed by tracing the whole path. Same root cause as F6 but a different control and a different downstream module, so I am keeping it separate rather than marking it duplicate: the impacts are distinct security classes (CWE-352 vs CWE-209), they live in different framework files (runtime/csrf.ts vs runtime/errors.ts), and each admits its own independent fix. Verification: index.ts:201 sets `proxy: { origin, addressHeader: 'x-forwarded-for', xffDepth: 1 }`, where `origin` is always a truthy computed string (line 118), so in csrfCheckDefault `expectedOriginConfigured` is `true` and control reaches the Origin-comparison branch rather than the unconfigured-origin branch. `development` resolves true in the deployed container (Mochi.ts:479 → SEEDED_IS_DEV → NODE_ENV=development, set by the root Dockerfile's `bun run dev:site`). csrf.ts:160-165 then does `logger.warn('… would be blocked in production …'); return null` on an Origin mismatch — `null` means allow. requestSetup.ts's `KIND_POLICY` runs CSRF for both `page` and `api` with `cfg.development` threaded through (line 120), and there is no `csrf:check` filter, no `checkOrigin: false`, and no `trustedOrigins` anywhere in the site config. `isFormContentType` gates exactly the three non-preflighted types plus a missing Content-Type, so an attacker page can land a cross-origin form POST. Reachable form-action targets exist and I read them: `/demos/login` declares `default` (session-issuing, sets `mochi_login_session`) and `logout` actions; `/demos/email` declares actions; `/demos/mode-watcher` writes a cookie. So the configured control reads as enabled while being verifiably inert. Two honest caveats. First, the login session cookie is `sameSite: 'Lax'`, which already blocks a cross-site POST from carrying it, so classic authenticated CSRF against that demo is blunted — the finding's own hedge that the dev-mode apps hold no high-value authenticated state is accurate, and the sharpest real primitives are login-CSRF (forcing a session), logout-CSRF, and the cookie write. Second, the finding's contrast that "`packages/demos/src/index.ts:20` passes `development:` explicitly; this entry does not" is a non-distinction: demos passes `development: process.env.NODE_ENV === 'development'`, the identical expression, so it is equally inert. Neither caveat changes the verdict — a security control the config advertises is silently off in production, and any future authenticated action on this host inherits the hole.
+
+## Recent committers (`git log`)
+
+- Stanislav Khromov <stanislav.khromov+github@gmail.com> (2026-11-14)

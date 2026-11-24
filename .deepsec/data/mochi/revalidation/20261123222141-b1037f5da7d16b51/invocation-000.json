@@ -1,0 +1,46 @@
+{
+  "batchIndex": 2,
+  "label": "initial",
+  "timestamp": "2026-11-23T22:25:01.096Z",
+  "files": [
+    "packages/mochi/src/cron.ts"
+  ],
+  "requested": [
+    {
+      "findingId": "finding_d46bfcd30d36b85c",
+      "filePath": "packages/mochi/src/cron.ts",
+      "title": "`cronSignature` omits the handler, so editing a cron handler body in dev keeps running the stale closure",
+      "alias": "F1"
+    }
+  ],
+  "rawResponses": [
+    {
+      "kind": "initial",
+      "rawText": "```json\n[\n  {\n    \"findingId\": \"F1\",\n    \"verdict\": \"true-positive\",\n    \"adjustedSeverity\": \"BUG\",\n    \"reasoning\": \"I traced the whole dev-reload path and every link in the chain holds. `cronSignature` (cron.ts:78-79) maps each job to `[name, schedule, options?.tz ?? null, options?.dev ?? true]` — the `run` handler is structurally absent, and the function's own parameter type (`{ name; schedule; options? }`) doesn't even accept it. `reconcileCron` (devWatcher.ts:369-374) computes that signature and `return`s before touching the scheduler when it matches `lastCronSignature`, which is seeded at boot from `Mochi.ts:2153`. Meanwhile `buildEntry()` does produce a genuinely fresh closure: `extractServeOptions(outFile, { fresh: true })` → `freshImport()` copies the rebuilt bundle to a uniquely *named* artifact and imports it, so the `MochiCronJob` objects (and their `run` functions) are brand new on every save. The live worker registration is unaffected: `startCronRuntime` calls `boss.work(queueName, cronWorkOptions, cronWorkHandler(job))` (queue.ts:983), and `cronWorkHandler` closes over the `MochiCronJob` object and invokes `job.run(...)` at firing time (queue.ts:898-904). That boss lives on `registry`, which is `pinGlobal('__mochi_queue_registry__', …)` (queue.ts:233-245), and the entry is rebuilt with `packages: 'external'`, so `mochi-framework` is never re-evaluated — the old boss and its old handler closure survive the reload intact. I also ruled out two plausible mitigations: `isBuildingEntry()` is `AsyncLocalStorage`-scoped (`runInEntryImportScope`), so it is already false by the time `reconcileCron` runs on line 348 and does not independently suppress re-registration; and nothing resolves the handler dynamically by job name at fire time. The trigger is real and ordinary — the site's own `packages/site/src/demos/cron/cron.server.ts` is imported via `demos/cron/routes.ts` → `src/routes.ts` → the entry, so it is in `serverEntryDeps` and a `change` on it takes the `isServerEntryDep` branch (devWatcher.ts:767-770) into `triggerEntryReload`, which emits `recompile:complete` and prints a normal-looking `HMR … rebuilt N pages, M bundles` line (consoleLogger.ts:399-412) with no cron warning. That demo makes the consequence sharper than the finding states: the `ws` handler map is hot-swapped to the *new* module's `addClient`/`clients`, while the cron keeps appending to the *old* module's `log` and broadcasting to the old `clients` set, so after one reload the firings silently reach nobody. No test references `cronSignature`/`reconcileCron`, and nothing documents the limitation — `170-development-mode.md:82` enumerates what hot-swaps (api/serverProps/actions/ws/sse) without mentioning cron, while `118-scheduled-jobs.md:114` promises save-time re-registration. The only part I'd soften is the doc-violation framing: 'editing the `cron` array' can be read strictly as adding/removing/retiming entries, which does work. Severity BUG is correct — dev-mode only, no production or security impact (no watcher in prod), and the workaround is a dev-server restart.\"\n  }\n]\n```",
+      "parsedCount": 1
+    }
+  ],
+  "repairAttempts": 0,
+  "parsedVerdicts": [
+    {
+      "findingId": "F1",
+      "verdict": "true-positive",
+      "adjustedSeverity": "BUG",
+      "reasoning": "I traced the whole dev-reload path and every link in the chain holds. `cronSignature` (cron.ts:78-79) maps each job to `[name, schedule, options?.tz ?? null, options?.dev ?? true]` — the `run` handler is structurally absent, and the function's own parameter type (`{ name; schedule; options? }`) doesn't even accept it. `reconcileCron` (devWatcher.ts:369-374) computes that signature and `return`s before touching the scheduler when it matches `lastCronSignature`, which is seeded at boot from `Mochi.ts:2153`. Meanwhile `buildEntry()` does produce a genuinely fresh closure: `extractServeOptions(outFile, { fresh: true })` → `freshImport()` copies the rebuilt bundle to a uniquely *named* artifact and imports it, so the `MochiCronJob` objects (and their `run` functions) are brand new on every save. The live worker registration is unaffected: `startCronRuntime` calls `boss.work(queueName, cronWorkOptions, cronWorkHandler(job))` (queue.ts:983), and `cronWorkHandler` closes over the `MochiCronJob` object and invokes `job.run(...)` at firing time (queue.ts:898-904). That boss lives on `registry`, which is `pinGlobal('__mochi_queue_registry__', …)` (queue.ts:233-245), and the entry is rebuilt with `packages: 'external'`, so `mochi-framework` is never re-evaluated — the old boss and its old handler closure survive the reload intact. I also ruled out two plausible mitigations: `isBuildingEntry()` is `AsyncLocalStorage`-scoped (`runInEntryImportScope`), so it is already false by the time `reconcileCron` runs on line 348 and does not independently suppress re-registration; and nothing resolves the handler dynamically by job name at fire time. The trigger is real and ordinary — the site's own `packages/site/src/demos/cron/cron.server.ts` is imported via `demos/cron/routes.ts` → `src/routes.ts` → the entry, so it is in `serverEntryDeps` and a `change` on it takes the `isServerEntryDep` branch (devWatcher.ts:767-770) into `triggerEntryReload`, which emits `recompile:complete` and prints a normal-looking `HMR … rebuilt N pages, M bundles` line (consoleLogger.ts:399-412) with no cron warning. That demo makes the consequence sharper than the finding states: the `ws` handler map is hot-swapped to the *new* module's `addClient`/`clients`, while the cron keeps appending to the *old* module's `log` and broadcasting to the old `clients` set, so after one reload the firings silently reach nobody. No test references `cronSignature`/`reconcileCron`, and nothing documents the limitation — `170-development-mode.md:82` enumerates what hot-swaps (api/serverProps/actions/ws/sse) without mentioning cron, while `118-scheduled-jobs.md:114` promises save-time re-registration. The only part I'd soften is the doc-violation framing: 'editing the `cron` array' can be read strictly as adding/removing/retiming entries, which does work. Severity BUG is correct — dev-mode only, no production or security impact (no watcher in prod), and the workaround is a dev-server restart."
+    }
+  ],
+  "reconciliation": {
+    "matches": [
+      {
+        "matchedBy": "finding-id",
+        "returnedFindingId": "F1",
+        "resolvedFindingId": "finding_d46bfcd30d36b85c"
+      }
+    ],
+    "missingFindingIds": [],
+    "unknownVerdicts": [],
+    "ambiguousVerdicts": []
+  },
+  "persistedCount": 1,
+  "unresolvedFindingIds": []
+}

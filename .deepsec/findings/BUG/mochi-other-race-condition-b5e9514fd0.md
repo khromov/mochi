@@ -1,0 +1,27 @@
+# [BUG] Reload generation baseline is taken at socket-connect, not at page render, so a reload signal landing during page load is permanently swallowed
+
+**File:** [`packages/mochi/src/dev/liveReloadGeneration.ts`](https://github.com/khromov/mochi/blob/main/packages/mochi/src/dev/liveReloadGeneration.ts#L28-L32) (lines 28, 31, 32)
+**Project:** mochi
+**Severity:** BUG  •  **Confidence:** medium  •  **Slug:** `other-race-condition`
+
+## Owners
+
+**Suggested assignee:** `stanislav.khromov+github@gmail.com` _(via last-committer)_
+
+## Finding
+
+The generation scheme exists to close the 'tab missed a reload while disconnected' hole, but the baseline is sampled too late. `liveReloadGreeting()` is called from the WebSocket `open` handler (Mochi.ts:1960), and the client stores that first greeting as its baseline and never reloads for it (`if (this.bootId === null) { this.bootId = id; this.reloadGeneration = gen; }` — LiveReload.ts:106-108). Page SSR is not serialized against the watcher's rebuild chain: `renderShell(...)` runs in the page handler (Mochi.ts:950-953) while `reloadChain` is private to `startDevWatcher` (devWatcher.ts:197), with no barrier between them. So any `recordReloadSignal()` that fires after a page's HTML was rendered but before that page's socket opens increments the counter, the reload broadcast goes to the *old* sockets only, and the new tab then adopts the already-incremented value as its baseline. Failure scenario: a dev saves `Page.svelte` while a cold-compile request for that page is in flight (dev compiles on demand, so this window is seconds, not milliseconds); the response is rendered from pre-edit code, the watcher finishes the rebuild and broadcasts `reload` to the old socket, the new tab connects and greets at generation N+1, stores N+1, and never reloads. The tab shows stale output indefinitely until the next unrelated edit — exactly the condition the file's header comment says it is there to catch. The same swallow happens on a double-save (editor + format-on-save writing twice) that straddles a reload. Note the per-entry filtering makes this silent rather than self-correcting: for a scoped signal the tab's own entry counter has moved, so no later greeting comparison can recover it.
+
+## Recommendation
+
+Sample the generation at render time instead of connect time: export a `currentReloadGeneration(entry)` from this module, have the shell renderer inject it alongside `window.__mochi_page_entry` (Mochi.ts:357), and have `LiveReload.connect()` seed `this.reloadGeneration` from that injected value (falling back to the first greeting when absent, for tabs on an older shell) rather than from the first greeting it happens to receive.
+
+## Revalidation
+
+**Verdict:** true-positive
+
+Every link in the chain checks out. The baseline really is sampled at connect: `liveReloadGreeting(client.data.__mochiEntry)` is called only from the WS `open` handler (Mochi.ts:1955-1963), with the entry coming from the `?entry=` query the client sends (devWatcher.ts:152-172), and the client stores the first greeting it ever sees without reloading (`if (this.bootId === null) { this.bootId = id; this.reloadGeneration = gen; }` — LiveReload.ts:106-108). The generation is bumped before the fan-out (`recordReloadSignal(affected)` at devWatcher.ts:179), so a signal that lands while a tab is still loading goes only to the old sockets, and the new tab then adopts N+1 as its floor. There is no barrier between the render and the rebuild: `reloadChain` is a local inside `startDevWatcher` (devWatcher.ts:197) and nothing on the request path awaits it (I grepped — the only references are in that file), while `renderShell` injects only `window.__mochi_page_entry`, no generation (Mochi.ts:357, 950-953). Crucially, a render during a rebuild really is stale: `renderComponent` calls `this.compile(filename)` without `force`, and `compileAll` filters out anything already in `compiledComponents` (ComponentRegistry.ts:728), while the rebuild path `recompileChanged → recompileDependents → safeBatchCompile → compileAll({force:true})` only swaps the module at ComponentRegistry.ts:1142, after the build finishes — and `notifyClients` fires after that. So a page request whose HTML is rendered in the tail of a rebuild, close enough that its socket handshake lags past the notify, yields a tab that is stale and, because the scoped per-entry counter has already moved, can never recover via a later greeting comparison; it stays stale until the next unrelated reload signal or a manual refresh. Two corrections to the write-up that don't change the verdict: page components are eagerly compiled at route registration (Mochi.ts:893-895), so the stale window is the rebuild duration rather than a seconds-long on-demand cold compile; and there is a second, wider variant — the gap between the module swap and the notify also spans `buildClientBundle()`, so a tab loading there gets fresh HTML but possibly mid-rewrite client chunks and then swallows the corrective reload too. Impact is confined to dev (`liveReloadEnabled = options.liveReload ?? development`, Mochi.ts:504), so BUG is the right severity, and the recommended fix — inject the generation at render time next to `__mochi_page_entry` and seed `reloadGeneration` from it — is both feasible and the correct shape.
+
+## Recent committers (`git log`)
+
+- Stanislav Khromov <stanislav.khromov+github@gmail.com> (2026-07-27)

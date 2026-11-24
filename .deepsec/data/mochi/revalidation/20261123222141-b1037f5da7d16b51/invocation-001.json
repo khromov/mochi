@@ -1,0 +1,64 @@
+{
+  "batchIndex": 4,
+  "label": "initial",
+  "timestamp": "2026-11-23T22:27:45.798Z",
+  "files": [
+    "packages/mochi/src/dev/FontSubsetCheck.ts",
+    "packages/mochi/src/dev/liveReloadGeneration.ts"
+  ],
+  "requested": [
+    {
+      "findingId": "finding_c7212d1a6ba5fd84",
+      "filePath": "packages/mochi/src/dev/FontSubsetCheck.ts",
+      "title": "Unguarded prototype-chain lookup on the subset map aborts the whole glyph check with a TypeError",
+      "alias": "F1"
+    },
+    {
+      "findingId": "finding_acebd27993500803",
+      "filePath": "packages/mochi/src/dev/liveReloadGeneration.ts",
+      "title": "Reload generation baseline is taken at socket-connect, not at page render, so a reload signal landing during page load is permanently swallowed",
+      "alias": "F2"
+    }
+  ],
+  "rawResponses": [
+    {
+      "kind": "initial",
+      "rawText": "I've traced both findings end-to-end. Here are my verdicts.\n\n```json\n[\n  {\n    \"findingId\": \"F1\",\n    \"verdict\": \"false-positive\",\n    \"adjustedSeverity\": \"BUG\",\n    \"reasoning\": \"The mechanism is mechanically correct but the trigger is unreachable. I confirmed `faces` does carry Object.prototype: `rangesByFamily()` (compiler/fontImportAttributes.ts:248-259) builds a bare `{}`, `jsonForHtml` (Mochi.ts:174) JSON-stringifies it, and it is evaluated as an object literal in `<script>window.__mochi_font_subsets=…</script>` (Mochi.ts:364). I also confirmed only `constructor` and `__proto__` survive `firstFamily()`'s `toLowerCase()` (every other Object.prototype key — `hasOwnProperty`, `toString`, `__defineGetter__` — lowercases to a non-key), that both are truthy, that neither has `.some`, and that `start()` has no `.catch` (line 74), so the throw would indeed abort the walk as an unhandled rejection. What is missing is any input path. The lookup key is `getComputedStyle(element).fontFamily`'s first family — i.e. whatever the app's own stylesheets set — so reaching the crash requires a developer to author `font-family: constructor` (or `\\\"__proto__\\\"`) as the first family in a computed stack on their own dev page. The map's own keys come from `@font-face` families in imported npm font CSS (`caveat variable`, `inter variable`), and even a hypothetical family literally named `constructor` would be an ordinary own property and work fine. The script is also gated to `this.development && subsetFaces.length > 0` (ComponentRegistry.ts:2342-2344), and the lookup is a read into a local `missing` Map — no write, so no prototype pollution and no security impact, as the finding itself concedes. I separately audited every other statement in `check()` for throw paths (`getComputedStyle` on attached elements only, `split(',')[0]` never undefined on a string, `codePointAt(0)` on a non-empty char, `JSON.stringify(ch)`, `__mochi_warn`) and found none, so the missing `.catch` has nothing real to catch either. `Object.hasOwn`/`Array.isArray` hardening is a one-line improvement worth taking, but as a reported defect this is not reachable by any realistic input, attacker or accident.\"\n  },\n  {\n    \"findingId\": \"F2\",\n    \"verdict\": \"true-positive\",\n    \"adjustedSeverity\": \"BUG\",\n    \"reasoning\": \"Every link in the chain checks out. The baseline really is sampled at connect: `liveReloadGreeting(client.data.__mochiEntry)` is called only from the WS `open` handler (Mochi.ts:1955-1963), with the entry coming from the `?entry=` query the client sends (devWatcher.ts:152-172), and the client stores the first greeting it ever sees without reloading (`if (this.bootId === null) { this.bootId = id; this.reloadGeneration = gen; }` — LiveReload.ts:106-108). The generation is bumped before the fan-out (`recordReloadSignal(affected)` at devWatcher.ts:179), so a signal that lands while a tab is still loading goes only to the old sockets, and the new tab then adopts N+1 as its floor. There is no barrier between the render and the rebuild: `reloadChain` is a local inside `startDevWatcher` (devWatcher.ts:197) and nothing on the request path awaits it (I grepped — the only references are in that file), while `renderShell` injects only `window.__mochi_page_entry`, no generation (Mochi.ts:357, 950-953). Crucially, a render during a rebuild really is stale: `renderComponent` calls `this.compile(filename)` without `force`, and `compileAll` filters out anything already in `compiledComponents` (ComponentRegistry.ts:728), while the rebuild path `recompileChanged → recompileDependents → safeBatchCompile → compileAll({force:true})` only swaps the module at ComponentRegistry.ts:1142, after the build finishes — and `notifyClients` fires after that. So a page request whose HTML is rendered in the tail of a rebuild, close enough that its socket handshake lags past the notify, yields a tab that is stale and, because the scoped per-entry counter has already moved, can never recover via a later greeting comparison; it stays stale until the next unrelated reload signal or a manual refresh. Two corrections to the write-up that don't change the verdict: page components are eagerly compiled at route registration (Mochi.ts:893-895), so the stale window is the rebuild duration rather than a seconds-long on-demand cold compile; and there is a second, wider variant — the gap between the module swap and the notify also spans `buildClientBundle()`, so a tab loading there gets fresh HTML but possibly mid-rewrite client chunks and then swallows the corrective reload too. Impact is confined to dev (`liveReloadEnabled = options.liveReload ?? development`, Mochi.ts:504), so BUG is the right severity, and the recommended fix — inject the generation at render time next to `__mochi_page_entry` and seed `reloadGeneration` from it — is both feasible and the correct shape.\"\n  }\n]\n```",
+      "parsedCount": 2
+    }
+  ],
+  "repairAttempts": 0,
+  "parsedVerdicts": [
+    {
+      "findingId": "F1",
+      "verdict": "false-positive",
+      "adjustedSeverity": "BUG",
+      "reasoning": "The mechanism is mechanically correct but the trigger is unreachable. I confirmed `faces` does carry Object.prototype: `rangesByFamily()` (compiler/fontImportAttributes.ts:248-259) builds a bare `{}`, `jsonForHtml` (Mochi.ts:174) JSON-stringifies it, and it is evaluated as an object literal in `<script>window.__mochi_font_subsets=…</script>` (Mochi.ts:364). I also confirmed only `constructor` and `__proto__` survive `firstFamily()`'s `toLowerCase()` (every other Object.prototype key — `hasOwnProperty`, `toString`, `__defineGetter__` — lowercases to a non-key), that both are truthy, that neither has `.some`, and that `start()` has no `.catch` (line 74), so the throw would indeed abort the walk as an unhandled rejection. What is missing is any input path. The lookup key is `getComputedStyle(element).fontFamily`'s first family — i.e. whatever the app's own stylesheets set — so reaching the crash requires a developer to author `font-family: constructor` (or `\"__proto__\"`) as the first family in a computed stack on their own dev page. The map's own keys come from `@font-face` families in imported npm font CSS (`caveat variable`, `inter variable`), and even a hypothetical family literally named `constructor` would be an ordinary own property and work fine. The script is also gated to `this.development && subsetFaces.length > 0` (ComponentRegistry.ts:2342-2344), and the lookup is a read into a local `missing` Map — no write, so no prototype pollution and no security impact, as the finding itself concedes. I separately audited every other statement in `check()` for throw paths (`getComputedStyle` on attached elements only, `split(',')[0]` never undefined on a string, `codePointAt(0)` on a non-empty char, `JSON.stringify(ch)`, `__mochi_warn`) and found none, so the missing `.catch` has nothing real to catch either. `Object.hasOwn`/`Array.isArray` hardening is a one-line improvement worth taking, but as a reported defect this is not reachable by any realistic input, attacker or accident."
+    },
+    {
+      "findingId": "F2",
+      "verdict": "true-positive",
+      "adjustedSeverity": "BUG",
+      "reasoning": "Every link in the chain checks out. The baseline really is sampled at connect: `liveReloadGreeting(client.data.__mochiEntry)` is called only from the WS `open` handler (Mochi.ts:1955-1963), with the entry coming from the `?entry=` query the client sends (devWatcher.ts:152-172), and the client stores the first greeting it ever sees without reloading (`if (this.bootId === null) { this.bootId = id; this.reloadGeneration = gen; }` — LiveReload.ts:106-108). The generation is bumped before the fan-out (`recordReloadSignal(affected)` at devWatcher.ts:179), so a signal that lands while a tab is still loading goes only to the old sockets, and the new tab then adopts N+1 as its floor. There is no barrier between the render and the rebuild: `reloadChain` is a local inside `startDevWatcher` (devWatcher.ts:197) and nothing on the request path awaits it (I grepped — the only references are in that file), while `renderShell` injects only `window.__mochi_page_entry`, no generation (Mochi.ts:357, 950-953). Crucially, a render during a rebuild really is stale: `renderComponent` calls `this.compile(filename)` without `force`, and `compileAll` filters out anything already in `compiledComponents` (ComponentRegistry.ts:728), while the rebuild path `recompileChanged → recompileDependents → safeBatchCompile → compileAll({force:true})` only swaps the module at ComponentRegistry.ts:1142, after the build finishes — and `notifyClients` fires after that. So a page request whose HTML is rendered in the tail of a rebuild, close enough that its socket handshake lags past the notify, yields a tab that is stale and, because the scoped per-entry counter has already moved, can never recover via a later greeting comparison; it stays stale until the next unrelated reload signal or a manual refresh. Two corrections to the write-up that don't change the verdict: page components are eagerly compiled at route registration (Mochi.ts:893-895), so the stale window is the rebuild duration rather than a seconds-long on-demand cold compile; and there is a second, wider variant — the gap between the module swap and the notify also spans `buildClientBundle()`, so a tab loading there gets fresh HTML but possibly mid-rewrite client chunks and then swallows the corrective reload too. Impact is confined to dev (`liveReloadEnabled = options.liveReload ?? development`, Mochi.ts:504), so BUG is the right severity, and the recommended fix — inject the generation at render time next to `__mochi_page_entry` and seed `reloadGeneration` from it — is both feasible and the correct shape."
+    }
+  ],
+  "reconciliation": {
+    "matches": [
+      {
+        "matchedBy": "finding-id",
+        "returnedFindingId": "F1",
+        "resolvedFindingId": "finding_c7212d1a6ba5fd84"
+      },
+      {
+        "matchedBy": "finding-id",
+        "returnedFindingId": "F2",
+        "resolvedFindingId": "finding_acebd27993500803"
+      }
+    ],
+    "missingFindingIds": [],
+    "unknownVerdicts": [],
+    "ambiguousVerdicts": []
+  },
+  "persistedCount": 2,
+  "unresolvedFindingIds": []
+}

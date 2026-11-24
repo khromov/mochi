@@ -1,0 +1,37 @@
+# [MEDIUM] Server-only `.server.svelte` component is compiled into the browser bundle when Bun's runtime resolver and the bundler resolver disagree
+
+**File:** [`packages/mochi/src/compiler/serverOnlyComponents.ts`](https://github.com/khromov/mochi/blob/main/packages/mochi/src/compiler/serverOnlyComponents.ts#L33-L48) (lines 33, 34, 38, 41, 42, 43, 44, 48)
+**Project:** mochi
+**Severity:** MEDIUM  •  **Confidence:** medium  •  **Slug:** `env-exposure`
+
+## Owners
+
+**Suggested assignee:** `stanislav.khromov+github@gmail.com` _(via last-committer)_
+
+## Finding
+
+The `.server.svelte` stub resolver classifies a specifier as relative only when it starts with `./`, `../`, or is absolute (L34). Every other specifier is resolved with `Bun.resolveSync` (L42) — Bun's *runtime* resolver — and on failure the handler returns `undefined` (L43), deliberately falling through to Bun's own resolution.
+
+The assumption behind that fall-through (and behind the only test for it, serverOnlyComponents.test.ts:112) is that if `Bun.resolveSync` cannot resolve a specifier, the bundler cannot either. That is not true: the client `Bun.build` runs with `conditions: ['svelte', 'production'|'development']`, `target: 'browser'` (ComponentRegistry.ts:1424-1425), and honours `tsconfig.json` `paths`, none of which `Bun.resolveSync` applies. Whenever the bundler resolves a `.server.svelte` specifier that the runtime resolver rejected, nothing else in the client plugin claims it — the `.server.ts` resolver's filter `/\.server(?:\.[jt]s)?$/` does not match `.server.svelte`, `serverOnlyModuleGuard`'s `CANDIDATE_SPECIFIER` does not match, and `registerServerOnlyComponentStubs` has already declined — so it is resolved into the default `file` namespace and picked up by the generic client `.svelte` loader at ComponentRegistry.ts:1380, which runs `backend.compile(..., { generate: 'client' })` on it.
+
+The result is that a component the author explicitly marked SSR-only is compiled into a publicly served island bundle, with no warning and no build failure. Anything in its markup or `<script>` that was only ever meant to run on the server — an inlined secret or token, internal/admin markup, an internal URL or query shape, data deliberately withheld from the client — becomes readable by anyone who fetches the bundle. The failure is silent unless the component happens to also import a `node:`/`bun:` module (which would fail the browser build) or call a `mochi-env` client stub such as `getRequestContext()` (which throws only at runtime, after the source has already shipped).
+
+Two reachable triggers, both from documented/standard setups:
+(1) `packages/docs/15-coming-from-sveltekit.md:857-872` instructs users to add `"paths": { "$lib/*": ["./src/lib/*"] }` to `tsconfig.json`, while `:831-849` tells them the `.server.*` convention carries over from SvelteKit. `import Thing from '$lib/Thing.server.svelte'` is not relative and not absolute, so it takes the `Bun.resolveSync` branch; the bundler applies the tsconfig alias, the runtime resolver (which reads a single root tsconfig, and in a monorepo the aliases live in the package's own tsconfig while cwd is the repo root) does not.
+(2) A Svelte component library published by `svelte-package` exposes subpaths under a `svelte`-conditioned export with no `default`/`import` key — unresolvable by `Bun.resolveSync`, resolvable by a build passing `conditions: ['svelte']`.
+
+Note the asymmetry with the sibling `.server.ts` resolver (ComponentRegistry.ts:1346-1361), which always returns the stub namespace and never falls through — it is fail-closed, this one is fail-open.
+
+## Recommendation
+
+Make the handler fail closed. Since the `.server.svelte` suffix is the entire opt-in, never hand the specifier back to default resolution: when `Bun.resolveSync` throws, still return `{ path: <best-effort path>, namespace: SSR_ONLY_COMPONENT_NAMESPACE }` (the onLoad already tolerates an unreadable file via `.catch(() => '')` on L53 and will emit a default-only stub), or return a build error naming the specifier. Better still, add a belt-and-braces check in the client build's generic `/\.svelte$/` onLoad that throws if `args.path` ends with `.server.svelte`, so a resolver gap can never silently compile an SSR-only component for the browser. Add a regression test for a non-relative specifier that the bundler resolves but `Bun.resolveSync` does not (a tsconfig `paths` alias is the easiest fixture).
+
+## Revalidation
+
+**Verdict:** true-positive
+
+I verified every link in the chain. serverOnlyComponents.ts:34 classifies a specifier as relative only for `./`, `../` or absolute; everything else goes to `Bun.resolveSync` (L42) and a throw returns `undefined` (L43), handing the specifier back to Bun's default resolution — and the existing test at serverOnlyComponents.test.ts:112 shows that fall-through is deliberate. I then confirmed nothing else claims such a module: the sibling `.server.ts` onResolve filter is `/\.server(?:\.[jt]s)?$/`, which cannot match a string ending in `.svelte`; `serverOnlyModuleGuard`'s `CANDIDATE_SPECIFIER` only matches extensions/mochiConfig/requestContext/env; and `registerServerOnlyComponentStubs`'s onLoad is namespace-scoped. So the file lands in the default `file` namespace and is claimed by the generic `/\.svelte$/` onLoad at ComponentRegistry.ts:1380, which runs `backend.compile(..., { generate: 'client' })` — a server-only component compiled into a publicly served island bundle, silently. The asymmetry the finding highlights is real: the `.server.ts` resolver (L1346-1361) always returns the stub namespace and never falls through. On the trigger, I split the two claims. The tsconfig-`paths` claim is the weaker one: Bun's bundler and `Bun.resolveSync` share the same resolver and the same enclosing-tsconfig discovery (docs: /docs/runtime/module-resolution 'Path re-mapping'), so I would not expect them to diverge on `$lib/*`. The export-conditions claim, however, is architecturally certain: the client build passes `conditions: ['svelte', 'production'|'development']` and `target: 'browser'` (L1424-1425) while `Bun.resolveSync(moduleId, parent)` has no conditions parameter and runs the default runtime condition set. This is not theoretical — `node_modules/@lucide/svelte` in this very repo exposes `"./icons": { "types": ..., "svelte": ... }` with no `default` key, i.e. a subpath that only resolves when the `svelte` condition is supplied. A Mochi-targeting component library packaged the same way and shipping a `Foo.server.svelte` is exactly the fail-open case. Reachability is therefore narrow (it needs a third-party package using Mochi's own `.server.svelte` convention behind a condition-gated export), and the impact is attenuated because many real `.server.svelte` files import `node:`/`bun:` and would fail the browser build loudly (that is what the `ssr-only-barrel` integration test asserts via `readFileSync`). But a component whose server-ness is only markup, an internal URL, or a prerendered literal would ship silently. I keep MEDIUM: a security control that fails open with information-exposure impact, low likelihood, and a trivially safe fix (return the stub namespace on resolve failure, plus a belt-and-braces throw in the generic `.svelte` onLoad for paths ending `.server.svelte`).
+
+## Recent committers (`git log`)
+
+- Stanislav Khromov <stanislav.khromov+github@gmail.com> (2026-08-08)
