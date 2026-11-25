@@ -51,6 +51,14 @@ export async function initMochiConfig(options: MochiServeOptions): Promise<void>
     options,
     envKeyPresent,
   });
+  // An empty secret derives a public, constant AES-SIV key, so every sealed token would be forgeable.
+  if (secretKey.length === 0) {
+    throw new Error(
+      'The server secret key is empty: MOCHI_KEY decoded to zero bytes, or the serverIsland:secretKey filter ' +
+        'returned an empty Buffer. Every sealed token (server-island props, image URLs, captcha, protection clearances) ' +
+        'would be forgeable. Generate a key with `bunx mochi-framework generate-key`.',
+    );
+  }
 
   const ctx: MochiContext = { options, secretKey };
   (globalThis as unknown as Record<string, unknown>)[GLOBAL_KEY] = ctx;
