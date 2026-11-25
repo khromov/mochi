@@ -45,6 +45,8 @@ export { trailingSlashIt } from "__MOCHI_TRAILING_SLASH__";
 // Per-request hydratable-island props dedup helper. Used by the
 // preprocessor's injected `__mochi_emit_props__` import.
 export { emitIslandProps } from "__MOCHI_ISLAND_PROPS__";
+// Per-render record of which styled components initialised. Used by the preprocessor's injected `__mochi_css__` import.
+export { markRenderedCss } from "__MOCHI_RENDERED_CSS__";
 // Context-backed: true anywhere inside an island subtree that will hydrate
 // (seeded by the preprocessor's injected prologue on the island root).
 export { isHydratable } from "__MOCHI_IS_HYDRATABLE__";

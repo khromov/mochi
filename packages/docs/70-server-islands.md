@@ -45,7 +45,7 @@ A server island is a normal Svelte component with full access to the request con
 
 ### How it renders
 
-The page ships with the fallback in place of the island, plus an encrypted token carrying the island's props. The browser then fetches the rendered HTML from a per-island endpoint under `assetPrefix` (default `/_mochi/island/...`), and Mochi swaps it in over the fallback. A failed fetch retries with exponential backoff (default 9 retries, 1s–5s). Pass `mochi:defer={{ retries: 10 }}` to override.
+The page ships with the fallback in place of the island, plus an encrypted token carrying the island's props. The browser then fetches the rendered HTML from a per-island endpoint under `assetPrefix` (default `/_mochi/island/...`), and Mochi swaps it in over the fallback once the island's stylesheets have loaded. A failed fetch retries with exponential backoff (default 9 retries, 1s–5s). Pass `mochi:defer={{ retries: 10 }}` to override.
 
 <Callout type="info">
 
@@ -193,7 +193,7 @@ Mochi.serve({ inlineNestedIslands: false });
 
 `mochi:defer:visible` children are always exempt. Laziness is their point, so they keep their own viewport-triggered fetch.
 
-Mochi delivers CSS for nested islands with the fetched HTML. The host page cannot link it ahead of time, because the island content does not render until the island resolves. Styles apply as soon as the island appears.
+Mochi delivers CSS for nested islands with the fetched HTML. The host page cannot link it ahead of time, because the island content does not render until the island resolves. The island waits for that CSS before it shows the content, so styles apply as soon as the island appears.
 
 <Callout type="warning">
 

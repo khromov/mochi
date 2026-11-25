@@ -12,6 +12,8 @@ export interface CompiledFileOutput {
   hydratables: HydratableComponent[];
   serverIslands: ServerIslandComponent[];
   preprocessErrors: PreprocessIslandError[];
+  /** Whether the server output reports itself via `markRenderedCss` (see `instrumentCssTracking`). */
+  cssTracked: boolean;
 }
 
 interface CacheEntry {

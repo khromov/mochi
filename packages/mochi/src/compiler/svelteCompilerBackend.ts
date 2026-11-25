@@ -7,7 +7,7 @@ export type MochiSvelteCompiler = 'svelte' | 'rsvelte';
 /** Shape of a compile result the framework consumes. Structurally a subset of Svelte's own. */
 export interface SvelteCompileOutput {
   js: { code: string };
-  css?: { code: string } | null;
+  css?: { code: string; hasGlobal: boolean } | null;
 }
 
 /**

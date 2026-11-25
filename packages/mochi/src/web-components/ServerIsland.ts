@@ -7,6 +7,27 @@ import { isReloadableIslandName, notifyDeferredIslandChange, registerDeferredIsl
 
 // Key must match sharedCssTracker.ts for cross-bundle dedup with HydratableIsland.
 const _css: Set<string> = ((globalThis as unknown as Record<string, unknown>).__mochi_loaded_css__ ??= new Set()) as Set<string>;
+const _cssLoading = new Map<string, Promise<unknown>>();
+// Past this a stuck stylesheet costs a flash of unstyled content rather than a stranded fallback.
+const CSS_WAIT_MS = 5000;
+
+// Links `href` unless the page or another island already did, and returns a promise only while that load is in flight.
+function loadCss(href: string): Promise<unknown> | undefined {
+  if (_css.has(href)) {
+    return _cssLoading.get(href);
+  }
+  _css.add(href);
+  if (document.querySelector(`link[rel=stylesheet][href="${CSS.escape(href)}"]`)) {
+    return;
+  }
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = href;
+  const loading = new Promise((r) => (link.onload = link.onerror = r)).then(() => _cssLoading.delete(href));
+  _cssLoading.set(href, loading);
+  document.head.appendChild(link);
+  return loading;
+}
 
 class ServerIsland extends HTMLElement {
   _loaded = false;
@@ -155,6 +176,10 @@ class ServerIsland extends HTMLElement {
 
     const maxRetries = typeof options.retries === 'number' ? options.retries : 9;
 
+    // The island's own stylesheet is known up front, so it loads alongside the fragment instead of after it.
+    const cssUrl = g('css-url');
+    const ownCss = cssUrl ? loadCss(cssUrl) : undefined;
+
     let lastErr: unknown;
     for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
       try {
@@ -171,25 +196,14 @@ class ServerIsland extends HTMLElement {
           console.log(`${tag} loaded (attempt ${attempt}, ${(html.length / 1024).toFixed(1)}kB, alsoHydrate=${alsoHydrate || 'none'})`);
         }
 
-        const cssUrl = g('css-url');
-        if (cssUrl && !_css.has(cssUrl)) {
-          _css.add(cssUrl);
-          const link = document.createElement('link');
-          link.rel = 'stylesheet';
-          link.href = cssUrl;
-          document.head.appendChild(link);
-        }
-
-        this._unmountChildren();
-
         // SAFETY: HTML comes from our own same-origin server-island endpoint with encrypted props.
         // If the island endpoint ever returns user-controlled content, this must be sanitized.
-        this.innerHTML = html;
-        this._everLoaded = true;
+        const fragment = document.createElement('template');
+        fragment.innerHTML = html;
 
         // A `<script>` set via innerHTML never runs, so the endpoint names the bootstrap in a leading marker instead.
         // The module map dedupes this import against a bootstrap the page already shipped.
-        const marker = this.firstElementChild;
+        const marker = fragment.content.firstElementChild;
         const bootstrapUrl = marker?.getAttribute(BOOTSTRAP_MARKER_ATTR);
         if (marker && bootstrapUrl) {
           marker.remove();
@@ -201,6 +215,21 @@ class ServerIsland extends HTMLElement {
             window.__mochi_warn?.(msg);
           });
         }
+
+        // The endpoint leads the fragment with a `<link>` per stylesheet it rendered. They move to `<head>`, where a
+        // reload cannot drop them, and the swap waits for them so the new content never paints unstyled.
+        const css = [ownCss];
+        for (let link = fragment.content.firstElementChild; link?.matches('link[rel=stylesheet]'); link = fragment.content.firstElementChild) {
+          css.push(loadCss(link.getAttribute('href')!));
+          link.remove();
+        }
+        if (css.some(Boolean)) {
+          await Promise.race([Promise.all(css), new Promise((r) => setTimeout(r, CSS_WAIT_MS))]);
+        }
+
+        this._unmountChildren();
+        this.replaceChildren(fragment.content);
+        this._everLoaded = true;
         return true;
       } catch (err) {
         lastErr = err;
