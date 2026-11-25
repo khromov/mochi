@@ -35,14 +35,20 @@ export async function extractTemplate(tarball: Blob | Uint8Array, source: Templa
   if (files.size === 0) {
     throw new Error(`Template "${source.owner}/${source.repo}/${source.subdir}" is empty or missing at ref "${source.ref}".`);
   }
-  let written = 0;
-  for (const [entry, file] of files) {
+  // `files()` keeps `..` segments verbatim (only `extract()` sanitises), so every target is checked before anything is written.
+  const targets = [...files].map(([entry, file]) => {
     const root = entry.slice(0, entry.indexOf('/'));
-    const relative = entry.slice(`${root}/${source.subdir}/`.length);
-    await Bun.write(path.join(dir, relative), file);
-    written++;
+    const target = path.resolve(dir, entry.slice(`${root}/${source.subdir}/`.length));
+    const relative = path.relative(path.resolve(dir), target);
+    if (relative === '' || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      throw new Error(`Refusing to extract template entry "${entry}": it points outside the project directory.`);
+    }
+    return [target, file] as const;
+  });
+  for (const [target, file] of targets) {
+    await Bun.write(target, file);
   }
-  return written;
+  return targets.length;
 }
 
 export async function downloadTemplate(source: string, opts: { dir: string; force?: boolean }): Promise<void> {
