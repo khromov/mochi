@@ -62,6 +62,19 @@ function serializeCookie(name: string, value: string, options?: CookieSerializeO
   return serialized;
 }
 
+const CLIENT_COOKIE_DEFAULT_KEYS = ['path', 'domain', 'secure', 'sameSite', 'partitioned', 'priority'] as const;
+
+/** The `cookie:defaults` fields `document.cookie` can honour: a browser drops a script-written `HttpOnly` cookie outright, and the client jar has no `Max-Age`. */
+export function clientCookieDefaults(defaults: CookieSerializeOptions): CookieSerializeOptions | undefined {
+  const picked: Record<string, unknown> = {};
+  for (const key of CLIENT_COOKIE_DEFAULT_KEYS) {
+    if (defaults[key] !== undefined) {
+      picked[key] = defaults[key];
+    }
+  }
+  return Object.keys(picked).length > 0 ? picked : undefined;
+}
+
 export class MochiCookieJar {
   private parsed: Map<string, string>;
   private outgoing: string[] = [];

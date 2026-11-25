@@ -99,7 +99,7 @@ import { pinGlobal } from './utils/globalState';
 import { resetStartupMilestones } from './lifecycle';
 import type { MochiQueue, MochiQueueOptions, MochiQueueDescriptor, MochiQueueStorage, MochiWorker } from './queue';
 import type { BunBoss } from 'bun-boss';
-import { finalizeCookieHeaders, MochiCookieJar } from './runtime/cookies';
+import { clientCookieDefaults, finalizeCookieHeaders, MochiCookieJar, type CookieSerializeOptions } from './runtime/cookies';
 import { makeRequestContextBuilder, mirrorsSlashForm } from './runtime/requestSetup';
 import { createRouteLimiter, applyRateLimitHeaders } from './runtime/rateLimit';
 import type { MochiRateLimitOptions, MochiRateLimitStore, RouteLimiter } from './runtime/rateLimit';
@@ -308,11 +308,14 @@ export class Mochi {
       /** Reads the current speculation rules (reassigned on dev entry edits). */
       getSpeculationRules: () => SpeculationRules | undefined;
       fontPreload: boolean;
+      cookieDefaults: CookieSerializeOptions;
     },
   ): (result: RenderResult, opts?: { debugInfo?: DebugBarData; pageEntry?: string }) => string {
-    const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate, getSpeculationRules, fontPreload } = config;
+    const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate, getSpeculationRules, fontPreload, cookieDefaults } = config;
 
     const logLevelScript = logLevel === DEFAULT_LOG_LEVEL ? '' : `<script>window.__mochi_log_level=${JSON.stringify(logLevel)}</script>`;
+    const clientCookies = clientCookieDefaults(cookieDefaults);
+    const cookieDefaultsScript = clientCookies ? `<script>window.__mochi_cookie_defaults=${jsonForHtml(clientCookies)}</script>` : '';
     // Feeds the debug bar's Warnings panel. When the debug bar is off the
     // single `window.__mochi_warn?.(...)` call site no-ops via optional chaining.
     const warnShim = registry.debugBarEnabled
@@ -356,7 +359,7 @@ export class Mochi {
       const debugInfoScript = registry.debugBarEnabled && opts?.debugInfo ? `<script>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
       const pageEntryScript = liveReloadClientJs && opts?.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
 
-      const head = logLevelScript + warnShim + speculationRulesScript + result.head;
+      const head = logLevelScript + cookieDefaultsScript + warnShim + speculationRulesScript + result.head;
       const css = cssStylePrefix + cssLinks;
       const body = result.body + debugInfoScript + pageEntryScript + toolbarDiv;
       const fontSubsetCheck =
@@ -710,6 +713,7 @@ export class Mochi {
       getTemplate: () => shellTemplate,
       getSpeculationRules: () => speculationRules,
       fontPreload: options.fonts?.preload !== false,
+      cookieDefaults,
     });
 
     // The interstitial renders through the app shell like error pages do, so a custom `protection.page`
