@@ -589,9 +589,10 @@ export interface MochiServeOptions {
    * route, so a large tree costs one route instead of one per file, and Range, ETag, `If-None-Match`, `index.html`
    * and sendfile streaming come from Bun.
    *
-   * Unlike `publicDir` these mounts do no dotfile filtering, do not run the `publicDir:scan` filter, and cannot be
-   * gated by `protection.protectFiles`. A miss under the prefix answers with Bun's own 404 rather than the configured
-   * `errorPage`; paths outside the prefix are unaffected, which is why the site root cannot be mounted.
+   * Like `publicDir`, dotfiles and dot-directories other than a top-level `.well-known/` are not served — but only
+   * those present at startup are blocked. Unlike `publicDir` these mounts do not run the `publicDir:scan` filter and
+   * cannot be gated by `protection.protectFiles`. A miss under the prefix answers with Bun's own 404 rather than the
+   * configured `errorPage`; paths outside the prefix are unaffected, which is why the site root cannot be mounted.
    */
   staticDirs?: import('./runtime/staticDirs').MochiStaticDirs;
   /** Directory served as static assets (cwd-relative). Default: `./public`. */

@@ -12,6 +12,12 @@ mkdirSync(path.join(media, 'nested'), { recursive: true });
 writeFileSync(path.join(media, 'hello.txt'), 'hello from a mount');
 writeFileSync(path.join(media, 'nested', 'index.html'), '<!doctype html><p>nested index</p>');
 writeFileSync(path.join(media, '.env'), 'SECRET=1');
+mkdirSync(path.join(media, '.git'));
+writeFileSync(path.join(media, '.git', 'config'), 'url = https://SECRET@example.com/repo');
+writeFileSync(path.join(media, 'nested', '.env'), 'NESTED_SECRET=1');
+writeFileSync(path.join(media, '.x#y'), 'HASH_SECRET=1');
+mkdirSync(path.join(media, '.well-known'));
+writeFileSync(path.join(media, '.well-known', 'security.txt'), 'Contact: mailto:security@example.com');
 
 let server: Server<undefined> | undefined;
 
@@ -98,9 +104,15 @@ describe('Mochi.serve({ staticDirs })', () => {
     expect((await fetch(`${base}/nope`)).status).toBe(404);
   });
 
-  test('a mount does not filter dotfiles the way publicDir does', async () => {
-    // Documented, not desired: Bun's directory route serves everything under the directory.
-    expect((await fetch(`http://localhost:${server!.port}/assets/.env`)).status).toBe(200);
+  test('refuses dotfiles and dot-directories like publicDir, apart from .well-known', async () => {
+    const base = `http://localhost:${server!.port}`;
+    // `%23` is the spelling encodeURI leaves raw, yet Bun's directory route still decodes it to `.x#y`.
+    for (const p of ['/assets/.env', '/assets/nested/.env', '/assets/.git/config', '/assets/.git/', '/assets/.git', '/assets/.x%23y']) {
+      const res = await fetch(`${base}${p}`);
+      expect({ p, status: res.status }).toEqual({ p, status: 404 });
+      expect(await res.text()).not.toContain('SECRET');
+    }
+    expect(await (await fetch(`${base}/assets/.well-known/security.txt`)).text()).toContain('Contact:');
   });
 
   test('serves a percent-encoded filename', async () => {

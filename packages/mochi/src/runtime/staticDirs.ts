@@ -1,13 +1,14 @@
 import path from 'node:path';
-import { statSync } from 'node:fs';
+import { readdirSync, statSync } from 'node:fs';
 import type { BunRouteValue } from '../types';
 import { relForDisplay } from '../utils';
+import { isExcludedDotPath, publicRouteKey } from './publicDir';
 
 /** A prefix → directory mount, as declared in `Mochi.serve({ staticDirs })`. */
 export type MochiStaticDirs = Record<string, string>;
 
 /** Validate and normalize each mount, throwing before the socket binds on anything Bun's directory routes cannot express. */
-export function resolveStaticDirs(staticDirs: MochiStaticDirs, assetPrefix: string): { pattern: string; dir: string }[] {
+export function resolveStaticDirs(staticDirs: MochiStaticDirs, assetPrefix: string): { pattern: string; dir: string; blocked: string[] }[] {
   const seen = new Set<string>();
   return Object.entries(staticDirs).map(([rawPrefix, dir]) => {
     if (!rawPrefix.startsWith('/')) {
@@ -43,17 +44,46 @@ export function resolveStaticDirs(staticDirs: MochiStaticDirs, assetPrefix: stri
     if (!stats.isDirectory()) {
       throw new Error(`Mochi.serve({ staticDirs }): "${rawPrefix}" points at "${dir}", which is a file, not a directory.`);
     }
-    return { pattern: `${prefix}/*`, dir: resolved };
+    // Bun matches routes on the raw request path but the directory route decodes it, so `?`, `#` or `:` in a name can
+    // arrive either raw or percent-encoded — block both spellings.
+    const blocked = findDotEntries(resolved).flatMap((rel) =>
+      [...new Set([publicRouteKey(rel), rel.split('/').map(encodeURIComponent).join('/')])].map((key) => `${prefix}/${key}`),
+    );
+    return { pattern: `${prefix}/*`, dir: resolved, blocked };
+  });
+}
+
+/** POSIX paths of the entries publicDir's dot policy refuses; a refused directory is not descended into, so a `.git` costs one entry. */
+function findDotEntries(dir: string, rel = ''): string[] {
+  let entries;
+  try {
+    entries = readdirSync(path.join(dir, rel), { withFileTypes: true });
+  } catch {
+    // An unreadable subdirectory (a mounted volume's `lost+found`) must not fail the boot.
+    return [];
+  }
+  return entries.flatMap((entry) => {
+    const child = rel ? `${rel}/${entry.name}` : entry.name;
+    if (isExcludedDotPath(child)) {
+      return [child];
+    }
+    return entry.isDirectory() ? findDotEntries(dir, child) : [];
   });
 }
 
 /** Register the mounts as Bun directory routes, after the trailing-slash mirroring pass — a `/*` pattern must never be mirrored to `/*\/`, which is not a valid route. */
-export function registerStaticDirRoutes(bunRoutes: Record<string, BunRouteValue>, mounts: { pattern: string; dir: string }[]): void {
-  for (const { pattern, dir } of mounts) {
+export function registerStaticDirRoutes(bunRoutes: Record<string, BunRouteValue>, mounts: { pattern: string; dir: string; blocked: string[] }[]): void {
+  for (const { pattern, dir, blocked } of mounts) {
     if (pattern in bunRoutes) {
       throw new Error(`Mochi.serve({ staticDirs }): "${pattern}" is already registered as a route. Mount the directory somewhere else, or drop the conflicting route.`);
     }
     // Bun's `{ dir }` route value predates the BunRouteValue union here, hence the cast.
     bunRoutes[pattern] = { dir } as unknown as BunRouteValue;
+    // Bun's directory route has no dotfile notion, so the dot entries present at boot are shadowed by more specific 404 routes.
+    for (const route of blocked) {
+      for (const key of [route, `${route}/*`]) {
+        bunRoutes[key] ??= new Response(null, { status: 404 });
+      }
+    }
   }
 }

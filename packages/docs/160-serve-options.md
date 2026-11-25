@@ -104,6 +104,8 @@ await Mochi.serve({
 
 This is for **large or generated** trees — a media library, a docs export, a build directory from another tool. For ordinary site assets keep using `publicDir`, which scans and registers each file individually.
 
+Like `publicDir`, a mount does not serve dotfiles or dot-directories (`.env`, `.git/…`), apart from a top-level `.well-known/`. Mochi blocks the ones that exist at startup; a dotfile written into the tree later is served until the next restart, so keep secrets out of a mounted directory.
+
 <Callout type="warning">
 
 A mount is a native Bun directory route, matched **before** Mochi's request pipeline — so your middleware never sees it. `handle` hooks, `filterResponseHeaders`, `transformPage`, rate limiting, CSRF, trailing-slash normalization and the `request` event all skip `/prefix/*`, and a miss returns Bun's bare 404 rather than your `errorPage`. If you need any of that — auth, custom headers, logging — serve those files through `publicDir` (which can be gated with `protection.protectFiles`) or your own `Mochi.api` / `Mochi.file` route instead.
