@@ -67,8 +67,6 @@ Every event carries a `kind` that describes what the framework is about to do wi
 
 `kind` is set once at construction. An error thrown during a `Mochi.page` render stays `kind: 'page'`.
 
-Some requests never reach `handle`: `publicDir` files, `staticDirs` mounts, `Mochi.file` routes, WebSocket upgrades and SSE streams. Middleware cannot gate them or change their headers, so keep private files out of `publicDir`.
-
 Use it to opt out of per-request work for framework assets:
 
 ```ts
@@ -83,6 +81,8 @@ export const auth: Handle = async ({ event, resolve }) => {
   return resolve(event);
 };
 ```
+
+Some requests never reach `handle`: `publicDir` files, `staticDirs` mounts, `Mochi.file` routes, WebSocket upgrades and SSE streams. Middleware cannot gate them or change their headers, so keep private files out of `publicDir`.
 
 ### `sequence`
 
