@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, setSystemTime, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
@@ -32,7 +32,7 @@ const {
 } = await import('./db.server');
 const { adminAuth } = await import('./adminAuth');
 const { embedHeaders, embedAncestors, NEWSLETTER_EMBED_PATH } = await import('./embedHeaders');
-const { NEWSLETTER_TOKEN_PATHS } = await import('./newsletter/config');
+const { NEWSLETTER_TOKEN_PATHS, RESEND_COOLDOWN_MS, SIGNUP_RESPONSE_FLOOR_MS } = await import('./newsletter/config');
 
 const sent: ResolvedEmailMessage[] = [];
 
@@ -260,6 +260,30 @@ describe('newsletter signup', () => {
     // Only the genuinely new address was mailed.
     expect(sent.flatMap((m) => m.to)).toEqual(['grace-hopper@example.com']);
     expect(rowFor('linus@example.com')?.status).toBe('confirmed');
+  });
+
+  // Identical bodies are not enough: a confirmed address that skipped the log
+  // write and the enqueue answered ~10 ms sooner, outing it by latency alone.
+  test('a confirmed address does the same work as any signup and answers no sooner', async () => {
+    sent.length = 0;
+    // Backdated past the cooldown, so the submit below reaches `already` rather than `throttled`.
+    setSystemTime(Date.now() - RESEND_COOLDOWN_MS - 60_000);
+    const member = requestSubscription({ email: 'quiet@example.com', source: '' }, { cooldownMs: 0, ttlMs: 60_000 });
+    setSystemTime();
+    confirmSubscriber(member.id);
+
+    const started = performance.now();
+    expect((await subscribe(base, validFields('quiet@example.com'))).status).toBe(200);
+    expect(performance.now() - started).toBeGreaterThanOrEqual(SIGNUP_RESPONSE_FLOOR_MS - 5);
+
+    for (let i = 0; i < 200 && (newsletterLogsBySubscriber()[member.id]?.length ?? 0) < 2; i++) {
+      await Bun.sleep(10);
+    }
+    const entries = newsletterLogsBySubscriber()[member.id] ?? [];
+    expect(entries.map((e) => e.event)).toEqual(['queued', 'sent']);
+    expect(entries.at(-1)?.detail).toBe('Skipped — already confirmed');
+    expect(sent).toHaveLength(0);
+    expect(getSubscriber(member.id)?.status).toBe('confirmed');
   });
 
   test('a bogus token renders the invalid state rather than failing', async () => {
