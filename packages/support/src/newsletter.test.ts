@@ -5,6 +5,7 @@ import type { Server } from 'bun';
 import { parse } from 'devalue';
 import { Mochi, mintCaptcha, solveCaptcha, sequence } from 'mochi-framework';
 import type { ResolvedEmailMessage } from 'mochi-framework';
+import { analytics } from 'mochi-shared';
 
 // The db path and admin credentials must be set before `./routes` and its
 // transitive `./db.server` are evaluated.
@@ -30,7 +31,8 @@ const {
   getSubscriber,
 } = await import('./db.server');
 const { adminAuth } = await import('./adminAuth');
-const { embedHeaders, embedAncestors } = await import('./embedHeaders');
+const { embedHeaders, embedAncestors, NEWSLETTER_EMBED_PATH } = await import('./embedHeaders');
+const { NEWSLETTER_TOKEN_PATHS } = await import('./newsletter/config');
 
 const sent: ResolvedEmailMessage[] = [];
 
@@ -86,7 +88,7 @@ describe('newsletter signup', () => {
           },
         },
       },
-      handle: sequence(adminAuth, embedHeaders),
+      handle: sequence(adminAuth, embedHeaders, analytics({ exclude: [NEWSLETTER_EMBED_PATH, ...NEWSLETTER_TOKEN_PATHS] })),
       queues: [newsletterEmailQueue],
       // Mirrors src/index.ts's durable storage; the file joins the temp dir the afterAll retry-loop already cleans up.
       queueStorage: { sqlite: path.join(outDir, 'queue.sqlite') },
@@ -279,6 +281,32 @@ describe('newsletter signup', () => {
     expect(row?.confirm_token).not.toBe(oldConfirm);
     const stale = await fetch(`${base}/newsletter/confirm/?token=${oldConfirm}`);
     expect(await stale.text()).toContain("doesn't work");
+  });
+
+  // The tracker reports location.href, and on these pages the URL is the credential.
+  test('the analytics tracker never loads on a mailed token link', async () => {
+    sent.length = 0;
+    expect((await subscribe(base, validFields('hedy@example.com'))).status).toBe(200);
+    await waitForSent(1);
+    const links = [...new Set([...(sent[0]?.text ?? '').matchAll(/https:\/\/support\.test(\/\S*\?token=[\w-]+)/g)].map((m) => m[1]))];
+    expect(links).toHaveLength(2);
+
+    const docker = process.env.MOCHI_DOCKER;
+    process.env.MOCHI_DOCKER = 'true';
+    try {
+      expect(await (await fetch(`${base}/`)).text()).toContain('data-website-id');
+      for (const link of links) {
+        const res = await fetch(`${base}${link}`);
+        expect(res.status).toBe(200);
+        expect(await res.text()).not.toContain('data-website-id');
+      }
+    } finally {
+      if (docker === undefined) {
+        delete process.env.MOCHI_DOCKER;
+      } else {
+        process.env.MOCHI_DOCKER = docker;
+      }
+    }
   });
 
   test('the delivery log records queued → sending → sent', async () => {

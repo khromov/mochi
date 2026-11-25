@@ -7,6 +7,9 @@ export const RESEND_COOLDOWN_MS = Number(process.env.NEWSLETTER_RESEND_COOLDOWN_
 // A queue job has no request context, so the origin can only come from env.
 export const PUBLIC_ORIGIN = process.env.MOCHI_ORIGIN || `http://localhost:${process.env.PORT || 3336}`;
 
+// The token in their query string is the whole authorisation, so analytics must never load on these pages.
+export const NEWSLETTER_TOKEN_PATHS = ['/newsletter/confirm', '/newsletter/unsubscribe'];
+
 // The trailing slash matters: the site is `trailingSlash: 'always'`, so a
 // slashless link costs the recipient a 308.
 export function confirmUrl(token: string): string {
