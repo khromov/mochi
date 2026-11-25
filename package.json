@@ -23,7 +23,7 @@
     "db:stop": "bun --cwd=packages/docker run stop",
     "db:down": "bun --cwd=packages/docker run down",
     "db:reset": "bun --cwd=packages/docker run reset",
-    "test": "bun --filter='*' run test",
+    "test": "bun --filter='*' run test && bun test ./scripts",
     "test:leak": "bun packages/mochi/scripts/leak/runLeakTest.ts",
     "memtest:loop": "bash memtest/loop.sh",
     "memtest:rerun": "bash memtest/rerun.sh",
