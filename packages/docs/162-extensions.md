@@ -149,6 +149,8 @@ await Mochi.serve({
 
 #### `cookie:defaults`
 
+<VersionNote since="0.10.0" message="Before 0.10.0, cookies.set() and cookies.delete() in the browser ignored these defaults." />
+
 Default `CookieSerializeOptions` merged into every `cookies.set()` call. Per-call options win per field. Resolved once at startup. Sync. In the browser, `cookies.set()` and `cookies.delete()` apply `path`, `domain`, `secure`, `sameSite`, `partitioned` and `priority` from these defaults; `httpOnly`, `maxAge` and `expires` apply to server writes only.
 
 ```ts
