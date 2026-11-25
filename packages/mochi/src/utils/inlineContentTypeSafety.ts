@@ -1,5 +1,9 @@
 /** Strip charset/params and lowercase, e.g. "text/html; charset=utf-8" -> "text/html". */
 export function baseContentType(contentType: string): string {
+  // Browsers honour the last entry of a comma-delimited value ("image/png, text/html" renders as HTML), so keep it whole to miss every allowlist.
+  if (contentType.includes(',')) {
+    return contentType.trim().toLowerCase();
+  }
   return contentType.split(';')[0]!.trim().toLowerCase();
 }
 

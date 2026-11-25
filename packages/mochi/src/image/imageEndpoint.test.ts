@@ -58,9 +58,15 @@ describe('safeOriginalContentType', () => {
     expect(safeOriginalContentType('application/json')).toEqual({ contentType: 'application/octet-stream', attachment: true });
   });
 
-  test('matches on the base type, ignoring charset params and case', () => {
-    expect(safeOriginalContentType('IMAGE/PNG; charset=binary')).toEqual({ contentType: 'IMAGE/PNG; charset=binary', attachment: false });
+  test('matches on the base type, ignoring charset params and case, and serves the normalized type', () => {
+    expect(safeOriginalContentType('IMAGE/PNG; charset=binary')).toEqual({ contentType: 'image/png', attachment: false });
     expect(safeOriginalContentType('image/svg+xml; charset=utf-8')).toEqual({ contentType: 'application/octet-stream', attachment: true });
+  });
+
+  test('forces a comma-delimited type to a download, since browsers honour its last entry', () => {
+    for (const ct of ['image/png;x=1, text/html', 'image/png, text/html', 'image/png;x=1, image/svg+xml', 'image/png, image/png']) {
+      expect(safeOriginalContentType(ct)).toEqual({ contentType: 'application/octet-stream', attachment: true });
+    }
   });
 });
 
@@ -175,6 +181,18 @@ describe('createImageHandler', () => {
     expect(after.status).toBe(200);
     expect(after.headers.get('ETag')).toBeTruthy();
     expect(after.headers.get('ETag')).not.toBe(etagBefore);
+  });
+
+  test('an original whose upstream type is comma-delimited is served as a download', async () => {
+    installConfig();
+    const cache = installRuntime({});
+    initExtensions({});
+    await cache.getOriginal(SRC, async () => ({ bytes: new TextEncoder().encode('<script>alert(1)</script>'), contentType: 'image/png;x=1, text/html' }));
+    const handler = createImageHandler();
+    const res = await handler(request(getImageUrl(SRC)));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('application/octet-stream');
+    expect(res.headers.get('Content-Disposition')).toBe('attachment');
   });
 
   test('a size removed since minting serves the full-size original', async () => {
