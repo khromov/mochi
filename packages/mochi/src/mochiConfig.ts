@@ -51,12 +51,12 @@ export async function initMochiConfig(options: MochiServeOptions): Promise<void>
     options,
     envKeyPresent,
   });
-  // An empty secret derives a public, constant AES-SIV key, so every sealed token would be forgeable.
-  if (secretKey.length === 0) {
+  // HMAC zero-pads its key, so an empty or all-zero secret derives one public AES-SIV key that makes every sealed token forgeable.
+  if (secretKey.every((byte) => byte === 0)) {
     throw new Error(
-      'The server secret key is empty: MOCHI_KEY decoded to zero bytes, or the serverIsland:secretKey filter ' +
-        'returned an empty Buffer. Every sealed token (server-island props, image URLs, captcha, protection clearances) ' +
-        'would be forgeable. Generate a key with `bunx mochi-framework generate-key`.',
+      'The server secret key is empty or all zero bytes: MOCHI_KEY decoded to no bytes or only zero bytes, or the ' +
+        'serverIsland:secretKey filter returned such a Buffer. Every sealed token (server-island props, image URLs, ' +
+        'captcha, protection clearances) would be forgeable. Generate a key with `bunx mochi-framework generate-key`.',
     );
   }
 

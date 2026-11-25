@@ -23,9 +23,15 @@ describe('initMochiConfig secret key', () => {
     expect(() => getMochiConfig()).toThrow('Mochi.serve() has not been called yet.');
   });
 
-  test('refuses to start when the serverIsland:secretKey filter returns an empty Buffer', async () => {
+  test.each(['AA', 'A'.repeat(43)])('refuses to start when MOCHI_KEY=%p decodes to only zero bytes', async (value) => {
+    process.env.MOCHI_KEY = value;
+    await expect(initMochiConfig({})).rejects.toThrow(/secret key is empty or all zero bytes/);
+    expect(() => getMochiConfig()).toThrow('Mochi.serve() has not been called yet.');
+  });
+
+  test.each([0, 32])('refuses to start when the serverIsland:secretKey filter returns %p zero bytes', async (length) => {
     delete process.env.MOCHI_KEY;
-    initExtensions({ filters: { 'serverIsland:secretKey': async () => Buffer.alloc(0) } });
+    initExtensions({ filters: { 'serverIsland:secretKey': async () => Buffer.alloc(length) } });
     await expect(initMochiConfig({})).rejects.toThrow(/secret key is empty/);
   });
 
