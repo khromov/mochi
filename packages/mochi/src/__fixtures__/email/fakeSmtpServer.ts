@@ -1,6 +1,6 @@
 // Test SMTP server backed by `smtp-server` (the Nodemailer team's server-side
-// counterpart to the `nodemailer` client). Plaintext only: AUTH/STARTTLS are
-// disabled so nodemailer stays on `secure: false` and delivers without creds.
+// counterpart to the `nodemailer` client). Plaintext only: STARTTLS is never offered,
+// and AUTH only with `{ auth: true }` — what a STARTTLS-stripping attacker presents.
 import { SMTPServer } from 'smtp-server';
 
 export interface FakeSmtpMessage {
@@ -13,15 +13,23 @@ export interface FakeSmtpMessage {
 export interface FakeSmtpServer {
   port: number;
   messages: FakeSmtpMessage[];
+  /** `user:pass` of every AUTH the server received. */
+  logins: string[];
   close(): void;
 }
 
-export function startFakeSmtpServer(): FakeSmtpServer {
+export function startFakeSmtpServer({ auth = false }: { auth?: boolean } = {}): FakeSmtpServer {
   const messages: FakeSmtpMessage[] = [];
+  const logins: string[] = [];
 
   const server = new SMTPServer({
     authOptional: true,
-    disabledCommands: ['AUTH', 'STARTTLS'],
+    disabledCommands: auth ? ['STARTTLS'] : ['AUTH', 'STARTTLS'],
+    allowInsecureAuth: auth,
+    onAuth(credentials, _session, callback) {
+      logins.push(`${credentials.username}:${credentials.password}`);
+      callback(null, { user: credentials.username });
+    },
     onData(stream, session, callback) {
       const chunks: Buffer[] = [];
       stream.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -45,6 +53,7 @@ export function startFakeSmtpServer(): FakeSmtpServer {
   return {
     port: address.port,
     messages,
+    logins,
     close: () => server.close(),
   };
 }

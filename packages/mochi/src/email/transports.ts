@@ -100,7 +100,7 @@ class SmtpTransport implements EmailTransport {
         { cause: err },
       );
     }
-    const { host, port, secure, auth, pool, tls } = this.config;
+    const { host, port, secure, auth, pool, tls, requireTLS } = this.config;
     const resolvedSecure = secure ?? port === 465;
     return nodemailer.createTransport({
       host,
@@ -109,6 +109,8 @@ class SmtpTransport implements EmailTransport {
       ...(auth ? { auth } : {}),
       ...(pool ? { pool: true } : {}),
       ...(tls ? { tls } : {}),
+      // nodemailer's STARTTLS is opportunistic, so an on-path attacker who strips it from EHLO would otherwise receive the credentials in cleartext.
+      ...((requireTLS ?? (!resolvedSecure && !!auth)) ? { requireTLS: true } : {}),
     });
   }
 
