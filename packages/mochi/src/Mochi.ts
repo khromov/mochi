@@ -50,7 +50,7 @@ import type {
 } from './types';
 import { isFormFail, isFormSuccess, isRedirect } from './runtime/forms';
 import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } from './runtime/formsJson';
-import { csrfCheck, csrfBootWarning, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
+import { csrfCheck, csrfBootWarning, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS, wsOriginCheck } from './runtime/csrf';
 import { addSecurityHeaders, resolveSecurityHeaders } from './runtime/security';
 import { applyFilter, initExtensions, runHook } from './extensions';
 import { escapeHtmlAttr } from './utils/htmlEscape';
@@ -1297,6 +1297,11 @@ export class Mochi {
               duration: performance.now() - start,
             });
           };
+          const wsOriginBlock = wsOriginCheck(req, wsUrl, options.csrf, trustedOrigins);
+          if (wsOriginBlock) {
+            emitWsReject(wsOriginBlock.status);
+            return wsOriginBlock;
+          }
           requestContext.run(wsHookCtx, () => {
             runHook('route:matched', {
               pattern,
@@ -2195,6 +2200,7 @@ export class Mochi {
         reloadSpeculationRules,
         publicRouteGuard,
         securityHeaderDefaults,
+        trustedOrigins,
       });
     }
 

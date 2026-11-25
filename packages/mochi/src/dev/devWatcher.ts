@@ -17,6 +17,7 @@ import { reloadImageOptions } from '../image/config';
 import type { MochiImageOptions } from '../image/types';
 import type { MochiQueueStorage } from '../queue';
 import { buildPublicUrl } from '../runtime/proxy';
+import { wsOriginCheck } from '../runtime/csrf';
 import { resolvePublicFiles, registerPublicRoutes, type PublicRouteGuard } from '../runtime/publicDir';
 import { loadSvelteConfig } from '../compiler/svelteConfig';
 import { recordReloadSignal } from './liveReloadGeneration';
@@ -113,6 +114,7 @@ export interface DevWatcherDeps {
   reloadSpeculationRules?: (rules: SpeculationRules | undefined) => void;
   publicRouteGuard?: PublicRouteGuard;
   securityHeaderDefaults: Record<string, string>;
+  trustedOrigins: ReadonlySet<string>;
   /** Signature of the cron array at boot, so a reload re-registers cron only when it actually changed. */
   initialCronSignature?: string;
 }
@@ -149,10 +151,15 @@ export function startDevWatcher(deps: DevWatcherDeps): Promise<void> {
     reloadSpeculationRules,
     publicRouteGuard,
     securityHeaderDefaults,
+    trustedOrigins,
   } = deps;
 
   const liveReloadHandler = (req: Request, srv: Server<undefined>): Response => {
     const url = buildPublicUrl(req, options.proxy);
+    const originBlock = wsOriginCheck(req, url, options.csrf, trustedOrigins);
+    if (originBlock) {
+      return originBlock;
+    }
     const entryParam = url.searchParams.get('entry') ?? undefined;
     const success = (
       srv as unknown as {

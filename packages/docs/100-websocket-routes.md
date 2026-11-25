@@ -99,6 +99,20 @@ await Mochi.serve({
 });
 ```
 
+#### Origin check
+
+<VersionNote since="0.10.0" message="Earlier versions accepted upgrades from any origin." />
+
+Browsers apply neither the same-origin policy nor CORS to WebSockets, so any website could open a socket that carries your visitor's cookies. Mochi rejects an upgrade with `403` unless its `Origin` is the host the socket connects to, the public origin (`proxy.origin`/`proxy.hostHeader`), or listed in `csrf.trustedOrigins`. Clients that send no `Origin` (servers, CLIs, native apps) are not checked. `csrf.checkOrigin: false` turns the check off, along with the form check.
+
+```ts
+await Mochi.serve({
+  proxy: { origin: 'https://app.example.com' },
+  csrf: { trustedOrigins: ['https://widget.partner.com'] },
+  routes,
+});
+```
+
 <Callout type="info">
 
 Behind a reverse proxy every socket shares one peer address, so `ws.remoteAddress` is the proxy rather than the visitor. Rate limiting keyed on it becomes one bucket for your whole site — configure `proxy.addressHeader` and read `getClientAddress()` instead.
