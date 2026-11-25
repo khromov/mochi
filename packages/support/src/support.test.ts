@@ -27,10 +27,12 @@ const sent: ResolvedEmailMessage[] = [];
 
 const AUTH = { Authorization: `Basic ${Buffer.from('admin:letmein').toString('base64')}` };
 
-const post = (base: string, fields: Record<string, string>): Promise<Response> =>
+// Each POST defaults to its own client address so the route's rate limit only decides the test that is about it.
+let clientCounter = 0;
+const post = (base: string, fields: Record<string, string>, client = `192.0.2.${++clientCounter}`): Promise<Response> =>
   fetch(`${base}/?/send`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Forwarded-For': client },
     body: new URLSearchParams(fields).toString(),
   });
 
@@ -209,6 +211,21 @@ describe('support form action', () => {
     expect(sent[0]?.subject).not.toContain('\r');
     expect(sent[0]?.subject).toBe('Support request from Ada Bcc: evil@example.com');
     expect(sent[0]?.bcc).toBeUndefined();
+  });
+
+  test('one client is rate limited after 10 submissions, but can still load the form', async () => {
+    sent.length = 0;
+    const client = '198.51.100.7';
+    const statuses: number[] = [];
+    for (let i = 0; i < 12; i++) {
+      statuses.push((await post(base, { ...validFields(), message: `flood ${i}` }, client)).status);
+    }
+    expect(statuses).toEqual([...Array<number>(10).fill(200), 429, 429]);
+    await waitForSent(10);
+    await Bun.sleep(50);
+    expect(sent).toHaveLength(10);
+    expect(listSubmissions(false).filter((s) => s.message.startsWith('flood '))).toHaveLength(10);
+    expect((await fetch(`${base}/`, { headers: { 'X-Forwarded-For': client } })).status).toBe(200);
   });
 
   test('the delivery log records queued → sending → sent', async () => {
