@@ -44,11 +44,15 @@ export function resolveStaticDirs(staticDirs: MochiStaticDirs, assetPrefix: stri
     if (!stats.isDirectory()) {
       throw new Error(`Mochi.serve({ staticDirs }): "${rawPrefix}" points at "${dir}", which is a file, not a directory.`);
     }
-    // Bun matches routes on the raw request path but the directory route decodes it, so `?`, `#` or `:` in a name can
-    // arrive either raw or percent-encoded — block both spellings.
-    const blocked = findDotEntries(resolved).flatMap((rel) =>
-      [...new Set([publicRouteKey(rel), rel.split('/').map(encodeURIComponent).join('/')])].map((key) => `${prefix}/${key}`),
-    );
+    // Bun matches routes on the raw request path but the directory route decodes it, so an ancestor with more than one URL
+    // spelling becomes a param, and the dot name itself is blocked percent-encoded in either hex case.
+    const blocked = findDotEntries(resolved).flatMap((rel) => {
+      const segments = rel.split('/');
+      const name = segments.pop()!;
+      const parents = segments.map((segment, i) => (/^[\w.~-]+$/.test(segment) ? segment : `:p${i}`));
+      const names = [publicRouteKey(name), encodeURIComponent(name)].flatMap((n) => [n, n.replace(/%[0-9A-F]{2}/g, (m) => m.toLowerCase())]);
+      return [...new Set(names)].map((n) => [prefix, ...parents, n].join('/'));
+    });
     return { pattern: `${prefix}/*`, dir: resolved, blocked };
   });
 }

@@ -16,6 +16,10 @@ mkdirSync(path.join(media, '.git'));
 writeFileSync(path.join(media, '.git', 'config'), 'url = https://SECRET@example.com/repo');
 writeFileSync(path.join(media, 'nested', '.env'), 'NESTED_SECRET=1');
 writeFileSync(path.join(media, '.x#y'), 'HASH_SECRET=1');
+writeFileSync(path.join(media, '.x[y'), 'BRACKET_SECRET=1');
+mkdirSync(path.join(media, 'café'));
+writeFileSync(path.join(media, 'café', '.env'), 'CAFE_SECRET=1');
+writeFileSync(path.join(media, 'café', 'menu.txt'), 'espresso');
 mkdirSync(path.join(media, '.well-known'));
 writeFileSync(path.join(media, '.well-known', 'security.txt'), 'Contact: mailto:security@example.com');
 
@@ -106,13 +110,15 @@ describe('Mochi.serve({ staticDirs })', () => {
 
   test('refuses dotfiles and dot-directories like publicDir, apart from .well-known', async () => {
     const base = `http://localhost:${server!.port}`;
-    // `%23` is the spelling encodeURI leaves raw, yet Bun's directory route still decodes it to `.x#y`.
-    for (const p of ['/assets/.env', '/assets/nested/.env', '/assets/.git/config', '/assets/.git/', '/assets/.git', '/assets/.x%23y']) {
+    // Bun's router matches the raw path but its directory route decodes `%XX` in any hex case, so each spelling must 404.
+    const spellings = ['/assets/.x%23y', '/assets/.x%5By', '/assets/.x%5by', '/assets/caf%C3%A9/.env', '/assets/caf%c3%a9/.env', '/assets/caf%C3%a9/.env'];
+    for (const p of ['/assets/.env', '/assets/nested/.env', '/assets/.git/config', '/assets/.git/', '/assets/.git', ...spellings]) {
       const res = await fetch(`${base}${p}`);
       expect({ p, status: res.status }).toEqual({ p, status: 404 });
       expect(await res.text()).not.toContain('SECRET');
     }
     expect(await (await fetch(`${base}/assets/.well-known/security.txt`)).text()).toContain('Contact:');
+    expect(await (await fetch(`${base}/assets/caf%c3%a9/menu.txt`)).text()).toBe('espresso');
   });
 
   test('serves a percent-encoded filename', async () => {
