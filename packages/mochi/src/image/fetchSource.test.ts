@@ -2,7 +2,7 @@ import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createPinnedFetchRequest, fetchImageSource, fetchPinned } from './fetchSource';
+import { createPinnedFetchRequest, fetchImageSource, fetchPinned, MAX_CONCURRENT_SOURCE_FETCHES } from './fetchSource';
 import { registerLocalImageAsset } from './localAssetRegistry';
 import { ImageError } from './types';
 import type { ResolvedImageOptions } from './types';
@@ -16,11 +16,22 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR
 let receivedHost: string | null = null;
 // Read through a call so the `receivedHost = null` reset in a test does not narrow the type to `null`.
 const lastReceivedHost = () => receivedHost;
+// `/hold/*` parks each request until `releaseHeld()`, counting how many the server holds at once.
+let holding = 0;
+let peakHolding = 0;
+let releaseHeld: () => void = () => {};
+let held: Promise<void> = Promise.resolve();
 const server = Bun.serve({
   port: 0,
-  fetch(req) {
+  async fetch(req) {
     receivedHost = req.headers.get('host');
     const { pathname } = new URL(req.url);
+    if (pathname.startsWith('/hold/')) {
+      peakHolding = Math.max(peakHolding, ++holding);
+      await held;
+      holding--;
+      return new Response(PNG, { headers: { 'Content-Type': 'image/png' } });
+    }
     if (pathname === '/image') {
       return new Response(PNG, { headers: { 'Content-Type': 'image/png' } });
     }
@@ -178,6 +189,43 @@ describe('fetchImageSource redirect re-validation', () => {
     await expect(fetchImageSource(base('/redirect-ok'), opts())).rejects.toMatchObject({
       message: 'Too many redirects',
     });
+  });
+});
+
+describe('fetchImageSource concurrency cap', () => {
+  async function holdSlots(count: number): Promise<Array<Promise<unknown>>> {
+    holding = 0;
+    peakHolding = 0;
+    held = new Promise((resolve) => (releaseHeld = resolve));
+    const pending = Array.from({ length: count }, (_, i) => fetchImageSource(base(`/hold/${i}`), opts()));
+    const deadline = Date.now() + 2_000;
+    while (holding < Math.min(count, MAX_CONCURRENT_SOURCE_FETCHES) && Date.now() < deadline) {
+      await Bun.sleep(10);
+    }
+    await Bun.sleep(100);
+    return pending;
+  }
+
+  test('a burst of distinct sources queues beyond the cap instead of all buffering at once', async () => {
+    const pending = await holdSlots(MAX_CONCURRENT_SOURCE_FETCHES + 4);
+    try {
+      expect(peakHolding).toBe(MAX_CONCURRENT_SOURCE_FETCHES);
+    } finally {
+      releaseHeld();
+    }
+    const results = (await Promise.all(pending)) as Array<{ bytes: Uint8Array }>;
+    expect(results.every((r) => r.bytes.byteLength === PNG.byteLength)).toBe(true);
+  });
+
+  test('a fetch still waiting for a slot when fetchTimeoutMs elapses fails with 503', async () => {
+    const pending = await holdSlots(MAX_CONCURRENT_SOURCE_FETCHES);
+    try {
+      await expect(fetchImageSource(base('/image'), opts({ fetchTimeoutMs: 100 }))).rejects.toMatchObject({ status: 503 });
+    } finally {
+      releaseHeld();
+    }
+    await Promise.all(pending);
+    await expect(fetchImageSource(base('/image'), opts())).resolves.toMatchObject({ contentType: 'image/png' });
   });
 });
 

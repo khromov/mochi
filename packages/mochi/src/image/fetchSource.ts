@@ -1,5 +1,6 @@
 import { resolvePublicUrl, SsrfGuardError } from '../utils/publicUrl';
 import { applyFilter } from '../extensions';
+import { pinGlobal } from '../utils/globalState';
 import { getLocalImageAsset } from './localAssetRegistry';
 import { ImageError } from './types';
 import type { ResolvedImageOptions } from './types';
@@ -10,6 +11,39 @@ export interface FetchedSource {
 }
 
 const DEFAULT_MAX_REDIRECTS = 5;
+
+// Each in-flight fetch buffers up to ~2x `maxResponseBytes`, so a burst of distinct cold sources must queue rather than all be resident at once.
+export const MAX_CONCURRENT_SOURCE_FETCHES = 8;
+
+const fetchSlots = pinGlobal('__mochi_image_fetch_slots__', () => ({ active: 0, waiting: [] as Array<() => void> }));
+
+function acquireFetchSlot(signal: AbortSignal): Promise<void> {
+  if (fetchSlots.active < MAX_CONCURRENT_SOURCE_FETCHES) {
+    fetchSlots.active++;
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const wake = (): void => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    };
+    const onAbort = (): void => {
+      fetchSlots.waiting.splice(fetchSlots.waiting.indexOf(wake), 1);
+      reject(new ImageError(503, 'Too many concurrent source image fetches'));
+    };
+    fetchSlots.waiting.push(wake);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function releaseFetchSlot(): void {
+  const next = fetchSlots.waiting.shift();
+  if (next) {
+    next();
+  } else {
+    fetchSlots.active--;
+  }
+}
 
 export interface PinnedFetchRequest {
   url: URL;
@@ -67,9 +101,17 @@ export async function fetchImageSource(src: string, opts: ResolvedImageOptions):
     return { bytes: await Bun.file(local.diskPath).bytes(), contentType: local.contentType };
   }
 
-  // One timeout bounds the whole chain (all redirect hops), not each hop.
+  // One timeout bounds the whole chain (the wait for a fetch slot and all redirect hops), not each hop.
   const signal = AbortSignal.timeout(opts.fetchTimeoutMs);
+  await acquireFetchSlot(signal);
+  try {
+    return await fetchRemoteSource(src, opts, signal);
+  } finally {
+    releaseFetchSlot();
+  }
+}
 
+async function fetchRemoteSource(src: string, opts: ResolvedImageOptions, signal: AbortSignal): Promise<FetchedSource> {
   // Cap re-validated redirect hops; overridable per-source via the filter.
   const maxRedirects = applyFilter('image:maxRedirects', DEFAULT_MAX_REDIRECTS, { src });
 

@@ -249,7 +249,7 @@ Configure under `Mochi.serve({ image: { … } })`. Every option is optional.
 | `outputFormats`        | all four                | Allowed output formats                                                    |
 | `allowedHosts`         | any public host         | Exact host or `*.example.com`                                             |
 | `blockPrivateNetworks` | `true`                  | Reject private/loopback/link-local addresses                              |
-| `fetchTimeoutMs`       | `10_000`                | Upstream fetch timeout                                                    |
+| `fetchTimeoutMs`       | `10_000`                | Upstream fetch timeout, incl. the wait for one of 8 fetch slots           |
 | `maxResponseBytes`     | `20 MB`                 | Hard source-size cap                                                      |
 | `maxPixels`            | `50_000_000`            | Decompression-bomb guard                                                  |
 | `timeToStale`          | `14_400_000`            | Cache time-to-stale (ms); variants follow it                              |
