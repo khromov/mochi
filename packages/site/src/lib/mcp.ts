@@ -1,5 +1,5 @@
 import { ValibotJsonSchemaAdapter } from '@tmcp/adapter-valibot';
-import { HttpTransport } from '@tmcp/transport-http';
+import { HttpTransport, type HttpTransportOptions } from '@tmcp/transport-http';
 import mochiPkg from 'mochi-framework/package.json' with { type: 'json' };
 import { logger } from 'mochi-framework';
 import { McpServer } from 'tmcp';
@@ -41,15 +41,22 @@ mcpServer.tool(
   },
 );
 
+const MAX_SECTIONS = 50;
+const MAX_SLUG_LENGTH = 100;
+
 mcpServer.tool(
   {
     name: 'get_section',
     description:
       'Fetch the full text of one or more documentation sections (doc pages, demos, or blog posts). The changelog is available as { type: "doc", slug: "changelog" }. Pass an array of { type, slug } objects as returned by get_documentation_sections. Sections are returned in the requested order, each preceded by an ==== type:slug ==== marker.',
     annotations: readOnlyHints,
-    schema: v.object({
-      sections: v.array(v.object({ type: v.picklist(['doc', 'demo', 'post']), slug: v.string() })),
-    }),
+    // tmcp echoes every validation issue back, each embedding the whole array, so stop at the first one.
+    schema: v.config(
+      v.object({
+        sections: v.pipe(v.array(v.object({ type: v.picklist(['doc', 'demo', 'post']), slug: v.pipe(v.string(), v.maxLength(MAX_SLUG_LENGTH)) })), v.maxLength(MAX_SECTIONS)),
+      }),
+      { abortEarly: true },
+    ),
   },
   async ({ sections }) => {
     const results = await Promise.all(
@@ -75,7 +82,8 @@ mcpServer.tool(
       logger.log(`[mcp] get_section [${found.join(', ')}] → ${found.length} found`);
     }
     if (missing.length) {
-      logger.warn(`[mcp] get_section not found: ${missing.join(', ')}`);
+      // Missing ids carry the caller's raw slug, so JSON-encode them to keep CR/LF and escape codes out of the log.
+      logger.warn(`[mcp] get_section not found: ${JSON.stringify(missing)}`);
     }
     if (!found.length) {
       return tool.error(`None of the requested sections were found. Call get_documentation_sections to list valid slugs.`);
@@ -84,9 +92,23 @@ mcpServer.tool(
   },
 );
 
+// Neither tool reads per-session client info, and the default in-memory store keeps every `initialize`
+// payload forever under a client-chosen `mcp-session-id`.
+const noSessionInfo: NonNullable<NonNullable<HttpTransportOptions['sessionManager']>['info']> = {
+  getClientInfo: async () => undefined,
+  setClientInfo: () => {},
+  getClientCapabilities: async () => undefined,
+  setClientCapabilities: () => {},
+  getLogLevel: async () => undefined,
+  setLogLevel: () => {},
+  getSubscriptions: async () => [],
+  addSubscription: () => {},
+  delete: () => {},
+};
+
 // /mcp is a `Mochi.api()` route, so the site's `trailingSlash: 'always'` policy never applies to it and
 // the endpoint answers at /mcp directly — some MCP clients don't follow a redirect to /mcp/.
-const transport = new HttpTransport(mcpServer, { path: null, disableSse: true });
+const transport = new HttpTransport(mcpServer, { path: null, disableSse: true, sessionManager: { info: noSessionInfo } });
 
 export async function respondMcp(request: Request): Promise<Response> {
   return (await transport.respond(request)) ?? new Response('Not Found', { status: 404 });
