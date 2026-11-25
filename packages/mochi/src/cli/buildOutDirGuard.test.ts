@@ -61,4 +61,13 @@ describe('a .mochi symlink to a directory outside the project', () => {
     expect(existsSync(path.join(outside, 'svelte-compile', 'stale.js'))).toBe(false);
     expect(existsSync(path.join(outside, 'manifest.json'))).toBe(true);
   });
+
+  test('is still cleared when the target holds only a dev server output', async () => {
+    rmSync(path.join(outside, 'id_ed25519'));
+    mkdirSync(path.join(outside, 'dev', 'svelte-compile'), { recursive: true });
+    link();
+    await build({ routes: routes() });
+    expect(existsSync(path.join(outside, 'dev'))).toBe(false);
+    expect(existsSync(path.join(outside, 'manifest.json'))).toBe(true);
+  });
 });

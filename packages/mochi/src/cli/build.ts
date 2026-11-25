@@ -9,7 +9,7 @@ import type { MarkdownConfig, MochiBarrelWarningOptions, MochiFontOptions, Mochi
 import type { MochiProtectionOptions } from '../protection/types';
 import type { MochiSvelteCompiler } from '../compiler/svelteCompilerBackend';
 import { parseJsMinifier, resolveJsMinifier, type MochiJsMinifier } from '../compiler/jsMinifier';
-import { rmSync, mkdirSync, readdirSync } from 'node:fs';
+import { rmSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { scanPublicDir, publicRouteKey } from '../runtime/publicDir';
 import { scanEmailTemplates } from '../email/templates';
@@ -340,7 +340,8 @@ function assertClearableOutDir(outDir: string, sources: string[]): void {
     }
     throw err;
   }
-  if (entries.length > 0 && !entries.includes('svelte-compile')) {
+  // A dev server writes only `dev/`, so an out-dir it used holds a Mochi build too.
+  if (entries.length > 0 && !entries.includes('svelte-compile') && !existsSync(path.join(outDir, 'dev', 'svelte-compile'))) {
     refuse('it is outside the project and does not hold a previous Mochi build');
   }
 }
