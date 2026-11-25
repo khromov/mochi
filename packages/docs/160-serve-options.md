@@ -220,7 +220,7 @@ spoofed, client, proxy1, proxy2   # xffDepth: 3 → "client" (spoofed entry igno
 
 <Callout type="warning">
 
-**Use `getClientAddress()` for a trusted client IP.** Reading `x-forwarded-for` directly could return a spoofable address. Pass the right `xffDepth`.
+**Use `getClientAddress()` for a trusted client IP.** Reading `x-forwarded-for` directly could return a spoofable address. Pass the right `xffDepth`: count only the proxies that append to the header. A larger value is not safe — a client pads the header with extra entries and chooses its own address. Mochi warns once when a request has fewer entries than `xffDepth`.
 
 </Callout>
 
