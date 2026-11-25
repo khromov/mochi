@@ -20,7 +20,7 @@ export function createClientCookies() {
       Cookies.set(name, value, options ? { ...options } : undefined);
     },
 
-    delete(name: string, options?: Pick<CookieSerializeOptions, 'path' | 'domain'>): void {
+    delete(name: string, options?: Omit<CookieSerializeOptions, 'maxAge' | 'expires'>): void {
       Cookies.remove(name, options ? { ...options } : undefined);
     },
   };

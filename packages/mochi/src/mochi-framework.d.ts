@@ -14,7 +14,7 @@ declare module 'mochi-framework' {
     getAll(): import('./runtime/cookies').Cookie[];
     has(name: string): boolean;
     set(name: string, value: string, options?: CookieSerializeOptions): void;
-    delete(name: string, options?: Pick<CookieSerializeOptions, 'path' | 'domain'>): void;
+    delete(name: string, options?: Omit<CookieSerializeOptions, 'maxAge' | 'expires'>): void;
   }
 
   // `logger`, `LogLevel`, `setLogLevel`, `getLogLevel` are real exports of the

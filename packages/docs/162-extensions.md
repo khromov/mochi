@@ -149,7 +149,7 @@ await Mochi.serve({
 
 #### `cookie:defaults`
 
-Default `CookieSerializeOptions` merged into every `cookies.set()` call. Per-call options win per field. Resolved once at startup. Sync.
+Default `CookieSerializeOptions` merged into every `cookies.set()` and `cookies.delete()` call. Per-call options win per field. Resolved once at startup. Sync.
 
 ```ts
 await Mochi.serve({
