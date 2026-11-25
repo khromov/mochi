@@ -109,6 +109,9 @@ class SmtpTransport implements EmailTransport {
       ...(auth ? { auth } : {}),
       ...(pool ? { pool: true } : {}),
       ...(tls ? { tls } : {}),
+      // Attachments are content-only, and nodemailer otherwise reads a `path` from disk or fetches an `href` named by any message key.
+      disableFileAccess: true,
+      disableUrlAccess: true,
     });
   }
 
@@ -123,9 +126,8 @@ class SmtpTransport implements EmailTransport {
 
   private async deliver(message: ResolvedEmailMessage): Promise<MochiEmailResult> {
     const transporter = await this.getTransporter();
-    // `ResolvedEmailMessage`'s fields map 1:1 onto nodemailer's `sendMail`
-    // options (from/to/cc/bcc/replyTo/subject/html/text/attachments/headers) and
-    // its optional keys are already absent (not undefined), so spread it directly.
+    // Declared fields map 1:1 onto nodemailer's `sendMail` options and absent optionals are omitted, so spread it
+    // directly; undeclared keys reach nodemailer too, which is why the transporter disables file and URL access.
     const info = await transporter.sendMail({ ...message });
     return {
       transport: 'smtp',
