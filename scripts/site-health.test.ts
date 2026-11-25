@@ -46,6 +46,11 @@ describe.skipIf(process.platform === 'win32')('site-health Chrome flags', () => 
     expect(await chromeArgv(undefined)).not.toContain('--no-sandbox');
   });
 
+  test('keeps the Chrome sandbox on when CI is explicitly off', async () => {
+    expect(await chromeArgv('false')).not.toContain('--no-sandbox');
+    expect(await chromeArgv('0')).not.toContain('--no-sandbox');
+  });
+
   test('disables the Chrome sandbox under CI, where runners cannot initialize it', async () => {
     expect(await chromeArgv('true')).toContain('--no-sandbox');
   });

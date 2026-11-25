@@ -37,7 +37,8 @@ The sitemap hardcodes the production origin, so each <loc> is re-pointed at
 Writes a human-readable REPORT.md and exits 1 if any page failed.
 
 Chrome is discovered automatically; set BUN_CHROME_PATH to pick a specific binary.
-Chrome's sandbox stays on unless CI is set (GitHub Actions runners can't start it).
+Chrome's sandbox stays on unless CI is set to something other than 0/false (GitHub
+Actions runners can't start it).
 
 Arguments:
   base             Origin to check (default: https://mochi.fast)
@@ -134,7 +135,8 @@ const SETTLE_MS = 1500;
 const LOAD_ATTEMPTS = 2;
 
 /** GitHub Actions runners can't initialize Chrome's sandbox, so only CI turns it off; local runs keep it on. */
-const CHROME_BACKEND = { type: 'chrome', argv: process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : ['--disable-dev-shm-usage'] } as const;
+const UNDER_CI = !!process.env.CI && !['0', 'false'].includes(process.env.CI.toLowerCase());
+const CHROME_BACKEND = { type: 'chrome', argv: UNDER_CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : ['--disable-dev-shm-usage'] } as const;
 
 /** Run thunks with a bounded number in flight at once. */
 async function pool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
