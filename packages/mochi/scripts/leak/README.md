@@ -30,9 +30,10 @@ running `bun run dev` server.
    fetching `/__mochi/health/memory`, which only exists when the env var is set
    — so a 200 proves we're talking to _our_ spawned process, not someone else's
    server already on the port.
-2. **Capture** — fetches `/demos/server-island` and scrapes the
+2. **Capture** — fetches `/__leak/server-island/` and scrapes the
    `<mochi-server-island …>` element so it can hit `/_mochi/island/<name>?props=…`
-   with valid signed props for the rest of the run.
+   with valid signed props for the rest of the run. Aborts the run if the
+   capture fails.
 3. **Warmup** — drives traffic for `--warmup` seconds; samples discarded.
    Lets `ComponentRegistry` populate `compiledComponents` / `clientFiles` /
    `cssFileUrls`.
@@ -55,9 +56,14 @@ endpoint, JSON API + `MochiCookieJar`, minimum-overhead API, error responder,
 unmatched 404.
 
 The captured server-island hit targets `/__leak/server-island` (defined in
-`packages/site/src/leak-test/`), not `/demos/server-island` — the demo island
+`packages/site/src/leak-test/`, mounted only in development or when
+`MOCHI_MEMORY_PROBE=1`), not `/demos/server-island` — the demo island
 has an artificial 1–3s `delay()` that would dominate the harness's latency
 stats and mask any real p95 creep signal.
+
+Page paths end in `/` because the site is `trailingSlash: 'always'`. Each route
+has an expected status (`expectStatus`, default 200); any other response counts
+as an error.
 
 ## Verdict thresholds (first pass — tune after a few runs)
 
@@ -74,8 +80,8 @@ with delta=−112 MB, latency improved, GC dips observed would otherwise fail
 on a slope of 2.88 MB/min). Below the r² floor, the slope is reported but
 ignored for verdict purposes.
 
-Also fails on: error rate > 0.5%, or p95 latency creep > 50% (first vs last
-minute of workload).
+Also fails on: error rate > 0.5% (transport failures plus unexpected HTTP
+statuses), or p95 latency creep > 50% (first vs last minute of workload).
 
 ## Output
 

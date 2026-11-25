@@ -2,7 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { startServer } from './serverProcess';
-import { STATIC_ROUTES, buildWeightedRing, captureServerIslandHit, type RouteHit } from './routes';
+import { STATIC_ROUTES, buildWeightedRing, captureServerIslandHit } from './routes';
 import { startLoad, latenciesBetween } from './loadGen';
 import { startRssPoller, steadyStateProbe, probeMemory, type RssSample, type MemoryProbe } from './sampler';
 import { judge } from './analyze';
@@ -60,6 +60,8 @@ async function buildSite(siteCwd: string): Promise<void> {
     cwd: siteCwd,
     stdout: 'inherit',
     stderr: 'inherit',
+    // The site only registers its /__leak/* routes under this flag, so the build must see it to prebuild them.
+    env: { ...process.env, MOCHI_MEMORY_PROBE: '1' },
   });
   if ((await build.exited) !== 0) {
     throw new Error('Site build failed — fix the build before re-running the leak test');
@@ -80,7 +82,8 @@ async function main(): Promise<number> {
   const server = await startServer({
     cwd: siteCwd,
     port: args.port,
-    env: { MOCHI_MEMORY_PROBE: '1', NODE_ENV: 'production', PORT: String(args.port) },
+    // MOCHI_DOMAIN pins the site's CSRF origin to the URL loadGen sends as `Origin`.
+    env: { MOCHI_MEMORY_PROBE: '1', NODE_ENV: 'production', PORT: String(args.port), MOCHI_DOMAIN: baseUrl },
   });
   console.log(`[leak] Server up (pid=${server.pid})`);
 
@@ -94,11 +97,10 @@ async function main(): Promise<number> {
     // Capture server-island hit before warmup so it's in the route mix.
     console.log('[leak] Capturing server-island signed-props blob…');
     const islandHit = await captureServerIslandHit(baseUrl);
-    const allRoutes: RouteHit[] = islandHit ? [...STATIC_ROUTES, islandHit] : STATIC_ROUTES;
     if (!islandHit) {
-      console.warn('[leak] Could not capture server-island blob — skipping that route');
+      throw new Error('Could not capture a server-island blob from /__leak/server-island/ — the island endpoint would go untested');
     }
-    const ring = buildWeightedRing(allRoutes);
+    const ring = buildWeightedRing([...STATIC_ROUTES, islandHit]);
 
     console.log(`[leak] Warmup ${args.warmup}s @ ${args.rps} rps (discarded)`);
     await startLoad({

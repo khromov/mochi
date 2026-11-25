@@ -3,22 +3,26 @@ export type RouteHit = {
   method: 'GET' | 'POST';
   path: string;
   weight: number;
+  /** Any other response status counts as an error. Default: 200. */
+  expectStatus?: number;
   body?: BodyInit;
   headers?: Record<string, string>;
 };
 
+// Page paths carry the trailing slash: the site is `trailingSlash: 'always'`, so a slashless page only hits the redirect.
 export const STATIC_ROUTES: RouteHit[] = [
-  { name: 'page:hello-world', method: 'GET', path: '/demos/hello-world', weight: 1 },
-  { name: 'page:data-loading', method: 'GET', path: '/demos/data-loading/pikachu', weight: 1 },
+  { name: 'page:hello-world', method: 'GET', path: '/demos/hello-world/', weight: 1 },
+  { name: 'page:data-loading', method: 'GET', path: '/demos/data-loading/pikachu/', weight: 1 },
   {
     name: 'form:data-loading',
     method: 'POST',
-    path: '/demos/data-loading/pikachu',
+    path: '/demos/data-loading/pikachu/',
     weight: 1,
+    expectStatus: 303,
     body: 'pokemon=charizard',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   },
-  { name: 'page:server-island', method: 'GET', path: '/demos/server-island', weight: 1 },
+  { name: 'page:server-island', method: 'GET', path: '/demos/server-island/', weight: 1 },
   {
     name: 'api:cookie',
     method: 'POST',
@@ -28,8 +32,8 @@ export const STATIC_ROUTES: RouteHit[] = [
     headers: { 'Content-Type': 'application/json' },
   },
   { name: 'api:health', method: 'GET', path: '/health', weight: 1 },
-  { name: 'page:error-404', method: 'GET', path: '/demos/error/404', weight: 1 },
-  { name: 'unmatched:404', method: 'GET', path: '/does-not-exist-xyz', weight: 0.3 },
+  { name: 'page:error-404', method: 'GET', path: '/demos/error/404/', weight: 1, expectStatus: 404 },
+  { name: 'unmatched:404', method: 'GET', path: '/does-not-exist-xyz', weight: 0.3, expectStatus: 404 },
 ];
 
 const SERVER_ISLAND_RE = /<mochi-server-island\b[^>]*\bcomponent-name="([^"]+)"[^>]*\bsigned-props="([^"]+)"/;
@@ -38,7 +42,7 @@ export async function captureServerIslandHit(baseUrl: string): Promise<RouteHit 
   // Captured from /__leak/server-island, not /demos/server-island — the demo
   // island has an artificial 1–3s `delay()` that would dominate latency stats
   // and block any meaningful p95-creep signal.
-  const res = await fetch(`${baseUrl}/__leak/server-island`);
+  const res = await fetch(`${baseUrl}/__leak/server-island/`);
   if (!res.ok) {
     return null;
   }

@@ -88,6 +88,8 @@ import { routes as yourFirstMochiAppRoutes } from './demos/your-first-mochi-app/
 
 const DEVELOPMENT = process.env.NODE_ENV === 'development';
 const HEAP_SNAPSHOTS_ENABLED = process.env.HEAP_SNAPSHOTS_ENABLED === 'true';
+// Set by `bun run test:leak`, which runs the site in production mode.
+const LEAK_TEST = process.env.MOCHI_MEMORY_PROBE === '1';
 
 // Served by packages/support; NEWSLETTER_EMBED_URL overrides it. The trailing
 // slash is required — support is `trailingSlash: 'always'`, so a slashless src
@@ -382,7 +384,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...islandPropsRoutes,
   ...lazyRoutes,
   ...lazyServerIslandRoutes,
-  ...(DEVELOPMENT ? leakTestRoutes : {}),
+  ...(DEVELOPMENT || LEAK_TEST ? leakTestRoutes : {}),
   ...islandDepthRoutes,
   ...loginRoutes,
   ...mdsvexRoutes,
