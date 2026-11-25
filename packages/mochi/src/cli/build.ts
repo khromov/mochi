@@ -9,7 +9,7 @@ import type { MarkdownConfig, MochiBarrelWarningOptions, MochiFontOptions, Mochi
 import type { MochiProtectionOptions } from '../protection/types';
 import type { MochiSvelteCompiler } from '../compiler/svelteCompilerBackend';
 import { parseJsMinifier, resolveJsMinifier, type MochiJsMinifier } from '../compiler/jsMinifier';
-import { rmSync, mkdirSync } from 'node:fs';
+import { rmSync, mkdirSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { scanPublicDir, publicRouteKey } from '../runtime/publicDir';
 import { scanEmailTemplates } from '../email/templates';
@@ -17,7 +17,7 @@ import { encodeSourcePath } from '../compiler/manifestPaths';
 import { resolveOutDir } from '../compiler/resolveOutDir';
 import { loadSvelteConfig } from '../compiler/svelteConfig';
 import { logger, setLogLevel } from '../utils/log';
-import { relForDisplay } from '../utils/index';
+import { relForDisplay, toPosixPath } from '../utils/index';
 import { consoleLogger } from '../dev/consoleLogger';
 import { mochiEvents } from '../events';
 import type { MochiCompileCompleteEvent } from '../events';
@@ -109,6 +109,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     const publicDir = options.publicDir ?? './public';
 
     // Clean previous build artifacts
+    assertClearableOutDir(outDir, [publicDir, ...Object.values(options.routes).flatMap((r) => (isMochiPage(r) ? [r.componentPath] : []))]);
     rmSync(outDir, { recursive: true, force: true });
     mkdirSync(path.join(outDir, 'svelte-compile'), { recursive: true });
     mkdirSync(path.join(outDir, 'svelte-client'), { recursive: true });
@@ -311,6 +312,36 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   } finally {
     mochiEvents.off('client-bundle:complete', onClientBundle);
     mochiEvents.off('compile:complete', onCompileComplete);
+  }
+}
+
+// `outDir` is canonicalised, so the recursive delete lands on a symlink's target, wherever that is.
+function assertClearableOutDir(outDir: string, sources: string[]): void {
+  const contains = (dir: string, p: string): boolean => {
+    const rel = path.relative(dir, resolveOutDir(p));
+    return rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
+  };
+  const refuse = (why: string): never => {
+    throw new Error(`[mochi:build] Refusing to clear the out-dir ${toPosixPath(outDir)}: ${why}. Choose a dedicated out-dir such as ./.mochi.`);
+  };
+  const held = ['.', ...sources].find((p) => contains(outDir, p));
+  if (held !== undefined) {
+    refuse(`it contains ${held === '.' ? 'the project directory' : toPosixPath(held)}`);
+  }
+  if (contains(resolveOutDir('.'), outDir)) {
+    return;
+  }
+  let entries: string[];
+  try {
+    entries = readdirSync(outDir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return;
+    }
+    throw err;
+  }
+  if (entries.length > 0 && !entries.includes('svelte-compile')) {
+    refuse('it is outside the project and does not hold a previous Mochi build');
   }
 }
 
