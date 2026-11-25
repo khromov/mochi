@@ -493,7 +493,16 @@ describe('csrfBootWarning', () => {
 
   test('stays silent when a trusted origin is configured', () => {
     expect(csrfBootWarning({ routes: routesWithActions, proxy: { origin: 'https://app.example' } })).toBeNull();
-    expect(csrfBootWarning({ routes: routesWithActions, proxy: { hostHeader: 'x-forwarded-host' } })).toBeNull();
+    expect(csrfBootWarning({ routes: routesWithActions, proxy: { hostHeader: 'x-forwarded-host', protocolHeader: 'x-forwarded-proto' } })).toBeNull();
+    expect(csrfBootWarning({ routes: routesWithActions, proxy: { hostHeader: 'x-forwarded-host' }, bun: { tls: {} } })).toBeNull();
+  });
+
+  test('warns when hostHeader is set without protocolHeader, whose http:// origin a TLS-terminating proxy never matches', () => {
+    const warning = csrfBootWarning({ routes: routesWithActions, proxy: { hostHeader: 'x-forwarded-host' } });
+    expect(warning).toContain('1 route(s) declare form actions (e.g. "/contact")');
+    expect(warning).toContain('proxy.hostHeader is set without proxy.protocolHeader');
+    expect(warning).toContain("protocolHeader: 'x-forwarded-proto'");
+    expect(csrfBootWarning({ routes: { '/about': page() }, proxy: { hostHeader: 'x-forwarded-host' } })).toBeNull();
   });
 
   test('stays silent when the check is disabled or overridden by a csrf:check filter', () => {
