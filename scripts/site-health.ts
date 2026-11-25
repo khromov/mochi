@@ -37,6 +37,7 @@ The sitemap hardcodes the production origin, so each <loc> is re-pointed at
 Writes a human-readable REPORT.md and exits 1 if any page failed.
 
 Chrome is discovered automatically; set BUN_CHROME_PATH to pick a specific binary.
+Chrome's sandbox stays on unless CI is set (GitHub Actions runners can't start it).
 
 Arguments:
   base             Origin to check (default: https://mochi.fast)
@@ -132,8 +133,8 @@ const SETTLE_MS = 1500;
 /** Load attempts per page: a flaky first timeout is retried once before the page fails. */
 const LOAD_ATTEMPTS = 2;
 
-/** GitHub Actions runners can't initialize Chrome's sandbox; CI needs these flags for Chrome to launch. */
-const CHROME_BACKEND = { type: 'chrome', argv: ['--no-sandbox', '--disable-dev-shm-usage'] } as const;
+/** GitHub Actions runners can't initialize Chrome's sandbox, so only CI turns it off; local runs keep it on. */
+const CHROME_BACKEND = { type: 'chrome', argv: process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : ['--disable-dev-shm-usage'] } as const;
 
 /** Run thunks with a bounded number in flight at once. */
 async function pool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
@@ -473,7 +474,7 @@ async function main() {
     }
   } catch (err) {
     console.error(styleText('red', `Could not launch Chrome: ${err instanceof Error ? err.message : String(err)}`));
-    console.error(styleText('dim', 'Set BUN_CHROME_PATH to a Chrome/Chromium executable.'));
+    console.error(styleText('dim', 'Set BUN_CHROME_PATH to a Chrome/Chromium executable, or CI=1 if Chrome cannot start its sandbox here.'));
     process.exit(2);
   }
 
