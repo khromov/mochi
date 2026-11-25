@@ -37,8 +37,8 @@ export interface MintedCaptcha {
  * Mint a single-use captcha challenge. Spread the result onto `<MochiCaptcha />`.
  *
  * `bits` is sealed inside the encrypted token, so {@link verifyCaptcha} always
- * checks the difficulty this token was actually minted at — reconfiguring the
- * server can never silently weaken or break tokens already in flight.
+ * checks the difficulty this token was actually minted at — lowering the
+ * configured difficulty can never silently weaken tokens already in flight.
  */
 export function mintCaptcha(options?: { bits?: number; solveBudgetMs?: number }): MintedCaptcha {
   const resolved = getCaptchaRuntime().options;
@@ -58,7 +58,7 @@ export function mintCaptcha(options?: { bits?: number; solveBudgetMs?: number })
  * `reason` is deliberately coarse. `minAgeMs` overrides the configured timing floor for this call alone — for flows with
  * nothing to fill in (protection mode's auto-solve submits the instant the proof-of-work lands); being explicit and
  * per-call, it also bypasses the app-wide `captcha:minAgeMs` filter. `minBits` refuses tokens minted below a difficulty
- * floor — without it, any endpoint minting easier tokens (a low-bits form captcha) devalues a harder one's proof.
+ * floor, the configured `bits` unless given, so an endpoint minting easier tokens can't devalue a harder one's proof.
  */
 export async function verifyCaptcha(formData: FormData, options?: { consume?: boolean; minAgeMs?: number; minBits?: number }): Promise<CaptchaResult> {
   const token = String(formData.get('captcha_token') ?? '');
@@ -81,11 +81,11 @@ export async function verifyCaptcha(formData: FormData, options?: { consume?: bo
     return reject('malformed');
   }
 
-  if (options?.minBits !== undefined && bits < options.minBits) {
+  const { options: resolved, store } = getCaptchaRuntime();
+  if (bits < (options?.minBits ?? resolved.bits)) {
     return reject('bad-pow', { bits });
   }
 
-  const { options: resolved, store } = getCaptchaRuntime();
   const ageMs = Date.now() - iat;
 
   // Skew between the minting and verifying instance lands directly in `ageMs`, since the two `Date.now()` reads come off
