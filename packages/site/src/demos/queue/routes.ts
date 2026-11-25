@@ -6,6 +6,11 @@ import { randomUsername } from './usernames';
 // Mounted in the site's Mochi.serve({ queues }) call — see src/routes.ts.
 export const queues: MochiQueueConfig[] = [notificationQueue];
 
+// Every open stream re-serializes the snapshot on each queue event and is never timed out, so one client must not be able to open them without limit.
+export const MAX_QUEUE_EVENT_STREAMS = 500;
+
+let eventStreams = 0;
+
 export const routes: Record<string, MochiRouteValue> = {
   '/demos/queue': Mochi.page('./src/demos/queue/Queue.svelte', {
     // Scoped to the enqueue POST: a page-wide limit also counts GETs (including speculation-rules
@@ -28,6 +33,11 @@ export const routes: Record<string, MochiRouteValue> = {
     },
   }),
   '/demos/queue/events': Mochi.sse((stream) => {
+    if (eventStreams >= MAX_QUEUE_EVENT_STREAMS) {
+      stream.close();
+      return;
+    }
+    eventStreams++;
     // Broadcast the shared snapshot on enqueue and on settle, so every client's
     // in-flight/processed counts move together — no per-client reconciliation.
     const push = (event: { queue: string }) => {
@@ -39,6 +49,7 @@ export const routes: Record<string, MochiRouteValue> = {
     mochiEvents.on('queue:completed', push);
     mochiEvents.on('queue:failed', push);
     stream.onClose(() => {
+      eventStreams--;
       mochiEvents.off('queue:added', push);
       mochiEvents.off('queue:completed', push);
       mochiEvents.off('queue:failed', push);
