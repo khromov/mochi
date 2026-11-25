@@ -44,7 +44,7 @@ export function emitIslandProps(value: unknown): string {
     const json = stringify(value);
     entry = ctx.islandProps.get(json);
     if (!entry) {
-      entry = { id: `mochi-props-${ctx.islandProps.size}`, emitCount: 0, bags: [] };
+      entry = { id: `mochi-props-${ctx.islandPropsPrefix ? `${ctx.islandPropsPrefix}-` : ''}${ctx.islandProps.size}`, emitCount: 0, bags: [] };
       ctx.islandProps.set(json, entry);
     }
     if (bag) {
