@@ -82,8 +82,8 @@ mcpServer.tool(
       logger.log(`[mcp] get_section [${found.join(', ')}] → ${found.length} found`);
     }
     if (missing.length) {
-      // Missing ids carry the caller's raw slug, so JSON-encode them to keep CR/LF and escape codes out of the log.
-      logger.warn(`[mcp] get_section not found: ${JSON.stringify(missing)}`);
+      // Missing ids carry the caller's raw slug, so JSON-encode them (plus the DEL/C1/U+2028 range JSON leaves raw) to keep CR/LF and escape codes out of the log.
+      logger.warn(`[mcp] get_section not found: ${JSON.stringify(missing).replace(/[\u007f-\u009f\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)}`);
     }
     if (!found.length) {
       return tool.error(`None of the requested sections were found. Call get_documentation_sections to list valid slugs.`);

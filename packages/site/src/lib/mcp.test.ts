@@ -224,4 +224,17 @@ describe('mcp resource bounds', () => {
       warn.mockRestore();
     }
   });
+
+  test('a missing slug cannot write an 8-bit escape code or Unicode line break into the log', async () => {
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await getSection([{ type: 'doc', slug: 'x\u009b2m\u0085\u2028\u2029\u007fforged line' }]);
+      const logged = warn.mock.calls.flat().join(' ');
+      expect(logged).toContain('get_section not found');
+      expect(logged).toContain('\\u009b2m\\u0085\\u2028\\u2029\\u007fforged line');
+      expect(logged).not.toMatch(/[\u007f-\u009f\u2028\u2029]/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });
