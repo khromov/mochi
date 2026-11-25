@@ -15,9 +15,9 @@ export function embedAncestors(env: Record<string, string | undefined> = process
   return ancestors.split(/\s+/).filter(Boolean);
 }
 
-// Everything but the embed refuses framing, since a clickjacked /admin/ POST carries our own Origin and passes CSRF.
-// The embed gets no X-Frame-Options: it can't express an allow-list, which is the whole point for a widget meant to be
-// embedded cross-origin. The response is rebuilt because `filterResponseHeaders` can only drop headers, never add one.
+// Everything but the embed refuses framing, since a clickjacked /admin/ POST carries our own Origin and passes CSRF; the
+// embed skips X-Frame-Options, which can't express its cross-origin allow-list.
+// The response is rebuilt because `filterResponseHeaders` can only drop headers, never add one.
 export const embedHeaders: Handle = async ({ event, resolve }) => {
   const response = await resolve(event);
   if (event.kind === 'asset') {
