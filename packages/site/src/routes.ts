@@ -15,7 +15,7 @@ import {
   internalDemoLlmsRoutes,
   loadDocs,
 } from './lib/docs';
-import { loadPosts, getPost } from './lib/blog';
+import { draftsVisible, loadPosts, getPost } from './lib/blog';
 import { buildFeedXml, FEED_CONTENT_TYPE } from './lib/feed';
 import { CHANGELOG_SLUG, CHANGELOG_TITLE, CHANGELOG_DESCRIPTION, getChangelogHtml, getChangelogTxt } from './lib/changelog';
 import { respondMcp } from './lib/mcp';
@@ -226,7 +226,7 @@ export const routes: Record<string, MochiRouteValue> = {
   }),
   '/blog': Mochi.page('./src/Blog.svelte', {
     serverProps: async () => {
-      const posts = await loadPosts({ includeDrafts: DEVELOPMENT });
+      const posts = await loadPosts({ includeDrafts: draftsVisible() });
       return {
         docsNav: await buildDocsNav(),
         posts: posts.map(({ slug, title, description, date, draft }) => ({ slug, title, description, date, draft })),
@@ -238,7 +238,7 @@ export const routes: Record<string, MochiRouteValue> = {
     serverProps: async () => {
       const { params } = getRequestContext();
       const slug = params.slug ?? '';
-      const post = await getPost(slug, { includeDrafts: DEVELOPMENT });
+      const post = await getPost(slug, { includeDrafts: draftsVisible() });
       if (!post) {
         error(404, `No post '${slug}'`);
       }

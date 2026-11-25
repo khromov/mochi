@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { loadPosts, getPost } from './blog';
+import { loadPosts, getPost, draftsVisible } from './blog';
 
 describe('loadPosts', () => {
   it('excludes drafts by default', async () => {
@@ -32,5 +32,14 @@ describe('getPost', () => {
 
   it('returns null for an unknown slug', async () => {
     expect(await getPost('nope', { includeDrafts: true })).toBeNull();
+  });
+});
+
+describe('draftsVisible', () => {
+  it('shows drafts only in local dev, not in the dev-mode Docker deploy', () => {
+    expect(draftsVisible({ NODE_ENV: 'development' })).toBe(true);
+    expect(draftsVisible({ NODE_ENV: 'development', MOCHI_DOCKER: 'true' })).toBe(false);
+    expect(draftsVisible({ NODE_ENV: 'production' })).toBe(false);
+    expect(draftsVisible({})).toBe(false);
   });
 });
