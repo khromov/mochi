@@ -117,10 +117,17 @@ describe('newsletter signup', () => {
     expect(res.headers.get('X-Robots-Tag')).toBe('noindex');
   });
 
-  test('the CSP is scoped to the embed', async () => {
-    const res = await fetch(`${base}/`);
-    expect(res.status).toBe(200);
-    expect(res.headers.get('Content-Security-Policy')).toBeNull();
+  // A framed /admin/ form POST carries the panel's own Origin, so the CSRF check can't stop a clickjacked delete.
+  test('every page outside the embed refuses to be framed', async () => {
+    for (const [pathname, headers] of [
+      ['/', {}],
+      ['/admin/', AUTH],
+    ] as const) {
+      const res = await fetch(`${base}${pathname}`, { headers });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Security-Policy')).toBe("frame-ancestors 'none'");
+      expect(res.headers.get('X-Frame-Options')).toBe('DENY');
+    }
   });
 
   // The widget loads on the blog index and every post, so page views must not

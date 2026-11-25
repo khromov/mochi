@@ -15,17 +15,22 @@ export function embedAncestors(env: Record<string, string | undefined> = process
   return ancestors.split(/\s+/).filter(Boolean);
 }
 
-// No X-Frame-Options: it can't express an allow-list, which is the whole point
-// for a widget meant to be embedded cross-origin. The response is rebuilt because
-// `filterResponseHeaders` can only drop headers, never add one.
+// Everything but the embed refuses framing, since a clickjacked /admin/ POST carries our own Origin and passes CSRF.
+// The embed gets no X-Frame-Options: it can't express an allow-list, which is the whole point for a widget meant to be
+// embedded cross-origin. The response is rebuilt because `filterResponseHeaders` can only drop headers, never add one.
 export const embedHeaders: Handle = async ({ event, resolve }) => {
   const response = await resolve(event);
-  const { pathname } = event.url;
-  if (pathname !== NEWSLETTER_EMBED_PATH && !pathname.startsWith(`${NEWSLETTER_EMBED_PATH}/`)) {
+  if (event.kind === 'asset') {
     return response;
   }
+  const { pathname } = event.url;
   const headers = new Headers(response.headers);
-  headers.set('Content-Security-Policy', `frame-ancestors 'self' ${embedAncestors().join(' ')}`);
-  headers.set('X-Robots-Tag', 'noindex');
+  if (pathname === NEWSLETTER_EMBED_PATH || pathname.startsWith(`${NEWSLETTER_EMBED_PATH}/`)) {
+    headers.set('Content-Security-Policy', `frame-ancestors 'self' ${embedAncestors().join(' ')}`);
+    headers.set('X-Robots-Tag', 'noindex');
+  } else {
+    headers.set('Content-Security-Policy', "frame-ancestors 'none'");
+    headers.set('X-Frame-Options', 'DENY');
+  }
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 };
