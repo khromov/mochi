@@ -59,3 +59,16 @@ test('non-inert attachment types download instead of rendering inline', async ()
   const svg = await fetchAttachment(stored.id, 2);
   expect(svg.headers.get('Content-Disposition')).toBe('attachment; filename="vector.svg"');
 });
+
+test('a comma-delimited type downloads, since browsers honour its last entry', async () => {
+  seedRuntime();
+  const stored = recordDevEmail({
+    from: 'a@b.dev',
+    to: ['c@d.dev'],
+    subject: 'x',
+    attachments: [{ filename: 'evil.png', content: '<script>alert(1)</script>', contentType: 'image/png;x=1, text/html' }],
+  });
+
+  const res = await fetchAttachment(stored.id, 0);
+  expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="evil.png"');
+});
