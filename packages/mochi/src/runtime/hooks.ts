@@ -186,7 +186,7 @@ export async function applyResolveOptions(response: Response, opts: MochiResolve
     const filtered = new Headers();
     for (const [name, value] of result.headers.entries()) {
       if (opts.filterResponseHeaders(name, value)) {
-        filtered.set(name, value);
+        filtered.append(name, value);
       }
     }
     result = new Response(result.body, {
