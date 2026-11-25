@@ -1385,6 +1385,9 @@ export class Mochi {
               mochiEvents.emit('sse:open', { path });
               const stream: MochiSseStream = {
                 send(data, opts) {
+                  if (/[\r\n]/.test(opts?.id ?? '') || /[\r\n]/.test(opts?.event ?? '')) {
+                    throw new TypeError('MochiSseStream.send(): `id` and `event` must not contain CR or LF characters.');
+                  }
                   let frame = '';
                   if (opts?.id) {
                     frame += `id: ${opts.id}\n`;
@@ -1392,7 +1395,8 @@ export class Mochi {
                   if (opts?.event) {
                     frame += `event: ${opts.event}\n`;
                   }
-                  for (const line of data.split('\n')) {
+                  // EventSource ends a line on CR, LF or CRLF, so splitting on LF alone lets a lone CR forge fields and events.
+                  for (const line of data.split(/\r\n|\r|\n/)) {
                     frame += `data: ${line}\n`;
                   }
                   frame += '\n';
