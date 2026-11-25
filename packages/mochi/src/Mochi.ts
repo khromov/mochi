@@ -897,7 +897,9 @@ export class Mochi {
         const renderComponent = async (req: Request, ctx: MochiRequestContext, resolveOpts: MochiResolveOptions | undefined, statusOverride?: number): Promise<Response> => {
           const compileErrors = registry.getErrors();
           if (compileErrors.length > 0) {
-            throw new MochiHttpError(500, formatCompileErrors(compileErrors));
+            // A plain Error renders as a generic 500 in production, keeping file paths and diagnostics in the server log.
+            const detail = formatCompileErrors(compileErrors);
+            throw development ? new MochiHttpError(500, detail) : new Error(detail);
           }
           const liveServerProps = pageConfigMap ? pageConfigMap.get(pattern)?.serverProps : serverProps;
           const resolved = isServerPropsResolver(liveServerProps) ? ((await liveServerProps(req, ctx.params)) ?? {}) : (liveServerProps ?? {});
