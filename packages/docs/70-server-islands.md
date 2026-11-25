@@ -29,7 +29,7 @@ Children of a deferred component become the fallback shown until the island reso
 
 Import a deferred component statically from a relative `.svelte` / `.md` / `.svx` path. See [Supported import forms](/docs/selective-hydration/#supported-import-forms).
 
-A server island is a normal Svelte component with full access to the request context through `getRequestContext()`. Cookies are forwarded automatically because the fetch is same-origin.
+A server island is a normal Svelte component with full access to the request context through `getRequestContext()`. Cookies are forwarded automatically because the fetch is same-origin. The fetch runs through your [`handle` middleware](/docs/middleware/#eventkind) with `event.kind === 'island'`, so `locals` and authentication apply as they do for the page.
 
 ```svelte
 <!-- file: src/UserAvatar.svelte -->
@@ -215,7 +215,7 @@ Combine `rootMargin` and `retries`: `mochi:defer:visible={{ rootMargin: '200px',
 
 ### Props
 
-Mochi serializes props with `devalue` — see [Passing props to islands](/docs/island-props/). Server islands also encrypt the payload and pass it as a query parameter. The island's component name is bound as authenticated data, so a token sealed for one island cannot be replayed against another.
+Mochi serializes props with `devalue` — see [Passing props to islands](/docs/island-props/). Server islands also encrypt the payload and pass it as a query parameter. The island's component name is bound as authenticated data, so a token sealed for one island cannot be replayed against another. The endpoint rejects a request without a valid token with a 403.
 
 <Callout type="warning">
 
