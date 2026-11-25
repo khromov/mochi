@@ -23,10 +23,17 @@ describe('encryptPayload + decryptPayload', () => {
     expect(decryptPayload(encryptPayload(plaintext))).toBe(plaintext);
   });
 
+  test('does not deflate unless asked, so token length tracks plaintext length only', () => {
+    installConfig();
+    const plaintext = 'x'.repeat(500);
+    expect(Buffer.from(encryptPayload(plaintext), 'base64url').length).toBe(16 + 1 + plaintext.length);
+    expect(decryptPayload(encryptPayload(plaintext))).toBe(plaintext);
+  });
+
   test('round-trips a long payload via the compressed path', () => {
     installConfig();
     const plaintext = 'x'.repeat(500);
-    const token = encryptPayload(plaintext);
+    const token = encryptPayload(plaintext, { compress: true });
     expect(token.length).toBeLessThan(plaintext.length); // compression shrank it
     expect(decryptPayload(token)).toBe(plaintext);
   });
@@ -45,12 +52,12 @@ describe('encryptPayload + decryptPayload', () => {
         },
       },
     });
-    expect(encryptPayload(plaintext).length).toBeGreaterThan(plaintext.length);
+    expect(encryptPayload(plaintext, { compress: true }).length).toBeGreaterThan(plaintext.length);
     expect(seenLength).toBe(500); // the filter saw the real payload bytes
 
     // Lower the threshold below it → deflate applied → token shrinks, still round-trips.
     initExtensions({ filters: { 'payload:compressMinBytes': () => 64 } });
-    const compressed = encryptPayload(plaintext);
+    const compressed = encryptPayload(plaintext, { compress: true });
     expect(compressed.length).toBeLessThan(plaintext.length);
     expect(decryptPayload(compressed)).toBe(plaintext);
   });
@@ -127,7 +134,7 @@ describe('wire format is stable (regression guard)', () => {
 
   test('long compressed payload seals to a stable token', () => {
     installConfig();
-    expect(encryptPayload('x'.repeat(500))).toBe(WIRE.long);
+    expect(encryptPayload('x'.repeat(500), { compress: true })).toBe(WIRE.long);
   });
 
   test('empty payload seals to a stable token', () => {

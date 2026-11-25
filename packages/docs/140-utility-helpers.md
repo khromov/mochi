@@ -76,7 +76,7 @@ return redirect(303, '/dashboard');
 
 ### Sealed tokens
 
-`encryptPayload(plaintext, { aad?, compress? })` and `decryptPayload(token, { aad? })` seal a string into an opaque, tamper-proof base64url token (AES-256-SIV keyed from `MOCHI_KEY`) and open it again. `decryptPayload` returns `null` on any tamper or `aad` mismatch. This is the same primitive Mochi uses for server-island props. Use it for short-lived signed values such as form challenges or magic links.
+`encryptPayload(plaintext, { aad?, compress? })` and `decryptPayload(token, { aad? })` seal a string into an opaque, tamper-proof base64url token (AES-256-SIV keyed from `MOCHI_KEY`) and open it again. `decryptPayload` returns `null` on any tamper or `aad` mismatch. This is the same primitive Mochi uses for server-island props. Use it for short-lived signed values such as form challenges or magic links. `compress: true` deflates the payload first. Do not use it when the payload mixes a secret with user-controlled text: the token length then leaks the secret.
 
 ```ts
 import { encryptPayload, decryptPayload } from 'mochi-framework';

@@ -28,7 +28,7 @@ function jsonSafeReplacer(_key: string, value: unknown): unknown {
 
 export function encryptProps(propsJson: string, componentName: string): string {
   const { options } = getMochiConfig();
-  const token = encryptPayload(propsJson, { aad: componentName, compress: options.compressServerIslandProps ?? true });
+  const token = encryptPayload(propsJson, { aad: componentName, compress: options.compressServerIslandProps ?? false });
 
   // Encrypted props are opaque on the wire, so the debug bar reads this decoded snapshot instead, keyed by the token
   // the client sees in `signed-props`. Best-effort: failures are ignored so encryption never depends on it.
