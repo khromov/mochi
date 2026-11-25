@@ -46,7 +46,7 @@ if (process.env.NODE_ENV === 'development') {
 
 const handleError: HandleError = ({ error, event, status, message }) => {
   if (!event.url.pathname.includes('.well-known')) {
-    logger.info(`handleError: ${event.url.pathname} → ${status} "${message}" (error ${error ? 'present' : 'null'})`);
+    logger.info(`handleError: ${event.url.pathname} → ${status} ${JSON.stringify(message)} (error ${error ? 'present' : 'null'})`);
   }
   // error is null for unmatched routes / unknown form actions — guard before forwarding
   if (error && status >= 500) {
