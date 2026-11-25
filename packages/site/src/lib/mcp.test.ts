@@ -152,4 +152,13 @@ describe('mcp docs server', () => {
     });
     expect(res.result?.isError).toBe(true);
   });
+
+  test('unknown demo slugs are not retained in the process-wide demo cache', async () => {
+    const slugs = Array.from({ length: 50 }, (_, i) => `unknown-demo-${i}`);
+    await call('tools/call', { name: 'get_section', arguments: { sections: slugs.map((slug) => ({ type: 'demo', slug })) } });
+    const demoCache = (globalThis as unknown as { __mochi_site_docs_cache__: { demoLlmsTxt: Map<string, unknown> } }).__mochi_site_docs_cache__.demoLlmsTxt;
+    for (const slug of slugs) {
+      expect(demoCache.has(slug)).toBe(false);
+    }
+  });
 });

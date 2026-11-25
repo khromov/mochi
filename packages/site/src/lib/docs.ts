@@ -199,12 +199,16 @@ async function buildDemosTxt(stripStyles = false): Promise<string> {
 // the demo page renders via loadSources — so cross-folder files (e.g. shared stores,
 // the demoIndex.ts example) are included, not just files in the demo folder.
 export async function getDemoLlmsTxt(slug: string): Promise<string | null> {
+  // The slug reaches here unvalidated from /mcp, so only known demos may become cache keys.
+  if (!filesForDemo(slug)) {
+    return null;
+  }
   if (cache.demoLlmsTxt.has(slug)) {
     return cache.demoLlmsTxt.get(slug)!;
   }
   const result = await buildDemoLlmsTxt(slug);
-  // Source files never change at runtime, so cache the rendered bundle (including
-  // the null "no such demo" result) to avoid re-reading every file on each request.
+  // Source files never change at runtime, so cache the rendered bundle to avoid
+  // re-reading every file on each request.
   cache.demoLlmsTxt.set(slug, result);
   return result;
 }
