@@ -100,9 +100,8 @@ export function csrfBootWarning(options: {
 }
 
 /**
- * Cross-Site WebSocket Hijacking guard. Browsers apply neither the same-origin policy nor CORS to a WebSocket handshake,
- * so without it any page can open a socket to this server carrying the visitor's cookies. An upgrade passes when its
- * `Origin` is the host the socket connects to, the public origin, or in `csrf.trustedOrigins`; otherwise it gets a 403.
+ * Cross-site WebSocket hijacking guard: browsers apply neither the same-origin policy nor CORS to a WebSocket handshake,
+ * so without it any page can open a socket to this server carrying the visitor's cookies.
  */
 export function wsOriginCheck(request: Request, url: URL, csrf: MochiCsrfOptions | undefined, trustedOrigins: ReadonlySet<string>): Response | null {
   const origin = request.headers.get('origin');
