@@ -4,6 +4,9 @@
 // once per key per realm.
 export function pinGlobal<T>(key: string, factory: () => T): T {
   const slot = globalThis as unknown as Record<string, unknown>;
-  slot[key] ??= factory();
+  // A page element with `id`/`name` equal to `key` shows up as an inherited window property, so only an own value counts.
+  if (!Object.prototype.hasOwnProperty.call(slot, key) || slot[key] == null) {
+    slot[key] = factory();
+  }
   return slot[key] as T;
 }

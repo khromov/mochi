@@ -4,19 +4,18 @@
 import '../debug-bar/types';
 import { BOOTSTRAP_MARKER_ATTR } from '../islands/bootstrapMarker';
 import { isReloadableIslandName, notifyDeferredIslandChange, registerDeferredIsland, unregisterDeferredIsland } from '../islands/deferInvalidation';
+import { isLoadedCss, markLoadedCss } from './sharedCssTracker';
 
-// Key must match sharedCssTracker.ts for cross-bundle dedup with HydratableIsland.
-const _css: Set<string> = ((globalThis as unknown as Record<string, unknown>).__mochi_loaded_css__ ??= new Set()) as Set<string>;
 const _cssLoading = new Map<string, Promise<unknown>>();
 // Past this a stuck stylesheet costs a flash of unstyled content rather than a stranded fallback.
 const CSS_WAIT_MS = 5000;
 
 // Links `href` unless the page or another island already did, and returns a promise only while that load is in flight.
 function loadCss(href: string): Promise<unknown> | undefined {
-  if (_css.has(href)) {
+  if (isLoadedCss(href)) {
     return _cssLoading.get(href);
   }
-  _css.add(href);
+  markLoadedCss(href);
   if (document.querySelector(`link[rel=stylesheet][href="${CSS.escape(href)}"]`)) {
     return;
   }
