@@ -196,8 +196,9 @@ jobs:
 
       - name: Resolve package directory from tag
         id: pkg
+        env:
+          tag: ${{ inputs.tag }}
         run: |
-          tag='${{ inputs.tag }}'
           case "$tag" in
             mochi-framework-v*) echo "dir=packages/mochi" >> "$GITHUB_OUTPUT" ;;
             create-mochi-v*) echo "dir=packages/cli" >> "$GITHUB_OUTPUT" ;;
