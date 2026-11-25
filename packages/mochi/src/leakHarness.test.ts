@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { Server } from 'bun';
-import { startLoad } from './loadGen';
-import { STATIC_ROUTES, type RouteHit } from './routes';
+import { startLoad } from '../scripts/leak/loadGen';
+import { STATIC_ROUTES, type RouteHit } from '../scripts/leak/routes';
 
 describe('leak harness load generator', () => {
   let server: Server<undefined>;
