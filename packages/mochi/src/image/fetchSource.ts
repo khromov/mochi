@@ -1,5 +1,6 @@
 import { resolvePublicUrl, SsrfGuardError } from '../utils/publicUrl';
 import { applyFilter } from '../extensions';
+import { pinGlobal } from '../utils/globalState';
 import { getLocalImageAsset } from './localAssetRegistry';
 import { ImageError } from './types';
 import type { ResolvedImageOptions } from './types';
@@ -10,6 +11,80 @@ export interface FetchedSource {
 }
 
 const DEFAULT_MAX_REDIRECTS = 5;
+
+// Each in-flight fetch buffers up to ~2x `maxResponseBytes`, so the process-wide count is capped, and one host may hold
+// at most half the slots so a slow upstream cannot make every other host's fetches wait out `fetchTimeoutMs`.
+const fetchGate = pinGlobal('__mochi_image_fetch_gate__', () => ({
+  active: 0,
+  perHost: new Map<string, number>(),
+  waiting: new Map<string, Array<{ seq: number; wake: () => void }>>(),
+  seq: 0,
+}));
+
+function hasRoom(host: string, limit: number): boolean {
+  return fetchGate.active < limit && (fetchGate.perHost.get(host) ?? 0) < Math.max(1, Math.floor(limit / 2));
+}
+
+function admit(host: string): void {
+  fetchGate.active++;
+  fetchGate.perHost.set(host, (fetchGate.perHost.get(host) ?? 0) + 1);
+}
+
+function acquireFetchSlot(host: string, limit: number, signal: AbortSignal): Promise<void> {
+  if (hasRoom(host, limit)) {
+    admit(host);
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const queue = fetchGate.waiting.get(host) ?? [];
+    const waiter = {
+      seq: fetchGate.seq++,
+      wake: (): void => {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      },
+    };
+    const onAbort = (): void => {
+      queue.splice(queue.indexOf(waiter), 1);
+      if (queue.length === 0) {
+        fetchGate.waiting.delete(host);
+      }
+      reject(new ImageError(503, 'Too many concurrent source image fetches'));
+    };
+    queue.push(waiter);
+    fetchGate.waiting.set(host, queue);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function releaseFetchSlot(host: string, limit: number): void {
+  fetchGate.active--;
+  const left = (fetchGate.perHost.get(host) ?? 1) - 1;
+  if (left > 0) {
+    fetchGate.perHost.set(host, left);
+  } else {
+    fetchGate.perHost.delete(host);
+  }
+  // Oldest waiter first, skipping hosts at their share: round-robin would hand each slot a short fetch frees to a slow host.
+  for (;;) {
+    let next: [string, Array<{ seq: number; wake: () => void }>] | undefined;
+    for (const entry of fetchGate.waiting) {
+      if (hasRoom(entry[0], limit) && (!next || entry[1][0]!.seq < next[1][0]!.seq)) {
+        next = entry;
+      }
+    }
+    if (!next) {
+      return;
+    }
+    const [nextHost, queue] = next;
+    const { wake } = queue.shift()!;
+    if (queue.length === 0) {
+      fetchGate.waiting.delete(nextHost);
+    }
+    admit(nextHost);
+    wake();
+  }
+}
 
 export interface PinnedFetchRequest {
   url: URL;
@@ -67,9 +142,20 @@ export async function fetchImageSource(src: string, opts: ResolvedImageOptions):
     return { bytes: await Bun.file(local.diskPath).bytes(), contentType: local.contentType };
   }
 
-  // One timeout bounds the whole chain (all redirect hops), not each hop.
+  // One timeout bounds the whole chain (the wait for a fetch slot and all redirect hops), not each hop.
   const signal = AbortSignal.timeout(opts.fetchTimeoutMs);
+  // Redirect hops stay charged to the host the source URL names.
+  const host = URL.parse(src)?.host ?? '';
+  const limit = opts.maxConcurrentFetches;
+  await acquireFetchSlot(host, limit, signal);
+  try {
+    return await fetchRemoteSource(src, opts, signal);
+  } finally {
+    releaseFetchSlot(host, limit);
+  }
+}
 
+async function fetchRemoteSource(src: string, opts: ResolvedImageOptions, signal: AbortSignal): Promise<FetchedSource> {
   // Cap re-validated redirect hops; overridable per-source via the filter.
   const maxRedirects = applyFilter('image:maxRedirects', DEFAULT_MAX_REDIRECTS, { src });
 

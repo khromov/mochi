@@ -62,6 +62,7 @@ function opts(over: Partial<ResolvedImageOptions> = {}): ResolvedImageOptions {
     blockPrivateNetworks: false,
     fetchTimeoutMs: 5_000,
     maxResponseBytes: 20 * 1024 * 1024,
+    maxConcurrentFetches: 8,
     timeToStale: 60_000,
     timeToEvict: 86_400_000,
     compressPayload: true,
@@ -178,6 +179,102 @@ describe('fetchImageSource redirect re-validation', () => {
     await expect(fetchImageSource(base('/redirect-ok'), opts())).rejects.toMatchObject({
       message: 'Too many redirects',
     });
+  });
+});
+
+describe('fetchImageSource concurrency cap', () => {
+  // Each upstream is its own host (a distinct port) and parks every request until `release()`, counting how many it holds at once.
+  const upstreams: Array<{ stop: (force: boolean) => void }> = [];
+  const pending: Array<Promise<unknown>> = [];
+  const releases: Array<() => void> = [];
+
+  afterEach(async () => {
+    for (const release of releases.splice(0)) {
+      release();
+    }
+    await Promise.allSettled(pending.splice(0));
+    for (const upstream of upstreams.splice(0)) {
+      upstream.stop(true);
+    }
+  });
+
+  function holdingUpstream() {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    releases.push(release);
+    const stats = { holding: 0, peak: 0 };
+    const upstream = Bun.serve({
+      port: 0,
+      async fetch() {
+        stats.peak = Math.max(stats.peak, ++stats.holding);
+        await held;
+        stats.holding--;
+        return new Response(PNG, { headers: { 'Content-Type': 'image/png' } });
+      },
+    });
+    upstreams.push(upstream);
+    const fire = (count: number, over: Partial<ResolvedImageOptions> = {}) => {
+      const fetches = Array.from({ length: count }, (_, i) => fetchImageSource(`http://127.0.0.1:${upstream.port}/hold/${i}`, opts(over)));
+      pending.push(...fetches);
+      return fetches;
+    };
+    return { stats, release, fire };
+  }
+
+  async function settle(isDone: () => boolean): Promise<void> {
+    const deadline = Date.now() + 2_000;
+    while (!isDone() && Date.now() < deadline) {
+      await Bun.sleep(10);
+    }
+    await Bun.sleep(100);
+  }
+
+  test('a burst of distinct sources queues beyond the cap instead of all buffering at once', async () => {
+    const hosts = [holdingUpstream(), holdingUpstream(), holdingUpstream()];
+    const fetches = hosts.flatMap((host) => host.fire(5));
+    const inFlight = () => hosts.reduce((sum, host) => sum + host.stats.holding, 0);
+    await settle(() => inFlight() >= 8);
+    expect(inFlight()).toBe(8);
+    expect(hosts.every((host) => host.stats.peak <= 4)).toBe(true);
+    for (const host of hosts) {
+      host.release();
+    }
+    const results = await Promise.all(fetches);
+    expect(results.every((r) => r.bytes.byteLength === PNG.byteLength)).toBe(true);
+  });
+
+  test('maxConcurrentFetches sets the cap, and each host gets at most half of it', async () => {
+    const hosts = [holdingUpstream(), holdingUpstream(), holdingUpstream()];
+    const fetches = hosts.flatMap((host) => host.fire(2, { maxConcurrentFetches: 2 }));
+    const inFlight = () => hosts.reduce((sum, host) => sum + host.stats.holding, 0);
+    await settle(() => inFlight() >= 2);
+    expect(inFlight()).toBe(2);
+    expect(hosts.every((host) => host.stats.peak <= 1)).toBe(true);
+    for (const host of hosts) {
+      host.release();
+    }
+    expect(await Promise.all(fetches)).toHaveLength(6);
+  });
+
+  test('a fetch still waiting for a slot when fetchTimeoutMs elapses fails with 503', async () => {
+    const slow = holdingUpstream();
+    slow.fire(4);
+    await settle(() => slow.stats.holding >= 4);
+    const [queued] = slow.fire(1, { fetchTimeoutMs: 100 });
+    await expect(queued!).rejects.toMatchObject({ status: 503 });
+    slow.release();
+    await expect(slow.fire(1)[0]!).resolves.toMatchObject({ contentType: 'image/png' });
+  });
+
+  test('slow fetches from one host do not make fetches from another host fail', async () => {
+    const slow = holdingUpstream();
+    slow.fire(12);
+    await settle(() => slow.stats.holding >= 4);
+    const started = performance.now();
+    const results = await Promise.all(Array.from({ length: 6 }, () => fetchImageSource(base('/image'), opts({ fetchTimeoutMs: 1_000 }))));
+    expect(results.every((r) => r.contentType === 'image/png')).toBe(true);
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(slow.stats.peak).toBe(4);
   });
 });
 
