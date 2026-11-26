@@ -10,17 +10,19 @@
 
   const id = (params.id ?? 'pikachu').toLowerCase();
 
-  const [pokemon, options] = await Promise.all([
-    pokemonCache.fetch(`pokemon:${id}`, async () => {
-      const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(id)}`);
-      return res.ok ? await res.json() : null;
-    }),
-    pokemonCache.fetch('pokemon:list:151', async () => {
-      const res = await fetch('https://pokeapi.co/api/v2/pokemon?limit=151');
-      const data = await res.json();
-      return data.results;
-    }),
-  ]);
+  const options = await pokemonCache.fetch('pokemon:list:151', async () => {
+    const res = await fetch('https://pokeapi.co/api/v2/pokemon?limit=151');
+    const data = await res.json();
+    return data.results;
+  });
+
+  // The id comes from the URL, so only names on the list may become cache keys or upstream requests.
+  const pokemon = options.some((option) => option.name === id)
+    ? await pokemonCache.fetch(`pokemon:${id}`, async () => {
+        const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(id)}`);
+        return res.ok ? await res.json() : null;
+      })
+    : null;
 
   const types = pokemon?.types.map((t) => t.type.name) ?? [];
   const abilities = pokemon?.abilities.map((a) => a.ability.name) ?? [];
