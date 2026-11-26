@@ -10,7 +10,7 @@ on:
 # Cancel superseded runs for the same PR/branch so a new push doesn't leave the
 # old run churning (or hanging) on stale code.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
