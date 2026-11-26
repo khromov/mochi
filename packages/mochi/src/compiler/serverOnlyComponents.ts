@@ -47,13 +47,17 @@ export function registerServerOnlyComponentStubs(build: PluginBuilder): void {
     // Stamp a dedicated namespace so the default `.svelte` file-namespace onLoad can't reclaim it.
     return { path: abs, namespace: SSR_ONLY_COMPONENT_NAMESPACE };
   });
-  build.onLoad({ filter: /.*/, namespace: SSR_ONLY_COMPONENT_NAMESPACE }, async (args) => {
+  const loadStub = async (args: { path: string }) => {
     const source = await Bun.file(args.path)
       .text()
       .catch(() => '');
     return {
       contents: buildServerOnlyStubModule(relForDisplay(args.path), scanComponentExports(source), { component: true }),
-      loader: 'js',
+      loader: 'js' as const,
     };
-  });
+  };
+  build.onLoad({ filter: /.*/, namespace: SSR_ONLY_COMPONENT_NAMESPACE }, loadStub);
+  // A specifier `Bun.resolveSync` rejects but the bundler resolves (e.g. a `svelte`-condition-only export) reaches the
+  // file namespace, so stub it there too — callers register this before their generic `.svelte` compile loader.
+  build.onLoad({ filter: /\.server\.svelte$/ }, loadStub);
 }
