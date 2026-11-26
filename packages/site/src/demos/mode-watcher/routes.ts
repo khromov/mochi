@@ -11,7 +11,8 @@ export const routes: Record<string, MochiRouteValue> = {
 // SSR the resolved theme: read the cookie the island mirrors the mode into, and set the `dark`
 // class on <html> before it's sent so the first paint already matches — no flash on reload.
 export const handle: Handle = async ({ event, resolve }) => {
-  if (!event.url.pathname.startsWith('/demos/mode-watcher')) {
+  // Non-page requests (assets, unmatched paths) run outside a request context, where getRequestContext() throws.
+  if (event.kind !== 'page' || !event.url.pathname.startsWith('/demos/mode-watcher')) {
     return resolve(event);
   }
   if (getRequestContext().cookies.get(THEME_COOKIE) !== 'dark') {
