@@ -64,7 +64,7 @@ Route parameters matched by the Bun router. Server-only.
 
 ### `cookies`
 
-<VersionNote since="0.10.0" message="Before 0.10.0, cookies.set() and cookies.delete() in the browser wrote nothing when passed httpOnly: true, and gave no development warnings." />
+<VersionNote since="0.10.0" message="Before 0.10.0, cookies.set() and cookies.delete() in the browser wrote nothing when passed httpOnly: true and gave no development warnings, and cookies.set() in the browser ignored maxAge." />
 
 Read and write cookies on the server and the client through one API. In the browser, `cookies.set()` and `cookies.delete()` ignore `httpOnly`, because a browser discards any `document.cookie` write that carries it. See the [Cookies demo](/demos/cookies/).
 
@@ -78,7 +78,7 @@ In development, the browser jar warns in the console and the debug bar when a ca
 </script>
 ```
 
-Delete a cookie with the same per-call options you set it with. See [`cookie:defaults`](/docs/extensions/#cookiedefaults).
+`maxAge` (seconds) and `expires` (days, or a `Date`) set the same cookie lifetime on the server and in the browser. Delete a cookie with the same per-call options you set it with. See [`cookie:defaults`](/docs/extensions/#cookiedefaults).
 
 With [`secureCookies`](/docs/serve-options/#secure-cookies) on, a cookie the server sets is `HttpOnly`, so the browser can neither read nor overwrite it. Pass `{ httpOnly: false }` where the server sets a cookie that an island reads or writes.
 

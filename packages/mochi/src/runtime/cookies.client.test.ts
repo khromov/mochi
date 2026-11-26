@@ -80,6 +80,18 @@ describe('client cookie jar never writes HttpOnly', () => {
   });
 });
 
+describe('client cookie jar honours a per-call maxAge', () => {
+  test('set() writes maxAge as Max-Age, like the server jar', () => {
+    createClientCookies().set('pref', 'dark', { maxAge: 3600 });
+    expect(written()).toEqual({ pair: 'pref=dark', attrs: { path: '/', 'max-age': '3600' } });
+  });
+
+  test('set() keeps maxAge: 0, so the write expires the cookie', () => {
+    createClientCookies().set('pref', 'dark', { maxAge: 0 });
+    expect(written()).toEqual({ pair: 'pref=dark', attrs: { path: '/', 'max-age': '0' } });
+  });
+});
+
 describe('clientCookieDefaults', () => {
   test('drops what document.cookie cannot honour', () => {
     expect(

@@ -77,7 +77,8 @@ export function createClientCookies(checks?: ReturnType<typeof cookieWriteChecks
     set(name: string, value: string, options?: CookieSerializeOptions): void {
       // A browser discards a document.cookie write that carries HttpOnly, so isomorphic options would make this a no-op.
       const merged = { ...defaults, ...options, httpOnly: undefined };
-      const written = Cookies.set(name, value, merged);
+      // js-cookie has no maxAge option and drops falsy attributes, so Max-Age goes under its cookie name as a string to keep 0.
+      const written = Cookies.set(name, value, { ...merged, maxAge: undefined, 'max-age': options?.maxAge?.toString() });
       checks?.set(name, options, merged, written);
     },
 
