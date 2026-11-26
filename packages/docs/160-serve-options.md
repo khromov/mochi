@@ -276,7 +276,7 @@ Scripts your own markup emits are not stamped: pass `getCspNonce()` to them your
 
 <Callout type="warning">
 
-The nonce changes on every response. Do not cache rendered HTML with `csp` on, in a CDN or a `MochiCache`: a replayed page carries an old nonce that no longer matches the header.
+The nonce changes on every response, so do not cache rendered HTML with `csp` on. A page replayed from a `MochiCache` carries an old nonce that no longer matches the header, and a CDN that caches the header too serves every visitor the same nonce, which an injected script can then reuse.
 
 </Callout>
 
