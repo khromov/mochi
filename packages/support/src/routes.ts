@@ -33,6 +33,13 @@ function subscriberFromForm(formData: FormData): Subscriber | null {
 export const routes: Record<string, MochiRouteValue> = {
   ...newsletterRoutes,
   '/': Mochi.page('./src/Support.svelte', {
+    // The captcha only prices each POST, it doesn't cap how many one client sends; GETs are skipped, as on the newsletter embed.
+    rateLimit: {
+      limit: 10,
+      window: '15m',
+      ban: { threshold: 3, duration: '1h' },
+      skip: (req) => req.method !== 'POST',
+    },
     serverProps: () => ({ captcha: mintCaptcha() }),
     actions: {
       send: async ({ formData }) => {
