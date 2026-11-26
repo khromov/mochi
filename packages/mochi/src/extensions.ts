@@ -105,6 +105,7 @@ export interface MochiFilterValue {
   'csrf:check': Response | null;
   'trailingSlash:redirect': Response | null;
   'cookie:defaults': CookieSerializeOptions;
+  'security:headers': Record<string, string>;
   'html:shell': string;
   'serverIsland:secretKey': Buffer;
   'serverIsland:inlineBudget': number;
@@ -142,6 +143,7 @@ export interface MochiFilterContext {
   'csrf:check': { request: Request; url: URL };
   'trailingSlash:redirect': { request: Request; url: URL; policy: TrailingSlashPolicy };
   'cookie:defaults': { options: MochiServeOptions };
+  'security:headers': { options: MochiServeOptions };
   'html:shell': { options: MochiServeOptions; development: boolean };
   'serverIsland:secretKey': { options: MochiServeOptions; envKeyPresent: boolean };
   /** Resolved per island fetch as the endpoint arms nested-island inlining; never fires when `inlineNestedIslands` is off or the fetched island also hydrates. */
@@ -215,6 +217,7 @@ export interface MochiFilterKindMap {
   'csrf:check': 'sync';
   'trailingSlash:redirect': 'sync';
   'cookie:defaults': 'sync';
+  'security:headers': 'sync';
   'html:shell': 'sync';
   'serverIsland:secretKey': 'async';
   'serverIsland:inlineBudget': 'sync';
@@ -265,6 +268,7 @@ const FILTER_KINDS: { [K in keyof MochiFilterValue]: MochiKind } = {
   'csrf:check': 'sync',
   'trailingSlash:redirect': 'sync',
   'cookie:defaults': 'sync',
+  'security:headers': 'sync',
   'html:shell': 'sync',
   'serverIsland:secretKey': 'async',
   'serverIsland:inlineBudget': 'sync',

@@ -78,6 +78,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `protection` — Cloudflare-style browser verification: unverified clients get an interstitial that auto-solves the captcha proof-of-work and redeems it for a signed clearance cookie. Default: disabled. See [Protection Mode](/docs/protection/).
 - `csrf` — `MochiCsrfOptions` for the origin-header check. See below.
 - `proxy` — `MochiProxyOptions` for trusted reverse-proxy headers. See below.
+- `securityHeaders` (since 0.10.0) — baseline security headers on every framework response: `nosniff` and `Referrer-Policy` by default, `X-Frame-Options` opt-in. `boolean | MochiSecurityHeadersOptions`. Default: on. See [Security](/docs/security/).
 - `hooks` / `filters` — named lifecycle hooks and value filters. See [Extensions](/docs/extensions/).
 - `warmup` — warm the SSR pipeline at startup by invoking every static page route once. `boolean | { enabledInProd, enabledInDev }`. Default: `false`. See below.
 - `bun` — escape hatch for raw `Bun.serve()` options Mochi does not surface — `idleTimeout`, `maxRequestBodySize`, `reusePort`, `tls`. `fetch` / `websocket` / `routes` / `error` are framework-owned and throw if set. See below.

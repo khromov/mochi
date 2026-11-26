@@ -51,6 +51,7 @@ import type {
 import { isFormFail, isFormSuccess, isRedirect } from './runtime/forms';
 import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } from './runtime/formsJson';
 import { csrfCheck, csrfBootWarning, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
+import { addSecurityHeaders, resolveSecurityHeaders } from './runtime/security';
 import { applyFilter, initExtensions, runHook } from './extensions';
 import { escapeHtmlAttr } from './utils/htmlEscape';
 import { buildPublicUrl } from './runtime/proxy';
@@ -495,6 +496,7 @@ export class Mochi {
     const protectedMethods: ReadonlySet<string> = applyFilter('csrf:protectedMethods', new Set(DEFAULT_PROTECTED_METHODS), { options });
     const trustedOrigins: ReadonlySet<string> = applyFilter('csrf:trustedOrigins', new Set(options.csrf?.trustedOrigins ?? []), { options });
     const cookieDefaults = applyFilter('cookie:defaults', {}, { options });
+    const securityHeaderDefaults = resolveSecurityHeaders(options);
 
     const bootCsrfWarning = csrfBootWarning(options);
     if (bootCsrfWarning) {
@@ -786,6 +788,16 @@ export class Mochi {
       newRequestId,
       protection: protectionRuntime?.gate,
     });
+
+    // Outermost around each handler, so middleware's `filterResponseHeaders` cannot strip the baseline.
+    const withSecurityHeaders = <R extends Response | undefined>(handler: (req: Request, server: Server<undefined>) => R | Promise<R>) =>
+      Object.keys(securityHeaderDefaults).length === 0
+        ? handler
+        : async (req: Request, server: Server<undefined>): Promise<R> => {
+            const res = await handler(req, server);
+            // A `Mochi.ws` handler returns nothing once the socket is upgraded.
+            return (res && addSecurityHeaders(res, securityHeaderDefaults)) as R;
+          };
 
     const internalRoutes: Record<string, MochiPageConfig | MochiApiConfig> = {
       // Gated behind the debug bar, like the page-cache admin routes, since the stats page discloses every bundle's input
@@ -1187,8 +1199,8 @@ export class Mochi {
 
           return {
             bunRouteValue: withHead({
-              GET: getHandler,
-              POST: postHandler,
+              GET: withSecurityHeaders(getHandler),
+              POST: withSecurityHeaders(postHandler),
             } as unknown as BunRouteValue),
             type: 'page',
           };
@@ -1196,7 +1208,7 @@ export class Mochi {
         // A method-keyed object keeps a POST/PUT to an action-less page from matching (it falls through to the fetch
         // handler and 404s); a bare function runs for every method and would render 200 on POST in production,
         // diverging from dev, where `pageConfigMap` forces this path anyway.
-        return { bunRouteValue: withHead({ GET: getHandler } as unknown as BunRouteValue), type: 'page' };
+        return { bunRouteValue: withHead({ GET: withSecurityHeaders(getHandler) } as unknown as BunRouteValue), type: 'page' };
       } else if (isMochiApi(handler)) {
         if (apiHandlerMap) {
           apiHandlerMap.set(pattern, handler.handler);
@@ -1261,12 +1273,12 @@ export class Mochi {
             return final;
           });
         };
-        return { bunRouteValue: withHead(bunRouteValue), type: 'api' };
+        return { bunRouteValue: withHead(withSecurityHeaders(bunRouteValue)), type: 'api' };
       } else if (isMochiWs(handler)) {
         const wsHandlers = handler.handlers;
         wsHandlersMap.set(pattern, wsHandlers);
 
-        const bunRouteValue = (async (req: Request, server: Server<undefined>) => {
+        const bunRouteValue = withSecurityHeaders(async (req: Request, server: Server<undefined>) => {
           const setup = await buildRequestContext(req, server, { kind: 'ws', pattern });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
@@ -1438,7 +1450,7 @@ export class Mochi {
             },
           });
         };
-        return { bunRouteValue, type: 'sse' };
+        return { bunRouteValue: withSecurityHeaders(bunRouteValue), type: 'sse' };
       } else if (isMochiFile(handler)) {
         const source = handler.source;
 
@@ -1513,7 +1525,7 @@ export class Mochi {
             }
           });
         };
-        return { bunRouteValue, type: 'file' };
+        return { bunRouteValue: withSecurityHeaders(bunRouteValue), type: 'file' };
       }
       return null;
     }
@@ -1560,10 +1572,10 @@ export class Mochi {
     }
 
     // After the mirroring pass on purpose: a `/*` pattern must not be mirrored to `/*\/`.
-    registerStaticDirRoutes(bunRoutes, staticDirMounts);
+    registerStaticDirRoutes(bunRoutes, staticDirMounts, securityHeaderDefaults);
 
     // Register server island endpoint
-    bunRoutes[`${registry.assetPrefix}/island/:componentName`] = withHead(async (req: Request, server: Server<undefined>): Promise<Response> => {
+    const serverIslandHandler = async (req: Request, server: Server<undefined>): Promise<Response> => {
       const setup = await buildRequestContext(req, server, {
         kind: 'island',
         pattern: `${registry.assetPrefix}/island/:componentName`,
@@ -1699,7 +1711,8 @@ export class Mochi {
       const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'island', isWarmup: ctx.isWarmup };
       const innerResolve = async (_event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => applyResolveOptions(await renderIsland(), resolveOpts);
       return requestContext.run(ctx, () => (middleware ? middleware({ event, resolve: innerResolve }) : innerResolve(event)));
-    });
+    };
+    bunRoutes[`${registry.assetPrefix}/island/:componentName`] = withHead(withSecurityHeaders(serverIslandHandler));
 
     // Gives `Mochi.email()` the live compile cache, so Svelte email templates render through the same registry as page routes.
     getEmailRuntime().registry = registry;
@@ -1722,7 +1735,7 @@ export class Mochi {
           status: response.status,
           duration: performance.now() - start,
         });
-        return response;
+        return addSecurityHeaders(response, securityHeaderDefaults);
       });
       stopImageSweeper = startImageCacheSweeper(imageRuntime.cache, imageRuntime.options.sweepIntervalMs);
     }
@@ -1730,12 +1743,12 @@ export class Mochi {
     // Plain static serving of locally-imported image assets (`import x from './x.png'`), so it registers independently
     // of `image.enabled`. The handler reads the global registry the build populated, letting new dev images appear
     // without a route reload.
-    bunRoutes[`${registry.assetPrefix}/asset/:filename`] = withHead(createLocalAssetHandler(development));
+    bunRoutes[`${registry.assetPrefix}/asset/:filename`] = withHead(withSecurityHeaders(createLocalAssetHandler(development)));
 
     // The debug bar's Cache tab reads the entry count (GET) and empties the image cache (POST). It registers with the
     // debug bar rather than the image endpoint, since the tab always shows and acting on an empty cache is a no-op.
     if (debugBarEnabled) {
-      const imageCacheHandler = async (req: Request): Promise<Response> => {
+      const imageCacheHandler = withSecurityHeaders(async (req: Request): Promise<Response> => {
         if (req.method === 'POST') {
           await imageRuntime.cache.clearAll();
           return Response.json({ ok: true, count: 0, keys: [] });
@@ -1746,9 +1759,9 @@ export class Mochi {
           return Response.json({ count: keys.length, keys });
         }
         return new Response('Method Not Allowed', { status: 405 });
-      };
+      });
       // Returns the raw stored entry for a single key (`?key=<url-encoded key>`).
-      const imageCacheEntryHandler = async (req: Request): Promise<Response> => {
+      const imageCacheEntryHandler = withSecurityHeaders(async (req: Request): Promise<Response> => {
         if (req.method !== 'GET') {
           return new Response('Method Not Allowed', { status: 405 });
         }
@@ -1763,7 +1776,7 @@ export class Mochi {
           return new Response('Gone', { status: 410 });
         }
         return Response.json({ key, value });
-      };
+      });
       // Register both slash variants so they work under any `trailingSlash` policy.
       bunRoutes[`${registry.assetPrefix}/image-cache`] = imageCacheHandler;
       bunRoutes[`${registry.assetPrefix}/image-cache/`] = imageCacheHandler;
@@ -1773,7 +1786,7 @@ export class Mochi {
 
     if (protectionRuntime) {
       const { verifyPath, options: protectionOptions } = protectionRuntime;
-      const verifyHandler = async (req: Request, server: Server<undefined>): Promise<Response> => {
+      const verifyHandler = withSecurityHeaders(async (req: Request, server: Server<undefined>): Promise<Response> => {
         if (req.method !== 'POST') {
           return new Response('Method Not Allowed', { status: 405 });
         }
@@ -1813,7 +1826,7 @@ export class Mochi {
           duration: performance.now() - start,
         });
         return final;
-      };
+      });
       // Both slash variants, like the image-cache routes, so the endpoint answers under any trailingSlash policy.
       bunRoutes[verifyPath] = verifyHandler;
       bunRoutes[`${verifyPath}/`] = verifyHandler;
@@ -1862,7 +1875,7 @@ export class Mochi {
             return blocked ?? finalizeCookieHeaders(await serve(), cookies);
           }
         : undefined;
-    registerPublicRoutes(bunRoutes, initialPublicFiles, publicRouteGuard);
+    registerPublicRoutes(bunRoutes, initialPublicFiles, publicRouteGuard, securityHeaderDefaults);
 
     const userFetch = options.fetch;
 
@@ -1870,7 +1883,7 @@ export class Mochi {
       const url = buildPublicUrl(req, options.proxy);
       const csrfResponse = csrfCheck(req, url, options.csrf, options.proxy, development, formContentTypes, protectedMethods, trustedOrigins);
       if (csrfResponse) {
-        return csrfResponse;
+        return addSecurityHeaders(csrfResponse, securityHeaderDefaults);
       }
 
       // Non-route requests run middleware too, so static-asset paths (`/_mochi/client/...` bundles) share the chain and a
@@ -1935,9 +1948,9 @@ export class Mochi {
         duration: performance.now() - start,
       });
       if (req.method === 'HEAD') {
-        return headResponse(response);
+        return addSecurityHeaders(await headResponse(response), securityHeaderDefaults);
       }
-      return response;
+      return addSecurityHeaders(response, securityHeaderDefaults);
     };
 
     const {
@@ -2181,6 +2194,7 @@ export class Mochi {
         reloadShell,
         reloadSpeculationRules,
         publicRouteGuard,
+        securityHeaderDefaults,
       });
     }
 
