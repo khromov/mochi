@@ -12,8 +12,8 @@ function readableHere(path: string | undefined): boolean {
 
 // js-cookie writes Expires to the whole second, so a cookie due within the next second can be gone as soon as it lands.
 function expiresNow(expires: number | Date | undefined, maxAge: number | undefined): boolean {
-  // Max-Age wins over Expires, and a Max-Age of zero or less removes the cookie.
-  if (maxAge !== undefined) {
+  // Per RFC 6265 §5.2.2, browsers ignore non-integer Max-Age values and fall back to Expires; a valid Max-Age wins.
+  if (maxAge != null && /^-?\d+$/.test(String(maxAge))) {
     return maxAge <= 0;
   }
   const ms = typeof expires === 'number' ? expires * 864e5 : expires instanceof Date ? expires.getTime() - Date.now() : Infinity;
@@ -34,7 +34,7 @@ export function cookieWriteChecks(warn: (message: string) => void) {
     set(name: string, options: CookieSerializeOptions | undefined, merged: CookieSerializeOptions, written: string | undefined): void {
       // A browser refuses some writes without an error, such as one that would replace a server-set HttpOnly cookie; it lists a nameless cookie as its bare value, so that pair is never looked for.
       const refused =
-        !!written && !!name && readableHere(merged.path) && !expiresNow(merged.expires, merged.maxAge) && !`; ${document.cookie}; `.includes(`; ${written.split(';')[0]}; `);
+        !!written && !!name && readableHere(merged.path) && !expiresNow(merged.expires, options?.maxAge) && !`; ${document.cookie}; `.includes(`; ${written.split(';')[0]}; `);
       if (options?.httpOnly && !refused) {
         warnOnce(
           `cookies.set("${name}", …, { httpOnly: true }) ran in the browser, where document.cookie cannot set HttpOnly. The cookie is written without it, so scripts on this page can read it; set it from server code, such as a page action or API route, to keep it HttpOnly.`,
