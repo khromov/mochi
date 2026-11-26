@@ -15,6 +15,7 @@ import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
 import type { MochiJsMinifier } from './compiler/jsMinifier';
 import type { FontSubsetGroup } from './compiler/fontImportAttributes';
 import type { SpeculationRules } from './runtime/speculationRules';
+import type { MochiSecurityHeadersOptions } from './runtime/security';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | MochiRedirect | Promise<Record<string, unknown> | MochiRedirect>;
 
@@ -652,6 +653,13 @@ export interface MochiServeOptions {
    * Set the header options only when the proxy is trusted to overwrite them, since clients can otherwise spoof them.
    */
   proxy?: MochiProxyOptions;
+  /**
+   * Baseline security headers added to every framework response: `X-Content-Type-Options: nosniff` and
+   * `Referrer-Policy: strict-origin-when-cross-origin` by default. `X-Frame-Options` is opt-in (`{ frameOptions: 'DENY' }`)
+   * and skipped on a response that sends a CSP `frame-ancestors` directive. Pass `false` to drop them all, or extend the
+   * set (HSTS, CSP) through the `security:headers` filter. A header the route or middleware already set is never overwritten.
+   */
+  securityHeaders?: boolean | MochiSecurityHeadersOptions;
   /**
    * Trailing-slash policy for `Mochi.page()` routes. When set, each page is registered under both `/foo` and `/foo/`,
    * and the non-canonical form redirects:

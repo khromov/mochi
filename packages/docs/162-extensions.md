@@ -169,6 +169,21 @@ cookies.set('theme', 'dark', { secure: false });
 cookies.delete('theme', { secure: false });
 ```
 
+#### `security:headers`
+
+<VersionNote since="0.10.0" message="The security:headers filter is new in 0.10.0." />
+
+The security headers added to every framework response, as a `Record<string, string>` built from the `securityHeaders` option. Return the set to send: add HSTS or a static CSP, or drop a default. Resolved once at startup. Sync. See [Security](/docs/security/).
+
+```ts
+await Mochi.serve({
+  filters: {
+    'security:headers': (headers) => ({ ...headers, 'Strict-Transport-Security': 'max-age=63072000; includeSubDomains' }),
+  },
+  routes,
+});
+```
+
 #### `html:shell`
 
 Modify the HTML shell template once at startup. The value is the resolved template with `{{mochi.head}}`, `{{mochi.css}}`, `{{mochi.body}}`, `{{mochi.script}}` placeholders intact. Sync.

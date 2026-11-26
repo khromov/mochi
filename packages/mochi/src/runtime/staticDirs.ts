@@ -50,19 +50,18 @@ export function resolveStaticDirs(staticDirs: MochiStaticDirs, assetPrefix: stri
 }
 
 /** Register each mount as one wildcard route, after the trailing-slash mirroring pass — a `/*` pattern must never be mirrored to `/*\/`, which is not a valid route. */
-export function registerStaticDirRoutes(bunRoutes: Record<string, BunRouteValue>, mounts: { pattern: string; dir: string }[]): void {
+export function registerStaticDirRoutes(bunRoutes: Record<string, BunRouteValue>, mounts: { pattern: string; dir: string }[], securityHeaders: Record<string, string> = {}): void {
   for (const { pattern, dir } of mounts) {
     if (pattern in bunRoutes) {
       throw new Error(`Mochi.serve({ staticDirs }): "${pattern}" is already registered as a route. Mount the directory somewhere else, or drop the conflicting route.`);
     }
     // A handler rather than Bun's `{ dir }` route, which serves dot entries and has no hook to refuse them.
-    bunRoutes[pattern] = serveStaticDir(pattern.slice(0, -1), dir);
+    bunRoutes[pattern] = serveStaticDir(pattern.slice(0, -1), dir, securityHeaders);
   }
 }
 
-const notFound = (): Response => new Response(null, { status: 404 });
-
-function serveStaticDir(base: string, root: string): (req: Request) => Response {
+function serveStaticDir(base: string, root: string, securityHeaders: Record<string, string>): (req: Request) => Response {
+  const notFound = (): Response => new Response(null, { status: 404, headers: securityHeaders });
   return (req) => {
     const { pathname, search } = new URL(req.url);
     let rel: string;
@@ -92,11 +91,11 @@ function serveStaticDir(base: string, root: string): (req: Request) => Response 
       return notFound();
     }
     if (stats.isDirectory()) {
-      return pathname.endsWith('/') ? notFound() : new Response(null, { status: 301, headers: { Location: `${pathname}/${search}` } });
+      return pathname.endsWith('/') ? notFound() : new Response(null, { status: 301, headers: { ...securityHeaders, Location: `${pathname}/${search}` } });
     }
     const seconds = Math.floor(stats.mtimeMs / 1000);
     const etag = `W/"${stats.size.toString(16)}-${seconds.toString(16)}"`;
-    const headers = { ETag: etag, 'Last-Modified': stats.mtime.toUTCString() };
+    const headers = { ...securityHeaders, ETag: etag, 'Last-Modified': stats.mtime.toUTCString() };
     const ifNoneMatch = req.headers.get('if-none-match');
     const ifModifiedSince = req.headers.get('if-modified-since');
     const fresh = ifNoneMatch

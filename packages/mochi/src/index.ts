@@ -20,6 +20,7 @@ export { getRequestContext } from './runtime/requestContext';
 export type { MochiRequestContext } from './runtime/requestContext';
 export { getMochiConfig } from './mochiConfig';
 export type { CookieSerializeOptions, Cookie } from './runtime/cookies';
+export type { MochiSecurityHeadersOptions } from './runtime/security';
 export { MochiCache } from './cache/cache';
 export type { MochiCacheOptions, CacheResult, CacheStatus, Storage, SweepOptions, SweepResult } from './cache/cache';
 export { requestCache, requestMemo, getRequestCache } from './runtime/requestCache';
