@@ -302,6 +302,7 @@ export async function buildSitemapXml(): Promise<string> {
 
   const urls: string[] = [
     `${SITE_BASE}/`,
+    `${SITE_BASE}/demos/`,
     ...docs.map((d) => `${SITE_BASE}/docs/${d.slug}/`),
     `${SITE_BASE}/docs/${CHANGELOG_SLUG}/`,
     `${SITE_BASE}/blog/`,

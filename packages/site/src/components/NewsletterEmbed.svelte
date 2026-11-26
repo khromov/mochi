@@ -5,7 +5,7 @@
   let { src, title = 'Subscribe to the Mochi newsletter' }: { src: string; title?: string } = $props();
 </script>
 
-<aside class="newsletter-embed" aria-label={title}>
+<aside class="newsletter-embed" id="newsletter" aria-label={title}>
   <SidechainFrame mochi:clientOnly {src} {title}>
     <!-- SSR fallback, wiped on mount. Without JS nothing mounts, so the link stays. -->
     <div class="skeleton" aria-hidden="true"></div>
