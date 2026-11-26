@@ -229,6 +229,12 @@ Mochi serializes props with `devalue` — see [Passing props to islands](/docs/i
 
 </Callout>
 
+<Callout type="warning">
+
+**Props are inputs, not authorization.** A token does not expire, and the same props produce the same token on every render, so it stays valid until `MOCHI_KEY` changes. It travels in the query string, where proxy and CDN access logs record it. Anyone who obtains it can render the island with those props. Do not pass a decision such as `isAdmin`, or a `userId` that the island loads private data for without a check. Read the visitor from `getRequestContext()` inside the island and authorize there.
+
+</Callout>
+
 ### Encryption key
 
 <VersionNote since="0.10.0" message="Before 0.10.0 Mochi started with a key that decoded to no bytes or only zero bytes." />
