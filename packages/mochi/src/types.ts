@@ -562,7 +562,10 @@ export interface MochiServeOptions {
   errorPage?: string;
   /** Hook invoked before rendering the error page; may override status/message or return a `Response` to take over. See `HandleError`. */
   handleError?: HandleError;
-  /** Deflate-compress server island props when it reduces size. Default: true. */
+  /**
+   * Deflate-compress server island props when it reduces size. Default: false — a compressed token's length reveals
+   * whether request-controlled props repeat other props, leaking server-only values.
+   */
   compressServerIslandProps?: boolean;
   /**
    * Render nested `mochi:defer` islands in-process during an island fetch instead of emitting further client fetches,

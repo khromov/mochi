@@ -58,7 +58,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `handle` — a `Handle` (or `sequence(...)`) wrapping every request. See [Middleware](/docs/middleware/).
 - `errorPage` — component rendered for uncaught page errors and unmatched routes. Default: built-in. See [Error handling](/docs/error-handling/).
 - `handleError` — `HandleError` hook run before the error page renders. See [Error handling](/docs/error-handling/).
-- `compressServerIslandProps` — deflate server-island props when it reduces size. Default: `true`.
+- `compressServerIslandProps` — deflate server-island props when it reduces size. Default: `false` (`true` before 0.10.0). A compressed token's length reveals whether one prop repeats text from another, so enable it only when no island mixes request-controlled props with server-only values.
 - `inlineNestedIslands` — render nested `mochi:defer` islands in-process during an island fetch instead of emitting more client fetches. `mochi:defer:visible` children keep their own fetch; one call site opts out with `mochi:defer={{ inline: false }}`. Default: `true`. See [Server islands](/docs/server-islands/).
 - `logger` — built-in request logger. Default: `{ enabled: true }`.
 - `publicDir` — directory served as static assets. Default: `./public`. Scanned from disk at startup in every mode, so it must ship with a production deploy.

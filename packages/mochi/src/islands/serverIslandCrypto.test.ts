@@ -60,6 +60,27 @@ describe('encryptProps + decryptProps', () => {
     expect(decoded).not.toContain('islandId');
   });
 
+  // A deflated token is shorter when request-controlled props repeat a server-only prop, so its length leaks the secret.
+  test('token length does not reveal whether one prop repeats another (no compression oracle)', () => {
+    installConfig();
+    const apiKey = 'sk_live_4f9c2b7e1d8a';
+    const hit = devalueStringify({ islandId: 'mochi-abc-0', query: 'sk_live_4f9c2b7e1d8aQ', apiKey });
+    const miss = devalueStringify({ islandId: 'mochi-abc-0', query: 'xq_zmzw_GHJKLMNOPRSTQ', apiKey });
+    expect(hit.length).toBe(miss.length);
+    expect(encryptProps(hit, COMP).length).toBe(encryptProps(miss, COMP).length);
+  });
+
+  test('compressServerIslandProps: true still opts into deflate', () => {
+    (globalThis as unknown as Record<string, unknown>)[GLOBAL_CONFIG_KEY] = {
+      options: { compressServerIslandProps: true },
+      secretKey: Buffer.from('test-key-for-unit-tests-32bytes!'),
+    };
+    const json = devalueStringify({ islandId: 'mochi-abc-0', rows: 'row '.repeat(100) });
+    const token = encryptProps(json, COMP);
+    expect(Buffer.from(token, 'base64url').length).toBeLessThan(json.length);
+    expect(decryptProps(token, COMP)).toBe(json);
+  });
+
   test('rejects a tampered token', () => {
     installConfig();
     const json = devalueStringify({ islandId: 'mochi-abc-0' });

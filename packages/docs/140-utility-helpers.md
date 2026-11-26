@@ -86,7 +86,7 @@ Pass it only for a location your own code builds. A location taken from request 
 
 ### Sealed tokens
 
-`encryptPayload(plaintext, { aad?, compress? })` and `decryptPayload(token, { aad? })` seal a string into an opaque, tamper-proof base64url token (AES-256-SIV keyed from `MOCHI_KEY`) and open it again. `decryptPayload` returns `null` on any tamper or `aad` mismatch. This is the same primitive Mochi uses for server-island props. Use it for short-lived signed values such as form challenges or magic links.
+`encryptPayload(plaintext, { aad?, compress? })` and `decryptPayload(token, { aad? })` seal a string into an opaque, tamper-proof base64url token (AES-256-SIV keyed from `MOCHI_KEY`) and open it again. `decryptPayload` returns `null` on any tamper or `aad` mismatch. This is the same primitive Mochi uses for server-island props. Use it for short-lived signed values such as form challenges or magic links. `compress: true` deflates the payload first (the default before 0.10.0). Do not use it when the payload mixes a secret with user-controlled text: the token length then leaks the secret.
 
 ```ts
 import { encryptPayload, decryptPayload } from 'mochi-framework';
