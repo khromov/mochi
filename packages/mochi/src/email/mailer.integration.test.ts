@@ -163,6 +163,25 @@ describe('Mochi.email()', () => {
     }
   });
 
+  test('SMTP transport with auth fails closed when the server does not offer STARTTLS', async () => {
+    const smtp: FakeSmtpServer = startFakeSmtpServer({ auth: true });
+    const message = { to: 'rcpt@example.com', subject: 'Ticket', text: 'confidential body' };
+    const auth = { user: 'smtp-user', pass: 'hunter2' };
+    try {
+      useTransport({ type: 'smtp', host: '127.0.0.1', port: smtp.port, auth });
+      await expect(Mochi.email(message)).rejects.toThrow(/STARTTLS/);
+      expect(smtp.logins).toEqual([]);
+      expect(smtp.messages).toHaveLength(0);
+
+      useTransport({ type: 'smtp', host: '127.0.0.1', port: smtp.port, auth, requireTLS: false });
+      await Mochi.email(message);
+      expect(smtp.logins).toEqual(['smtp-user:hunter2']);
+      expect(smtp.messages).toHaveLength(1);
+    } finally {
+      smtp.close();
+    }
+  });
+
   test('SMTP transport refuses nodemailer path/href content sources (no local file read, no URL fetch)', async () => {
     const secret = `top-secret-${crypto.randomUUID()}`;
     const secretFile = path.join(outDir, 'secret.txt');
