@@ -188,11 +188,11 @@ await Mochi.serve({
 
 <Callout type="warning">
 
-Browser code cannot read or overwrite an `HttpOnly` cookie, so a cookie that an island reads or writes needs `cookies.set('theme', 'dark', { httpOnly: false })` where the server sets it. A production site served over plain HTTP does not receive `Secure` cookies: the flag follows `development`, not the request's scheme, so it stays on behind a TLS-terminating proxy.
+Browser code cannot read or overwrite an `HttpOnly` cookie, so a cookie that an island reads or writes needs `cookies.set('theme', 'dark', { httpOnly: false })` where the server sets it. A production site served over plain HTTP keeps none of these cookies, because the browser drops a `Secure` cookie that arrives over HTTP. The flag follows `development`, not the request's scheme, so it stays on behind a TLS-terminating proxy.
 
 </Callout>
 
-A field you pass to `cookies.set()` wins for that call. The `secureCookies` fields are also the value the [`cookie:defaults`](/docs/extensions/#cookiedefaults) filter receives, so a field the filter returns wins over them. In the browser, `cookies.set()` applies the resulting `secure` and `sameSite`, but never `httpOnly`.
+A field you pass to `cookies.set()` wins for that call. The `secureCookies` fields are also the value the [`cookie:defaults`](/docs/extensions/#cookiedefaults) filter receives, and its return value replaces them: spread them, as below, to keep the fields you do not change. In the browser, `cookies.set()` applies the resulting `secure` and `sameSite`, but never `httpOnly`.
 
 ```ts
 await Mochi.serve({
