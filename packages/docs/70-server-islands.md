@@ -231,7 +231,9 @@ Mochi serializes props with `devalue` — see [Passing props to islands](/docs/i
 
 ### Encryption key
 
-Mochi encrypts props with a key derived from `process.env.MOCHI_KEY` (base64url-encoded, any length). Without `MOCHI_KEY`, Mochi generates a random key and logs a warning — fine for local dev, broken across restarts and multi-instance deploys.
+<VersionNote since="0.10.0" message="Before 0.10.0 Mochi started with a key that decoded to no bytes or only zero bytes." />
+
+Mochi encrypts props with a key derived from `process.env.MOCHI_KEY` (base64url-encoded, any length). Mochi refuses to start if the key decodes to no bytes or only zero bytes. Without `MOCHI_KEY`, Mochi generates a random key and logs a warning — fine for local dev, broken across restarts and multi-instance deploys.
 
 Generate a key and write it to `.env`:
 
