@@ -13,10 +13,11 @@ beforeAll(async () => {
   tmp = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-csp-dev-'));
   mkdirSync(path.join(tmp, 'files'));
   copyFileSync(path.join(import.meta.dir, '__fixtures__', 'fonts', 'caveat-latin-wght-normal.woff2'), path.join(tmp, 'files', 'caveat-latin-wght-normal.woff2'));
+  copyFileSync(path.join(import.meta.dir, '__fixtures__', 'csp', 'Probe.svelte'), path.join(tmp, 'Probe.svelte'));
   writeFileSync(path.join(tmp, 'font.css'), `@font-face {\n  font-family: 'Caveat Variable';\n  src: url(./files/caveat-latin-wght-normal.woff2) format('woff2-variations');\n}\n`);
   writeFileSync(
     path.join(tmp, 'Page.svelte'),
-    `<script>\n  import './font.css' with { subset: 'Hello' };\n  import Probe from '${path.join(import.meta.dir, '__fixtures__', 'csp', 'Probe.svelte')}';\n<` +
+    `<script>\n  import './font.css' with { subset: 'Hello' };\n  import Probe from './Probe.svelte';\n<` +
       `/script>\n<p style="font-family: 'Caveat Variable'">Hello</p>\n<Probe mochi:hydrate label="dev" />\n`,
   );
   server = await Mochi.serve({
