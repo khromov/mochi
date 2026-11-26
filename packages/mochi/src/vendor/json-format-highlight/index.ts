@@ -8,22 +8,6 @@ const defaultColors = {
   nullColor: 'cornflowerblue',
 };
 
-const entityMap = {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#39;',
-  '`': '&#x60;',
-  '=': '&#x3D;',
-};
-
-function escapeHtml(html: string) {
-  return String(html).replace(/[&<>"'`=]/g, function (s) {
-    return entityMap[s as keyof typeof entityMap];
-  });
-}
-
 export default function (json: unknown, colorOptions = {}) {
   const valueType = typeof json;
   let str: string;
@@ -33,7 +17,8 @@ export default function (json: unknown, colorOptions = {}) {
     str = json as string;
   }
   const colors = Object.assign({}, defaultColors, colorOptions);
-  str = str.replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
+  // Upstream's escape pass replaced each character with itself, so keys reached {@html} raw.
+  str = str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return str.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+]?\d+)?)/g, (match: string) => {
     let color = colors.numberColor;
     let style = '';
@@ -42,7 +27,6 @@ export default function (json: unknown, colorOptions = {}) {
         color = colors.keyColor;
       } else {
         color = colors.stringColor;
-        match = '"' + escapeHtml(match.substr(1, match.length - 2)) + '"';
         style = 'word-wrap:break-word;white-space:pre-wrap;';
       }
     } else {
