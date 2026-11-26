@@ -131,9 +131,9 @@ export function cachedImageDimensions() { return Promise.resolve(null); }
 export function invalidateImage() { __serverOnly("invalidateImage()"); }
 export { reloadDeferredIsland, reloadDeferredIslandAll } from "__MOCHI_DEFER_API__";
 export { deferReloadState, DeferReloadState } from "__MOCHI_DEFER_REACTIVE__";
-export function memoryStore() { __serverOnly("memoryStore()"); }
-export function sqliteStore() { __serverOnly("sqliteStore()"); }
-export function postgresStore() { __serverOnly("postgresStore()"); }
+export function rateLimitMemoryStore() { __serverOnly("rateLimitMemoryStore()"); }
+export function rateLimitSqliteStore() { __serverOnly("rateLimitSqliteStore()"); }
+export function rateLimitPostgresStore() { __serverOnly("rateLimitPostgresStore()"); }
 export { enhance, deserialize } from "__MOCHI_ENHANCE_CLIENT__";
 // Constant by construction: client bundles are built only for islands, so
 // every component that executes in the browser is part of a hydrating (or
