@@ -535,7 +535,9 @@ export class Mochi {
     const formContentTypes: ReadonlySet<string> = applyFilter('csrf:formContentTypes', new Set(DEFAULT_FORM_CONTENT_TYPES), { options });
     const protectedMethods: ReadonlySet<string> = applyFilter('csrf:protectedMethods', new Set(DEFAULT_PROTECTED_METHODS), { options });
     const trustedOrigins: ReadonlySet<string> = applyFilter('csrf:trustedOrigins', new Set(options.csrf?.trustedOrigins ?? []), { options });
-    const cookieDefaults = applyFilter('cookie:defaults', {}, { options });
+    // Secure follows the mode, not the request's scheme: behind a TLS-terminating proxy Bun sees plain HTTP.
+    const secureCookieDefaults: CookieSerializeOptions = options.secureCookies ? { httpOnly: true, sameSite: 'lax', secure: !development } : {};
+    const cookieDefaults = applyFilter('cookie:defaults', secureCookieDefaults, { options });
     const securityHeaderDefaults = resolveSecurityHeaders(options);
     const redirectOrigins: ReadonlySet<string> = new Set(options.redirect?.trustedOrigins ?? []);
 
