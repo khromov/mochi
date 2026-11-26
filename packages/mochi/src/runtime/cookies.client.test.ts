@@ -4,7 +4,7 @@ GlobalRegistrator.register({ url: 'http://localhost/app/' });
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createClientCookies } from './cookies.client';
-import { clientCookieDefaults } from './cookies';
+import { clientCookieDefaults, type CookieSerializeOptions } from './cookies';
 
 // Captures the raw strings js-cookie hands to `document.cookie`, i.e. exactly the attributes the browser receives.
 let writes: string[] = [];
@@ -60,6 +60,23 @@ describe('client cookie jar applies cookie:defaults', () => {
   test('without seeded defaults the jar keeps js-cookie’s Path=/', () => {
     createClientCookies().set('pref', 'dark');
     expect(written()).toEqual({ pair: 'pref=dark', attrs: { path: '/' } });
+  });
+});
+
+describe('client cookie jar never writes HttpOnly', () => {
+  const options: CookieSerializeOptions = { httpOnly: true, sameSite: 'Lax', path: '/app/' };
+
+  test('set() drops a per-call httpOnly and keeps the rest', () => {
+    createClientCookies().set('session', 'abc', options);
+    expect(written()).toEqual({ pair: 'session=abc', attrs: { path: '/app/', sameSite: 'Lax' } });
+  });
+
+  test('delete() drops a per-call httpOnly and keeps the rest', () => {
+    createClientCookies().delete('session', options);
+    const { pair, attrs } = written();
+    expect(pair).toBe('session=');
+    expect(attrs).toMatchObject({ path: '/app/', sameSite: 'Lax' });
+    expect(attrs).not.toHaveProperty('httpOnly');
   });
 });
 

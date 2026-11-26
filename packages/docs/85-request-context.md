@@ -7,6 +7,7 @@ description: 'Access the current URL, route params, cookies, and locals from ser
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Request context
@@ -63,7 +64,9 @@ Route parameters matched by the Bun router. Server-only.
 
 ### `cookies`
 
-Read and write cookies on the server and the client through one API. See the [Cookies demo](/demos/cookies/).
+<VersionNote since="0.10.0" message="Before 0.10.0, cookies.set() and cookies.delete() in the browser wrote nothing when passed httpOnly: true." />
+
+Read and write cookies on the server and the client through one API. In the browser, `cookies.set()` and `cookies.delete()` ignore `httpOnly`, because a browser discards any `document.cookie` write that carries it. See the [Cookies demo](/demos/cookies/).
 
 ```svelte
 <script>

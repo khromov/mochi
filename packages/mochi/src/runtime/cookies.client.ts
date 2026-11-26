@@ -20,11 +20,12 @@ export function createClientCookies() {
     },
 
     set(name: string, value: string, options?: CookieSerializeOptions): void {
-      Cookies.set(name, value, { ...defaults, ...options });
+      // A browser discards a document.cookie write that carries HttpOnly, so isomorphic options would make this a no-op.
+      Cookies.set(name, value, { ...defaults, ...options, httpOnly: undefined });
     },
 
     delete(name: string, options?: Pick<CookieSerializeOptions, 'path' | 'domain'>): void {
-      Cookies.remove(name, { ...defaults, ...options });
+      Cookies.remove(name, { ...defaults, ...options, httpOnly: undefined });
     },
   };
 }
