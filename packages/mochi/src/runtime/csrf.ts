@@ -77,8 +77,13 @@ export function csrfBootWarning(options: {
   proxy?: MochiProxyOptions;
   filters?: { 'csrf:check'?: unknown };
   routes?: Record<string, unknown>;
+  bun?: { tls?: unknown };
 }): string | null {
-  if (options.csrf?.checkOrigin === false || options.filters?.['csrf:check'] !== undefined || options.proxy?.origin || options.proxy?.hostHeader) {
+  const proxy = options.proxy;
+  // Without a protocol header the expected origin takes Bun's own socket protocol, which is `http` behind a
+  // TLS-terminating proxy and so never matches the browser's `https` Origin.
+  const hostHeaderWithoutProtocol = Boolean(proxy?.hostHeader && !proxy.protocolHeader && !options.bun?.tls);
+  if (options.csrf?.checkOrigin === false || options.filters?.['csrf:check'] !== undefined || proxy?.origin || (proxy?.hostHeader && !hostHeaderWithoutProtocol)) {
     return null;
   }
   const actionRoutes = Object.entries(options.routes ?? {}).filter(([, handler]) => {
@@ -87,6 +92,9 @@ export function csrfBootWarning(options: {
   });
   if (actionRoutes.length === 0) {
     return null;
+  }
+  if (hostHeaderWithoutProtocol) {
+    return `CSRF: ${actionRoutes.length} route(s) declare form actions (e.g. "${actionRoutes[0]?.[0]}") and proxy.hostHeader is set without proxy.protocolHeader, so the expected origin uses the server's own http:// protocol — behind a TLS-terminating proxy their form POSTs will be blocked with 403 in production. Set Mochi.serve({ proxy: { protocolHeader: 'x-forwarded-proto' } }) or proxy.origin before deploying.`;
   }
   return `CSRF: ${actionRoutes.length} route(s) declare form actions (e.g. "${actionRoutes[0]?.[0]}") but no proxy.origin or proxy.hostHeader is configured — their form POSTs will be blocked with 403 in production, because the expected origin can't be trusted. Set Mochi.serve({ proxy: { origin: '...' } }) before deploying.`;
 }
