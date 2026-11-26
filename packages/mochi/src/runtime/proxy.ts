@@ -30,7 +30,8 @@ export interface MochiProxyOptions {
    * comma-separated, and reading from the right at depth `N` skips `N - 1` trusted proxies; defaults to `1`, the
    * rightmost entry. Given `client, proxy1, proxy2`, `xffDepth: 3` yields `client` and `xffDepth: 1` yields `proxy2`.
    * Reading from the right blocks spoofing, since each trusted proxy pushes a client-appended header leftward — but only
-   * when `N` equals the number of proxies that append; a larger `N` lets a padded header pick the address.
+   * when `N` equals the number of proxies that append; with a larger `N` a client can pad the header and choose the
+   * address that is read.
    */
   xffDepth?: number;
   /**
@@ -121,8 +122,8 @@ export function getClientAddress(request: Request, fallback: string | null, opti
     if (ips.length < depth) {
       warnShortChain(depth, ips.length);
     }
-    // Reading the rightmost entry keeps an honest short chain sane, but it is no defence: a client pads the header to
-    // `xffDepth` entries and the leftmost, client-written one is read.
+    // Reading the rightmost entry keeps an honest short chain sane, but it is no defence: a client can pad the header
+    // to `xffDepth` entries, and then the leftmost, client-written one is read.
     return ips[ips.length - depth] ?? ips[ips.length - 1]!;
   }
 
