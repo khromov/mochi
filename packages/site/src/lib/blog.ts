@@ -99,6 +99,11 @@ async function loadAllPosts(): Promise<PostEntry[]> {
   return entries;
 }
 
+// The deployed image runs NODE_ENV=development for the debug bar, so dev mode alone doesn't mean a local preview.
+export function draftsVisible(env: Record<string, string | undefined> = process.env): boolean {
+  return env.NODE_ENV === 'development' && env.MOCHI_DOCKER !== 'true';
+}
+
 export async function loadPosts(opts?: { includeDrafts?: boolean }): Promise<PostEntry[]> {
   const posts = await loadAllPosts();
   return opts?.includeDrafts ? posts : posts.filter((p) => !p.draft);

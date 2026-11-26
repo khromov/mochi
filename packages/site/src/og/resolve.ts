@@ -1,10 +1,8 @@
 import { getDoc } from '../lib/docs.ts';
-import { getPost } from '../lib/blog.ts';
+import { draftsVisible, getPost } from '../lib/blog.ts';
 import { demos } from '../lib/demos.ts';
 import { CHANGELOG_TITLE } from '../lib/changelog.ts';
 import type { OgSubject } from './render.ts';
-
-const DEVELOPMENT = process.env.NODE_ENV === 'development';
 
 /** Pages whose titles are written into a component rather than a registry. */
 const FIXED: Record<string, OgSubject> = {
@@ -31,7 +29,7 @@ export async function resolveOgSubject(pathname: string): Promise<OgSubject | nu
 
   const postSlug = path.match(/^\/blog\/([^/]+)$/)?.[1];
   if (postSlug) {
-    const post = await getPost(postSlug, { includeDrafts: DEVELOPMENT });
+    const post = await getPost(postSlug, { includeDrafts: draftsVisible() });
     return post && { kind: 'blog', title: post.title, date: post.date };
   }
 
