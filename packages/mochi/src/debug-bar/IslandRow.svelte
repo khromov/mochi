@@ -37,7 +37,7 @@
       const recorded = window.__mochi_debug?.serverProps?.[island.signedProps];
       if (recorded) {
         try {
-          const { islandId, ...rest } = JSON.parse(recorded) as Record<string, unknown>;
+          const { islandId, __mochi_ah: _alsoHydrate, ...rest } = JSON.parse(recorded) as Record<string, unknown>;
           return {
             html: formatHighlight(rest, highlightColors),
             caption: typeof islandId === 'string' ? islandId : undefined,
