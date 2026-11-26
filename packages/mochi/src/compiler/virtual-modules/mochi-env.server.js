@@ -6,6 +6,10 @@ export function getRequestContext() {
   if (!ctx) throw new Error("getRequestContext() called outside of a request.");
   return ctx;
 }
+// Mirrors runtime/csp.ts: the fetch fallback (unmatched-route 404) carries its nonce outside any request context.
+export function getCspNonce() {
+  return globalThis.__mochi_request_context__?.getStore()?.cspNonce ?? globalThis.__mochi_csp_nonce__?.getStore();
+}
 function __mochiCtxProxy(key) {
   return new Proxy({}, {
     get(_, p) {

@@ -28,6 +28,7 @@ function makeConfig(overrides: Partial<RequestSetupConfig> = {}): RequestSetupCo
     csrf: undefined,
     trailingSlashPolicy: undefined,
     cookieDefaults: {},
+    csp: false,
     development: false,
     debugBarEnabled: false,
     formContentTypes: DEFAULT_FORM_CONTENT_TYPES,
@@ -70,6 +71,21 @@ describe('makeRequestContextBuilder', () => {
     expect(typeof setup.ctx.getClientAddress).toBe('function');
     expect(setup.ctx.debugBarData).toBeDefined();
     expect(setup.ctx.debugBarData!.route).toBe('/foo/');
+  });
+
+  test('csp mints a fresh base64 nonce per request, and none when off', async () => {
+    const { server } = mockServer();
+    const nonceOf = async (csp: boolean) => {
+      const setup = await makeRequestContextBuilder(makeConfig({ csp }))(mockReq('GET', '/'), server, { kind: 'page', pattern: '/' });
+      if ('earlyResponse' in setup) {
+        throw new Error('expected ok setup');
+      }
+      return setup.ctx.cspNonce;
+    };
+    const first = await nonceOf(true);
+    expect(first).toMatch(/^[A-Za-z0-9+/]{22}==$/);
+    expect(await nonceOf(true)).not.toBe(first);
+    expect(await nonceOf(false)).toBeUndefined();
   });
 
   test('kind: "api" produces no debugBarData even when enabled', async () => {

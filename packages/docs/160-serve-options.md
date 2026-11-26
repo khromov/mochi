@@ -79,6 +79,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `csrf` — `MochiCsrfOptions` for the origin-header check. See below.
 - `proxy` — `MochiProxyOptions` for trusted reverse-proxy headers. See below.
 - `securityHeaders` (since 0.10.0) — baseline security headers on every framework response: `nosniff` and `Referrer-Policy` by default, `X-Frame-Options` opt-in. `boolean | MochiSecurityHeadersOptions`. Default: on. See [Security](/docs/security/).
+- `csp` (since 0.10.0) — mint a per-request nonce and stamp it on every script Mochi emits, for a nonce-based `Content-Security-Policy`. Default: `false`. See [Content-Security-Policy nonce](#content-security-policy-nonce).
 - `hooks` / `filters` — named lifecycle hooks and value filters. See [Extensions](/docs/extensions/).
 - `warmup` — warm the SSR pipeline at startup by invoking every static page route once. `boolean | { enabledInProd, enabledInDev }`. Default: `false`. See below.
 - `bun` — escape hatch for raw `Bun.serve()` options Mochi does not surface — `idleTimeout`, `maxRequestBodySize`, `reusePort`, `tls`. `fetch` / `websocket` / `routes` / `error` are framework-owned and throw if set. See below.
@@ -246,3 +247,37 @@ export const handler = Mochi.api(() => {
 ```
 
 Without `proxy.addressHeader`, this returns Bun's connecting `remoteAddress` (or `null` if unavailable).
+
+### Content-Security-Policy nonce
+
+<VersionNote since="0.10.0" message="The csp option ships in the next Mochi release (0.10.0)." />
+
+`csp: true` mints a fresh nonce for every request and stamps it on each `<script>` Mochi emits: the island bootstrap, the server-island loader, the shell's inline config, speculation rules, Svelte's `hydratable()` payload, and the dev-only live reload and debug bar. Mochi sets no header itself. Read the nonce with [`getCspNonce()`](/docs/request-context/#getcspnonce) and send the policy from middleware:
+
+```ts
+// file: src/index.ts
+import { Mochi, getCspNonce, type Handle } from 'mochi-framework';
+
+const csp: Handle = async ({ event, resolve }) => {
+  const response = await resolve(event);
+  const nonce = getCspNonce();
+  if (nonce) {
+    response.headers.set('Content-Security-Policy', `script-src 'nonce-${nonce}'; object-src 'none'; base-uri 'self'`);
+  }
+  return response;
+};
+
+await Mochi.serve({ csp: true, handle: csp, routes });
+```
+
+Islands and deferred server islands load through the nonced scripts, so a plain `'nonce-…'` source is enough. The fall-through 404 and the error page carry the nonce too. Island props travel in `<script type="application/json">` blocks, which CSP does not gate, so they get none.
+
+Scripts your own markup emits are not stamped: pass `getCspNonce()` to them yourself. With `csp` off the HTML is unchanged.
+
+<Callout type="warning">
+
+The nonce changes on every response. Do not cache rendered HTML with `csp` on, in a CDN or a `MochiCache`: a replayed page carries an old nonce that no longer matches the header.
+
+</Callout>
+
+Responses sent before middleware runs, such as the [protection](/docs/protection/) interstitial for a page route and the CSRF `403`, never reach the handle above and go out without a policy.

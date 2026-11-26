@@ -43,6 +43,8 @@ export interface MochiRequestContext {
   debugBarData?: DebugBarData;
   /** Result of the form action that just ran, available during POST re-renders of an entry route with `actions`. */
   form?: MochiFormResult;
+  /** Per-request CSP nonce, set only under `Mochi.serve({ csp: true })`. Read it with `getCspNonce()`. */
+  cspNonce?: string;
   /**
    * The client's IP address, defaulting to Bun's connecting `remoteAddress`. Behind a reverse proxy, configure
    * `Mochi.serve({ proxy: { addressHeader: '...' } })`; for `'x-forwarded-for'`, `proxy.xffDepth` sets how many trusted

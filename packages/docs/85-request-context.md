@@ -123,6 +123,27 @@ serverProps: async () => {
 };
 ```
 
+### `getCspNonce()`
+
+<VersionNote since="0.10.0" message="getCspNonce() ships in the next Mochi release (0.10.0)." />
+
+Returns the current request's CSP nonce, or `undefined` when the [`csp` serve option](/docs/serve-options/#content-security-policy-nonce) is off. Use it to build the `Content-Security-Policy` header in middleware, or to stamp a script of your own:
+
+```svelte
+<!-- file: src/Analytics.svelte -->
+<script>
+  import { getCspNonce } from 'mochi-framework';
+
+  const nonce = getCspNonce();
+</script>
+
+<svelte:head>
+  <script {nonce} src="/analytics.js"></script>
+</svelte:head>
+```
+
+It also works in middleware for the fall-through 404, which has no full request context. In the browser it returns `undefined`.
+
 <SeeItInAction
 demos={[
 { href: "/demos/request-id/", title: "Request ID", hook: "How request IDs work — every request gets a UUID v7 on getRequestContext().requestId that rides every lifecycle event for correlation." },
