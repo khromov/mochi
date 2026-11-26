@@ -210,7 +210,7 @@ Same-origin means the origin from `proxy.origin` or `proxy.hostHeader`. Without 
 
 In production an off-origin location fails the request with `500`. In development it is sent, with a `[mochi]` warning. Pass `{ external: true }` to [`redirect()`](/docs/utility-helpers/#form-action-helpers) to allow one call without listing its origin.
 
-Two checks apply in every mode, `{ external: true }` included: a location with a control character, and a script-capable scheme (`javascript:`, `data:`, `vbscript:`, `blob:`, `filesystem:`, `file:`, `view-source:`), fail with `500`. The [`enhance()`](/docs/progressively-enhancing-forms-with-enhance/) client refuses the same schemes. Other schemes, such as `mailto:`, `tel:` and app deep links, pass without a list entry.
+In every mode, `{ external: true }` included, a location fails with `500` if it has a control character, does not parse as a URL, or uses a script-capable scheme (`javascript:`, `data:`, `vbscript:`, `blob:`, `filesystem:`, `file:`, `view-source:`). The [`enhance()`](/docs/progressively-enhancing-forms-with-enhance/) client refuses the same schemes. Other schemes, such as `mailto:`, `tel:` and app deep links, pass without a list entry.
 
 ### Proxy
 

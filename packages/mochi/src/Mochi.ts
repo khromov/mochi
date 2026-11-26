@@ -845,8 +845,8 @@ export class Mochi {
     const blockedRedirect = (result: MochiRedirect, req: Request, url: URL): string | null => {
       const selfOrigin = trustedSelfOrigin(req, url, options.proxy);
       const requestUrl = new URL(req.url);
-      // Without proxy config the request's own Host stands in, scheme ignored like the WebSocket origin check, so a
-      // TLS-terminating proxy that keeps Host needs no setup.
+      // Without proxy config the request's own Host stands in, scheme ignored, so a TLS-terminating proxy that keeps
+      // Host needs no setup.
       const isAllowedOrigin = (target: URL): boolean =>
         matchesAllowedOrigin(target.origin, selfOrigin ?? requestUrl.origin, redirectOrigins) || (selfOrigin === null && target.host === requestUrl.host);
       const verdict = redirectVerdict(result.location, isAllowedOrigin, result.external === true);
@@ -855,7 +855,9 @@ export class Mochi {
       }
       const location = JSON.stringify(result.location);
       if (verdict === 'unsafe') {
-        logger.warn(`Blocking redirect() to ${location}: a control character or script-capable scheme is never a valid target, even with { external: true }.`);
+        logger.warn(
+          `Blocking redirect() to ${location}: a control character, a script-capable scheme or an unparseable URL is never a valid target, even with { external: true }.`,
+        );
         return 'Unsafe redirect location';
       }
       const detail = `redirect() to off-origin ${location} (allowed: ${selfOrigin ?? `the request host ${requestUrl.host}`}). Add the origin to redirect.trustedOrigins, or pass { external: true } to this call, if intentional.`;
