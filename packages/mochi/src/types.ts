@@ -649,6 +649,12 @@ export interface MochiServeOptions {
    */
   csrf?: MochiCsrfOptions;
   /**
+   * Mint a CSP nonce per request and stamp it on every executable `<script>` the framework emits. Off by default, and
+   * the HTML is unchanged when off. The framework sets no `Content-Security-Policy` header: build one from
+   * `getCspNonce()`, typically in middleware.
+   */
+  csp?: boolean;
+  /**
    * Reverse-proxy trust configuration, deriving the expected CSRF origin and `getClientAddress()`'s client IP from forwarded headers.
    * Set the header options only when the proxy is trusted to overwrite them, since clients can otherwise spoof them.
    */

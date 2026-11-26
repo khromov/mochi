@@ -78,6 +78,7 @@ import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './ru
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
 import { requestContext } from './runtime/requestContext';
 import type { MochiRequestContext } from './runtime/requestContext';
+import { cspNonceStore, generateCspNonce, getCspNonce, inlineScript, nonceAttr } from './runtime/csp';
 import type { SpeculationRules } from './runtime/speculationRules';
 import {
   startQueueRuntime,
@@ -195,7 +196,7 @@ async function appendDebugTail(response: Response, ctx: MochiRequestContext, dev
     requestCookies: ctx.cookies.peekAll().map(({ name, value }) => [name, value]),
   };
   const body = await response.text();
-  const tail = `<script>Object.assign((window.__mochi_debug||={}),${jsonForHtml(dynamic)})</script>`;
+  const tail = inlineScript(`Object.assign((window.__mochi_debug||={}),${jsonForHtml(dynamic)})`, nonceAttr(ctx.cspNonce));
   return new Response(body + tail, {
     status: response.status,
     statusText: response.statusText,
@@ -314,19 +315,23 @@ export class Mochi {
   ): (result: RenderResult, opts?: { debugInfo?: DebugBarData; pageEntry?: string }) => string {
     const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate, getSpeculationRules, fontPreload, cookieDefaults } = config;
 
-    const logLevelScript = logLevel === DEFAULT_LOG_LEVEL ? '' : `<script>window.__mochi_log_level=${JSON.stringify(logLevel)}</script>`;
     const clientCookies = clientCookieDefaults(cookieDefaults);
-    const cookieDefaultsScript = clientCookies ? `<script>window.__mochi_cookie_defaults=${jsonForHtml(clientCookies)}</script>` : '';
-    // Feeds the debug bar's Warnings panel. When the debug bar is off the
-    // single `window.__mochi_warn?.(...)` call site no-ops via optional chaining.
-    const warnShim = registry.debugBarEnabled
-      ? `<script>window.__mochi_warnings=[];window.__mochi_warn=function(m){console.warn("[mochi] "+m);window.__mochi_warnings.push(m)}</script>`
-      : '';
+    const buildStaticScripts = (attr: string) => ({
+      logLevel: logLevel === DEFAULT_LOG_LEVEL ? '' : inlineScript(`window.__mochi_log_level=${JSON.stringify(logLevel)}`, attr),
+      cookieDefaults: clientCookies ? inlineScript(`window.__mochi_cookie_defaults=${jsonForHtml(clientCookies)}`, attr) : '',
+      // Feeds the debug bar's Warnings panel. When the debug bar is off the
+      // single `window.__mochi_warn?.(...)` call site no-ops via optional chaining.
+      warnShim: registry.debugBarEnabled
+        ? inlineScript('window.__mochi_warnings=[];window.__mochi_warn=function(m){console.warn("[mochi] "+m);window.__mochi_warnings.push(m)}', attr)
+        : '',
+      serverIsland: inlineScript(serverIslandClientJs, attr),
+      liveReloadTail: liveReloadClientJs ? `${inlineScript(liveReloadClientJs, attr)}<mochi-live-reload></mochi-live-reload>` : '',
+    });
+    // Without `csp` every page shares one set; with it each request rebuilds its own, so no nonce outlives its response.
+    const unnoncedScripts = buildStaticScripts('');
     const cssStylePrefix = `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty, mochi-hydratable-island[hydrate-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
       registry.development ? ISLAND_FAILURE_DEV_CSS : ''
     }</style>\n`;
-    const serverIslandScript = `<script>${serverIslandClientJs}</script>`;
-    const liveReloadTail = liveReloadClientJs ? `<script>${liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : '';
     const toolbarDiv = registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : '';
     const assetPrefixJson = JSON.stringify(registry.assetPrefix);
 
@@ -336,7 +341,7 @@ export class Mochi {
 
     // Same deal for the speculation-rules payload: serialize once, re-serialize only when a dev entry edit swaps the object.
     let specRulesFrom: SpeculationRules | undefined | null = null;
-    let speculationRulesScript = '';
+    let speculationRulesJson = '';
 
     return (result, opts) => {
       const template = getTemplate();
@@ -349,30 +354,35 @@ export class Mochi {
       if (specRules !== specRulesFrom) {
         specRulesFrom = specRules;
         const count = (specRules?.prefetch?.length ?? 0) + (specRules?.prerender?.length ?? 0);
-        speculationRulesScript = count > 0 ? `<script type="speculationrules">${jsonForHtml(specRules)}</script>` : '';
+        speculationRulesJson = count > 0 ? jsonForHtml(specRules) : '';
       }
+
+      // Only framework-built tags get the nonce, never `result.head`/`result.body`, which hold whatever the page emitted.
+      const attr = nonceAttr(getCspNonce());
+      const scripts = attr ? buildStaticScripts(attr) : unnoncedScripts;
+      const speculationRulesScript = speculationRulesJson ? `<script type="speculationrules"${attr}>${speculationRulesJson}</script>` : '';
 
       const bootstrapUrl = result.bootstrapUrl;
       // Preloads go ahead of the stylesheet links: the fonts are otherwise discovered only after the CSS arrives.
       const fontPreloads = fontPreload ? result.fontPreloadUrls.slice(0, FONT_PRELOAD_MAX).map(fontPreloadTag).join('\n') : '';
       const cssLinks = (fontPreloads ? `${fontPreloads}\n` : '') + result.cssUrls.map(cssLinkTag).join('\n');
       const debugBarUrl = registry.getDebugBarUrl();
-      const debugInfoScript = registry.debugBarEnabled && opts?.debugInfo ? `<script>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
-      const pageEntryScript = liveReloadClientJs && opts?.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
+      const debugInfoScript = registry.debugBarEnabled && opts?.debugInfo ? inlineScript(`window.__mochi_debug=${jsonForHtml(opts.debugInfo)}`, attr) : '';
+      const pageEntryScript = liveReloadClientJs && opts?.pageEntry ? inlineScript(`window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}`, attr) : '';
 
-      const head = logLevelScript + cookieDefaultsScript + warnShim + speculationRulesScript + result.head;
+      const head = scripts.logLevel + scripts.cookieDefaults + scripts.warnShim + speculationRulesScript + result.head;
       const css = cssStylePrefix + cssLinks;
       const body = result.body + debugInfoScript + pageEntryScript + toolbarDiv;
       const fontSubsetCheck =
         registry.fontSubsetCheckClientJs && result.fontSubsetFaces
-          ? `<script>window.__mochi_font_subsets=${jsonForHtml(rangesByFamily(result.fontSubsetFaces))}</script><script>${registry.fontSubsetCheckClientJs}</script>`
+          ? inlineScript(`window.__mochi_font_subsets=${jsonForHtml(rangesByFamily(result.fontSubsetFaces))}`, attr) + inlineScript(registry.fontSubsetCheckClientJs, attr)
           : '';
       const script =
-        (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
-        (result.hasServerIslands ? serverIslandScript : '') +
-        (debugBarUrl ? `<script type="module" src="${debugBarUrl}"></script><script>window.__mochi_asset_prefix=${assetPrefixJson}</script>` : '') +
+        (bootstrapUrl ? `<script type="module"${attr} src="${bootstrapUrl}"></script>` : '') +
+        (result.hasServerIslands ? scripts.serverIsland : '') +
+        (debugBarUrl ? `<script type="module"${attr} src="${debugBarUrl}"></script>${inlineScript(`window.__mochi_asset_prefix=${assetPrefixJson}`, attr)}` : '') +
         fontSubsetCheck +
-        liveReloadTail;
+        scripts.liveReloadTail;
 
       let out = '';
       for (const part of parts) {
@@ -780,6 +790,7 @@ export class Mochi {
       csrf: options.csrf,
       trailingSlashPolicy,
       cookieDefaults,
+      csp: options.csp ?? false,
       development,
       debugBarEnabled,
       formContentTypes,
@@ -1879,7 +1890,7 @@ export class Mochi {
 
     const userFetch = options.fetch;
 
-    const composedFetch = async (req: Request, server: Server<undefined>): Promise<Response> => {
+    const fallbackFetch = async (req: Request, server: Server<undefined>): Promise<Response> => {
       const url = buildPublicUrl(req, options.proxy);
       const csrfResponse = csrfCheck(req, url, options.csrf, options.proxy, development, formContentTypes, protectedMethods, trustedOrigins);
       if (csrfResponse) {
@@ -1952,6 +1963,11 @@ export class Mochi {
       }
       return addSecurityHeaders(response, securityHeaderDefaults);
     };
+
+    // The fallback builds no request context, so its nonce lives in an ambient store that middleware and the 404 page both read.
+    const composedFetch = options.csp
+      ? (req: Request, server: Server<undefined>): Promise<Response> => cspNonceStore.run(generateCspNonce(), () => fallbackFetch(req, server))
+      : fallbackFetch;
 
     const {
       routes: _routes,

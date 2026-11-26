@@ -16,6 +16,7 @@ import {
 } from '../utils';
 import { injectIslandPropsBlock } from '../islands/islandPropsRegistry';
 import { requestContext, renderDetached } from '../runtime/requestContext';
+import { getCspNonce } from '../runtime/csp';
 import type { DebugBarData } from '../runtime/requestContext';
 import { logger } from '../utils/log';
 import { mochiEvents } from '../events';
@@ -1756,11 +1757,17 @@ export class ComponentRegistry {
       transformError: typeof transformError;
       idPrefix?: string;
       context?: Map<unknown, unknown>;
+      csp?: { nonce: string };
     } = {
       transformError,
     };
     if (props) {
       renderOptions.props = props;
+    }
+    // Svelte inlines a <script> for hydratable() values, which a nonce-based CSP would otherwise block.
+    const cspNonce = getCspNonce();
+    if (cspNonce) {
+      renderOptions.csp = { nonce: cspNonce };
     }
     if (opts?.idPrefix) {
       renderOptions.idPrefix = opts.idPrefix;

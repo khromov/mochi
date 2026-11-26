@@ -17,6 +17,7 @@ export type { MochiSvelteCompiler, SvelteCompilerBackend, SvelteCompileOutput } 
 export type { MochiJsMinifier } from './compiler/jsMinifier';
 export type { ShakeAppResult, SvelteShakerBackend } from './compiler/svelteShaker';
 export { getRequestContext } from './runtime/requestContext';
+export { getCspNonce } from './runtime/csp';
 export type { MochiRequestContext } from './runtime/requestContext';
 export { getMochiConfig } from './mochiConfig';
 export type { CookieSerializeOptions, Cookie } from './runtime/cookies';
