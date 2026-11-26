@@ -160,6 +160,15 @@ await Mochi.serve({
 });
 ```
 
+<VersionNote since="0.10.0" message="Before 0.10.0, cookies.delete() took only path and domain from these defaults." />
+
+Pass `cookies.delete()` the per-call options that overrode these defaults in `cookies.set()`. Otherwise the browser can ignore the deletion without an error: with the defaults above, a bare `cookies.delete('theme')` for the cookie below sends `Secure`, which the browser rejects over plain HTTP.
+
+```ts
+cookies.set('theme', 'dark', { secure: false });
+cookies.delete('theme', { secure: false });
+```
+
 #### `html:shell`
 
 Modify the HTML shell template once at startup. The value is the resolved template with `{{mochi.head}}`, `{{mochi.css}}`, `{{mochi.body}}`, `{{mochi.script}}` placeholders intact. Sync.

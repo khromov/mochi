@@ -145,9 +145,19 @@ describe('MochiCookieJar defaults', () => {
     const jar = new MochiCookieJar('__Secure-token=abc');
     jar.delete('__Secure-token', { secure: true, partitioned: true });
     const [header] = jar.getSetCookieHeaders();
-    expect(header).toContain('Secure');
+    expect(header!.split('; ')).toContain('Secure');
     expect(header).toContain('Partitioned');
     expect(header).toContain('Max-Age=0');
+  });
+
+  test('delete() lets per-call options override defaults, like set()', () => {
+    const jar = new MochiCookieJar('theme=dark', { secure: true, partitioned: true, path: '/' });
+    jar.delete('theme', { secure: false, partitioned: false });
+    const attributes = jar.getSetCookieHeaders()[0]!.split('; ');
+    expect(attributes).not.toContain('Secure');
+    expect(attributes).not.toContain('Partitioned');
+    expect(attributes).toContain('Path=/');
+    expect(attributes).toContain('Max-Age=0');
   });
 
   test('delete() ignores a default expires so only Max-Age=0 decides the expiry', () => {
