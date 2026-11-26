@@ -114,7 +114,7 @@ import { onDevEmailRecorded } from './email/devOutbox';
 import { sendEmail } from './email/mailer';
 import type { MochiEmailMessage, MochiEmailResult } from './email/types';
 import { initMochiConfig } from './mochiConfig';
-import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './utils/log';
+import { escapeControlChars, logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './utils/log';
 import { SEEDED_IS_DEV, setDevelopment } from './utils/env';
 import { mochiEvents } from './events';
 import type { MochiActionResult, MochiErrorEvent, MochiErrorKind, MochiServerStartEvent, MochiServerStopEvent } from './events';
@@ -1228,7 +1228,7 @@ export class Mochi {
                 return applyResolveOptions(response, resolveOpts);
               } catch (err) {
                 if (err instanceof MochiHttpError) {
-                  logger.error(`${event.request.method} ${event.url.pathname} → ${err.status}: ${err.message}`);
+                  logger.error(`${event.request.method} ${event.url.pathname} → ${err.status}: ${escapeControlChars(err.message)}`);
                   emitError('api', requestId, req, event.url, err.status, err);
                   return apiError(err.status, err.message);
                 }
@@ -1497,7 +1497,7 @@ export class Mochi {
               return finish(new Response(file));
             } catch (err) {
               if (err instanceof MochiHttpError) {
-                logger.error(`${req.method} ${url.pathname} → ${err.status}: ${err.message}`);
+                logger.error(`${req.method} ${url.pathname} → ${err.status}: ${escapeControlChars(err.message)}`);
                 emitError('file', requestId, req, url, err.status, err);
                 return finish(new Response(err.message, { status: err.status, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
               }

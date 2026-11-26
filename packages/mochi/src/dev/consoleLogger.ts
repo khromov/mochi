@@ -4,7 +4,7 @@ import prettyBytes from '../vendor/pretty-bytes';
 import { pinGlobal } from '../utils/globalState';
 import { mochiEvents } from '../events';
 import type { MochiEventMap, MochiRequestKind } from '../events';
-import { logger } from '../utils/log';
+import { escapeControlChars, logger } from '../utils/log';
 import { getEmailRuntime } from '../email/config';
 import { applyFilter, type ConsoleLoggerLevel, type ConsoleLoggerSource, type MochiFilterContext, type MochiFilterReturn } from '../extensions';
 
@@ -163,7 +163,7 @@ export function consoleLogger(options: ConsoleLoggerOptions = {}): void {
     label: 'ERR ',
     path,
     status,
-    note: `${styleText('dim', `${method} ${kind}`)} ${styleText('red', message)}`,
+    note: `${styleText('dim', `${method} ${kind}`)} ${styleText('red', escapeControlChars(message))}`,
   }));
 
   // Per-read cache lookups are high-volume; route them through `logger.debug`
