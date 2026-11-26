@@ -217,8 +217,7 @@ describe('mintCaptcha + verifyCaptcha', () => {
   });
 
   test('verifies at the difficulty sealed in the token, not the current config', async () => {
-    // A token minted at 4 bits stays verifiable at 4 bits after the server is
-    // reconfigured to 20 — difficulty can't drift out from under a live token.
+    // Checked against the sealed 4 bits, not the reconfigured 20 — a 4-bit solve passes once the floor admits it.
     installConfig({ bits: 4, minAgeMs: 0 });
     const minted = mintCaptcha();
     const solved = solveCaptcha(minted);
@@ -226,7 +225,7 @@ describe('mintCaptcha + verifyCaptcha', () => {
     installConfig({ bits: 20, minAgeMs: 0 });
 
     expect(minted.bits).toBe(4);
-    expect((await verifyCaptcha(fields(solved))).ok).toBe(true);
+    expect((await verifyCaptcha(fields(solved), { minBits: 4 })).ok).toBe(true);
   });
 });
 
@@ -359,6 +358,17 @@ describe('minBits', () => {
     installConfig({ bits: 4, minAgeMs: 0 });
     const solved = fields(solveCaptcha(mintCaptcha()));
     expect((await verifyCaptcha(solved, { minBits: 8 })).ok).toBe(false);
+  });
+
+  test('defaults the floor to the configured difficulty', async () => {
+    // A cheaper mint elsewhere in the app (a low-bits form, a lower protection.bits) must not pass a default verify.
+    installConfig({ bits: 8, minAgeMs: 0 });
+    expect((await verifyCaptcha(fields(solveCaptcha(mintCaptcha({ bits: 4 }))))).ok).toBe(false);
+  });
+
+  test('an explicit lower floor accepts a form minted below the configured difficulty', async () => {
+    installConfig({ bits: 8, minAgeMs: 0 });
+    expect((await verifyCaptcha(fields(solveCaptcha(mintCaptcha({ bits: 4 }))), { minBits: 4 })).ok).toBe(true);
   });
 
   test('accepts a token minted at or above the floor', async () => {

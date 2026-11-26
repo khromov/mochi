@@ -10,6 +10,7 @@ description: 'Slide-to-verify captcha with proof-of-work, replay protection, and
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
   import PersistenceTable from './_components/PersistenceTable.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
   import captchaShot from './images/captcha.png';
 </script>
 
@@ -173,6 +174,24 @@ Every token failure returns the same message, so a probing bot cannot tell "too 
 ### The timing floor
 
 `minAgeMs` is the only check that a submission took human time. The proof-of-work bounds an attacker's **cost** (~2^`bits` hashes per token), not any single solver's latency. A form with fields to type into runs past the 2s default. A form with nothing to fill in may not, so tune it per form with the [`captcha:minAgeMs`](/docs/extensions/#captchaminagems) filter.
+
+### The difficulty floor
+
+<VersionNote since="0.10.0" message="The default floor and the minBits option arrive in 0.10.0. Earlier versions accept a token at whatever difficulty it was minted at." />
+
+`verifyCaptcha()` refuses a token minted below the configured `bits`. Without this, a token from a cheaper mint — `mintCaptcha({ bits: 12 })` on another form, or a lower `protection.bits` — would pass a form that expects the default. To verify a form you deliberately mint below the default, pass the same floor:
+
+```ts
+serverProps: () => ({ captcha: mintCaptcha({ bits: 12 }) }),
+actions: {
+  subscribe: async ({ formData }) => {
+    const captcha = await verifyCaptcha(formData, { minBits: 12 });
+    // ...
+  },
+},
+```
+
+A token is still checked at the difficulty sealed into it, so lowering `bits` never weakens one in flight. Raising `bits` refuses tokens minted before the change, and a visitor with an open form reloads once.
 
 ### Clock skew
 
