@@ -51,8 +51,13 @@ function isBinary(value: unknown): value is Uint8Array {
   return value instanceof Uint8Array;
 }
 
+// The only shape `encodeBlobs` writes (`<sha256(key)>/<sha256(bytes)>.bin`); anything else is cached user data that
+// happens to use the key, and must not become a path `readBlobRef` would follow out of the cache directory.
+const BLOB_REL_PATH = /^[0-9a-f]{64}[\\/][0-9a-f]{64}\.bin$/;
+
 function isBlobPointer(value: unknown): value is BlobPointer {
-  return typeof value === 'object' && value !== null && typeof (value as { __mochiBlob?: unknown }).__mochiBlob === 'string';
+  const rel = typeof value === 'object' && value !== null ? (value as { __mochiBlob?: unknown }).__mochiBlob : undefined;
+  return typeof rel === 'string' && BLOB_REL_PATH.test(rel);
 }
 
 /** On-disk sentinel for a binary field when offloading is off: the bytes inlined as base64. */
@@ -543,7 +548,8 @@ export class FileStorage implements Storage {
   }
 
   // Deep-clones `value`, replacing binary fields with on-disk pointers and pushing their bytes onto `blobs`, leaving the
-  // input untouched. An existing BlobRef — one re-persisted by `markStale` — re-points at its current blob file. Fresh
+  // input untouched. An existing BlobRef — one re-persisted by `markStale` — re-points at its current blob file, or is
+  // kept verbatim when that file is not one of this directory's blobs. Fresh
   // binaries are content-addressed by `sha256(bytes)`, so a filename always implies its bytes: a rewrite lands in a new
   // file that a live lazy BlobRef can't be reading, and identical bytes dedupe. Superseded blobs are reclaimed with the
   // whole entry folder by `removeItem` or the sweep.
@@ -559,7 +565,9 @@ export class FileStorage implements Storage {
     }
     if (isBlobRef(value)) {
       const relPath = relative(this.directory, value.path);
-      return { __mochiBlob: relPath, bytes: value.bytes } satisfies BlobPointer;
+      if (BLOB_REL_PATH.test(relPath)) {
+        return { __mochiBlob: relPath, bytes: value.bytes } satisfies BlobPointer;
+      }
     }
     if (Array.isArray(value)) {
       return value.map((v) => this.encodeBlobs(v, hash, blobs));
