@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 // MOCHI_KEY is a base64url-encoded 32-byte secret — the same shape
@@ -30,7 +31,8 @@ export async function generateKey(options: GenerateKeyOptions = {}): Promise<Gen
   const line = `MOCHI_KEY=${key}`;
 
   if (!existsSync(envPath)) {
-    await Bun.write(envPath, `${line}\n`);
+    // Owner-only because it holds the root secret; Bun.write ignores `mode`, and `wx` makes sure this call created the file the mode applies to.
+    await writeFile(envPath, `${line}\n`, { mode: 0o600, flag: 'wx' });
     return { path: envPath, key, action: 'created' };
   }
 
