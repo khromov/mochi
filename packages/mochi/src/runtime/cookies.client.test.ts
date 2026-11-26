@@ -143,7 +143,8 @@ function browserStore(initial: Stored[], { secureContext = true } = {}): { reads
         return;
       }
       const index = store.findIndex((c) => c.name === name && c.path === path);
-      const expired = typeof attrs.expires === 'string' && new Date(attrs.expires).getTime() <= Date.now();
+      const maxAge = typeof attrs['max-age'] === 'string' ? Number(attrs['max-age']) : undefined;
+      const expired = maxAge !== undefined ? maxAge <= 0 : typeof attrs.expires === 'string' && new Date(attrs.expires).getTime() <= Date.now();
       const cookie = { name, value: pair.slice(pair.indexOf('=') + 1), path };
       if (index >= 0) {
         store.splice(index, 1, ...(expired ? [] : [cookie]));
@@ -268,6 +269,8 @@ describe('client cookie jar development warnings', () => {
       jar.set('cart', '', { expires: -1 });
       jar.set('gone', '', { expires: new Date(0) });
       jar.set('brief', '1', { expires: new Date(Math.floor(Date.now() / 1000) * 1000 + 999) });
+      jar.set('pref', '1', { maxAge: 0 });
+      jar.set('old', '1', { maxAge: -1 });
       expect(warn).not.toHaveBeenCalled();
     });
 
