@@ -52,6 +52,9 @@ One block per version: every breaking change, who it affects, and what to do abo
 
 - An action name that `actions` only inherits through its prototype (`Object.create(base)`, class methods) now answers 404 `Unknown form action`. Make every action an own property: spread a plain base object (`actions: { ...base }`), and list class methods explicitly (`actions: { save: (event) => form.save(event) }`), because a spread skips them.
 - `enhance()` no longer follows a `redirect()` to a `javascript:`, `data:` or `vbscript:` URL; it logs the location and stays on the page. Redirect to a page URL instead.
+- In production, `redirect()` from a form action or `serverProps` to an `http:` or `https:` URL on another origin now fails the request with `500` instead of redirecting; development sends it with a warning. Same-origin means `proxy.origin` or `proxy.hostHeader` when set, and the request's own `Host` otherwise. Add each external target to `redirect: { trustedOrigins: [...] }` in `Mochi.serve()`, or pass `{ external: true }` as the third argument of `redirect()` for a location your own code builds.
+- `redirect()` now fails with `500` in every mode, `{ external: true }` included, when the location has a control character, does not parse as a URL, or uses a script-capable scheme (`javascript:`, `data:`, `vbscript:`, `blob:`, `filesystem:`, `file:`, `view-source:`). Redirect to a page URL instead.
+- `verifyCaptcha()` now refuses a token minted below the configured `captcha.bits`. Where a form mints with `mintCaptcha({ bits: n })` below it, verify with `verifyCaptcha(formData, { minBits: n })`. Raising `captcha.bits` now also refuses tokens already in flight, so a visitor with an open form reloads once.
 
 ## Cookies
 
@@ -64,6 +67,7 @@ One block per version: every breaking change, who it affects, and what to do abo
 
 - `cookies.delete()` now sends every `cookie:defaults` attribute (`Secure`, `Partitioned`, `HttpOnly`, `SameSite`, `Priority`), not only `path` and `domain`. Where `cookies.set()` overrode a default per call, pass the same options to `cookies.delete()`, or the browser can ignore the deletion.
 - In the browser, `cookies.set()` and `cookies.delete()` now apply `cookie:defaults` too (all but `httpOnly`, `maxAge` and `expires`) instead of only the per-call options. With a `path` default other than `/`, client cookies move off `Path=/`, and with `secure: true` a client write is dropped over plain HTTP. Pass per-call options where client code needs other attributes.
+- In the browser, `cookies.set()` now honours `maxAge`: the cookie lasts `maxAge` seconds instead of ending with the browser session, and `maxAge: 0` removes it instead of leaving it in place. Drop `maxAge` from client calls that relied on a session cookie.
 
 ## Email
 
@@ -107,6 +111,8 @@ One block per version: every breaking change, who it affects, and what to do abo
 - Unmatched paths are no longer slash-normalized, so they 404 instead of redirecting, and the `trailingSlash:redirect` filter now runs only for page routes. Handle it in your `fetch` fallback if you relied on that redirect.
 - `redirect()` returned from `serverProps` now issues a real 3xx instead of being spread into props. Review any `serverProps` that returned one.
 - `fail()` or `success()` returned from `serverProps` now throws. Return props or a redirect instead.
+- A browser WebSocket upgrade to a `Mochi.ws()` route now gets `403`, in development too, unless its `Origin` is the host the socket connects to, the public origin (`proxy.origin` or `proxy.hostHeader`) or listed in `csrf.trustedOrigins`; clients that send no `Origin` are not checked. Add a page on another origin that opens sockets (a separate frontend dev server, a sibling subdomain or port) to `csrf.trustedOrigins`, and set `proxy.origin` behind a proxy that rewrites `Host`.
+- `MochiSseStream.send()` now throws a `TypeError` when `id` or `event` contains CR or LF, and a lone `\r` in `data` arrives at the client as `\n`. Strip line breaks from `id` and `event` values built from user input.
 
 ## Islands
 
@@ -119,6 +125,8 @@ One block per version: every breaking change, who it affects, and what to do abo
 - A `*.server.svelte` component is now server-only: it cannot take `mochi:hydrate*` or `mochi:clientOnly*`, and inside a hydrated island the client bundle gets a stub that throws, so hydration fails (the build warns). Rename the file if the suffix was incidental.
 - `mochi:defer` inside a `mochi:hydrate` subtree is now a build error. Restructure so the server island sits outside the hydrated subtree.
 - Nested `mochi:defer` islands resolve in a single request, so child islands no longer have their own wrapper, caching or timing. Pass `inlineNestedIslands: false` to `Mochi.serve()` to keep a request per island.
+- Server-island props are no longer deflated before sealing (`compressServerIslandProps` now defaults to `false`), because a compressed token's length can leak a server-only prop that shares an island with request-controlled ones. `signed-props` tokens and `/_mochi/island/` URLs get longer and reach the 1800-character URL warning sooner; tokens sealed compressed before the upgrade still decrypt. Set `compressServerIslandProps: true` only if no island mixes request-controlled props with server-only values.
+- `encryptPayload()` without `compress` now seals the payload uncompressed, and `decryptPayload()` still opens compressed tokens. Pass `compress: true` for the old output, unless the payload mixes a secret with user-controlled text.
 
 ## Assets and build output
 
@@ -127,6 +135,8 @@ One block per version: every breaking change, who it affects, and what to do abo
 - Fonts imported through CSS are served as separate assets from `/_mochi/fonts/` rather than inline base64, and are preloaded. Allow `'self'` in a CSP `font-src` that only allowed `data:`, or raise `fonts.inlineThreshold`.
 - Imported CSS bundles are minified, so their content hashes change. No action needed unless those URLs were pinned somewhere.
 - A module named `*.prerender.ts` or `*.prerender.js` now runs at build time and ships only its serialized exports, so one that exports a function fails the build. Rename the file if the suffix was incidental.
+- Every framework response now sends `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin`, unless the route or middleware already set the header, so a browser refuses a script or stylesheet served with a wrong or missing `Content-Type`. Fix the type where the route builds its response, or set `securityHeaders: { contentTypeOptions: false }` (`securityHeaders: false` drops both headers).
+- At most 8 remote image-source fetches now run at once per process, one host gets at most half of them, and `fetchTimeoutMs` now includes the wait for a slot, so a fetch that waits too long fails with `503`. Raise `image.maxConcurrentFetches` or `image.fetchTimeoutMs` if a cold burst from one image host slows down or gets 503s.
 
 ## Other
 
