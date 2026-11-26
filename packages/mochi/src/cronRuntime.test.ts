@@ -105,6 +105,17 @@ describe('startCronRuntime', () => {
     expect(await registeredCronNames()).toEqual(['keep']);
   });
 
+  // A dev node on the fleet's shared store only skips working a dev:false job; unscheduling it would stop it fleet-wide.
+  test('a development boot keeps the stored schedule of a dev:false job', async () => {
+    const storage = tmpSqlite();
+    const jobs = () => [createCronJob('tick', '0 3 * * *', () => {}), createCronJob('billing', '0 4 * * *', { run: () => {}, dev: false })];
+    await startCronRuntime(jobs(), { cronStorage: storage, development: false, jitterMs: 0 });
+    await closeAllQueueResources();
+
+    await startCronRuntime(jobs(), { cronStorage: storage, development: true, jitterMs: 0 });
+    expect((await registeredCronNames()).sort()).toEqual(['billing', 'tick']);
+  });
+
   // SQLite has no schemas, so bun-boss folds the namespace into the table name; without it cron would land in the
   // default `bunboss.*` tables and share them with a queue pointed at the same file.
   test('cron tables carry the mochi_cron namespace, so one sqlite file can hold both', async () => {
