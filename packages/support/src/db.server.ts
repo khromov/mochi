@@ -255,8 +255,8 @@ function newToken(): string {
 export type SubscribeOutcome = { kind: 'created' | 'resent' | 'resubscribed' | 'already'; id: number } | { kind: 'throttled'; id: number; retryAfterMs: number };
 
 // One row per address forever, its state moved around. Apart from `throttled`,
-// callers must render every outcome identically, or the public widget becomes a
-// subscriber oracle.
+// callers must render every outcome identically, and do the same work for it, or
+// the public widget becomes a subscriber oracle.
 export function requestSubscription(fields: { email: string; source: string }, opts: { cooldownMs: number; ttlMs: number }): SubscribeOutcome {
   const email = fields.email.trim();
   const key = email.toLowerCase();

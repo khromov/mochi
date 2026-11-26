@@ -4,6 +4,9 @@ export const CONFIRM_TTL_MS = (Number(process.env.NEWSLETTER_CONFIRM_TTL_DAYS) |
 
 export const RESEND_COOLDOWN_MS = Number(process.env.NEWSLETTER_RESEND_COOLDOWN_MS) || 5 * 60 * 1000;
 
+// Comfortably above the signup action's own work plus the queue processor it wakes inline, so latency never says which ran.
+export const SIGNUP_RESPONSE_FLOOR_MS = 250;
+
 // A queue job has no request context, so the origin can only come from env.
 export const PUBLIC_ORIGIN = process.env.MOCHI_ORIGIN || `http://localhost:${process.env.PORT || 3336}`;
 
