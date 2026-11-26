@@ -6,6 +6,7 @@ import { adminAuth } from './adminAuth';
 import { supportEmailQueue } from './jobs.server';
 import { newsletterEmailQueue, purgeExpiredSubscribers } from './newsletter/jobs.server';
 import { NEWSLETTER_EMBED_PATH, embedHeaders } from './embedHeaders';
+import { NEWSLETTER_TOKEN_PATHS } from './newsletter/config';
 import { isSupportDev } from './devMode';
 
 const PORT = Number(process.env.PORT) || 3336;
@@ -38,7 +39,7 @@ await Mochi.serve({
   proxy: { origin: ORIGIN, addressHeader: 'x-forwarded-for', xffDepth: 1 },
   // Auth first, so an unauthorised /admin hit is never counted as a pageview.
   // The embed is excluded from analytics — it would double every blog pageview.
-  handle: sequence(adminAuth, embedHeaders, analytics({ exclude: [NEWSLETTER_EMBED_PATH] })),
+  handle: sequence(adminAuth, embedHeaders, analytics({ exclude: [NEWSLETTER_EMBED_PATH, ...NEWSLETTER_TOKEN_PATHS] })),
   queues: [supportEmailQueue, newsletterEmailQueue],
   cron: [purgeExpiredSubscribers],
   // A separate file from SUPPORT_DB on purpose: the app holds its own bun:sqlite handle on support.sqlite, and sharing
