@@ -99,19 +99,11 @@ export class MochiCookieJar {
     this.outgoing.push(serializeCookie(name, value, { ...this.defaults, ...options }));
   }
 
-  delete(name: string, options?: Pick<CookieSerializeOptions, 'path' | 'domain'>): void {
+  delete(name: string, options?: Omit<CookieSerializeOptions, 'maxAge' | 'expires'>): void {
     this.accessed = true;
     this.parsed.delete(name);
-    // path/domain from the resolved defaults must apply, otherwise the browser
-    // won't match the original Set-Cookie and the cookie won't be deleted.
-    this.outgoing.push(
-      serializeCookie(name, '', {
-        path: this.defaults.path,
-        domain: this.defaults.domain,
-        ...options,
-        maxAge: 0,
-      }),
-    );
+    // The browser drops or mismatches the deletion unless it carries the original's path/domain, Secure (cookie prefixes) and Partitioned (CHIPS).
+    this.outgoing.push(serializeCookie(name, '', { ...this.defaults, ...options, expires: undefined, maxAge: 0 }));
   }
 
   /** Returns accumulated Set-Cookie header strings for the response. */
