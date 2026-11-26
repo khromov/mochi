@@ -1,7 +1,10 @@
 import Cookies from '../vendor/js-cookie/index.ts';
 import type { CookieSerializeOptions, Cookie } from './cookies';
+import type {} from '../debug-bar/types';
 
 export function createClientCookies() {
+  // The client-safe part of `cookie:defaults`, seeded by the server shell so both halves of the jar write alike.
+  const defaults = (typeof window !== 'undefined' && window.__mochi_cookie_defaults) || {};
   return {
     get(name: string): string | undefined {
       return Cookies.get(name);
@@ -17,11 +20,12 @@ export function createClientCookies() {
     },
 
     set(name: string, value: string, options?: CookieSerializeOptions): void {
-      Cookies.set(name, value, options ? { ...options } : undefined);
+      // A browser discards a document.cookie write that carries HttpOnly, so isomorphic options would make this a no-op.
+      Cookies.set(name, value, { ...defaults, ...options, httpOnly: undefined });
     },
 
     delete(name: string, options?: Omit<CookieSerializeOptions, 'maxAge' | 'expires'>): void {
-      Cookies.remove(name, options ? { ...options } : undefined);
+      Cookies.remove(name, { ...defaults, ...options, httpOnly: undefined });
     },
   };
 }

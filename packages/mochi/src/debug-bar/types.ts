@@ -1,5 +1,6 @@
 import type { DebugBarRuntimeData } from '../runtime/requestContext';
 import type { LogLevel } from '../utils/log';
+import type { CookieSerializeOptions } from '../runtime/cookies';
 
 declare global {
   interface Window {
@@ -10,6 +11,7 @@ declare global {
     __mochi_reload_ws?: WebSocket;
     __mochi_live_reload_status?: 'connected' | 'reconnecting' | 'disconnected';
     __mochi_log_level?: LogLevel;
+    __mochi_cookie_defaults?: CookieSerializeOptions;
     __mochi_page_entry?: string;
     /** Dev only: kept codepoint ranges per lowercased subsetted family on this page, read by `dev/FontSubsetCheck.ts`. */
     __mochi_font_subsets?: Record<string, [number, number][]>;
