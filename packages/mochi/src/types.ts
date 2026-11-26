@@ -688,6 +688,16 @@ export interface MochiServeOptions {
    */
   redirect?: MochiRedirectOptions;
   /**
+   * Give every cookie the app sets `HttpOnly` and `SameSite=Lax`, plus `Secure` outside development, unless that
+   * `cookies.set()` call overrides the field. Default: `false`.
+   *
+   * `HttpOnly` hides the cookie from browser code, so a cookie an island reads or writes needs `{ httpOnly: false }`
+   * where the server sets it. A production site served over plain HTTP does not receive `Secure` cookies.
+   *
+   * These fields become the value the `cookie:defaults` filter receives, so the filter wins where it sets a field.
+   */
+  secureCookies?: boolean;
+  /**
    * Trailing-slash policy for `Mochi.page()` routes. When set, each page is registered under both `/foo` and `/foo/`,
    * and the non-canonical form redirects:
    *

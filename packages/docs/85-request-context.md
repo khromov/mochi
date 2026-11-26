@@ -78,6 +78,8 @@ Read and write cookies on the server and the client through one API. In the brow
 
 Delete a cookie with the same per-call options you set it with. See [`cookie:defaults`](/docs/extensions/#cookiedefaults).
 
+With [`secureCookies`](/docs/serve-options/#secure-cookies) on, a cookie the server sets is `HttpOnly`, so `cookies.get()` in the browser cannot read it. Pass `{ httpOnly: false }` where the server sets a cookie that an island reads.
+
 ### `locals`
 
 Per-request data set by middleware. Server-only.

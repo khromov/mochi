@@ -81,6 +81,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `securityHeaders` (since 0.10.0) — baseline security headers on every framework response: `nosniff` and `Referrer-Policy` by default, `X-Frame-Options` opt-in. `boolean | MochiSecurityHeadersOptions`. Default: on. See [Security](/docs/security/).
 - `csp` (since 0.10.0) — mint a per-request nonce and stamp it on every script Mochi emits, for a nonce-based `Content-Security-Policy`. Default: `false`. See [Content-Security-Policy nonce](#content-security-policy-nonce).
 - `redirect` (since 0.10.0) — where `redirect()` may send a visitor (`trustedOrigins`). Default: same-origin only. See [Redirects](#redirects).
+- `secureCookies` (since 0.10.0) — give every cookie the app sets `HttpOnly` and `SameSite=Lax`, plus `Secure` outside development. Default: `false`. See [Secure cookies](#secure-cookies).
 - `hooks` / `filters` — named lifecycle hooks and value filters. See [Extensions](/docs/extensions/).
 - `warmup` — warm the SSR pipeline at startup by invoking every static page route once. `boolean | { enabledInProd, enabledInDev }`. Default: `false`. See below.
 - `bun` — escape hatch for raw `Bun.serve()` options Mochi does not surface — `idleTimeout`, `maxRequestBodySize`, `reusePort`, `tls`. `fetch` / `websocket` / `routes` / `error` are framework-owned and throw if set. See below.
@@ -167,6 +168,41 @@ const analytics: Handle = async ({ event, resolve }) => {
   if (!event.isWarmup) track(event.url.pathname); // skip warmup hits
   return resolve(event);
 };
+```
+
+### Secure cookies
+
+<VersionNote since="0.10.0" message="secureCookies ships in the next Mochi release (0.10.0). This section describes the upcoming API." />
+
+Turn on `secureCookies` to give every cookie the app sets `HttpOnly` and `SameSite=Lax`, plus `Secure` outside development. It is off by default, but we recommend it: `HttpOnly` keeps a session cookie away from injected scripts, and `Secure` keeps it off plain-HTTP connections.
+
+```ts
+// file: src/index.ts
+await Mochi.serve({
+  secureCookies: true,
+  routes,
+});
+```
+
+`cookies.set('session', 'abc')` then sends `session=abc; Path=/; Secure; HttpOnly; SameSite=Lax` in production, and the same without `Secure` in development so `http://localhost` keeps working. A bare `cookies.delete('session')` sends the same attributes, so it clears the cookie.
+
+<Callout type="warning">
+
+Browser code cannot read or overwrite an `HttpOnly` cookie, so a cookie that an island reads or writes needs `cookies.set('theme', 'dark', { httpOnly: false })` where the server sets it. A production site served over plain HTTP does not receive `Secure` cookies: the flag follows `development`, not the request's scheme, so it stays on behind a TLS-terminating proxy.
+
+</Callout>
+
+A field you pass to `cookies.set()` wins for that call. The `secureCookies` fields are also the value the [`cookie:defaults`](/docs/extensions/#cookiedefaults) filter receives, so a field the filter returns wins over them. In the browser, `cookies.set()` applies the resulting `secure` and `sameSite`, but never `httpOnly`.
+
+```ts
+await Mochi.serve({
+  secureCookies: true,
+  filters: {
+    // Served over plain HTTP: keep HttpOnly and SameSite, drop Secure.
+    'cookie:defaults': (defaults) => ({ ...defaults, secure: false }),
+  },
+  routes,
+});
 ```
 
 ### CSRF

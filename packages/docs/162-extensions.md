@@ -153,6 +153,8 @@ await Mochi.serve({
 
 Default `CookieSerializeOptions` merged into every `cookies.set()` and `cookies.delete()` call. Per-call options win per field. Resolved once at startup. Sync. In the browser, `cookies.set()` and `cookies.delete()` apply `path`, `domain`, `secure`, `sameSite`, `partitioned` and `priority` from these defaults; `httpOnly`, `maxAge` and `expires` apply to server writes only.
 
+With [`secureCookies`](/docs/serve-options/#secure-cookies) on, the filter receives `{ httpOnly: true, sameSite: 'lax', secure }` instead of `{}`, where `secure` is `true` outside development. Spread it to change one field and keep the others.
+
 ```ts
 await Mochi.serve({
   filters: {
