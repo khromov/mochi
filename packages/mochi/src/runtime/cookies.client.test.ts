@@ -2,8 +2,8 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 
 GlobalRegistrator.register({ url: 'http://localhost/app/' });
 
-import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { createClientCookies } from './cookies.client';
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { cookieWriteChecks, createClientCookies } from './cookies.client';
 import { clientCookieDefaults, type CookieSerializeOptions } from './cookies';
 
 // Captures the raw strings js-cookie hands to `document.cookie`, i.e. exactly the attributes the browser receives.
@@ -100,5 +100,162 @@ describe('clientCookieDefaults', () => {
   test('returns undefined when nothing applies, so the shell seeds nothing', () => {
     expect(clientCookieDefaults({})).toBeUndefined();
     expect(clientCookieDefaults({ httpOnly: true, maxAge: 60 })).toBeUndefined();
+  });
+});
+
+type Stored = { name: string; value: string; path: string; httpOnly?: boolean };
+
+// Enough of a browser cookie store to show what a read-back sees: path scoping, invisible HttpOnly cookies, and the
+// writes a browser drops without an error (verified in Chrome).
+function browserStore(initial: Stored[], { secureContext = true } = {}): { reads: number } {
+  const store = [...initial];
+  const stats = { reads: 0 };
+  const here = window.location.pathname;
+  const pathMatches = (path: string) => here === path || (here.startsWith(path) && (path.endsWith('/') || here[path.length] === '/'));
+  Object.defineProperty(document, 'cookie', {
+    configurable: true,
+    get: () => {
+      stats.reads++;
+      return store
+        .filter((c) => !c.httpOnly && pathMatches(c.path))
+        .sort((a, b) => b.path.length - a.path.length)
+        .map((c) => `${c.name}=${c.value}`)
+        .join('; ');
+    },
+    set: (raw: string) => {
+      const [pair = '', ...rest] = raw.split('; ');
+      const attrs = Object.fromEntries(rest.map((a) => [a.split('=')[0]!.toLowerCase(), a.includes('=') ? a.slice(a.indexOf('=') + 1) : true]));
+      const name = pair.slice(0, pair.indexOf('='));
+      const path = typeof attrs.path === 'string' ? attrs.path : '/';
+      if ((attrs.secure && !secureContext) || attrs.httponly || store.some((c) => c.name === name && c.path === path && c.httpOnly)) {
+        return;
+      }
+      const index = store.findIndex((c) => c.name === name && c.path === path);
+      const expired = typeof attrs.expires === 'string' && new Date(attrs.expires).getTime() <= Date.now();
+      const cookie = { name, value: pair.slice(pair.indexOf('=') + 1), path };
+      if (index >= 0) {
+        store.splice(index, 1, ...(expired ? [] : [cookie]));
+      } else if (!expired) {
+        store.push(cookie);
+      }
+    },
+  });
+  return stats;
+}
+
+describe('client cookie jar development warnings', () => {
+  // The page is http://localhost/app/.
+  const setup = (initial: Stored[] = [], opts?: { secureContext?: boolean }) => {
+    const store = browserStore(initial, opts);
+    const warn = mock((_message: string) => {});
+    return { store, warn, jar: createClientCookies(cookieWriteChecks(warn)), messages: () => warn.mock.calls.map(([m]) => m) };
+  };
+
+  test('set() with httpOnly says the cookie was written without it, readable by scripts', () => {
+    const { jar, messages } = setup();
+    jar.set('session', 'abc', { httpOnly: true });
+    expect(jar.get('session')).toBe('abc');
+    expect(messages()).toEqual([expect.stringContaining('The cookie is written without it, so scripts on this page can read it')]);
+  });
+
+  test('delete() with httpOnly says an HttpOnly cookie survives it', () => {
+    const { jar, messages } = setup([{ name: 'session', value: 'srv', path: '/', httpOnly: true }]);
+    jar.delete('session', { httpOnly: true });
+    expect(messages()).toEqual([expect.stringContaining('can neither see nor remove an HttpOnly cookie')]);
+  });
+
+  test('set() warns when a server-set HttpOnly cookie of the same name blocks the write', () => {
+    const { jar, messages } = setup([{ name: 'session', value: 'srv', path: '/', httpOnly: true }]);
+    jar.set('session', 'client');
+    expect(messages()).toEqual([expect.stringContaining('cookies.set("session", …) had no effect: the browser refused the write.')]);
+  });
+
+  test('set() warns when the browser refuses a secure default on a page that is not a secure context', () => {
+    window.__mochi_cookie_defaults = { secure: true };
+    const { jar, messages } = setup([], { secureContext: false });
+    jar.set('pref', 'dark');
+    expect(messages()).toEqual([expect.stringContaining('had no effect')]);
+  });
+
+  test('delete() warns when the cookie is still readable afterwards', () => {
+    const { jar, messages } = setup([{ name: 'cart', value: '3', path: '/' }]);
+    jar.delete('cart', { path: '/app/' });
+    expect(jar.get('cart')).toBe('3');
+    expect(messages()).toEqual([expect.stringContaining('cookies.delete("cart") had no effect: a cookie named "cart" is still readable on this page.')]);
+  });
+
+  test('delete() warns when the browser refuses its secure default', () => {
+    window.__mochi_cookie_defaults = { secure: true };
+    const { jar, messages } = setup([{ name: 'cart', value: '3', path: '/' }], { secureContext: false });
+    jar.delete('cart');
+    expect(messages()).toEqual([expect.stringContaining('had no effect')]);
+  });
+
+  test('each message prints once, however often the call repeats', () => {
+    const { jar, warn } = setup([{ name: 'session', value: 'srv', path: '/', httpOnly: true }]);
+    for (const value of ['a', 'b', 'c']) {
+      jar.set('session', value, { httpOnly: true });
+    }
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  describe('stays quiet', () => {
+    test('for writes and deletes that land', () => {
+      const { jar, warn } = setup([{ name: 'cart', value: '3', path: '/' }]);
+      jar.set('pref', 'a b;c=d"é');
+      jar.set('empty', '');
+      jar.delete('cart');
+      jar.delete('never-set');
+      expect(jar.get('pref')).toBe('a b;c=d"é');
+      expect(jar.has('cart')).toBe(false);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    test('for a cookie scoped by cookie:defaults to a path this page is not under', () => {
+      window.__mochi_cookie_defaults = { path: '/admin/' };
+      const { jar, warn } = setup();
+      jar.set('pref', 'dark');
+      jar.delete('pref');
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    test('for a per-call path this page is not under, including a mere string prefix of it', () => {
+      const { jar, warn } = setup([{ name: 'pref', value: 'light', path: '/' }]);
+      jar.set('pref', 'dark', { path: '/somewhere-else/' });
+      jar.set('pref', 'dark', { path: '/ap' });
+      jar.delete('pref', { path: '/ap' });
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    test('for a write that lands behind a same-name cookie on a longer path', () => {
+      const { jar, warn } = setup([{ name: 'theme', value: 'old', path: '/app/' }]);
+      jar.set('theme', 'new', { path: '/' });
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    test('for a delete that removes one of two same-name cookies', () => {
+      const { jar, warn } = setup([
+        { name: 'theme', value: 'root', path: '/' },
+        { name: 'theme', value: 'app', path: '/app/' },
+      ]);
+      jar.delete('theme', { path: '/app/' });
+      expect(jar.get('theme')).toBe('root');
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    test('for a set() that expires the cookie', () => {
+      const { jar, warn } = setup([{ name: 'cart', value: '3', path: '/' }]);
+      jar.set('cart', '', { expires: -1 });
+      jar.set('gone', '', { expires: new Date(0) });
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    test('in production, where the jar gets no checks and skips the read-backs', () => {
+      const store = browserStore([{ name: 'session', value: 'srv', path: '/', httpOnly: true }]);
+      const jar = createClientCookies();
+      jar.set('session', 'client', { httpOnly: true });
+      jar.delete('session', { httpOnly: true });
+      expect(store.reads).toBe(0);
+    });
   });
 });
