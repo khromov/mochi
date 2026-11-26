@@ -25,6 +25,24 @@ describe('rendered virtual module bodies', () => {
   });
 });
 
+describe('virtual module exports track the package', () => {
+  // Names only the virtual module provides: request-scoped proxies, devalue, and helpers for framework components or the preprocessor.
+  const VIRTUAL_ONLY = ['DEV', 'cachedImageDimensions', 'cookies', 'devWarn', 'emitIslandProps', 'locals', 'markRenderedCss', 'params', 'parse', 'stringify', 'url'];
+  const exportNames = (code: string) => new Bun.Transpiler({ loader: 'ts' }).scan(code).exports.sort();
+  const server = exportNames(renderMochiEnvServer(false));
+  const client = exportNames(renderMochiEnvClient(false, 'cookies.ts', 'enhance.ts'));
+
+  test('server and client export the same names', () => {
+    expect(client).toEqual(server);
+  });
+
+  // A rename in index.ts leaves the old name here, and the build reports the new one as a missing export of mochi-env.
+  test('every name is a package export or virtual-only', async () => {
+    const pkg = exportNames(await Bun.file(path.join(import.meta.dir, '..', 'index.ts')).text());
+    expect(server.filter((name) => !pkg.includes(name) && !VIRTUAL_ONLY.includes(name))).toEqual([]);
+  });
+});
+
 // The reason the virtual module exists: a client bundle must not fall through to the real utils/env.ts.
 describe('client bundles resolve the virtual module, not utils/env.ts', () => {
   async function buildProbe(name: string, development: boolean, source: string): Promise<string> {

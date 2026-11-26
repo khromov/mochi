@@ -80,7 +80,7 @@ export { deferReloadState, DeferReloadState } from "__MOCHI_DEFER_REACTIVE__";
 // if user code calls them on the server — which is a usage error.
 export { enhance, deserialize } from "__MOCHI_ENHANCE_SSR__";
 // Rate-limit stores — server-only (bun:sqlite / Bun SQL).
-export { memoryStore, sqliteStore, postgresStore } from "__MOCHI_RATE_LIMIT__";
+export { rateLimitMemoryStore, rateLimitSqliteStore, rateLimitPostgresStore } from "__MOCHI_RATE_LIMIT__";
 // The built-in protection interstitial's absolute path — lets a docs/tooling
 // component read the default `protection.page` source straight from disk.
 export const PROTECTION_SHELL_COMPONENT = "__MOCHI_PROTECTION_SHELL_PATH__";
