@@ -125,6 +125,22 @@ export interface MochiRedirect {
   readonly __mochiRedirect: true;
   readonly status: 301 | 302 | 303 | 307 | 308;
   readonly location: string;
+  /** Set by `redirect(status, location, { external: true })`; waives the same-origin guard for this one call. */
+  readonly external?: boolean;
+}
+
+export interface MochiRedirectInit {
+  /**
+   * Send the visitor off-origin without listing the destination in `redirect.trustedOrigins`. Only for a location your
+   * own code builds: one derived from request data is the open redirect the guard exists to stop. Script-capable
+   * schemes and control characters stay blocked.
+   */
+  external?: boolean;
+}
+
+export interface MochiRedirectOptions {
+  /** Absolute origins `redirect()` may target, beyond this server's own. */
+  trustedOrigins?: string[];
 }
 
 /** Returned by `success()`; re-renders the entry component with a `form` prop marking the action succeeded, with status 200. */
@@ -666,6 +682,11 @@ export interface MochiServeOptions {
    * set (HSTS, CSP) through the `security:headers` filter. A header the route or middleware already set is never overwritten.
    */
   securityHeaders?: boolean | MochiSecurityHeadersOptions;
+  /**
+   * Where `redirect()` may send a visitor. Relative and same-origin locations always pass; list an absolute origin here
+   * to allow it too. Separate from `csrf.trustedOrigins` on purpose: that list says who may send *us* requests.
+   */
+  redirect?: MochiRedirectOptions;
   /**
    * Trailing-slash policy for `Mochi.page()` routes. When set, each page is registered under both `/foo` and `/foo/`,
    * and the non-canonical form redirects:

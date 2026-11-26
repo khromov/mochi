@@ -67,6 +67,17 @@ export function isFormContentType(contentType: string | null, formContentTypes: 
   return formContentTypes.has(type);
 }
 
+/** Origin allow-list comparison with default ports stripped, the rule the CSRF check applies to `csrf.trustedOrigins`. */
+export function matchesAllowedOrigin(origin: string, expectedOrigin: string, trustedOrigins: ReadonlySet<string>): boolean {
+  const normalized = normalizeOrigin(origin);
+  return normalized === normalizeOrigin(expectedOrigin) || [...trustedOrigins].some((t) => normalizeOrigin(t) === normalized);
+}
+
+/** This server's public origin as configured through `proxy`, or `null` when only the client's own `Host` header vouches for it. */
+export function trustedSelfOrigin(request: Request, url: URL, proxy: MochiProxyOptions | undefined): string | null {
+  return proxy?.origin || proxy?.hostHeader ? resolveExpectedOrigin(request, url, proxy) : null;
+}
+
 /**
  * Boot-time visibility for a production-only failure: without a trusted origin every form-action POST 403s in
  * production while development only warns per-request — invisible until deploy. Returns the warning line, or null.

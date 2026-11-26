@@ -510,12 +510,17 @@ describe('redirect results', () => {
     expect(logged).toEqual([]);
   });
 
-  test.each(['javascript:alert(document.domain)', ' JavaScript:alert(1)', 'java\tscript:alert(1)', 'data:text/html,<script>alert(1)</script>', 'vbscript:msgbox(1)'])(
-    'the default fallback refuses to navigate to the script URL %p',
-    async (location) => {
-      const { assigned, logged } = await submitRedirect(location);
-      expect(assigned).toEqual([]);
-      expect(logged).toHaveLength(1);
-    },
-  );
+  test.each([
+    'javascript:alert(document.domain)',
+    ' JavaScript:alert(1)',
+    'java\tscript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'vbscript:msgbox(1)',
+    'blob:https://evil.example/u',
+    'file:///etc/passwd',
+  ])('the default fallback refuses to navigate to the script URL %p', async (location) => {
+    const { assigned, logged } = await submitRedirect(location);
+    expect(assigned).toEqual([]);
+    expect(logged).toHaveLength(1);
+  });
 });

@@ -208,6 +208,8 @@ export type {
   MochiFormActionHandler,
   MochiFormEvent,
   MochiRedirect,
+  MochiRedirectInit,
+  MochiRedirectOptions,
   MochiEnhanceOptions,
   MochiEnhanceResult,
   MochiFormShape,

@@ -1,4 +1,7 @@
-import type { MochiFormFail, MochiRedirect, MochiFormSuccess } from '../types';
+import type { MochiFormFail, MochiRedirect, MochiRedirectInit, MochiFormSuccess } from '../types';
+
+/** Schemes that run script or read local content instead of navigating, refused as a redirect target by both the server guard and `enhance()`. */
+export const SCRIPT_PROTOCOLS: ReadonlySet<string> = new Set(['javascript:', 'data:', 'vbscript:', 'blob:', 'filesystem:', 'file:', 'view-source:']);
 
 /**
  * Re-render the entry component with `form = { ok: false, action, status, data }` and the given HTTP status, for a form action's validation errors.
@@ -14,12 +17,16 @@ export function fail<T extends Record<string, unknown>>(status: number, data: T)
 /**
  * Produce an HTTP redirect response from a form action or a `serverProps` resolver. Use 303 for the standard POST/Redirect/GET pattern after a successful mutation.
  *
+ * Off-origin destinations are blocked unless listed in `redirect.trustedOrigins`; `{ external: true }` waives that for one
+ * call whose location your own code builds, never one taken from request data.
+ *
  * ```ts
  * return redirect(303, '/dashboard');
+ * return redirect(303, `https://accounts.example.com/authorize?${params}`, { external: true });
  * ```
  */
-export function redirect(status: 301 | 302 | 303 | 307 | 308, location: string): MochiRedirect {
-  return { __mochiRedirect: true, status, location };
+export function redirect(status: 301 | 302 | 303 | 307 | 308, location: string, init?: MochiRedirectInit): MochiRedirect {
+  return init?.external ? { __mochiRedirect: true, status, location, external: true } : { __mochiRedirect: true, status, location };
 }
 
 /**
