@@ -542,6 +542,29 @@ describe('FileStorage binary inline (offloadBinary off, the default)', () => {
   });
 });
 
+describe('FileStorage blob sentinels in cached data', () => {
+  test('a __mochiBlob field in cached data reads back as plain data, not a BlobRef', async () => {
+    const storage = makeStorage();
+    const escape = { __mochiBlob: `${'../'.repeat(16)}etc/passwd`, bytes: 1 };
+    const sibling = { __mochiBlob: `${'a'.repeat(64)}.json`, bytes: 1 };
+    await storage.setItem('profile', { value: { escape, sibling }, createdAt: 0 });
+
+    const raw = (await storage.getItem('profile')) as { value: { escape: unknown; sibling: unknown } };
+    expect(isBlobRef(raw.value.escape)).toBe(false);
+    expect(isBlobRef(raw.value.sibling)).toBe(false);
+    expect(raw.value).toEqual({ escape, sibling });
+  });
+
+  test('a BlobRef outside the storage directory round-trips verbatim', async () => {
+    const storage = makeStorage({ offloadBinary: true });
+    const foreign: BlobRef = { __mochiBlobRef: true, path: join(makeDir(), 'x.bin'), bytes: 3 };
+    await storage.setItem('k', { value: { foreign }, createdAt: 0 });
+
+    const raw = (await storage.getItem('k')) as { value: { foreign: BlobRef } };
+    expect(raw.value.foreign).toEqual(foreign);
+  });
+});
+
 // Two MochiCache instances over one shared directory model two load-balanced processes: each keeps its own in-process
 // `inflight` Map over a common FileStorage that reads fresh from disk on every getItem, so the advisory marker one
 // writes is visible to the other.

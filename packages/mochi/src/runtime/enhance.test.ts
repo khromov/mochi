@@ -291,6 +291,27 @@ describe('enhance JSON envelope', () => {
       expect(body.error?.message).toContain('Unknown form action');
     });
 
+    test.each(['toString', 'valueOf', 'hasOwnProperty', 'constructor', '__proto__'])('inherited Object.prototype name ?/%s → 404, not dispatched', async (name) => {
+      const res = await post(`?/${name}`, '');
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { type: string; error?: { message: string } };
+      expect(body.type).toBe('error');
+      expect(body.error?.message).toContain('Unknown form action');
+    });
+
+    test('non-enhanced POST to an inherited Object.prototype name → 404 page', async () => {
+      const res = await fetch(`${base}/page?/toString`, {
+        method: 'POST',
+        headers: {
+          accept: 'text/html',
+          'content-type': 'application/x-www-form-urlencoded',
+          origin: base,
+        },
+        body: '',
+      });
+      expect(res.status).toBe(404);
+    });
+
     test('non-enhanced POST (no Accept JSON) → HTML re-render, not JSON', async () => {
       const res = await fetch(`${base}/page`, {
         method: 'POST',

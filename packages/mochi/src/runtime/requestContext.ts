@@ -30,6 +30,8 @@ export interface MochiRequestContext {
    * `renderComponent` clears it at the start of every render so sequential same-ctx renders (an error page after a failed render) don't clobber each other.
    */
   islandProps: Map<string, IslandPropsEntry>;
+  /** Internal per-render namespace for `islandProps` ref ids, set by `renderComponent` from a server island's `idPrefix` so a fragment's ids never repeat the page's. */
+  islandPropsPrefix?: string;
   /** Internal per-render record of which styled components initialised (see `markRenderedCss`), so only their stylesheets get linked. Created by `renderComponent`. */
   renderedCss?: Set<string>;
   /**

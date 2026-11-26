@@ -179,7 +179,7 @@ await Mochi.serve({
 });
 ```
 
-In production, the check refuses every form mutation until `proxy.origin` (or `proxy.hostHeader`) is set, so the deployment break is loud. In development the request is allowed through with a `[mochi]` warning. Routes declaring form `actions` without either option also warn once at boot — in both modes — so the misconfiguration is visible before deploy, not first discovered as a production 403.
+In production, the check refuses every form mutation until `proxy.origin` (or `proxy.hostHeader`) is set, so the deployment break is loud. In development the request is allowed through with a `[mochi]` warning. Routes declaring form `actions` without either option also warn once at boot — in both modes — so the misconfiguration is visible before deploy, not first discovered as a production 403. So does `proxy.hostHeader` without `proxy.protocolHeader`: the expected origin then keeps the server's own `http://` protocol, which never matches the browser's `https://` origin behind a TLS-terminating proxy.
 
 ### Proxy
 
@@ -218,9 +218,16 @@ await Mochi.serve({
 spoofed, client, proxy1, proxy2   # xffDepth: 3 → "client" (spoofed entry ignored)
 ```
 
+Set `xffDepth` to the number of proxies that append to the header, never higher. With one proxy and `xffDepth: 2`, a client can send its own `X-Forwarded-For`, and the entry the framework reads is the one the client wrote:
+
+```
+client            # no header sent → "client" (too short: falls back to the rightmost entry and warns)
+1.2.3.4, client   # client sent "1.2.3.4" → "1.2.3.4" (the client chose its own address)
+```
+
 <Callout type="warning">
 
-**Use `getClientAddress()` for a trusted client IP.** Reading `x-forwarded-for` directly could return a spoofable address. Pass the right `xffDepth`.
+**Use `getClientAddress()` for a trusted client IP.** Reading `x-forwarded-for` directly could return a spoofable address. Pass the right `xffDepth`: a value larger than the number of proxies that append lets a client choose its own address. Mochi warns once when a request has fewer entries than `xffDepth`.
 
 </Callout>
 

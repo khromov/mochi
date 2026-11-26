@@ -134,7 +134,7 @@ To add a new event: add the payload type + key to `MochiEventMap` in `events.ts`
 ### Adding framework errors visible to the client
 
 1. Push errors to `this.errors` in `ComponentRegistry`.
-2. The page render path checks `registry.getErrors()` before each render and throws `MochiHttpError(500, …)` if any are present. The thrown error routes through `routeErrorResponse` and renders the configured `errorPage` (default: `DefaultError.svelte`) with the formatted compile errors in `error.message`.
+2. The page render path checks `registry.getErrors()` before each render and throws `MochiHttpError(500, …)` if any are present. The thrown error routes through `routeErrorResponse` and renders the configured `errorPage` (default: `DefaultError.svelte`) with the formatted compile errors in `error.message`. That is development only: production throws a plain `Error` instead, so visitors get a generic 500 and the details stay in the server log and `handleError`.
 
 Error-boundary scope is **islands-only**: the preprocessor auto-wraps `mochi:hydrate*` islands in `<svelte:boundary>`, but does NOT auto-wrap pages. An uncaught top-level SSR throw must fall through to the route-handler try/catch and render the configured `errorPage` — don't add page auto-wrappers (they'd convert a hard-fail into a silent stub). Users author their own `<svelte:boundary>` when they want to gracefully degrade a portion of a page.
 

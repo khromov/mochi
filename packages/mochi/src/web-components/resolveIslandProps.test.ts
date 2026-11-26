@@ -53,6 +53,16 @@ describe('resolveIslandProps', () => {
     expect(resolveIslandProps(deep, 'mochi-props-0')).toBe('INNER');
   });
 
+  test('an element that is not the props script cannot supply props, even ahead of the real block', () => {
+    document.body.innerHTML = `
+      <article><h2 id="mochi-props-0">[{"label":1},"CLOBBERED"]</h2></article>
+      ${propsBlock('PAGE')}
+      <mochi-hydratable-island component-name="Page" props-ref="mochi-props-0"></mochi-hydratable-island>`;
+
+    const el = document.querySelector('mochi-hydratable-island')!;
+    expect(resolveIslandProps(el, 'mochi-props-0')).toBe('PAGE');
+  });
+
   test('missing block returns null', () => {
     const el = island();
     document.body.appendChild(el);

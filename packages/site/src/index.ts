@@ -44,9 +44,12 @@ if (process.env.NODE_ENV === 'development') {
   });
 }
 
+// `message` can echo a URL-decoded route param, and JSON.stringify leaves DEL and C1 controls (NEL, 8-bit CSI) raw.
+const quoteForLog = (text: string): string => JSON.stringify(text).replace(/[\x7f-\x9f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+
 const handleError: HandleError = ({ error, event, status, message }) => {
   if (!event.url.pathname.includes('.well-known')) {
-    logger.info(`handleError: ${event.url.pathname} → ${status} "${message}" (error ${error ? 'present' : 'null'})`);
+    logger.info(`handleError: ${event.url.pathname} → ${status} ${quoteForLog(message)} (error ${error ? 'present' : 'null'})`);
   }
   // error is null for unmatched routes / unknown form actions — guard before forwarding
   if (error && status >= 500) {

@@ -1773,7 +1773,10 @@ export class ComponentRegistry {
     // HTMLRewriter pass below drains it, so clearing up front keeps sequential same-ctx renders self-contained — an
     // error page after a failed render, an action's POST re-render.
     const ctx = requestContext.getStore();
-    ctx?.islandProps.clear();
+    if (ctx) {
+      ctx.islandProps.clear();
+      ctx.islandPropsPrefix = opts?.idPrefix;
+    }
     // Filled by `markRenderedCss` as styled components initialise. A render whose whole tree hydrates (an also-hydrate
     // island's standalone render) keeps every stylesheet, since any component in it may render client-side.
     let renderedCss: Set<string> | undefined;
