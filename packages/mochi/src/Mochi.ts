@@ -1054,7 +1054,8 @@ export class Mochi {
                   break;
                 }
               }
-              const actionHandler = livePostActions[actionName];
+              // The name comes off the query string, so inherited members like `toString` must not dispatch.
+              const actionHandler = Object.hasOwn(livePostActions, actionName) ? livePostActions[actionName] : undefined;
               if (!actionHandler) {
                 const unknownErr = new Error(`Unknown form action: ${actionName}`);
                 const response = enhanced
