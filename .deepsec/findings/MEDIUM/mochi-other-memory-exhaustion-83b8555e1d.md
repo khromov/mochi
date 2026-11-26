@@ -1,0 +1,30 @@
+# [MEDIUM] /mcp retains attacker-chosen state forever with no auth, rate limit, or eviction
+
+**File:** [`packages/site/src/routes.ts`](https://github.com/khromov/mochi/blob/main/packages/site/src/routes.ts#L137-L348) (lines 137, 347, 348)
+**Project:** mochi
+**Severity:** MEDIUM  •  **Confidence:** high  •  **Slug:** `other-memory-exhaustion`
+
+## Owners
+
+**Suggested assignee:** `stanislav.khromov+github@gmail.com` _(via last-committer)_
+
+## Finding
+
+`/mcp` and `/mcp/` are registered as plain `Mochi.api()` values with no `rateLimit` (unlike the two captcha routes 80 lines above, which do carry one), and the site sets no global `options.rateLimit`, so `buildLimiter()` returns null for them. Two unbounded, permanently-retained maps are reachable from one unauthenticated POST:
+
+1. `@tmcp/transport-http` derives the session id as `request.headers.get('mcp-session-id') || getSessionId()` — fully client-supplied, unvalidated, unbounded length. On an `initialize` call the transport does `sessionManager.info.setClientCapabilities(sessionId, capabilities)` / `setClientInfo(sessionId, clientInfo)` into `InMemoryInfoSessionManager`'s plain `Map`s, which have no size cap, no TTL and are pruned only by an explicit DELETE for that exact id. `ClientCapabilitiesSchema` is a valibot `looseObject`, so the attacker's `params.capabilities` object is kept *verbatim* at arbitrary size/nesting, and `ImplementationSchema`'s `name`/`version` are unbounded `v.string()`. So `POST /mcp` with a fresh `mcp-session-id` and a multi-megabyte `capabilities` object (Bun's default body cap is 128 MB) permanently adds that payload to the heap. Repeat → OOM of a long-lived single container.
+2. `get_section`'s schema is `v.array(v.object({ type, slug: v.string() }))` with no length or format constraint. Each `{type:'demo', slug}` reaches `getDemoLlmsTxt(slug)`, which memoizes *every* slug — misses included — into the `pinGlobal`-pinned `cache.demoLlmsTxt` Map (lib/docs.ts:201-209), cleared only by the dev file watcher. JSON-RPC batching (`Array.isArray(body) ? body : [body]`) multiplies this per request. The same slugs are also concatenated into `logger.warn('[mcp] get_section not found: ' + missing.join(', '))`, so an attacker also controls arbitrarily long, newline-containing text written to the durable container log.
+
+## Recommendation
+
+Add `{ rateLimit: { limit: 30, window: '1m' } }` to `mcpRoute`. Constrain the MCP schema (`v.pipe(v.array(...), v.maxLength(20))`, `v.pipe(v.string(), v.maxLength(64), v.regex(/^[a-z0-9-]+$/))`). Cache only hits in `getDemoLlmsTxt`, or precompute the map from the known `internalDemos()` slug set so no attacker string can create an entry. Pass a bounded/LRU `sessionManager` to `HttpTransport` and truncate the slugs reaching `logger.warn`.
+
+## Revalidation
+
+**Verdict:** true-positive
+
+Verified end-to-end. (1) Rate limiting: `mcpRoute = Mochi.api(({ request }) => respondMcp(request))` (routes.ts:137) passes no config object, and `Mochi.serve()` in index.ts sets no global `rateLimit` key — I read the whole call. `buildLimiter()` at Mochi.ts:801-828 returns `null` when the route config is falsy and `options.rateLimit` is unset, so `checkRouteLimit` short-circuits. The two captcha routes 80 lines above do carry `{ rateLimit: ... }`, confirming the asymmetry. The site's `protection.protect` only matches `/demos/protection*`, so the PoW gate never covers /mcp, and CSRF is inapplicable because the transport demands `Content-Type: application/json` (and a non-browser attacker ignores it anyway). (2) Session retention: in `@tmcp/transport-http@0.8.6` `respond()`, `session_id = request.headers.get('mcp-session-id') || this.#options.getSessionId()` — client-supplied, unvalidated, unbounded. The constructor registers `#server.on('initialize', ...)` which calls `sessionManager.info.setClientCapabilities(sessionId, capabilities)` and `setClientInfo(...)`. The default `InMemoryInfoSessionManager` (`@tmcp/session-manager`) backs these with plain `Map`s — no size cap, no TTL, pruned only by `delete(id)`, reachable solely via an explicit DELETE for that exact id. In tmcp, `InitializeRequestParamsSchema.capabilities` is `ClientCapabilitiesSchema = v.looseObject({...})`, and valibot's `looseObject` preserves unknown keys verbatim, so an arbitrarily large/nested `params.capabilities` is retained as-is; `ImplementationSchema`'s `name`/`version` are unbounded `v.string()`. Mochi sets no `maxRequestBodySize`, so Bun's 128 MB default applies. (3) Slug cache: `get_section`'s schema is `v.array(v.object({ type: v.picklist([...]), slug: v.string() }))` — no array length bound, no slug length or format bound. `type: 'demo'` routes the raw slug to `getDemoLlmsTxt`, and docs.ts:201-209 does `cache.demoLlmsTxt.set(slug, result)` unconditionally, including the `null` miss, into a `pinGlobal`-pinned Map cleared only by `clearDocsCaches()` — wired in index.ts:30-44 to a `file:change` event that never fires in an immutable container. I also confirmed tmcp's `receive()` has no initialization-order gate (only `addMethod` dispatch), so `tools/call` works with no handshake, and `Array.isArray(body) ? body : [body]` permits JSON-RPC batching to multiply the effect per request. (4) The `logger.warn(\`[mcp] get_section not found: ${missing.join(', ')}\`)` at mcp.ts:78 does write attacker-controlled, unbounded, newline-capable text to the durable log. Concrete attack: repeated `POST /mcp` with `Content-Type: application/json`, a fresh random `mcp-session-id`, and a multi-megabyte `initialize` `capabilities` object grows the heap permanently until the container OOMs; separately, batched `get_section` calls with long random demo slugs grow `cache.demoLlmsTxt` forever. Impact is availability only (CapRover restart clears the maps), and nothing is disclosed, so MEDIUM is the right severity — not higher. Both `getDocLlmsTxt` and `getPostLlmsTxt` are pure Map *lookups* with no insert, so the finding is correctly scoped to the `demo` branch.
+
+## Recent committers (`git log`)
+
+- Stanislav Khromov <stanislav.khromov+github@gmail.com> (2026-11-08)

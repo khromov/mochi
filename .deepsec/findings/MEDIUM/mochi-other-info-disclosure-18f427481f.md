@@ -1,0 +1,35 @@
+# [MEDIUM] Internet-facing demos deployment runs with `development: true`, leaking stack traces and mounting dev-only internal routes
+
+**File:** [`packages/demos/src/index.ts`](https://github.com/khromov/mochi/blob/main/packages/demos/src/index.ts#L20) (lines 20)
+**Project:** mochi
+**Severity:** MEDIUM  •  **Confidence:** high  •  **Slug:** `other-info-disclosure`
+
+## Owners
+
+**Suggested assignee:** `stanislav.khromov+github@gmail.com` _(via last-committer)_
+
+## Finding
+
+L20 sets `development: process.env.NODE_ENV === 'development'`. The deployed demos image is built from the dev-mode `Dockerfile` (`.github/workflows/build.yml` matrix leg `demos` -> `dockerfile: Dockerfile`), whose ENTRYPOINT is `exec bun run dev:${WORKSPACE}` -> `bun run dev:demos` -> packages/demos/package.json `dev` script, which sets `NODE_ENV=development`. So the publicly deployed site runs the framework in development mode. Consequences, all reachable unauthenticated:
+
+1. Stack-trace disclosure: `runtime/errors.ts:93` attaches `thrown.stack` to the error prop only when `development` is true, and `templates/DefaultError.svelte:30` renders it in a `<pre>`. Any visitor who triggers a 500 (e.g. by making the HN demo's upstream fetch fail, or hitting any unhandled throw) receives absolute container filesystem paths, framework internals and line numbers. `handleEnhancedError` likewise returns `err.message` instead of 'Internal Server Error'.
+2. `/_mochi/client/stats` is mounted via `debugBarEnabled = development && (options.debugBar ?? true)` (Mochi.ts:503, 789). Its serverProps return `registry.getClientStats()`, and `templates/ClientStats/ClientStats.svelte` renders every bundle output with its `inputs[].path` — the framework's own comment at Mochi.ts:787 states this 'discloses every bundle's input file paths and sizes — project structure and dependency names'.
+3. `/_mochi/email` (dev outbox viewer, including its attachment-streaming API) is mounted because `emailViewerEnabled = development && emailTransportType === 'dev'` (Mochi.ts:619) and demos configures no `email` transport. `/__mochi/admin/page-cache` with its purge actions is mounted too.
+4. CSRF enforcement degrades to advisory: `csrfCheckDefault` in runtime/csrf.ts returns `null` (allow) and merely logs `logger.warn` on an origin mismatch when `development` is true, instead of returning 403. Demos declares no form actions today, so present impact is limited, but any action added later would be unprotected in production with no visible signal.
+5. The debug bar inlines build-time file paths as raw JSON into every page. `packages/site` deliberately added an `encodeDebugBarPaths` middleware for exactly this (see packages/site/src/lib/debugBarEncode.ts, whose header comment reads 'This site runs in dev mode in production to show the debug bar, which inlines build-time file paths as raw JSON'); demos has no equivalent mitigation.
+
+The presence of compiled `_hydrate-EmailView_*.js` and `_hydrate-CacheView_*.js` chunks in packages/demos/.mochi/dev/svelte-client/ confirms these internal templates are built into the demos app. Dev mode is intentional for the debug bar per the Dockerfile comment, but items 1-4 are unintended side effects of that single flag.
+
+## Recommendation
+
+Decouple the debug bar from full development mode: keep `development: false` in the deployed image and opt the demo site into the toolbar explicitly, or gate the dev-only surfaces independently. Concretely: (a) suppress `error.stack` in the rendered error page unless an explicit opt-in flag is set rather than keying it off `development`; (b) require an explicit flag (not `debugBarEnabled`) to mount `/_mochi/client/stats`, `/_mochi/email` and `/__mochi/admin/page-cache`, or block those prefixes in a `handle` middleware in this file; (c) make the CSRF origin check enforce regardless of mode, downgrading only the 'no proxy.origin configured' branch.
+
+## Revalidation
+
+**Verdict:** true-positive
+
+I traced the whole chain and every link holds. build.yml's `demos` matrix leg sets `dockerfile: Dockerfile`; that file's ENTRYPOINT is `exec bun run dev:${WORKSPACE}` → `bun --cwd=packages/demos run dev` → `NODE_ENV=development bun src/index.ts`, so index.ts:20 evaluates `development: true` in the internet-facing deployment (the Dockerfile header says so outright: 'Running in dev mode … so the debug bar and dev overlays are visible in the deployed environment'). From there: `runtime/errors.ts` sets `stack = development && thrown instanceof Error ? thrown.stack : undefined` and templates/DefaultError.svelte renders it in a `<pre>`, demos configures no `errorPage` or `handleError`, and `handleEnhancedError` (Mochi.ts:743) returns `err.message` instead of 'Internal Server Error' under development; `debugBarEnabled = development && (options.debugBar ?? true)` is true, mounting `buildClientStatsRoutes` (whose page renders every bundle output's `inputs[].path`, with the framework's own comment at Mochi.ts:787 calling that 'project structure and dependency names') and the page-cache admin at `/__mochi/admin/page-cache`; `emailViewerEnabled = development && transport === 'dev'` is true because email/config.ts defaults to the `dev` transport in development and demos configures no `email`, mounting `/_mochi/email` plus its attachment-streaming API; and `csrfCheckDefault` returns `null` with a `logger.warn` on an origin mismatch when development, so enforcement is log-only. `DEFAULT_ASSET_PREFIX` is `/_mochi` and internal page routes are registered on both slash forms, so `/_mochi/client/stats/` is unauthenticated and unconditionally reachable — no trigger needed — which is the finding's strongest leg; stack traces additionally need a 500, which is reachable but not reliably attacker-forced (`fetchItem`/`fetchUser` null-guard, though an upstream `fetch` throw or a malformed `res.json()` propagates). Two overstatements to note: the page-cache admin serves stub data with explicitly no-op purge actions, and demos never sends mail so its dev outbox is always empty. The important caveat is intentionality — the deployed debug bar links to both `/client/stats` and `/email` (debug-bar/BundlesPanel.svelte:59, MochiDebugBar.svelte:136), so mounting them follows from a documented choice, and packages/site has the same exposure with only an SEO-motivated mitigation (lib/debugBarEncode.ts). Even so this is not in the known-false-positive list, the threat model explicitly says 'Dev-only code reaching production matters here: the email viewer streams arbitrary attachment bytes, the client-stats page discloses bundle inputs and paths', and the CSRF degradation is plainly an unintended side effect of the single flag. MEDIUM stands for the aggregate (CWE-489-style active debug code plus unauthenticated path/structure disclosure), and the recommended decoupling of the toolbar from full development mode is the right fix.
+
+## Recent committers (`git log`)
+
+- Stanislav Khromov <stanislav.khromov+github@gmail.com> (2026-08-27)

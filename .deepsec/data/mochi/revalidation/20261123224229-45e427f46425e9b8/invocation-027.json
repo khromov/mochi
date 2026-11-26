@@ -1,0 +1,118 @@
+{
+  "batchIndex": 27,
+  "label": "initial",
+  "timestamp": "2026-11-23T23:26:18.450Z",
+  "files": [
+    "packages/site/src/leak-test/routes.ts",
+    "memtest/driver.ts",
+    "memtest/analyze.ts",
+    "packages/docker/scripts/reset.ts",
+    "packages/mochi/src/middleware/compress.ts"
+  ],
+  "requested": [
+    {
+      "findingId": "finding_48747ee7c46f179a",
+      "filePath": "packages/site/src/leak-test/routes.ts",
+      "title": "Leak-test route is dev-gated but its only caller runs the server in production mode, silently dropping the server-island probe",
+      "alias": "F1"
+    },
+    {
+      "findingId": "finding_eedbca113cda79aa",
+      "filePath": "memtest/driver.ts",
+      "title": "Sitemap fetch ignores res.ok, turning the load loop into an unthrottled single-URL flood",
+      "alias": "F2"
+    },
+    {
+      "findingId": "finding_340cdadef94f4962",
+      "filePath": "memtest/analyze.ts",
+      "title": "--sha / --latest-version filter is silently ignored by the shape-growth analysis",
+      "alias": "F3"
+    },
+    {
+      "findingId": "finding_a362326c8dc1d8eb",
+      "filePath": "packages/docker/scripts/reset.ts",
+      "title": "`docker compose down` exit code ignored before destructive `rmSync` of the Postgres data directory",
+      "alias": "F4"
+    },
+    {
+      "findingId": "finding_1360aa57cbb696e0",
+      "filePath": "packages/mochi/src/middleware/compress.ts",
+      "title": "Small-chunk streaming responses (text/event-stream) are latency-buffered by CompressionStream, production-only",
+      "alias": "F5"
+    }
+  ],
+  "rawResponses": [
+    {
+      "kind": "initial",
+      "rawText": "I've completed the investigation. Here are my verdicts:\n\n```json\n[\n  {\n    \"findingId\": \"F1\",\n    \"verdict\": \"true-positive\",\n    \"adjustedSeverity\": \"BUG\",\n    \"reasoning\": \"Verified every link in the chain. `packages/site/src/routes.ts:89` defines `const DEVELOPMENT = process.env.NODE_ENV === 'development'`, and line 385 is the *only* registration site for `leakTestRoutes` (`grep -rn leakTestRoutes` returns exactly two hits: the import at line 57 and the spread at line 385). `runLeakTest.ts:83` spawns the site with `env: { MOCHI_MEMORY_PROBE: '1', NODE_ENV: 'production', PORT }`, and `serverProcess.ts:37` merges it as `{ ...process.env, ...opts.env }`, so the child's `NODE_ENV` is unconditionally `production` — `DEVELOPMENT` is `false` and `/__leak/server-island` is never registered. I confirmed `packages/site/src/index.ts` passes only that one `routes` map and has no catch-all `fetch`, so the path reaches `composedFetch` and 404s; `captureServerIslandHit()` returns `null` on `!res.ok` (`scripts/leak/routes.ts:41-44`), `runLeakTest.ts:97` therefore builds the ring from `STATIC_ROUTES` alone, and the only signal is a `console.warn` at line 99. The `island:server` hit against `/_mochi/island/:name` is genuinely lost: `LeakIslandPage.svelte` uses `mochi:defer`, whose second fetch is performed by the `ServerIsland` client custom element, so the non-browser `loadGen` never issues it — and `/demos/server-island` in `STATIC_ROUTES` only renders the wrapper. Git history makes it worse, not better: before #338 the harness passed `MODE: 'production'` and inherited `NODE_ENV`, which I verified is `undefined` under `bun run` (no `.env` sets it), so `DEVELOPMENT` was already false — the probe has never worked under this harness. I downgrade HIGH_BUG → BUG: this is a manually-invoked internal harness (`grep test:leak .github/` is empty, so it is not a CI gate), nothing user-facing regresses, and it does emit a warning. The defect and the dead `packages/site/src/leak-test/` directory are real, and the fix the finding proposes mirrors the existing `HEAP_SNAPSHOTS_ENABLED` / profiler-route precedent in the same file.\"\n  },\n  {\n    \"findingId\": \"F2\",\n    \"verdict\": \"true-positive\",\n    \"adjustedSeverity\": \"BUG\",\n    \"reasoning\": \"Traced the control flow exactly as described. `fetchSitemapPaths()` (driver.ts:81-96) calls `res.text()` with no `res.ok` guard, then regex-scans for `<loc>`; a non-2xx body (a 500 from `buildSitemapXml()`, or the framework error page) contains none, so `paths` is `[]` and nothing throws. `runPool([])` computes `Math.min(CONCURRENCY, paths.length || 1)` = `Math.min(8, 1)` = 1 worker, whose `while (idx < paths.length)` is false on entry, so it resolves immediately. Back in `loadLoop` (line 114-132) the `catch` — the only site with a 2 s backoff — never fires, and `LOOP_DELAY_MS` is `Number(process.env.LOOP_DELAY_MS) || 0`; I confirmed neither `memtest/run.sh` nor `memtest/loop.sh` ever sets it, and `run.sh` passes only `PORT` and `MEMTEST_GIT_SHA` into the container. So the loop re-fetches `/sitemap.xml` with zero delay, forever, and `log('load loop: completed pass N (0 urls/pass)')` fires every 10 passes — a genuine log flood at that iteration rate. The site registers `/sitemap.xml` as a `Mochi.api()` route with no `rateLimit`, and `Mochi.serve()` sets no global limit, so nothing throttles it. One small correction to the description: the requests are serial (one awaited `fetch` per iteration), not concurrent, so 'as fast as the network allows' is a serial hot loop rather than a parallel flood — that does not change the outcome. The substantive consequence is right: the multi-day harness silently stops exercising its URL inventory and any heap trend the snapshots show would reflect the degenerate workload. BUG is the correct severity — this is ops tooling, not production code.\"\n  },\n  {\n    \"findingId\": \"F3\",\n    \"verdict\": \"true-positive\",\n    \"adjustedSeverity\": \"BUG\",\n    \"reasoning\": \"Confirmed against memlab's installed source rather than its docs. `runGrowth()` (analyze.ts:174) gets the *filtered* list from `listSnapshots()` and uses it for the header (line 179), `newest` (178), and the constructor-delta table (211-212) — but line 186 hands memlab the raw directory: `analysis.analyzeSnapshotsInDirectory(SNAPSHOT_DIR, { workDir: WORK_DIR })`. In `node_modules/@memlab/heap-analysis/dist/BaseAnalysis.js`, `analyzeSnapshotsInDirectory` passes the argument straight through as `args['snapshot-dir']`; `ShapeUnboundGrowthAnalysis.process` calls `PluginUtils.snapshotMapReduce`, which resolves `getSnapshotDirForAnalysis(options)` → that same dir → `utils.getSnapshotFilesInDir(snapshotDir)`, which in `@memlab/core/dist/lib/Utils.js:1436-1447` is a bare `readdirSync(dir).filter(f => f.endsWith('.heapsnapshot'))`. The JSDoc is explicit: 'all snapshot files will be loaded and analyzed'. So the `--sha` / `--latest-version` filter has literally no effect on the shape analysis, while `listSnapshots()` has already printed `Filtering to version <sha>: N/M snapshots`. The result is exactly the described mismatch: a filtered header and constructor table printed over an unfiltered shape series, with `s.counts` having one entry per snapshot in the whole directory, which `classifyTrend` then midpoint-slices — so cross-version shape churn is reported as sustained growth in the current build. The flags were added (per memtest/README.md:85-89, 162-169) precisely for the multi-SHA retained window, which is the case that is now wrong. BUG is right: internal analysis tooling, no production impact, but a report that actively misleads.\"\n  },\n  {\n    \"findingId\": \"F4\",\n    \"verdict\": \"true-positive\",\n    \"adjustedSeverity\": \"BUG\",\n    \"reasoning\": \"The code defect is real and verified. `reset.ts:9-13` awaits `down.exited` and discards the result, then unconditionally `rmSync(dbDir, { recursive: true, force: true })` at line 21. I empirically checked Bun's spawn semantics with an unrelated one-liner (`Bun.spawn` on a nonexistent binary): it throws `ENOENT` *synchronously*, before returning, and the `await proc.exited` line is never reached. So the `try/catch` traps only 'the docker binary is not on PATH'; a non-zero exit — daemon unreachable, docker-socket permission denied, or a compose failure — resolves `exited` normally and never reaches the warning, exactly as claimed. The sibling script sets the correct precedent: `scripts/dev.ts:17` checks `(await probe.exited) === 0`. I also confirmed `docker-compose.yml` bind-mounts `./.db:/var/lib/postgresql/data` under the pinned project `name: mochi`, and that both the compose argv and `dbDir` (`path.resolve(import.meta.dir, '..')`) are static — so the finding's 'no security impact / no traversal vector' assessment is correct. I'd temper the stated consequence: the harmful case needs compose to fail *while containers are still up*, which is narrow (if the daemon is down there is nothing running), the pinned project name rules out the project-name variant, and on Linux the uid-999-owned `.db` usually trips the existing EACCES branch instead. Also, this script's entire purpose is to destroy that data, so the realistic cost is a confusing live-container-on-deleted-datadir state the user must clear with `db:down`, not data loss. Still a genuine ignored-exit-code bug with an unreachable warning; BUG (the lowest available severity) is appropriate.\"\n  },\n  {\n    \"findingId\": \"F5\",\n    \"verdict\": \"true-positive\",\n    \"adjustedSeverity\": \"BUG\",\n    \"reasoning\": \"The finding filed this at medium confidence; I was able to settle the decisive mechanism, and it holds. Statically: `COMPRESSIBLE_TYPES[0]` is the bare `'text/'` prefix and `isCompressible` is a `startsWith` test, so `text/event-stream` matches and line 67 pipes the body through `new CompressionStream(COMPRESSION_FORMAT[chosen])` with the default `methods: ['zstd', 'gzip']`. I then pulled Bun's own implementation (commit 5702b39, `src/js/builtins/CompressionStream.ts`): `CompressionStream` is a thin wrapper — `zlib.createGzip()` / `zlib.createZstdCompress()` bridged via `stream.Readable.toWeb` / `Writable.toWeb`. In Bun's `src/js/node/zlib.ts` the defaults are `zlibDefaultOpts = { flush: Z_NO_FLUSH, finishFlush: Z_FINISH }` (line 672) and `zstdDefaultOpts = { flush: ZSTD_e_continue, finishFlush: ZSTD_e_end }` (line 909); `ZlibBase.prototype._transform` (line 403) uses `_defaultFlushFlag` for every chunk and only raises to `_finishFlushFlag` for the final one, and `processCallback` pushes output only under `if (have > 0)` (line 571). So a ~30-byte frame mid-stream yields zero pushed bytes — there is no per-chunk flush, confirming the claim for Bun specifically, not just from the WHATWG algorithm. This also explains why the existing regression test is not coverage: gzip emits its 10-byte header on the first `deflate()` call, which alone satisfies `expect(first.value!.byteLength).toBeGreaterThan(0)` — 16 KB of `'head'.repeat(4096)` produces only ~68 LZ77 symbols, nowhere near a block flush. I verified the surrounding reachability claims too: `Mochi.sse()` (Mochi.ts:1330-1432) returns its Response directly with no `middleware` call, while `Mochi.api()` (line 1240) and `Mochi.page()` (line 991) run the chain, and `isDev` (`utils/env.ts`, a live `export let` seeded from `NODE_ENV === 'development'`) makes the middleware a no-op in dev — so a consumer sees a working stream locally and a stalled one in production. Current in-repo impact is nil: `grep 'new ReadableStream' packages/*/src` finds nothing, and the only SSE is `Mochi.sse('/sse/time')`, which bypasses the chain — so this is a latent bug for `mochi-framework` npm consumers, which is why I keep it at BUG rather than raising it. Two minor corrections: `application/x-ndjson` does *not* match `COMPRESSIBLE_TYPES`, so the affected set is really 'any `text/*` body streamed in small chunks' (a `text/plain` token feed included), and the L22 doc comment's streaming guarantee is only true for large chunks.\"\n  }\n]\n```",
+      "parsedCount": 5
+    }
+  ],
+  "repairAttempts": 0,
+  "parsedVerdicts": [
+    {
+      "findingId": "F1",
+      "verdict": "true-positive",
+      "adjustedSeverity": "BUG",
+      "reasoning": "Verified every link in the chain. `packages/site/src/routes.ts:89` defines `const DEVELOPMENT = process.env.NODE_ENV === 'development'`, and line 385 is the *only* registration site for `leakTestRoutes` (`grep -rn leakTestRoutes` returns exactly two hits: the import at line 57 and the spread at line 385). `runLeakTest.ts:83` spawns the site with `env: { MOCHI_MEMORY_PROBE: '1', NODE_ENV: 'production', PORT }`, and `serverProcess.ts:37` merges it as `{ ...process.env, ...opts.env }`, so the child's `NODE_ENV` is unconditionally `production` — `DEVELOPMENT` is `false` and `/__leak/server-island` is never registered. I confirmed `packages/site/src/index.ts` passes only that one `routes` map and has no catch-all `fetch`, so the path reaches `composedFetch` and 404s; `captureServerIslandHit()` returns `null` on `!res.ok` (`scripts/leak/routes.ts:41-44`), `runLeakTest.ts:97` therefore builds the ring from `STATIC_ROUTES` alone, and the only signal is a `console.warn` at line 99. The `island:server` hit against `/_mochi/island/:name` is genuinely lost: `LeakIslandPage.svelte` uses `mochi:defer`, whose second fetch is performed by the `ServerIsland` client custom element, so the non-browser `loadGen` never issues it — and `/demos/server-island` in `STATIC_ROUTES` only renders the wrapper. Git history makes it worse, not better: before #338 the harness passed `MODE: 'production'` and inherited `NODE_ENV`, which I verified is `undefined` under `bun run` (no `.env` sets it), so `DEVELOPMENT` was already false — the probe has never worked under this harness. I downgrade HIGH_BUG → BUG: this is a manually-invoked internal harness (`grep test:leak .github/` is empty, so it is not a CI gate), nothing user-facing regresses, and it does emit a warning. The defect and the dead `packages/site/src/leak-test/` directory are real, and the fix the finding proposes mirrors the existing `HEAP_SNAPSHOTS_ENABLED` / profiler-route precedent in the same file."
+    },
+    {
+      "findingId": "F2",
+      "verdict": "true-positive",
+      "adjustedSeverity": "BUG",
+      "reasoning": "Traced the control flow exactly as described. `fetchSitemapPaths()` (driver.ts:81-96) calls `res.text()` with no `res.ok` guard, then regex-scans for `<loc>`; a non-2xx body (a 500 from `buildSitemapXml()`, or the framework error page) contains none, so `paths` is `[]` and nothing throws. `runPool([])` computes `Math.min(CONCURRENCY, paths.length || 1)` = `Math.min(8, 1)` = 1 worker, whose `while (idx < paths.length)` is false on entry, so it resolves immediately. Back in `loadLoop` (line 114-132) the `catch` — the only site with a 2 s backoff — never fires, and `LOOP_DELAY_MS` is `Number(process.env.LOOP_DELAY_MS) || 0`; I confirmed neither `memtest/run.sh` nor `memtest/loop.sh` ever sets it, and `run.sh` passes only `PORT` and `MEMTEST_GIT_SHA` into the container. So the loop re-fetches `/sitemap.xml` with zero delay, forever, and `log('load loop: completed pass N (0 urls/pass)')` fires every 10 passes — a genuine log flood at that iteration rate. The site registers `/sitemap.xml` as a `Mochi.api()` route with no `rateLimit`, and `Mochi.serve()` sets no global limit, so nothing throttles it. One small correction to the description: the requests are serial (one awaited `fetch` per iteration), not concurrent, so 'as fast as the network allows' is a serial hot loop rather than a parallel flood — that does not change the outcome. The substantive consequence is right: the multi-day harness silently stops exercising its URL inventory and any heap trend the snapshots show would reflect the degenerate workload. BUG is the correct severity — this is ops tooling, not production code."
+    },
+    {
+      "findingId": "F3",
+      "verdict": "true-positive",
+      "adjustedSeverity": "BUG",
+      "reasoning": "Confirmed against memlab's installed source rather than its docs. `runGrowth()` (analyze.ts:174) gets the *filtered* list from `listSnapshots()` and uses it for the header (line 179), `newest` (178), and the constructor-delta table (211-212) — but line 186 hands memlab the raw directory: `analysis.analyzeSnapshotsInDirectory(SNAPSHOT_DIR, { workDir: WORK_DIR })`. In `node_modules/@memlab/heap-analysis/dist/BaseAnalysis.js`, `analyzeSnapshotsInDirectory` passes the argument straight through as `args['snapshot-dir']`; `ShapeUnboundGrowthAnalysis.process` calls `PluginUtils.snapshotMapReduce`, which resolves `getSnapshotDirForAnalysis(options)` → that same dir → `utils.getSnapshotFilesInDir(snapshotDir)`, which in `@memlab/core/dist/lib/Utils.js:1436-1447` is a bare `readdirSync(dir).filter(f => f.endsWith('.heapsnapshot'))`. The JSDoc is explicit: 'all snapshot files will be loaded and analyzed'. So the `--sha` / `--latest-version` filter has literally no effect on the shape analysis, while `listSnapshots()` has already printed `Filtering to version <sha>: N/M snapshots`. The result is exactly the described mismatch: a filtered header and constructor table printed over an unfiltered shape series, with `s.counts` having one entry per snapshot in the whole directory, which `classifyTrend` then midpoint-slices — so cross-version shape churn is reported as sustained growth in the current build. The flags were added (per memtest/README.md:85-89, 162-169) precisely for the multi-SHA retained window, which is the case that is now wrong. BUG is right: internal analysis tooling, no production impact, but a report that actively misleads."
+    },
+    {
+      "findingId": "F4",
+      "verdict": "true-positive",
+      "adjustedSeverity": "BUG",
+      "reasoning": "The code defect is real and verified. `reset.ts:9-13` awaits `down.exited` and discards the result, then unconditionally `rmSync(dbDir, { recursive: true, force: true })` at line 21. I empirically checked Bun's spawn semantics with an unrelated one-liner (`Bun.spawn` on a nonexistent binary): it throws `ENOENT` *synchronously*, before returning, and the `await proc.exited` line is never reached. So the `try/catch` traps only 'the docker binary is not on PATH'; a non-zero exit — daemon unreachable, docker-socket permission denied, or a compose failure — resolves `exited` normally and never reaches the warning, exactly as claimed. The sibling script sets the correct precedent: `scripts/dev.ts:17` checks `(await probe.exited) === 0`. I also confirmed `docker-compose.yml` bind-mounts `./.db:/var/lib/postgresql/data` under the pinned project `name: mochi`, and that both the compose argv and `dbDir` (`path.resolve(import.meta.dir, '..')`) are static — so the finding's 'no security impact / no traversal vector' assessment is correct. I'd temper the stated consequence: the harmful case needs compose to fail *while containers are still up*, which is narrow (if the daemon is down there is nothing running), the pinned project name rules out the project-name variant, and on Linux the uid-999-owned `.db` usually trips the existing EACCES branch instead. Also, this script's entire purpose is to destroy that data, so the realistic cost is a confusing live-container-on-deleted-datadir state the user must clear with `db:down`, not data loss. Still a genuine ignored-exit-code bug with an unreachable warning; BUG (the lowest available severity) is appropriate."
+    },
+    {
+      "findingId": "F5",
+      "verdict": "true-positive",
+      "adjustedSeverity": "BUG",
+      "reasoning": "The finding filed this at medium confidence; I was able to settle the decisive mechanism, and it holds. Statically: `COMPRESSIBLE_TYPES[0]` is the bare `'text/'` prefix and `isCompressible` is a `startsWith` test, so `text/event-stream` matches and line 67 pipes the body through `new CompressionStream(COMPRESSION_FORMAT[chosen])` with the default `methods: ['zstd', 'gzip']`. I then pulled Bun's own implementation (commit 5702b39, `src/js/builtins/CompressionStream.ts`): `CompressionStream` is a thin wrapper — `zlib.createGzip()` / `zlib.createZstdCompress()` bridged via `stream.Readable.toWeb` / `Writable.toWeb`. In Bun's `src/js/node/zlib.ts` the defaults are `zlibDefaultOpts = { flush: Z_NO_FLUSH, finishFlush: Z_FINISH }` (line 672) and `zstdDefaultOpts = { flush: ZSTD_e_continue, finishFlush: ZSTD_e_end }` (line 909); `ZlibBase.prototype._transform` (line 403) uses `_defaultFlushFlag` for every chunk and only raises to `_finishFlushFlag` for the final one, and `processCallback` pushes output only under `if (have > 0)` (line 571). So a ~30-byte frame mid-stream yields zero pushed bytes — there is no per-chunk flush, confirming the claim for Bun specifically, not just from the WHATWG algorithm. This also explains why the existing regression test is not coverage: gzip emits its 10-byte header on the first `deflate()` call, which alone satisfies `expect(first.value!.byteLength).toBeGreaterThan(0)` — 16 KB of `'head'.repeat(4096)` produces only ~68 LZ77 symbols, nowhere near a block flush. I verified the surrounding reachability claims too: `Mochi.sse()` (Mochi.ts:1330-1432) returns its Response directly with no `middleware` call, while `Mochi.api()` (line 1240) and `Mochi.page()` (line 991) run the chain, and `isDev` (`utils/env.ts`, a live `export let` seeded from `NODE_ENV === 'development'`) makes the middleware a no-op in dev — so a consumer sees a working stream locally and a stalled one in production. Current in-repo impact is nil: `grep 'new ReadableStream' packages/*/src` finds nothing, and the only SSE is `Mochi.sse('/sse/time')`, which bypasses the chain — so this is a latent bug for `mochi-framework` npm consumers, which is why I keep it at BUG rather than raising it. Two minor corrections: `application/x-ndjson` does *not* match `COMPRESSIBLE_TYPES`, so the affected set is really 'any `text/*` body streamed in small chunks' (a `text/plain` token feed included), and the L22 doc comment's streaming guarantee is only true for large chunks."
+    }
+  ],
+  "reconciliation": {
+    "matches": [
+      {
+        "matchedBy": "finding-id",
+        "returnedFindingId": "F1",
+        "resolvedFindingId": "finding_48747ee7c46f179a"
+      },
+      {
+        "matchedBy": "finding-id",
+        "returnedFindingId": "F2",
+        "resolvedFindingId": "finding_eedbca113cda79aa"
+      },
+      {
+        "matchedBy": "finding-id",
+        "returnedFindingId": "F3",
+        "resolvedFindingId": "finding_340cdadef94f4962"
+      },
+      {
+        "matchedBy": "finding-id",
+        "returnedFindingId": "F4",
+        "resolvedFindingId": "finding_a362326c8dc1d8eb"
+      },
+      {
+        "matchedBy": "finding-id",
+        "returnedFindingId": "F5",
+        "resolvedFindingId": "finding_1360aa57cbb696e0"
+      }
+    ],
+    "missingFindingIds": [],
+    "unknownVerdicts": [],
+    "ambiguousVerdicts": []
+  },
+  "persistedCount": 5,
+  "unresolvedFindingIds": []
+}

@@ -1,0 +1,15 @@
+{
+  "tags": [
+    "bun",
+    "docker",
+    "github-actions",
+    "node"
+  ],
+  "sentinels": [
+    "Dockerfile",
+    "bun.lock",
+    "package.json"
+  ],
+  "detectedAt": "2026-11-23T03:59:21.643Z",
+  "rootPath": "/Users/k/Documents/GitHub/mochi"
+}

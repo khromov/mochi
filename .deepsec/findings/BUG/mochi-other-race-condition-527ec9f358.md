@@ -1,0 +1,29 @@
+# [BUG] Previous HMR artifact is unlinked before the in-flight import() of it has resolved
+
+**File:** [`packages/mochi/src/compiler/freshImport.ts`](https://github.com/khromov/mochi/blob/main/packages/mochi/src/compiler/freshImport.ts#L19-L28) (lines 19, 22, 28)
+**Project:** mochi
+**Severity:** BUG  •  **Confidence:** medium  •  **Slug:** `other-race-condition`
+
+## Owners
+
+**Suggested assignee:** `stanislav.khromov+github@gmail.com` _(via last-committer)_
+
+## Finding
+
+`importUnique()` deletes the source's previous artifact (lines 19-26) and only then issues `import()` of the new one (line 28). That ordering is safe for strictly sequential calls, but two concurrent calls for the same `sourcePath` interleave badly: call A writes `X.hmr-1.js`, records it in `lastArtifact`, and issues `import(X.hmr-1.js)` — whose module read is asynchronous; call B then writes `X.hmr-2.js`, reads `prev = X.hmr-1.js` and unlinks it while A's loader may still be reading it, yielding a `Cannot find module` rejection that surfaces as a 500 (or an unhandled rejection) on A's request. The header comment asserts the opposite invariant — that the lingering copy is 'the one the just-issued import still holds open' — but the delete is sequenced before the import, not after.
+
+The concurrency is reachable in dev: `ComponentRegistry.compileAll()` has no in-flight dedup (line 728 just filters on `!this.compiledComponents.has(f)`, which both callers see as false), and the lazy compile path is entered per request from renderComponent (ComponentRegistry.ts:1565, 1645) and from the server-island endpoint (Mochi.ts:1612). Two parallel requests for the same not-yet-compiled page — or several parallel `/_mochi/island/*` fetches for one island on a single page load — therefore run two `compileAll` passes that both land on `freshImport(outPath)` for the identical `outPath` (line 1094), with the preceding identical `Bun.build` work making near-simultaneous arrival at the delete likely. Dev-only (production takes the plain `import()` branch), and recoverable by a reload, but it presents as an inexplicable intermittent module-not-found error.
+
+## Recommendation
+
+Issue the import first and delete the previous artifact only after it resolves: `const mod = await import(Bun.pathToFileURL(unique).href); if (prev) { try { await Bun.file(prev).delete(); } catch {} } return mod;` — keeping `lastArtifact.set()` before the await. Better still, make the whole function idempotent per `sourcePath` by chaining calls on a per-source promise (the pattern `serializeCssBundling` already uses in ComponentRegistry), or give `compileAll()` an in-flight map so one entrypoint is never compiled twice concurrently.
+
+## Revalidation
+
+**Verdict:** uncertain
+
+Two of the three required legs check out; the third cannot be settled from source. (1) The ordering defect is real as written: `importUnique` (freshImport.ts:19-28) reads `prev`, `await`s its deletion, records `lastArtifact`, and only then issues `import(unique)` — so the delete is sequenced *before* the import, contradicting the header comment's claim that the lingering copy is 'the one the just-issued import still holds open'. For strictly sequential calls the behaviour is safe (`prev`'s import resolved in an earlier completed call); under concurrency `prev` can be an artifact whose import is still in flight. (2) The concurrency is reachable, and more easily than the finding claims. `compileAll` (ComponentRegistry.ts:724-731) computes `todo` synchronously from `!this.compiledComponents.has(f)` with no in-flight map; the only serialization primitive in the class is `serializeCssBundling`/`importedCssBatches` (lines 464-465, 2144), which covers CSS bundling only. Server-island components are never added to `ssrEntrypoints` (Mochi.ts:676-697) — `allServerIslands` only populates the name→path map at line 1237-1238 — so `/_mochi/island/:name` genuinely cold-compiles in dev (Mochi.ts:1612). `ServerIsland.ts`'s `_inflight` guard is per-element, so N wrappers for the same component fire N parallel fetches; `packages/site/src/demos/is-hydratable/IsHydratable.svelte:33,41` renders `HydrationProbe` twice in one page, which is exactly that shape. Entry naming (`'[name]-[hash].server.js'`, line 1010) is deterministic, so both passes land on the identical `outPath` and therefore the identical `lastArtifact` key. (3) What I cannot verify is the necessary condition for an observable failure: that Bun's `import()` yields to the *event loop* between being issued and reading the artifact. Call A issues `import(url_A)` in the same synchronous block as `lastArtifact.set`, so there is no gap before the import starts; call B can only delete `url_A` from a write-completion macrotask. If Bun's module fetch hook reads an on-disk file synchronously (which is my reading of its loader, and the entry's deps — content-hashed chunks and external `svelte/*` — are typically already in the process module cache), A's whole graph links across microtasks inside one macrotask and B can never interleave, making the race unobservable. If any hop does real async I/O, A fails with `Cannot find module` as described. The static-analysis-only constraint rules out the one-line probe that would decide this, and there is no concurrency test (freshImport.test.ts is purely sequential) or observed report in the repo. Worth noting separately: the same missing dedup creates a timing-independent hazard the finding does not flag — two concurrent `Bun.build`s write the same `outdir` filename, so `Bun.write(dest, Bun.file(outPath))` can copy a half-rewritten entry. Dev-only either way (production takes the plain `import()` branch at line 1094), and the recommended fix (import first, delete after; or an in-flight map on `compileAll`) is cheap and correct regardless of which way the timing falls.
+
+## Recent committers (`git log`)
+
+- Stanislav Khromov <stanislav.khromov+github@gmail.com> (2026-07-27)
