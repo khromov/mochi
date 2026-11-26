@@ -9,6 +9,8 @@
  *   request context for rate limiting, audit logs, and the like.
  */
 
+import { logger } from '../utils/log';
+
 export interface MochiProxyOptions {
   /**
    * Explicit public origin (e.g. `'https://my.site'`), overriding header derivation and `url.origin`.
@@ -27,7 +29,9 @@ export interface MochiProxyOptions {
    * Number of trusted proxies in front of the server when `addressHeader` is `'x-forwarded-for'`. The header is
    * comma-separated, and reading from the right at depth `N` skips `N - 1` trusted proxies; defaults to `1`, the
    * rightmost entry. Given `client, proxy1, proxy2`, `xffDepth: 3` yields `client` and `xffDepth: 1` yields `proxy2`.
-   * Reading from the right blocks spoofing, since each trusted proxy pushes a client-appended header leftward.
+   * Reading from the right blocks spoofing, since each trusted proxy pushes a client-appended header leftward — but only
+   * when `N` equals the number of proxies that append; with a larger `N` a client can pad the header and choose the
+   * address that is read.
    */
   xffDepth?: number;
   /**
@@ -81,6 +85,20 @@ export function resolveExpectedOrigin(request: Request, url: URL, options: Mochi
   return `${protocol}://${host}`;
 }
 
+let warnedShortChain = false;
+
+function warnShortChain(depth: number, entries: number): void {
+  if (warnedShortChain) {
+    return;
+  }
+  warnedShortChain = true;
+  logger.warn(
+    `proxy.xffDepth is ${depth}, but a request's X-Forwarded-For has only ${entries} ${entries === 1 ? 'entry' : 'entries'}. ` +
+      'If xffDepth counts more proxies than append to the header, a client can pad it and choose its own getClientAddress(); ' +
+      'otherwise the request skipped one of your proxies.',
+  );
+}
+
 export function getClientAddress(request: Request, fallback: string | null, options: MochiProxyOptions | undefined): string | null {
   const addressHeader = options?.addressHeader;
   if (!addressHeader) {
@@ -101,8 +119,11 @@ export function getClientAddress(request: Request, fallback: string | null, opti
       return fallback;
     }
     const depth = options?.xffDepth ?? 1;
-    // An `xffDepth` larger than the chain falls back to the rightmost, closest-proxy entry: the leftmost is fully
-    // client-controlled and spoofable.
+    if (ips.length < depth) {
+      warnShortChain(depth, ips.length);
+    }
+    // Reading the rightmost entry keeps an honest short chain sane, but it is no defence: a client can pad the header
+    // to `xffDepth` entries, and then the leftmost, client-written one is read.
     return ips[ips.length - depth] ?? ips[ips.length - 1]!;
   }
 
