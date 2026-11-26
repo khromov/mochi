@@ -33,6 +33,8 @@ beforeAll(async () => {
     outDir,
     publicDir: path.join(fixtures, 'public'),
     staticDirs: { '/media': path.join(fixtures, 'media') },
+    // Only the verify endpoint matters here; gating no path keeps every other response class ungated.
+    protection: { enabled: true, protectFiles: false, protect: () => false },
     routes: {
       '/page': Mochi.page(PLAIN_PAGE),
       '/form': Mochi.page(PLAIN_PAGE, { actions: { default: () => success() } }),
@@ -44,6 +46,11 @@ beforeAll(async () => {
         stream.close();
       }),
       '/download': Mochi.file(path.join(fixtures, 'report.txt')),
+      '/ws': Mochi.ws({
+        message(ws, message) {
+          ws.send(`echo:${message}`);
+        },
+      }),
     },
   });
   base = `http://localhost:${server.port}`;
@@ -113,6 +120,26 @@ describe('default security headers', () => {
   test('Mochi.file', async () => {
     const res = await fetch(`${base}/download`);
     expect(await res.text()).toBe('report');
+    expectBaseline(res);
+  });
+
+  test('Mochi.ws still upgrades, and a request it does not upgrade carries the headers', async () => {
+    const ws = new WebSocket(`ws://localhost:${server.port}/ws`);
+    const echoed = await new Promise<string>((resolve, reject) => {
+      ws.onopen = () => ws.send('hi');
+      ws.onmessage = (e) => resolve(String(e.data));
+      ws.onerror = reject;
+    });
+    ws.close();
+    expect(echoed).toBe('echo:hi');
+    const plain = await fetch(`${base}/ws`);
+    expect(plain.status).toBe(500);
+    expectBaseline(plain);
+  });
+
+  test('protection verify endpoint', async () => {
+    const res = await fetch(`${base}/_mochi/protection/verify`);
+    expect(res.status).toBe(405);
     expectBaseline(res);
   });
 

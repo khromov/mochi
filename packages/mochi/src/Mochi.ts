@@ -786,10 +786,14 @@ export class Mochi {
     });
 
     // Outermost around each handler, so middleware's `filterResponseHeaders` cannot strip the baseline.
-    const withSecurityHeaders = (handler: (req: Request, server: Server<undefined>) => Response | Promise<Response>) =>
+    const withSecurityHeaders = <R extends Response | undefined>(handler: (req: Request, server: Server<undefined>) => R | Promise<R>) =>
       Object.keys(securityHeaderDefaults).length === 0
         ? handler
-        : async (req: Request, server: Server<undefined>): Promise<Response> => addSecurityHeaders(await handler(req, server), securityHeaderDefaults);
+        : async (req: Request, server: Server<undefined>): Promise<R> => {
+            const res = await handler(req, server);
+            // A `Mochi.ws` handler returns nothing once the socket is upgraded.
+            return (res && addSecurityHeaders(res, securityHeaderDefaults)) as R;
+          };
 
     const internalRoutes: Record<string, MochiPageConfig | MochiApiConfig> = {
       // Gated behind the debug bar, like the page-cache admin routes, since the stats page discloses every bundle's input
@@ -1270,7 +1274,7 @@ export class Mochi {
         const wsHandlers = handler.handlers;
         wsHandlersMap.set(pattern, wsHandlers);
 
-        const bunRouteValue = (async (req: Request, server: Server<undefined>) => {
+        const bunRouteValue = withSecurityHeaders(async (req: Request, server: Server<undefined>) => {
           const setup = await buildRequestContext(req, server, { kind: 'ws', pattern });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
@@ -1740,7 +1744,7 @@ export class Mochi {
     // The debug bar's Cache tab reads the entry count (GET) and empties the image cache (POST). It registers with the
     // debug bar rather than the image endpoint, since the tab always shows and acting on an empty cache is a no-op.
     if (debugBarEnabled) {
-      const imageCacheHandler = async (req: Request): Promise<Response> => {
+      const imageCacheHandler = withSecurityHeaders(async (req: Request): Promise<Response> => {
         if (req.method === 'POST') {
           await imageRuntime.cache.clearAll();
           return Response.json({ ok: true, count: 0, keys: [] });
@@ -1751,9 +1755,9 @@ export class Mochi {
           return Response.json({ count: keys.length, keys });
         }
         return new Response('Method Not Allowed', { status: 405 });
-      };
+      });
       // Returns the raw stored entry for a single key (`?key=<url-encoded key>`).
-      const imageCacheEntryHandler = async (req: Request): Promise<Response> => {
+      const imageCacheEntryHandler = withSecurityHeaders(async (req: Request): Promise<Response> => {
         if (req.method !== 'GET') {
           return new Response('Method Not Allowed', { status: 405 });
         }
@@ -1768,7 +1772,7 @@ export class Mochi {
           return new Response('Gone', { status: 410 });
         }
         return Response.json({ key, value });
-      };
+      });
       // Register both slash variants so they work under any `trailingSlash` policy.
       bunRoutes[`${registry.assetPrefix}/image-cache`] = imageCacheHandler;
       bunRoutes[`${registry.assetPrefix}/image-cache/`] = imageCacheHandler;
@@ -1778,7 +1782,7 @@ export class Mochi {
 
     if (protectionRuntime) {
       const { verifyPath, options: protectionOptions } = protectionRuntime;
-      const verifyHandler = async (req: Request, server: Server<undefined>): Promise<Response> => {
+      const verifyHandler = withSecurityHeaders(async (req: Request, server: Server<undefined>): Promise<Response> => {
         if (req.method !== 'POST') {
           return new Response('Method Not Allowed', { status: 405 });
         }
@@ -1818,7 +1822,7 @@ export class Mochi {
           duration: performance.now() - start,
         });
         return final;
-      };
+      });
       // Both slash variants, like the image-cache routes, so the endpoint answers under any trailingSlash policy.
       bunRoutes[verifyPath] = verifyHandler;
       bunRoutes[`${verifyPath}/`] = verifyHandler;
