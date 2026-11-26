@@ -119,7 +119,7 @@ function browserStore(initial: Stored[], { secureContext = true } = {}): { reads
       return store
         .filter((c) => !c.httpOnly && pathMatches(c.path))
         .sort((a, b) => b.path.length - a.path.length)
-        .map((c) => `${c.name}=${c.value}`)
+        .map((c) => (c.name ? `${c.name}=${c.value}` : c.value))
         .join('; ');
     },
     set: (raw: string) => {
@@ -170,6 +170,12 @@ describe('client cookie jar development warnings', () => {
     expect(messages()).toEqual([expect.stringContaining('cookies.set("session", …) had no effect: the browser refused the write.')]);
   });
 
+  test('set() with httpOnly that the browser refuses reports the refusal, not a readable cookie', () => {
+    const { jar, messages } = setup([{ name: 'session', value: 'srv', path: '/', httpOnly: true }]);
+    jar.set('session', 'client', { httpOnly: true });
+    expect(messages()).toEqual([expect.stringContaining('had no effect')]);
+  });
+
   test('set() warns when the browser refuses a secure default on a page that is not a secure context', () => {
     window.__mochi_cookie_defaults = { secure: true };
     const { jar, messages } = setup([], { secureContext: false });
@@ -194,7 +200,8 @@ describe('client cookie jar development warnings', () => {
   test('each message prints once, however often the call repeats', () => {
     const { jar, warn } = setup([{ name: 'session', value: 'srv', path: '/', httpOnly: true }]);
     for (const value of ['a', 'b', 'c']) {
-      jar.set('session', value, { httpOnly: true });
+      jar.set('pref', value, { httpOnly: true });
+      jar.set('session', value);
     }
     expect(warn).toHaveBeenCalledTimes(2);
   });
@@ -204,6 +211,7 @@ describe('client cookie jar development warnings', () => {
       const { jar, warn } = setup([{ name: 'cart', value: '3', path: '/' }]);
       jar.set('pref', 'a b;c=d"é');
       jar.set('empty', '');
+      jar.set('', 'nameless');
       jar.delete('cart');
       jar.delete('never-set');
       expect(jar.get('pref')).toBe('a b;c=d"é');
@@ -213,7 +221,7 @@ describe('client cookie jar development warnings', () => {
 
     test('for a cookie scoped by cookie:defaults to a path this page is not under', () => {
       window.__mochi_cookie_defaults = { path: '/admin/' };
-      const { jar, warn } = setup();
+      const { jar, warn } = setup([{ name: 'pref', value: 'light', path: '/' }]);
       jar.set('pref', 'dark');
       jar.delete('pref');
       expect(warn).not.toHaveBeenCalled();
@@ -247,6 +255,7 @@ describe('client cookie jar development warnings', () => {
       const { jar, warn } = setup([{ name: 'cart', value: '3', path: '/' }]);
       jar.set('cart', '', { expires: -1 });
       jar.set('gone', '', { expires: new Date(0) });
+      jar.set('brief', '1', { expires: new Date(Math.floor(Date.now() / 1000) * 1000 + 999) });
       expect(warn).not.toHaveBeenCalled();
     });
 

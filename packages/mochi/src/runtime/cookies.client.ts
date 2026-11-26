@@ -10,8 +10,10 @@ function readableHere(path: string | undefined): boolean {
   return !path || here === path || (here.startsWith(path) && (path.endsWith('/') || here[path.length] === '/'));
 }
 
+// js-cookie writes Expires to the whole second, so a cookie due within the next second can be gone as soon as it lands.
 function expiresNow(expires: number | Date | undefined): boolean {
-  return typeof expires === 'number' ? expires <= 0 : expires !== undefined && expires.getTime() <= Date.now();
+  const ms = typeof expires === 'number' ? expires * 864e5 : expires instanceof Date ? expires.getTime() - Date.now() : Infinity;
+  return ms < 1000;
 }
 
 /** The `mochi-env` client module passes these to the jar in development builds only, so production bundles drop them. */
@@ -26,15 +28,16 @@ export function cookieWriteChecks(warn: (message: string) => void) {
   };
   return {
     set(name: string, options: CookieSerializeOptions | undefined, merged: CookieSerializeOptions, written: string | undefined): void {
-      if (options?.httpOnly) {
+      // A browser refuses some writes without an error, such as one that would replace a server-set HttpOnly cookie; it lists a nameless cookie as its bare value, so that pair is never looked for.
+      const refused = !!written && !!name && readableHere(merged.path) && !expiresNow(merged.expires) && !`; ${document.cookie}; `.includes(`; ${written.split(';')[0]}; `);
+      if (options?.httpOnly && !refused) {
         warnOnce(
           `cookies.set("${name}", …, { httpOnly: true }) ran in the browser, where document.cookie cannot set HttpOnly. The cookie is written without it, so scripts on this page can read it; set it from server code, such as a page action or API route, to keep it HttpOnly.`,
         );
       }
-      // A browser refuses some writes without an error, such as one that would replace a server-set HttpOnly cookie.
-      if (written && readableHere(merged.path) && !expiresNow(merged.expires) && !`; ${document.cookie}; `.includes(`; ${written.split(';')[0]}; `)) {
+      if (refused) {
         warnOnce(
-          `cookies.set("${name}", …) had no effect: the browser refused the write. Common causes are a cookie of the same name and path that the server set with HttpOnly, which document.cookie cannot replace, and options the browser rejects, such as secure on a page served over plain HTTP or a domain this page is not on.`,
+          `cookies.set("${name}", …) had no effect: the browser refused the write. If the server set "${name}" with HttpOnly on the same path, document.cookie cannot replace it; write it from server code, or have the server set it with httpOnly: false. Otherwise check the options: browsers refuse secure on a page served over plain HTTP, sameSite: "none" or partitioned without secure, and a domain this page is not on.`,
         );
       }
     },
@@ -47,7 +50,7 @@ export function cookieWriteChecks(warn: (message: string) => void) {
       }
       if (readableHere(merged.path) && document.cookie === before && Cookies.get(name) !== undefined) {
         warnOnce(
-          `cookies.delete("${name}") had no effect: a cookie named "${name}" is still readable on this page. Pass the path, domain and partitioned options it was set with; the browser also refuses secure on a page served over plain HTTP.`,
+          `cookies.delete("${name}") had no effect: a cookie named "${name}" is still readable on this page. Pass the path, domain and partitioned options it was set with; browsers also refuse secure on a page served over plain HTTP, and sameSite: "none" or partitioned without secure.`,
         );
       }
     },
