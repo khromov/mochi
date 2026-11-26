@@ -504,11 +504,14 @@ describe('redirect results', () => {
     return result;
   }
 
-  test.each(['/elsewhere', 'https://example.com/next', 'mailto:support@example.com'])('the default fallback navigates to %p', async (location) => {
-    const { assigned, logged } = await submitRedirect(location);
-    expect(assigned).toEqual([[location]]);
-    expect(logged).toEqual([]);
-  });
+  test.each(['/elsewhere', 'https://example.com/next', 'mailto:support@example.com', 'tel:+15551234567', 'myapp://open/thing'])(
+    'the default fallback navigates to %p',
+    async (location) => {
+      const { assigned, logged } = await submitRedirect(location);
+      expect(assigned).toEqual([[location]]);
+      expect(logged).toEqual([]);
+    },
+  );
 
   test.each([
     'javascript:alert(document.domain)',
