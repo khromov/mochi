@@ -185,6 +185,8 @@ await Mochi.serve({
 
 In production, the check refuses every form mutation until `proxy.origin` (or `proxy.hostHeader`) is set, so the deployment break is loud. In development the request is allowed through with a `[mochi]` warning. Routes declaring form `actions` without either option also warn once at boot — in both modes — so the misconfiguration is visible before deploy, not first discovered as a production 403. So does `proxy.hostHeader` without `proxy.protocolHeader`: the expected origin then keeps the server's own `http://` protocol, which never matches the browser's `https://` origin behind a TLS-terminating proxy.
 
+The same two options govern the [WebSocket origin check](/docs/websocket-routes/#origin-check), which runs in both modes.
+
 ### Proxy
 
 `proxy` tells the framework how to recover the public origin (for the CSRF check) and the real client IP (for `getClientAddress()`) from forwarded headers.

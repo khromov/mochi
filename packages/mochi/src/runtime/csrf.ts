@@ -100,6 +100,28 @@ export function csrfBootWarning(options: {
 }
 
 /**
+ * Cross-site WebSocket hijacking guard: browsers apply neither the same-origin policy nor CORS to a WebSocket handshake,
+ * so without it any page can open a socket to this server carrying the visitor's cookies.
+ */
+export function wsOriginCheck(request: Request, url: URL, csrf: MochiCsrfOptions | undefined, trustedOrigins: ReadonlySet<string>): Response | null {
+  const origin = request.headers.get('origin');
+  // Browsers always send `Origin` on a handshake, so a client without one is not a browser and has no ambient credentials to hijack.
+  if (!origin || csrf?.checkOrigin === false) {
+    return null;
+  }
+  const normalized = normalizeOrigin(origin);
+  // The host comparison ignores the scheme, so a TLS-terminating proxy that keeps `Host` intact needs no `proxy` config.
+  const sameHost = URL.parse(origin)?.host === URL.parse(request.url)?.host;
+  if (sameHost || normalized === normalizeOrigin(url.origin) || [...trustedOrigins].some((t) => normalizeOrigin(t) === normalized)) {
+    return null;
+  }
+  logger.warn(
+    `CSRF: blocking WebSocket upgrade ${url.pathname} from origin ${origin} (allowed: ${url.origin}). Add it to csrf.trustedOrigins or set csrf.checkOrigin: false to allow.`,
+  );
+  return new Response('Cross-site WebSocket upgrades are forbidden', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+}
+
+/**
  * Resolve the framework's default CSRF decision and run it through the `csrf:check` filter, the single override point
  * for extensions. The filter receives that decision — `null` to pass, `Response` to block — and returns the input
  * unchanged to delegate, `null` to bypass, or a fresh `Response` to substitute a custom block.
