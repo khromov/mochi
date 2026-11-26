@@ -83,6 +83,21 @@ describe('extractTemplate', () => {
     });
   });
 
+  test('refuses an entry whose ../ segments escape dir, writing nothing', async () => {
+    await withTempDir(async (base) => {
+      const dir = path.join(base, 'scaffold');
+      const archive = new Bun.Archive({
+        'mochi-HEAD/packages/minimal/package.json': '{}',
+        'mochi-HEAD/packages/minimal/../escaped.txt': 'pwned',
+      });
+
+      await expect(extractTemplate(await archive.bytes(), parseTemplateSource('khromov/mochi/packages/minimal'), dir)).rejects.toThrow(
+        'mochi-HEAD/packages/minimal/../escaped.txt',
+      );
+      expect(await readdir(base)).toEqual([]);
+    });
+  });
+
   test('reports a template that matches nothing rather than writing an empty directory', async () => {
     await withTempDir(async (dir) => {
       await expect(extractTemplate(await fixture().bytes(), parseTemplateSource('khromov/mochi/packages/nope'), dir)).rejects.toThrow('is empty or missing');
