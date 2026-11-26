@@ -10,9 +10,10 @@ export function getCspNonce() { return undefined; }
 // Lazy cookie jar + /*@__PURE__*/ initializers keep this module tree-shakeable:
 // if an island imports only e.g. `logger`, the bundler drops `cookies` and the
 // whole cookies.client.ts tree instead of eagerly evaluating __cc() at load.
-import { createClientCookies as __cc } from "__MOCHI_COOKIES_CLIENT__";
+import { createClientCookies as __cc, cookieWriteChecks as __cw } from "__MOCHI_COOKIES_CLIENT__";
 let __clientCookies;
-const __getClientCookies = () => (__clientCookies ??= __cc());
+// The literal, not the exported DEV const (which Bun keeps as a variable), lets a production build drop the write checks.
+const __getClientCookies = () => (__clientCookies ??= __cc(__MOCHI_DEV__ ? __cw(devWarn) : undefined));
 export const cookies = /*@__PURE__*/ new Proxy({}, {
   get(_, p) {
     const c = __getClientCookies();

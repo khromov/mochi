@@ -64,9 +64,11 @@ Route parameters matched by the Bun router. Server-only.
 
 ### `cookies`
 
-<VersionNote since="0.10.0" message="Before 0.10.0, cookies.set() and cookies.delete() in the browser wrote nothing when passed httpOnly: true." />
+<VersionNote since="0.10.0" message="Before 0.10.0, cookies.set() and cookies.delete() in the browser wrote nothing when passed httpOnly: true, and gave no development warnings." />
 
 Read and write cookies on the server and the client through one API. In the browser, `cookies.set()` and `cookies.delete()` ignore `httpOnly`, because a browser discards any `document.cookie` write that carries it. See the [Cookies demo](/demos/cookies/).
+
+In development, the browser jar warns in the console and the debug bar when a call passes `httpOnly`, and when a `set()` or `delete()` has no effect, for example a `set()` that would replace a cookie the server set with `httpOnly`. A cookie scoped to a path the page is not under is not checked, because the page cannot read it back.
 
 ```svelte
 <script>
