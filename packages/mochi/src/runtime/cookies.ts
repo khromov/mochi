@@ -64,7 +64,7 @@ function serializeCookie(name: string, value: string, options?: CookieSerializeO
 
 const CLIENT_COOKIE_DEFAULT_KEYS = ['path', 'domain', 'secure', 'sameSite', 'partitioned', 'priority'] as const;
 
-/** The `cookie:defaults` fields `document.cookie` can honour: a browser drops a script-written `HttpOnly` cookie outright, and the client jar has no `Max-Age`. */
+/** The `cookie:defaults` fields the browser jar applies: a browser drops a script-written `HttpOnly` cookie outright, and lifetime defaults apply to server writes only. */
 export function clientCookieDefaults(defaults: CookieSerializeOptions): CookieSerializeOptions | undefined {
   const picked: Record<string, unknown> = {};
   for (const key of CLIENT_COOKIE_DEFAULT_KEYS) {
