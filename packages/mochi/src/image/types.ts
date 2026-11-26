@@ -128,10 +128,12 @@ export interface MochiImageOptions {
   allowedHosts?: string[];
   /** Reject sources that resolve to private/loopback/link-local IPs. Default: `true`. */
   blockPrivateNetworks?: boolean;
-  /** Upstream fetch timeout in ms. Default: `10_000`. */
+  /** Upstream fetch timeout in ms, including the wait for a fetch slot (see `maxConcurrentFetches`). Default: `10_000`. */
   fetchTimeoutMs?: number;
   /** Max upstream response body in bytes. Default: `20 * 1024 * 1024`. */
   maxResponseBytes?: number;
+  /** Remote source fetches in flight at once per process; one host gets at most half of them. Default: `8`. */
+  maxConcurrentFetches?: number;
   /** Cache time-to-stale in ms — governs the original; resized variants follow it. Default: `14_400_000` (4 h). */
   timeToStale?: number;
   /** Cache time-to-evict in ms — governs the original; resized variants follow it. Default: `86_400_000` (1 day). */
@@ -158,6 +160,7 @@ export interface ResolvedImageOptions {
   blockPrivateNetworks: boolean;
   fetchTimeoutMs: number;
   maxResponseBytes: number;
+  maxConcurrentFetches: number;
   timeToStale: number;
   timeToEvict: number;
   compressPayload: boolean;

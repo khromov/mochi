@@ -70,6 +70,14 @@ function resolveSize(
   return resolved;
 }
 
+// Zero or a fraction would leave every remote fetch waiting out `fetchTimeoutMs`, so it fails at boot instead.
+function checkFetchConcurrency(value: number): number {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`image.maxConcurrentFetches must be a positive integer, got ${value}`);
+  }
+  return value;
+}
+
 export function resolveImageOptions(opts: MochiImageOptions | undefined): ResolvedImageOptions {
   const o = opts ?? {};
   const defaultFormat = o.defaultFormat ?? 'webp';
@@ -100,6 +108,7 @@ export function resolveImageOptions(opts: MochiImageOptions | undefined): Resolv
     blockPrivateNetworks: o.blockPrivateNetworks ?? true,
     fetchTimeoutMs: o.fetchTimeoutMs ?? 10_000,
     maxResponseBytes: o.maxResponseBytes ?? 20 * 1024 * 1024,
+    maxConcurrentFetches: checkFetchConcurrency(o.maxConcurrentFetches ?? 8),
     timeToStale: o.timeToStale ?? 14_400_000,
     timeToEvict: o.timeToEvict ?? 86_400_000,
     compressPayload: o.compressPayload ?? true,

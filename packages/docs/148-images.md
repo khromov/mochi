@@ -9,6 +9,7 @@ description: 'On-the-fly image transforms on Bun.Image via named sizes, with enc
   import { Image } from 'mochi-framework/image';
   import Callout from './_components/Callout.svelte';
   import PersistenceTable from './_components/PersistenceTable.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
   import placeholderShot from './images/image-placeholder.jpg';
 </script>
 
@@ -249,8 +250,9 @@ Configure under `Mochi.serve({ image: { … } })`. Every option is optional.
 | `outputFormats`        | all four                | Allowed output formats                                                    |
 | `allowedHosts`         | any public host         | Exact host or `*.example.com`                                             |
 | `blockPrivateNetworks` | `true`                  | Reject private/loopback/link-local addresses                              |
-| `fetchTimeoutMs`       | `10_000`                | Upstream fetch timeout                                                    |
+| `fetchTimeoutMs`       | `10_000`                | Upstream fetch timeout, incl. the wait for a fetch slot                   |
 | `maxResponseBytes`     | `20 MB`                 | Hard source-size cap                                                      |
+| `maxConcurrentFetches` | `8`                     | Remote source fetches in flight per process; one host gets at most half   |
 | `maxPixels`            | `50_000_000`            | Decompression-bomb guard                                                  |
 | `timeToStale`          | `14_400_000`            | Cache time-to-stale (ms); variants follow it                              |
 | `timeToEvict`          | `86_400_000`            | Cache time-to-evict (ms); variants follow it                              |
@@ -262,5 +264,11 @@ Configure under `Mochi.serve({ image: { … } })`. Every option is optional.
 **Encryption is the security boundary.** The payload is encrypted with a key derived from your `MOCHI_KEY`, so only your server can mint URLs and the source URL stays hidden. If you pass a **user-controlled** `src` into `getImageUrl()`/`getImage()`, keep `blockPrivateNetworks` on (the default) and prefer an `allowedHosts` allowlist so a user cannot proxy requests to internal services. Upstream redirects are followed, but every hop is re-validated against those same checks. Cap the hop count with the [`image:maxRedirects`](/docs/extensions/#imagemaxredirects) filter. A full-size original that is SVG (or any non-raster type) is served as a download rather than inline.
 
 </Callout>
+
+#### Remote fetch limits
+
+<VersionNote since="0.10.0" message="maxConcurrentFetches and the per-host fetch limit are new in 0.10.0. Before 0.10.0, every remote source fetch started at once." />
+
+A remote source fetch can hold about twice `maxResponseBytes` in memory, so at most `maxConcurrentFetches` run at once per process. One host gets at most half of them, so a slow upstream cannot block the images of other hosts. A free slot goes to the oldest waiting fetch whose host is under its share. The wait for a slot counts against `fetchTimeoutMs`. When that time runs out, the image request fails with `503`. Locally imported images are read from disk and never wait.
 
 See the [Named sizes demo](/demos/image-pipeline/) and the [Image demo](/demos/image/).

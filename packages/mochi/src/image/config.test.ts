@@ -43,6 +43,13 @@ describe('resolveImageOptions size validation (startup fail-fast)', () => {
   test('throws on a format outside outputFormats', () => {
     expect(() => resolveImageOptions({ outputFormats: ['webp'], sizes: { bad: { ...BASE, format: 'png' } } })).toThrow(/not in outputFormats/);
   });
+
+  test('maxConcurrentFetches defaults to 8 and must be a positive integer', () => {
+    expect(resolveImageOptions(undefined).maxConcurrentFetches).toBe(8);
+    for (const bad of [0, -1, 1.5, NaN]) {
+      expect(() => resolveImageOptions({ maxConcurrentFetches: bad })).toThrow(/maxConcurrentFetches must be a positive integer/);
+    }
+  });
 });
 
 describe('config hash', () => {
