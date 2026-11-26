@@ -666,7 +666,15 @@ describe('preprocessHydratable', () => {
     // Framework entries come last in the object literal, so the spread cannot
     // override the transport id (last key wins).
     expect(transformed).toContain('{@const __mochi_props__ = ({...rest})}');
-    expect(transformed).toContain('{ ...__mochi_props__, islandId: __mochi_iid }');
+    expect(transformed).toContain('{ ...__mochi_props__, islandId: __mochi_iid, __mochi_ah: null }');
+  });
+
+  test('pure mochi:defer pins __mochi_ah after a user spread so the spread cannot opt into also-hydrate', () => {
+    const source = `${SCRIPT('import Srv from "./Srv.svelte";\nconst rest = { __mochi_ah: "eager" };')}<Srv mochi:defer {...rest} /><Srv mochi:defer:visible {...rest} />`;
+    const { transformed } = preprocessHydratable(source, '/test/File.svelte');
+
+    expect(transformed).toContain('{ ...__mochi_props__, islandId: __mochi_iid, __mochi_ah: null }');
+    expect(transformed).toContain('{...rest, islandId: __mochi_iid, __mochi_ah: null}');
   });
 
   test('literal islandId prop on a plain hydrate island is rejected too', () => {

@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
+import { logger } from '../utils/log';
 import { buildPublicUrl, getClientAddress, resolveExpectedOrigin } from './proxy';
 
 const SAME = 'http://localhost:3333';
@@ -148,9 +149,17 @@ describe('getClientAddress', () => {
     expect(getClientAddress(r, null, { addressHeader: 'x-forwarded-for', xffDepth: 3 })).toBe('client');
   });
 
-  test('xffDepth deeper than the chain returns the rightmost (closest-proxy) entry, never the spoofable leftmost', () => {
-    const r = req({ 'x-forwarded-for': 'a, b' });
-    expect(getClientAddress(r, 'fb', { addressHeader: 'x-forwarded-for', xffDepth: 5 })).toBe('b');
+  test('xffDepth deeper than the chain returns the rightmost entry and warns once', () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    try {
+      const r = req({ 'x-forwarded-for': 'a, b' });
+      expect(getClientAddress(r, 'fb', { addressHeader: 'x-forwarded-for', xffDepth: 5 })).toBe('b');
+      expect(getClientAddress(r, 'fb', { addressHeader: 'x-forwarded-for', xffDepth: 5 })).toBe('b');
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]![0])).toContain('proxy.xffDepth is 5');
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   test('empty x-forwarded-for falls back to the connecting address', () => {

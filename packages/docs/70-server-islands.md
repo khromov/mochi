@@ -29,7 +29,7 @@ Children of a deferred component become the fallback shown until the island reso
 
 Import a deferred component statically from a relative `.svelte` / `.md` / `.svx` path. See [Supported import forms](/docs/selective-hydration/#supported-import-forms).
 
-A server island is a normal Svelte component with full access to the request context through `getRequestContext()`. Cookies are forwarded automatically because the fetch is same-origin.
+A server island is a normal Svelte component with full access to the request context through `getRequestContext()`. Cookies are forwarded automatically because the fetch is same-origin. The fetch runs through your [`handle` middleware](/docs/middleware/#eventkind) with `event.kind === 'island'`, so `locals` and authentication apply as they do for the page.
 
 ```svelte
 <!-- file: src/UserAvatar.svelte -->
@@ -215,7 +215,7 @@ Combine `rootMargin` and `retries`: `mochi:defer:visible={{ rootMargin: '200px',
 
 ### Props
 
-Mochi serializes props with `devalue` — see [Passing props to islands](/docs/island-props/). Server islands also encrypt the payload and pass it as a query parameter. The island's component name is bound as authenticated data, so a token sealed for one island cannot be replayed against another.
+Mochi serializes props with `devalue` — see [Passing props to islands](/docs/island-props/). Server islands also encrypt the payload and pass it as a query parameter. The island's component name is bound as authenticated data, so a token sealed for one island cannot be replayed against another. The endpoint rejects a request without a valid token with a 403.
 
 <Callout type="warning">
 
@@ -229,9 +229,17 @@ Mochi serializes props with `devalue` — see [Passing props to islands](/docs/i
 
 </Callout>
 
+<Callout type="warning">
+
+**Props are inputs, not authorization.** A token does not expire, and the same props produce the same token on every render, so it stays valid until `MOCHI_KEY` changes. It travels in the query string, where proxy and CDN access logs record it. Anyone who obtains it can render the island with those props. Do not pass a decision such as `isAdmin`, or a `userId` that the island loads private data for without a check. Read the visitor from `getRequestContext()` inside the island and authorize there.
+
+</Callout>
+
 ### Encryption key
 
-Mochi encrypts props with a key derived from `process.env.MOCHI_KEY` (base64url-encoded, any length). Without `MOCHI_KEY`, Mochi generates a random key and logs a warning — fine for local dev, broken across restarts and multi-instance deploys.
+<VersionNote since="0.10.0" message="Before 0.10.0 Mochi started with a key that decoded to no bytes or only zero bytes." />
+
+Mochi encrypts props with a key derived from `process.env.MOCHI_KEY` (base64url-encoded, any length). Mochi refuses to start if the key decodes to no bytes or only zero bytes. Without `MOCHI_KEY`, Mochi generates a random key and logs a warning — fine for local dev, broken across restarts and multi-instance deploys.
 
 Generate a key and write it to `.env`:
 

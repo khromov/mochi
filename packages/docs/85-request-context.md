@@ -76,6 +76,8 @@ Read and write cookies on the server and the client through one API. In the brow
 </script>
 ```
 
+Delete a cookie with the same per-call options you set it with. See [`cookie:defaults`](/docs/extensions/#cookiedefaults).
+
 ### `locals`
 
 Per-request data set by middleware. Server-only.

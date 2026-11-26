@@ -5,13 +5,14 @@ import type { Server } from 'bun';
  *
  *  - `'page'`     — handled by `Mochi.page` (GET render or POST form action)
  *  - `'api'`      — handled by `Mochi.api`
+ *  - `'island'`   — a `mochi:defer` server island fetched from `/_mochi/island/:name`
  *  - `'asset'`    — framework static asset: `/_mochi/client/*.js|.css` bundle
  *                   or the `/_mochi/client/stats` dev endpoint
  *  - `'fallback'` — unmatched URL that will be passed to the user's `fetch`
  *  - `'error'`    — unmatched URL with no `fetch` configured; the framework
  *                   error responder will render a 404
  */
-export type MochiEventKind = 'page' | 'api' | 'asset' | 'fallback' | 'error';
+export type MochiEventKind = 'page' | 'api' | 'island' | 'asset' | 'fallback' | 'error';
 
 /** The event object passed to every middleware handle function. */
 export interface MochiEvent {
@@ -186,7 +187,7 @@ export async function applyResolveOptions(response: Response, opts: MochiResolve
     const filtered = new Headers();
     for (const [name, value] of result.headers.entries()) {
       if (opts.filterResponseHeaders(name, value)) {
-        filtered.set(name, value);
+        filtered.append(name, value);
       }
     }
     result = new Response(result.body, {

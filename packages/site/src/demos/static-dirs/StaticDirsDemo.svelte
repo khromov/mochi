@@ -9,14 +9,14 @@
 
   const config = await highlightCode(
     [
-      '// One Bun directory route serves the whole tree — no per-file registration.',
+      '// One wildcard route serves the whole tree — no per-file registration.',
       'await Mochi.serve({',
       "  staticDirs: { '/gallery': './images' },",
       '  routes,',
       '});',
       '',
       '// GET /gallery/mochi-1.jpg  ->  packages/site/images/mochi-1.jpg',
-      '//   served byte-for-byte, with Content-Type / ETag / Range / 304 from Bun.',
+      '//   served byte-for-byte, with Content-Type / ETag / Range / 304.',
     ].join('\n'),
     'typescript',
   );
@@ -24,7 +24,7 @@
 
 <DemoPage
   title="Static Directories"
-  description="staticDirs mounts a whole directory tree under a URL prefix as a single Bun directory route. Every file inside is served straight from disk — Content-Type, ETag, conditional 304s, Range requests and index.html all come from Bun, with no per-file route registration."
+  description="staticDirs mounts a whole directory tree under a URL prefix as a single wildcard route. Every file inside is served straight from disk — Content-Type, ETag, conditional 304s, Range requests and index.html included, with no per-file route registration."
   {sources}
 >
   <p>
@@ -45,9 +45,9 @@
 
   <h3>When to reach for it</h3>
   <p>
-    <code>staticDirs</code> is one route per mount, so it stays cheap for large or generated trees — a media library, a docs export, another tool's build directory. It serves
-    dotfiles and returns Bun's bare 404 on a miss. For ordinary site assets keep using <code>publicDir</code>, which registers one route per file, skips dotfiles, and falls through
-    to your error page.
+    <code>staticDirs</code> is one route per mount, so it stays cheap for large or generated trees — a media library, a docs export, another tool's build directory. Like
+    <code>publicDir</code> it skips dotfiles, but it returns a bare 404 on a miss. For ordinary site assets keep using <code>publicDir</code>, which registers one route per file
+    and falls through to your error page.
   </p>
 
   <ImageCredits />

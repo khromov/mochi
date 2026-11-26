@@ -585,13 +585,15 @@ export interface MochiServeOptions {
    */
   memoryPressure?: boolean;
   /**
-   * Extra directory trees mounted under a URL prefix, as `{ "/assets": "./media" }`. Each becomes one Bun directory
-   * route, so a large tree costs one route instead of one per file, and Range, ETag, `If-None-Match`, `index.html`
-   * and sendfile streaming come from Bun.
+   * Extra directory trees mounted under a URL prefix, as `{ "/assets": "./media" }`. Each becomes one wildcard route,
+   * so a large tree costs one route instead of one per file; it serves Range, ETag, `If-None-Match`, `index.html`
+   * and sendfile streaming.
    *
-   * Unlike `publicDir` these mounts do no dotfile filtering, do not run the `publicDir:scan` filter, and cannot be
-   * gated by `protection.protectFiles`. A miss under the prefix answers with Bun's own 404 rather than the configured
-   * `errorPage`; paths outside the prefix are unaffected, which is why the site root cannot be mounted.
+   * Like `publicDir`, dotfiles and dot-directories other than a top-level `.well-known/` are not served, checked per
+   * request on the decoded URL and again after symlinks resolve; a symlink cannot leave the directory. Unlike
+   * `publicDir` these mounts do not run the `publicDir:scan` filter and cannot be gated by `protection.protectFiles`.
+   * A miss under the prefix answers with a bare 404 rather than the configured `errorPage`; paths outside the prefix
+   * are unaffected, which is why the site root cannot be mounted.
    */
   staticDirs?: import('./runtime/staticDirs').MochiStaticDirs;
   /** Directory served as static assets (cwd-relative). Default: `./public`. */

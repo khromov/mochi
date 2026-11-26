@@ -23,8 +23,9 @@ function textResponse(status: number, message: string): Response {
  * from executing.
  */
 export function safeOriginalContentType(contentType: string): { contentType: string; attachment: boolean } {
-  if (INLINE_SAFE_IMAGE_TYPES.has(baseContentType(contentType))) {
-    return { contentType, attachment: false };
+  const base = baseContentType(contentType);
+  if (INLINE_SAFE_IMAGE_TYPES.has(base)) {
+    return { contentType: base, attachment: false };
   }
   return { contentType: 'application/octet-stream', attachment: true };
 }

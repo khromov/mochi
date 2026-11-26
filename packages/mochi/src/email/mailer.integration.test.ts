@@ -163,6 +163,63 @@ describe('Mochi.email()', () => {
     }
   });
 
+  test('SMTP transport with auth fails closed when the server does not offer STARTTLS', async () => {
+    const smtp: FakeSmtpServer = startFakeSmtpServer({ auth: true });
+    const message = { to: 'rcpt@example.com', subject: 'Ticket', text: 'confidential body' };
+    const auth = { user: 'smtp-user', pass: 'hunter2' };
+    try {
+      useTransport({ type: 'smtp', host: '127.0.0.1', port: smtp.port, auth });
+      await expect(Mochi.email(message)).rejects.toThrow(/STARTTLS/);
+      expect(smtp.logins).toEqual([]);
+      expect(smtp.messages).toHaveLength(0);
+
+      useTransport({ type: 'smtp', host: '127.0.0.1', port: smtp.port, auth, requireTLS: false });
+      await Mochi.email(message);
+      expect(smtp.logins).toEqual(['smtp-user:hunter2']);
+      expect(smtp.messages).toHaveLength(1);
+    } finally {
+      smtp.close();
+    }
+  });
+
+  test('SMTP transport refuses nodemailer path/href content sources (no local file read, no URL fetch)', async () => {
+    const secret = `top-secret-${crypto.randomUUID()}`;
+    const secretFile = path.join(outDir, 'secret.txt');
+    await Bun.write(secretFile, secret);
+    let fetched = 0;
+    const internal = Bun.serve({
+      port: 0,
+      fetch: () => {
+        fetched++;
+        return new Response(secret);
+      },
+    });
+    const smtp: FakeSmtpServer = startFakeSmtpServer();
+    useTransport({ type: 'smtp', host: '127.0.0.1', port: smtp.port, secure: false });
+    // Shapes outside MochiEmailMessage that reach the transport from a JS caller or a forwarded request body.
+    const injected = [
+      { attachments: [{ filename: 'a.txt', path: secretFile }] },
+      { attachments: [{ filename: 'b.txt', href: internal.url.href }] },
+      { attachments: [{ filename: 'c.txt', path: internal.url.href }] },
+      { html: { path: secretFile } },
+    ];
+    try {
+      for (const extra of injected) {
+        const message = { to: 'rcpt@example.com', subject: 'x', text: 'y', ...extra } as unknown as Parameters<typeof Mochi.email>[0];
+        await expect(Mochi.email(message)).rejects.toThrow(/access rejected/i);
+      }
+      expect(fetched).toBe(0);
+      expect(smtp.messages).toHaveLength(0);
+
+      await Mochi.email({ to: 'rcpt@example.com', subject: 'x', text: 'y', attachments: [{ filename: 'ok.txt', content: 'inline-ok' }] });
+      expect(smtp.messages).toHaveLength(1);
+      expect(smtp.messages[0]!.data).toContain(Buffer.from('inline-ok').toString('base64'));
+    } finally {
+      smtp.close();
+      internal.stop(true);
+    }
+  });
+
   test('email:message filter rewrites the message before the dev outbox captures it', async () => {
     useTransport({ type: 'dev' });
     clearDevOutbox();

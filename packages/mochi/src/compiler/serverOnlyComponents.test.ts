@@ -46,6 +46,10 @@ describe('registerServerOnlyComponentStubs (unit)', () => {
   mkdirSync(pkgDir, { recursive: true });
   writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({ name: 'some-lib', version: '1.0.0' }));
   writeFileSync(path.join(pkgDir, 'Thing.server.svelte'), `<h1>lib</h1>\n`);
+  const condPkgDir = path.join(tmpDir, 'node_modules', 'svelte-cond-lib');
+  mkdirSync(condPkgDir, { recursive: true });
+  writeFileSync(path.join(condPkgDir, 'package.json'), JSON.stringify({ name: 'svelte-cond-lib', version: '1.0.0', exports: { './*': { svelte: './*' } } }));
+  writeFileSync(path.join(condPkgDir, 'Gated.server.svelte'), `<h1>cond-gated-body-marker-7d1e4b</h1>\n`);
   afterAll(() => rmSync(tmpDir, { recursive: true, force: true }));
 
   test('a *.server.svelte import is replaced by a throwing stub, its body never compiled', async () => {
@@ -119,6 +123,36 @@ describe('registerServerOnlyComponentStubs (unit)', () => {
     const messages = result.logs.map((l) => String(l.message ?? l)).join('\n');
     expect(messages).toContain('Could not resolve');
     expect(messages).not.toContain('ENOENT');
+  });
+
+  test('a specifier only the bundler can resolve (svelte-condition export) is still stubbed, never compiled', async () => {
+    const entry = path.join(tmpDir, 'entry-cond.ts');
+    writeFileSync(entry, `import Gated from 'svelte-cond-lib/Gated.server.svelte';\nexport default Gated;\n`);
+    expect(() => Bun.resolveSync('svelte-cond-lib/Gated.server.svelte', tmpDir)).toThrow();
+
+    // Mirrors the client builds: the stubs register before a generic `.svelte` loader that would ship the source.
+    const result = await Bun.build({
+      entrypoints: [entry],
+      plugins: [
+        {
+          name: 'stub-then-generic',
+          setup(build) {
+            registerServerOnlyComponentStubs(build);
+            build.onLoad({ filter: /\.svelte$/ }, async (args) => ({ contents: `export default ${JSON.stringify(await Bun.file(args.path).text())};`, loader: 'js' }));
+          },
+        },
+      ],
+      target: 'browser',
+      conditions: ['svelte'],
+      define: { ...CLIENT_BUILD_DEFINE },
+      throw: false,
+    });
+
+    expect(result.success).toBe(true);
+    const out = await result.outputs[0]!.text();
+    expect(out).toContain('server-only component');
+    expect(out).toContain('node_modules/svelte-cond-lib/Gated.server.svelte');
+    expect(out).not.toContain('cond-gated-body-marker-7d1e4b');
   });
 });
 

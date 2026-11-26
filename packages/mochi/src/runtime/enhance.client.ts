@@ -5,6 +5,8 @@ import { logger } from '../utils/log';
 
 const noop = (): void => {};
 
+const SCRIPT_PROTOCOLS: ReadonlySet<string> = new Set(['javascript:', 'data:', 'vbscript:']);
+
 /** Decode an `ActionResult` JSON envelope from Mochi's enhanced POST flow, for rolling your own `onsubmit` instead of `{@attach enhance(...)}`. */
 export function deserialize<Success extends MochiFormShape = MochiFormShape, Failure extends MochiFormShape = MochiFormShape>(text: string): MochiEnhanceResult<Success, Failure> {
   const parsed = JSON.parse(text) as MochiEnhanceResult<Success, Failure> & { data?: unknown };
@@ -31,7 +33,7 @@ function clone<T extends HTMLElement>(element: T): T {
  * Default fallback:
  * - `success` → `form.reset()` (skip with `update({ reset: false })`)
  * - `failure` → no-op (provide a callback to update UI)
- * - `redirect` → `window.location.assign(result.location)`
+ * - `redirect` → `window.location.assign(result.location)`, refusing (and logging) a `javascript:`, `data:` or `vbscript:` location
  * - `error` → logged via `console.error('[mochi] enhance:', error)` before any callback runs, so a
  *   custom handler cannot silently swallow it
  *
@@ -58,6 +60,11 @@ export function enhance<Success extends MochiFormShape = MochiFormShape, Failure
         return;
       }
       if (result.type === 'redirect') {
+        // `location.assign()` runs a `javascript:` URL inside this page, which a native submit's `Location` header never would.
+        if (SCRIPT_PROTOCOLS.has(new URL(result.location, document.baseURI).protocol)) {
+          logger.error('enhance: refused to follow a redirect to a script URL:', result.location);
+          return;
+        }
         window.location.assign(result.location);
         return;
       }

@@ -114,7 +114,7 @@ import { onDevEmailRecorded } from './email/devOutbox';
 import { sendEmail } from './email/mailer';
 import type { MochiEmailMessage, MochiEmailResult } from './email/types';
 import { initMochiConfig } from './mochiConfig';
-import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './utils/log';
+import { escapeControlChars, logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './utils/log';
 import { SEEDED_IS_DEV, setDevelopment } from './utils/env';
 import { mochiEvents } from './events';
 import type { MochiActionResult, MochiErrorEvent, MochiErrorKind, MochiServerStartEvent, MochiServerStopEvent } from './events';
@@ -901,7 +901,9 @@ export class Mochi {
         const renderComponent = async (req: Request, ctx: MochiRequestContext, resolveOpts: MochiResolveOptions | undefined, statusOverride?: number): Promise<Response> => {
           const compileErrors = registry.getErrors();
           if (compileErrors.length > 0) {
-            throw new MochiHttpError(500, formatCompileErrors(compileErrors));
+            // A plain Error renders as a generic 500 in production, keeping file paths and diagnostics in the server log.
+            const detail = formatCompileErrors(compileErrors);
+            throw development ? new MochiHttpError(500, detail) : new Error(detail);
           }
           const liveServerProps = pageConfigMap ? pageConfigMap.get(pattern)?.serverProps : serverProps;
           const resolved = isServerPropsResolver(liveServerProps) ? ((await liveServerProps(req, ctx.params)) ?? {}) : (liveServerProps ?? {});
@@ -1058,7 +1060,8 @@ export class Mochi {
                   break;
                 }
               }
-              const actionHandler = livePostActions[actionName];
+              // The name comes off the query string, so inherited members like `toString` must not dispatch.
+              const actionHandler = Object.hasOwn(livePostActions, actionName) ? livePostActions[actionName] : undefined;
               if (!actionHandler) {
                 const unknownErr = new Error(`Unknown form action: ${actionName}`);
                 const response = enhanced
@@ -1231,7 +1234,7 @@ export class Mochi {
                 return applyResolveOptions(response, resolveOpts);
               } catch (err) {
                 if (err instanceof MochiHttpError) {
-                  logger.error(`${event.request.method} ${event.url.pathname} → ${err.status}: ${err.message}`);
+                  logger.error(`${event.request.method} ${event.url.pathname} → ${err.status}: ${escapeControlChars(err.message)}`);
                   emitError('api', requestId, req, event.url, err.status, err);
                   return apiError(err.status, err.message);
                 }
@@ -1500,7 +1503,7 @@ export class Mochi {
               return finish(new Response(file));
             } catch (err) {
               if (err instanceof MochiHttpError) {
-                logger.error(`${req.method} ${url.pathname} → ${err.status}: ${err.message}`);
+                logger.error(`${req.method} ${url.pathname} → ${err.status}: ${escapeControlChars(err.message)}`);
                 emitError('file', requestId, req, url, err.status, err);
                 return finish(new Response(err.message, { status: err.status, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
               }
@@ -1575,19 +1578,14 @@ export class Mochi {
         return new Response('Missing component name', { status: 400 });
       }
 
-      const signedProps = url.searchParams.get('props') ?? '';
-
-      // Decrypt props (empty means no props)
-      let decodedProps: Record<string, unknown>;
-      if (signedProps) {
-        const propsJson = decryptProps(signedProps, componentName);
-        if (propsJson === null) {
-          return new Response('Invalid props', { status: 403 });
-        }
-        decodedProps = devalueParse(propsJson) as Record<string, unknown>;
-      } else {
-        decodedProps = {};
+      // Every emitted island carries a sealed token (its `islandId` at least), so a request without one was never minted
+      // by a page render and must not reach the component.
+      const signedProps = url.searchParams.get('props');
+      const propsJson = signedProps ? decryptProps(signedProps, componentName) : null;
+      if (propsJson === null) {
+        return new Response('Invalid props', { status: 403 });
       }
+      const decodedProps = devalueParse(propsJson) as Record<string, unknown>;
 
       // `islandId` and `__mochi_ah` ride inside the signed envelope as transport only, and are split into a fresh object
       // so neither reaches the component as a prop. The hydrate mode comes from the decrypted payload: trusting a
@@ -1608,7 +1606,7 @@ export class Mochi {
         ctx.islandInline = { budget: applyFilter('serverIsland:inlineBudget', DEFAULT_INLINE_BUDGET, { componentName, request: req }) };
       }
 
-      return requestContext.run(ctx, async () => {
+      const renderIsland = async (): Promise<Response> => {
         // A miss here means the build's eager discovery (see build.ts) didn't
         // find this island; `compileAll` warns about any manifest miss, so the
         // request-path compile this endpoint is supposed to prevent is never
@@ -1696,7 +1694,11 @@ export class Mochi {
             'Cache-Control': 'private, no-store',
           },
         });
-      });
+      };
+
+      const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'island', isWarmup: ctx.isWarmup };
+      const innerResolve = async (_event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => applyResolveOptions(await renderIsland(), resolveOpts);
+      return requestContext.run(ctx, () => (middleware ? middleware({ event, resolve: innerResolve }) : innerResolve(event)));
     });
 
     // Gives `Mochi.email()` the live compile cache, so Svelte email templates render through the same registry as page routes.

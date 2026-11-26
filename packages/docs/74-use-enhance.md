@@ -55,6 +55,8 @@ Without a callback, `enhance` runs a minimal default per result type:
 | `redirect`    | `window.location.assign(result.location)`         |
 | `error`       | `console.error('[mochi] enhance:', result.error)` |
 
+The `redirect` default refuses a `javascript:`, `data:` or `vbscript:` location and logs it instead, so it matches a native submit, where the browser never follows such a `Location` header. A custom handler that navigates to `result.location` itself gets no such check.
+
 The `error` log is not part of the replaceable fallback: it fires on every submission, before any callback runs, so a custom handler that only branches on `success`/`failure` cannot turn a transport or server error into a silent no-op.
 
 <Callout type="warning">

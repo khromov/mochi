@@ -92,7 +92,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 
 <VersionNote since="0.10.0" message="staticDirs ships in the next Mochi release (0.10.0). This section describes the upcoming API." />
 
-Mount a directory tree under a URL prefix. Each entry becomes one Bun directory route, so a large tree costs one route rather than one per file, and `Content-Type`, `ETag`, `If-None-Match`, `Range`, `index.html` and sendfile streaming all come from Bun.
+Mount a directory tree under a URL prefix. Each entry becomes one wildcard route that streams files from disk, so a large tree costs one route rather than one per file. Responses carry `Content-Type`, `ETag` and `Last-Modified`, answer `Range` and `If-None-Match` / `If-Modified-Since`, and a directory URL serves its `index.html`.
 
 ```ts
 // file: src/index.ts
@@ -104,9 +104,11 @@ await Mochi.serve({
 
 This is for **large or generated** trees — a media library, a docs export, a build directory from another tool. For ordinary site assets keep using `publicDir`, which scans and registers each file individually.
 
+Like `publicDir`, a mount does not serve dotfiles or dot-directories (`.env`, `.git/…`), apart from a top-level `.well-known/`. The check runs on every request, so it covers files added after startup and every URL spelling of a name. A symlink is followed only while it stays inside the directory and does not resolve to a dot entry.
+
 <Callout type="warning">
 
-A mount is a native Bun directory route, matched **before** Mochi's request pipeline — so your middleware never sees it. `handle` hooks, `filterResponseHeaders`, `transformPage`, rate limiting, CSRF, trailing-slash normalization and the `request` event all skip `/prefix/*`, and a miss returns Bun's bare 404 rather than your `errorPage`. If you need any of that — auth, custom headers, logging — serve those files through `publicDir` (which can be gated with `protection.protectFiles`) or your own `Mochi.api` / `Mochi.file` route instead.
+A mount is a raw Bun route, matched **before** Mochi's request pipeline — so your middleware never sees it. `handle` hooks, `filterResponseHeaders`, `transformPage`, rate limiting, CSRF, trailing-slash normalization and the `request` event all skip `/prefix/*`, and a miss returns a bare 404 rather than your `errorPage`. If you need any of that — auth, custom headers, logging — serve those files through `publicDir` (which can be gated with `protection.protectFiles`) or your own `Mochi.api` / `Mochi.file` route instead.
 
 </Callout>
 
@@ -179,7 +181,7 @@ await Mochi.serve({
 });
 ```
 
-In production, the check refuses every form mutation until `proxy.origin` (or `proxy.hostHeader`) is set, so the deployment break is loud. In development the request is allowed through with a `[mochi]` warning. Routes declaring form `actions` without either option also warn once at boot — in both modes — so the misconfiguration is visible before deploy, not first discovered as a production 403.
+In production, the check refuses every form mutation until `proxy.origin` (or `proxy.hostHeader`) is set, so the deployment break is loud. In development the request is allowed through with a `[mochi]` warning. Routes declaring form `actions` without either option also warn once at boot — in both modes — so the misconfiguration is visible before deploy, not first discovered as a production 403. So does `proxy.hostHeader` without `proxy.protocolHeader`: the expected origin then keeps the server's own `http://` protocol, which never matches the browser's `https://` origin behind a TLS-terminating proxy.
 
 ### Proxy
 
@@ -218,9 +220,16 @@ await Mochi.serve({
 spoofed, client, proxy1, proxy2   # xffDepth: 3 → "client" (spoofed entry ignored)
 ```
 
+Set `xffDepth` to the number of proxies that append to the header, never higher. With one proxy and `xffDepth: 2`, a client can send its own `X-Forwarded-For`, and the entry the framework reads is the one the client wrote:
+
+```
+client            # no header sent → "client" (too short: falls back to the rightmost entry and warns)
+1.2.3.4, client   # client sent "1.2.3.4" → "1.2.3.4" (the client chose its own address)
+```
+
 <Callout type="warning">
 
-**Use `getClientAddress()` for a trusted client IP.** Reading `x-forwarded-for` directly could return a spoofable address. Pass the right `xffDepth`.
+**Use `getClientAddress()` for a trusted client IP.** Reading `x-forwarded-for` directly could return a spoofable address. Pass the right `xffDepth`: a value larger than the number of proxies that append lets a client choose its own address. Mochi warns once when a request has fewer entries than `xffDepth`.
 
 </Callout>
 

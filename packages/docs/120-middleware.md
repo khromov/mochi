@@ -7,6 +7,7 @@ description: 'Intercept and transform requests and responses with SvelteKit-styl
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Middleware (hooks)
@@ -51,12 +52,15 @@ export const attachUser: Handle = async ({ event, resolve }) => {
 
 ### `event.kind`
 
+<VersionNote since="0.10.0" message="Earlier versions skipped middleware for server-island fetches; the 'island' kind was added in 0.10.0." />
+
 Every event carries a `kind` that describes what the framework is about to do with the request:
 
 | Value        | When                                                                         |
 | ------------ | ---------------------------------------------------------------------------- |
 | `'page'`     | `Mochi.page` route (GET render or POST form action)                          |
 | `'api'`      | `Mochi.api` route                                                            |
+| `'island'`   | `mochi:defer` server-island fetch, sent with the page's cookies              |
 | `'asset'`    | Framework static asset (`.js` / `.css` client bundle or the dev stats route) |
 | `'fallback'` | Unmatched URL — passed to your `fetch` handler                               |
 | `'error'`    | Unmatched URL with no `fetch` configured — framework renders a 404           |
@@ -155,7 +159,7 @@ await Mochi.serve({
 });
 ```
 
-`asset`, `fallback`, and `error` events pass through unchanged. WebSocket upgrades and SSE streams never reach the middleware.
+`island`, `asset`, `fallback`, and `error` events pass through unchanged. WebSocket upgrades and SSE streams never reach the middleware.
 
 <SeeItInAction
 demos={[{ href: "/demos/request-id/", title: "Request ID", hook: "How request IDs work — every request gets a UUID v7 on getRequestContext().requestId that rides every lifecycle event for correlation." }]}
