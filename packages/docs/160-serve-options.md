@@ -80,6 +80,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `proxy` — `MochiProxyOptions` for trusted reverse-proxy headers. See below.
 - `securityHeaders` (since 0.10.0) — baseline security headers on every framework response: `nosniff` and `Referrer-Policy` by default, `X-Frame-Options` opt-in. `boolean | MochiSecurityHeadersOptions`. Default: on. See [Security](/docs/security/).
 - `csp` (since 0.10.0) — mint a per-request nonce and stamp it on every script Mochi emits, for a nonce-based `Content-Security-Policy`. Default: `false`. See [Content-Security-Policy nonce](#content-security-policy-nonce).
+- `redirect` (since 0.10.0) — where `redirect()` may send a visitor (`trustedOrigins`). Default: same-origin only. See [Redirects](#redirects).
 - `hooks` / `filters` — named lifecycle hooks and value filters. See [Extensions](/docs/extensions/).
 - `warmup` — warm the SSR pipeline at startup by invoking every static page route once. `boolean | { enabledInProd, enabledInDev }`. Default: `false`. See below.
 - `bun` — escape hatch for raw `Bun.serve()` options Mochi does not surface — `idleTimeout`, `maxRequestBodySize`, `reusePort`, `tls`. `fetch` / `websocket` / `routes` / `error` are framework-owned and throw if set. See below.
@@ -186,6 +187,30 @@ await Mochi.serve({
 In production, the check refuses every form mutation until `proxy.origin` (or `proxy.hostHeader`) is set, so the deployment break is loud. In development the request is allowed through with a `[mochi]` warning. Routes declaring form `actions` without either option also warn once at boot — in both modes — so the misconfiguration is visible before deploy, not first discovered as a production 403. So does `proxy.hostHeader` without `proxy.protocolHeader`: the expected origin then keeps the server's own `http://` protocol, which never matches the browser's `https://` origin behind a TLS-terminating proxy.
 
 The same two options govern the [WebSocket origin check](/docs/websocket-routes/#origin-check), which runs in both modes.
+
+### Redirects
+
+<VersionNote since="0.10.0" message="The redirect guard is new in mochi-framework 0.10.0. Older versions send any redirect() location as given." />
+
+`redirect` controls where `redirect()` may send a visitor from a form action or a `serverProps` resolver. A relative path always passes. An absolute `http:` or `https:` location must be same-origin or have its origin in `trustedOrigins`, so a `?next=` value passed to `redirect()` cannot send visitors to another site.
+
+- `trustedOrigins` — extra origins `redirect()` may target. Default: `[]`.
+
+```ts
+await Mochi.serve({
+  proxy: { origin: 'https://app.example.com' },
+  redirect: { trustedOrigins: ['https://accounts.google.com'] },
+  routes,
+});
+```
+
+This list is separate from `csrf.trustedOrigins`. That list says which origins may send your server a form POST; this one says where your server may send its visitors.
+
+Same-origin means the origin from `proxy.origin` or `proxy.hostHeader`. Without either, it means the request's own `Host` with any scheme, so a TLS-terminating proxy that keeps `Host` needs no config. A client can set any `Host`, so if a shared cache in front of the app ignores `Host` in its cache key, set `proxy.origin`, or one request can store a redirect to another host for every visitor.
+
+In production an off-origin location fails the request with `500`. In development it is sent, with a `[mochi]` warning. Pass `{ external: true }` to [`redirect()`](/docs/utility-helpers/#form-action-helpers) to allow one call without listing its origin.
+
+In every mode, `{ external: true }` included, a location fails with `500` if it has a control character, does not parse as a URL, or uses a script-capable scheme (`javascript:`, `data:`, `vbscript:`, `blob:`, `filesystem:`, `file:`, `view-source:`). The [`enhance()`](/docs/progressively-enhancing-forms-with-enhance/) client refuses the same schemes. Other schemes, such as `mailto:`, `tel:` and app deep links, pass without a list entry.
 
 ### Proxy
 

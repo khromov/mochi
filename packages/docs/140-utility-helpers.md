@@ -74,6 +74,16 @@ import { redirect } from 'mochi-framework';
 return redirect(303, '/dashboard');
 ```
 
+<VersionNote since="0.10.0" message="The redirect guard and the external option are new in mochi-framework 0.10.0." />
+
+An off-origin location fails the request unless its origin is in [`redirect.trustedOrigins`](/docs/serve-options/#redirects). To waive that for one call, pass `{ external: true }`:
+
+```ts
+return redirect(303, `${tenant.ssoUrl}?state=${state}`, { external: true });
+```
+
+Pass it only for a location your own code builds. A location taken from request data, such as a `?next=` parameter, is the open redirect the guard exists to stop. Script-capable schemes and control characters stay blocked with the flag set.
+
 ### Sealed tokens
 
 `encryptPayload(plaintext, { aad?, compress? })` and `decryptPayload(token, { aad? })` seal a string into an opaque, tamper-proof base64url token (AES-256-SIV keyed from `MOCHI_KEY`) and open it again. `decryptPayload` returns `null` on any tamper or `aad` mismatch. This is the same primitive Mochi uses for server-island props. Use it for short-lived signed values such as form challenges or magic links.

@@ -504,18 +504,26 @@ describe('redirect results', () => {
     return result;
   }
 
-  test.each(['/elsewhere', 'https://example.com/next', 'mailto:support@example.com'])('the default fallback navigates to %p', async (location) => {
-    const { assigned, logged } = await submitRedirect(location);
-    expect(assigned).toEqual([[location]]);
-    expect(logged).toEqual([]);
-  });
-
-  test.each(['javascript:alert(document.domain)', ' JavaScript:alert(1)', 'java\tscript:alert(1)', 'data:text/html,<script>alert(1)</script>', 'vbscript:msgbox(1)'])(
-    'the default fallback refuses to navigate to the script URL %p',
+  test.each(['/elsewhere', 'https://example.com/next', 'mailto:support@example.com', 'tel:+15551234567', 'myapp://open/thing'])(
+    'the default fallback navigates to %p',
     async (location) => {
       const { assigned, logged } = await submitRedirect(location);
-      expect(assigned).toEqual([]);
-      expect(logged).toHaveLength(1);
+      expect(assigned).toEqual([[location]]);
+      expect(logged).toEqual([]);
     },
   );
+
+  test.each([
+    'javascript:alert(document.domain)',
+    ' JavaScript:alert(1)',
+    'java\tscript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'vbscript:msgbox(1)',
+    'blob:https://evil.example/u',
+    'file:///etc/passwd',
+  ])('the default fallback refuses to navigate to the script URL %p', async (location) => {
+    const { assigned, logged } = await submitRedirect(location);
+    expect(assigned).toEqual([]);
+    expect(logged).toHaveLength(1);
+  });
 });

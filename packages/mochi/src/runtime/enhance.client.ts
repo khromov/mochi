@@ -2,10 +2,9 @@ import * as devalue from 'devalue';
 import type { Attachment } from 'svelte/attachments';
 import type { MochiEnhanceOptions, MochiEnhanceResult, MochiFormShape, MochiSubmitFunction } from '../types';
 import { logger } from '../utils/log';
+import { SCRIPT_PROTOCOLS } from './forms';
 
 const noop = (): void => {};
-
-const SCRIPT_PROTOCOLS: ReadonlySet<string> = new Set(['javascript:', 'data:', 'vbscript:']);
 
 /** Decode an `ActionResult` JSON envelope from Mochi's enhanced POST flow, for rolling your own `onsubmit` instead of `{@attach enhance(...)}`. */
 export function deserialize<Success extends MochiFormShape = MochiFormShape, Failure extends MochiFormShape = MochiFormShape>(text: string): MochiEnhanceResult<Success, Failure> {
@@ -33,7 +32,7 @@ function clone<T extends HTMLElement>(element: T): T {
  * Default fallback:
  * - `success` → `form.reset()` (skip with `update({ reset: false })`)
  * - `failure` → no-op (provide a callback to update UI)
- * - `redirect` → `window.location.assign(result.location)`, refusing (and logging) a `javascript:`, `data:` or `vbscript:` location
+ * - `redirect` → `window.location.assign(result.location)`, refusing (and logging) a script URL such as `javascript:` or `data:`, as the server's redirect guard does
  * - `error` → logged via `console.error('[mochi] enhance:', error)` before any callback runs, so a
  *   custom handler cannot silently swallow it
  *

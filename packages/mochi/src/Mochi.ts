@@ -34,6 +34,7 @@ import type {
   MochiFileResolver,
   MochiPageConfig,
   MochiPageHandlerConfig,
+  MochiRedirect,
   MochiFormActionResult,
   MochiFormActions,
   MochiRouteValue,
@@ -48,9 +49,9 @@ import type {
   MochiWsHandlers,
   MochiWsData,
 } from './types';
-import { isFormFail, isFormSuccess, isRedirect } from './runtime/forms';
+import { isFormFail, isFormSuccess, isRedirect, SCRIPT_PROTOCOLS } from './runtime/forms';
 import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } from './runtime/formsJson';
-import { csrfCheck, csrfBootWarning, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS, wsOriginCheck } from './runtime/csrf';
+import { csrfCheck, csrfBootWarning, matchesAllowedOrigin, trustedSelfOrigin, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS, wsOriginCheck } from './runtime/csrf';
 import { addSecurityHeaders, resolveSecurityHeaders } from './runtime/security';
 import { applyFilter, initExtensions, runHook } from './extensions';
 import { escapeHtmlAttr } from './utils/htmlEscape';
@@ -175,6 +176,35 @@ function parseShellTemplate(template: string): ShellPart[] {
 // Escaping `<` keeps a `</script>` inside the payload from closing the tag early.
 function jsonForHtml(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
+// A reserved TLD, so a location that resolves back to this base carried no origin of its own and is relative.
+const RELATIVE_BASE = 'https://relative.invalid';
+
+/**
+ * Open-redirect guard for `redirect()`. `unsafe` (a control character, a script-capable scheme, an unparseable URL) is
+ * never waived; `off-origin` is an http(s) location `isAllowedOrigin` rejects, which `{ external: true }` waives.
+ */
+function redirectVerdict(location: string, isAllowedOrigin: (target: URL) => boolean, external: boolean): 'ok' | 'unsafe' | 'off-origin' {
+  for (let i = 0; i < location.length; i++) {
+    const code = location.charCodeAt(i);
+    if (code <= 0x1f || code === 0x7f) {
+      return 'unsafe';
+    }
+  }
+  // Detected rather than inferred from a parse: against a fixed base `https:/evil.example` reads as a path, while a
+  // browser on an `http:` page reads it as another host.
+  const trimmed = location.replace(/^ +/, '');
+  const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed);
+  const resolved = hasScheme ? URL.parse(trimmed) : URL.parse(trimmed, RELATIVE_BASE);
+  if (!resolved || SCRIPT_PROTOCOLS.has(resolved.protocol)) {
+    return 'unsafe';
+  }
+  // `mailto:`, `tel:` or an app deep link can't render the lookalike page an open redirect is used for.
+  if (external || (!hasScheme && resolved.origin === RELATIVE_BASE) || (resolved.protocol !== 'http:' && resolved.protocol !== 'https:')) {
+    return 'ok';
+  }
+  return isAllowedOrigin(resolved) ? 'ok' : 'off-origin';
 }
 
 /**
@@ -507,6 +537,7 @@ export class Mochi {
     const trustedOrigins: ReadonlySet<string> = applyFilter('csrf:trustedOrigins', new Set(options.csrf?.trustedOrigins ?? []), { options });
     const cookieDefaults = applyFilter('cookie:defaults', {}, { options });
     const securityHeaderDefaults = resolveSecurityHeaders(options);
+    const redirectOrigins: ReadonlySet<string> = new Set(options.redirect?.trustedOrigins ?? []);
 
     const bootCsrfWarning = csrfBootWarning(options);
     if (bootCsrfWarning) {
@@ -810,6 +841,34 @@ export class Mochi {
             return (res && addSecurityHeaders(res, securityHeaderDefaults)) as R;
           };
 
+    // Shared by the form-action and `serverProps` paths; returns the message to fail with, or `null` to send the redirect.
+    const blockedRedirect = (result: MochiRedirect, req: Request, url: URL): string | null => {
+      const selfOrigin = trustedSelfOrigin(req, url, options.proxy);
+      const requestUrl = new URL(req.url);
+      // Without proxy config the request's own Host stands in, scheme ignored, so a TLS-terminating proxy that keeps
+      // Host needs no setup.
+      const isAllowedOrigin = (target: URL): boolean =>
+        matchesAllowedOrigin(target.origin, selfOrigin ?? requestUrl.origin, redirectOrigins) || (selfOrigin === null && target.host === requestUrl.host);
+      const verdict = redirectVerdict(result.location, isAllowedOrigin, result.external === true);
+      if (verdict === 'ok') {
+        return null;
+      }
+      const location = JSON.stringify(result.location);
+      if (verdict === 'unsafe') {
+        logger.warn(
+          `Blocking redirect() to ${location}: a control character, a script-capable scheme or an unparseable URL is never a valid target, even with { external: true }.`,
+        );
+        return 'Unsafe redirect location';
+      }
+      const detail = `redirect() to off-origin ${location} (allowed: ${selfOrigin ?? `the request host ${requestUrl.host}`}). Add the origin to redirect.trustedOrigins, or pass { external: true } to this call, if intentional.`;
+      if (development) {
+        logger.warn(`${detail} This would be blocked in production.`);
+        return null;
+      }
+      logger.warn(`Blocking ${detail}`);
+      return 'Unsafe redirect location';
+    };
+
     const internalRoutes: Record<string, MochiPageConfig | MochiApiConfig> = {
       // Gated behind the debug bar, like the page-cache admin routes, since the stats page discloses every bundle's input
       // file paths and sizes — project structure and dependency names.
@@ -931,6 +990,10 @@ export class Mochi {
           const liveServerProps = pageConfigMap ? pageConfigMap.get(pattern)?.serverProps : serverProps;
           const resolved = isServerPropsResolver(liveServerProps) ? ((await liveServerProps(req, ctx.params)) ?? {}) : (liveServerProps ?? {});
           if (isRedirect(resolved)) {
+            const blocked = blockedRedirect(resolved, req, ctx.url);
+            if (blocked) {
+              throw new MochiHttpError(500, blocked);
+            }
             const redirectResponse = new Response(null, {
               status: resolved.status,
               headers: { Location: resolved.location },
@@ -1160,6 +1223,13 @@ export class Mochi {
                 return applyResolveOptions(result, resolveOpts);
               }
               if (isRedirect(result)) {
+                const blocked = blockedRedirect(result, req, ctx.url);
+                if (blocked) {
+                  const response = enhanced ? jsonError(500, blocked) : await renderErrorResponse({ req, event, resolveOpts, status: 500, message: blocked, thrown: null });
+                  emitError('action', ctx.requestId, req, ctx.url, response.status, new Error(blocked), actionName);
+                  emitActionComplete(actionName, 'error', response.status);
+                  return response;
+                }
                 emitActionComplete(actionName, 'redirect', result.status);
                 if (enhanced) {
                   return jsonRedirect(result.status, result.location);
