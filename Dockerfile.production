@@ -23,18 +23,23 @@ ARG BUN_IMAGE=oven/bun:1.4.4-alpine
 FROM ${BUN_IMAGE} AS base
 WORKDIR /usr/src/app
 
-# install stage — copy only mochi + the target workspace, then write a
-# narrowed root package.json so bun install resolves workspace:* across
-# just the two we need. Lockfile is regenerated (the source lockfile
-# references site/demos/etc. that aren't all present here).
+# install stage — install exactly the versions pinned in the committed
+# bun.lock. The whole packages/ tree is copied so the frozen lockfile's
+# workspace topology matches; --filter limits the install to mochi + the
+# target workspace.
 FROM base AS install
 ARG WORKSPACE
-COPY packages/mochi /temp/prod/packages/mochi
-COPY packages/docs /temp/prod/packages/docs
-COPY packages/shared /temp/prod/packages/shared
-COPY packages/${WORKSPACE} /temp/prod/packages/${WORKSPACE}
-RUN printf '{\n  "name": "mochi-monorepo",\n  "private": true,\n  "type": "module",\n  "workspaces": ["packages/mochi", "packages/docs", "packages/shared", "packages/%s"]\n}\n' "${WORKSPACE}" > /temp/prod/package.json
-RUN cd /temp/prod && bun install --production --omit=dev
+COPY package.json bun.lock /temp/prod/
+COPY packages /temp/prod/packages
+RUN cd /temp/prod && bun install --frozen-lockfile --production --omit=dev \
+        --filter ./packages/mochi --filter ./packages/docs \
+        --filter ./packages/shared --filter ./packages/${WORKSPACE}
+# The lockfile links mochi-framework's optional rsvelte / svelte-shaker peers
+# to workspaces that never reach the later stages, so their trees are dead weight.
+RUN rm -rf /temp/prod/node_modules/.bun/@rsvelte* \
+           /temp/prod/node_modules/.bun/svelte-shaker* \
+           /temp/prod/node_modules/@rsvelte \
+           /temp/prod/node_modules/svelte-shaker*
 # Tailwind/lightningcss are demos-only. Mochi-framework declares them as
 # optional peers + transitive paths still pull them in; prune for everyone
 # except demos.
