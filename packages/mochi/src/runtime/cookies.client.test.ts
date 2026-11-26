@@ -143,7 +143,8 @@ function browserStore(initial: Stored[], { secureContext = true } = {}): { reads
         return;
       }
       const index = store.findIndex((c) => c.name === name && c.path === path);
-      const expired = typeof attrs.expires === 'string' && new Date(attrs.expires).getTime() <= Date.now();
+      const maxAge = typeof attrs['max-age'] === 'string' && /^-?\d+$/.test(attrs['max-age']) ? Number(attrs['max-age']) : undefined;
+      const expired = maxAge !== undefined ? maxAge <= 0 : typeof attrs.expires === 'string' && new Date(attrs.expires).getTime() <= Date.now();
       const cookie = { name, value: pair.slice(pair.indexOf('=') + 1), path };
       if (index >= 0) {
         store.splice(index, 1, ...(expired ? [] : [cookie]));
@@ -209,6 +210,33 @@ describe('client cookie jar development warnings', () => {
     expect(messages()).toEqual([expect.stringContaining('had no effect')]);
   });
 
+  test('set() warns when a positive maxAge overrides a past expires and the browser refuses the write', () => {
+    const { jar, messages } = setup([{ name: 'session', value: 'srv', path: '/', httpOnly: true }]);
+    jar.set('session', 'client', { maxAge: 3600, expires: -1 });
+    expect(messages()).toEqual([expect.stringContaining('had no effect')]);
+  });
+
+  test('set() warns when a non-integer or non-finite negative maxAge is ignored and the browser refuses the write', () => {
+    for (const maxAge of [-0.5, Number.NEGATIVE_INFINITY, -1e21]) {
+      const { jar, messages } = setup([{ name: 'session', value: 'srv', path: '/', httpOnly: true }]);
+      jar.set('session', 'client', { maxAge });
+      expect(messages()).toEqual([expect.stringContaining('had no effect')]);
+    }
+  });
+
+  test('set() ignores maxAge on cookie defaults during read-back because defaults do not write Max-Age', () => {
+    window.__mochi_cookie_defaults = { maxAge: 0 };
+    const refused = setup([{ name: 'session', value: 'srv', path: '/', httpOnly: true }]);
+    refused.jar.set('session', 'client');
+    expect(refused.messages()).toEqual([expect.stringContaining('had no effect')]);
+
+    window.__mochi_cookie_defaults = { maxAge: 3600 };
+    const expired = setup([{ name: 'cart', value: '3', path: '/' }]);
+    expired.jar.set('cart', '', { expires: -1 });
+    expect(expired.jar.has('cart')).toBe(false);
+    expect(expired.warn).not.toHaveBeenCalled();
+  });
+
   test('each message prints once, however often the call repeats', () => {
     const { jar, warn } = setup([{ name: 'session', value: 'srv', path: '/', httpOnly: true }]);
     for (const value of ['a', 'b', 'c']) {
@@ -264,10 +292,21 @@ describe('client cookie jar development warnings', () => {
     });
 
     test('for a set() that expires the cookie', () => {
-      const { jar, warn } = setup([{ name: 'cart', value: '3', path: '/' }]);
+      const { jar, warn } = setup([
+        { name: 'cart', value: '3', path: '/' },
+        { name: 'pref', value: 'dark', path: '/' },
+      ]);
       jar.set('cart', '', { expires: -1 });
       jar.set('gone', '', { expires: new Date(0) });
       jar.set('brief', '1', { expires: new Date(Math.floor(Date.now() / 1000) * 1000 + 999) });
+      jar.set('pref', '1', { maxAge: 0 });
+      jar.set('old', '1', { maxAge: -1 });
+      jar.set('override', '1', { maxAge: 0, expires: 7 });
+      jar.set('frac', '1', { maxAge: 0.5, expires: -1 });
+      jar.set('nan', '1', { maxAge: Number.NaN, expires: -1 });
+      jar.set('inf', '1', { maxAge: Number.POSITIVE_INFINITY, expires: -1 });
+      jar.set('sci', '1', { maxAge: 1e21, expires: -1 });
+      expect(jar.has('pref')).toBe(false);
       expect(warn).not.toHaveBeenCalled();
     });
 
