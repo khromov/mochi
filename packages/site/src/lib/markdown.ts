@@ -47,12 +47,34 @@ export function collectHeadings(tree: HastNode): TocEntry[] {
   return toc;
 }
 
+const SAFE_URL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
+
+function isSafeUrl(url: string): boolean {
+  try {
+    return SAFE_URL_PROTOCOLS.has(new URL(url, 'https://mochi.fast/').protocol);
+  } catch {
+    return false;
+  }
+}
+
+// Runtime markdown isn't hand-authored (the changelog is release-please output built from PR titles), so a `javascript:` link in it must not reach the page.
+function stripUnsafeUrls(node: HastNode): void {
+  for (const key of ['href', 'src']) {
+    const value = node.properties?.[key];
+    if (typeof value === 'string' && !isSafeUrl(value)) {
+      delete node.properties?.[key];
+    }
+  }
+  node.children?.forEach(stripUnsafeUrls);
+}
+
 /** Renders markdown that arrives at runtime (so it can't go through the `*.prerender.ts` `.md` → Svelte map) to plain HTML, using the same mdsvex + rehype pipeline as the docs. */
 export async function renderMarkdown(markdown: string): Promise<string> {
   let html = '';
   // Stringify inside the plugin: mdsvex keeps transforming the tree afterwards on its
   // way to Svelte source, so a reference captured here is stale by the time it resolves.
   const capture = () => (tree: HastNode) => {
+    stripUnsafeUrls(tree);
     html = toHtml(tree as Parameters<typeof toHtml>[0]);
   };
   await mdsvexCompile(markdown, {

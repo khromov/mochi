@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { compile as mdsvexCompile } from 'mdsvex';
 import rehypeSlug from 'rehype-slug';
-import { collectHeadings, type HastNode, type MdsvexRehypePlugin } from './markdown';
+import { collectHeadings, renderMarkdown, type HastNode, type MdsvexRehypePlugin } from './markdown';
 import type { TocEntry } from './toc';
 
 // Mirrors parseDoc in docs.ts: run the same mdsvex + rehype pipeline the docs build with,
@@ -53,5 +53,35 @@ describe('collectHeadings', () => {
     // The slug comes from rehype-slug run on the still-encoded tree, so it must be left
     // as-is to keep matching the id on the rendered heading — only the text is decoded.
     expect(h.slug).toBe('component-scoped-ltstylegt-blocks');
+  });
+});
+
+describe('renderMarkdown', () => {
+  test.each([
+    ['inline link', '[click](javascript:alert(document.domain))'],
+    ['mixed-case scheme', '[click](JaVaScRiPt:alert(1))'],
+    ['reference definition', '[x]: javascript:alert(1)\n\n[click][x]'],
+    ['data URL', '[click](data:text/html,<script>alert(1)</script>)'],
+    ['vbscript', '[click](vbscript:msgbox(1))'],
+    ['image source', '![click](javascript:alert(1))'],
+  ])('drops a script-capable URL (%s)', async (_, markdown) => {
+    const html = await renderMarkdown(markdown);
+    expect(html).toContain('click');
+    expect(html).not.toMatch(/(?:href|src)=/);
+  });
+
+  test('keeps http(s), mailto, relative and fragment links', async () => {
+    const html = await renderMarkdown('[a](https://example.com) [b](/docs/) [c](#x) [d](mailto:a@b.c) ![e](./e.png)');
+    expect(html).toContain('href="https://example.com"');
+    expect(html).toContain('href="/docs/"');
+    expect(html).toContain('href="#x"');
+    expect(html).toContain('href="mailto:a@b.c"');
+    expect(html).toContain('src="./e.png"');
+  });
+
+  test('escapes raw HTML instead of emitting it', async () => {
+    const html = await renderMarkdown('<script>alert(1)</script> <a href="javascript:alert(1)">x</a>');
+    expect(html).not.toContain('<script');
+    expect(html).not.toContain('<a ');
   });
 });
