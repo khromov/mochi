@@ -77,6 +77,19 @@ describe('/sse/time connection cap', () => {
     expect(replacement.closed).toBe(false);
     expect(replacement.sent.length).toBe(1);
   });
+
+  test('a stream whose first send throws does not hold a slot', () => {
+    const failing: MochiSseStream = {
+      send: () => {
+        throw new Error('send failed');
+      },
+      close: () => {},
+      onClose: () => {},
+    };
+    expect(() => sse.handler(failing, new Request('http://localhost/sse/time'))).toThrow('send failed');
+    const held = Array.from({ length: MAX_CLOCK_CONNECTIONS }, openSse);
+    expect(held.every((s) => !s.closed)).toBe(true);
+  });
 });
 
 describe('/ws/time connection cap', () => {

@@ -34,8 +34,9 @@ export const routes: Record<string, MochiRouteValue> = {
       stream.close();
       return;
     }
-    sseClocks++;
+    // Counted only after the first send, so a send that throws cannot hold a slot that onClose never frees.
     stream.send(new Date().toISOString());
+    sseClocks++;
     const interval = setInterval(() => {
       stream.send(new Date().toISOString());
     }, 1000);
