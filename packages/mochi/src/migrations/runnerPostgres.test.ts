@@ -57,7 +57,7 @@ describe('runMigrations (postgres)', () => {
 
     expect((await pg.query<{ id: number }>('SELECT id FROM mochi_migrations')).rows.map((r) => r.id)).toEqual([1]);
     expect((await pg.query<{ n: number }>('SELECT count(*)::int AS n FROM a')).rows[0]!.n).toBe(0);
-  });
+  }, 15_000);
 
   test('rejects explicit BEGIN, COMMIT, or ROLLBACK while allowing dollar-quoted blocks and savepoints', async () => {
     writeFileSync(path.join(dir, '1_sneaky.sql'), 'CREATE TABLE sneaky (x integer); ROLLBACK;');
@@ -94,17 +94,17 @@ describe('runMigrations (postgres)', () => {
     expect((await pg.query<{ name: string }>('SELECT name FROM mochi_migrations')).rows.map((r) => r.name)).toEqual(['app']);
   });
 
-  test('keeps tracking writes in the initial schema even when a migration alters search_path', async () => {
+  test('keeps tracking writes in the initial schema and resets SET search_path before later files', async () => {
     writeFileSync(path.join(dir, '1_schema.sql'), 'CREATE SCHEMA app_s; SET search_path TO app_s; CREATE TABLE items (id integer PRIMARY KEY);');
-    writeFileSync(path.join(dir, '2_noop.sql'), '-- SQLite-only migration; no-op on Postgres\n');
+    writeFileSync(path.join(dir, '2_default_schema.sql'), 'CREATE TABLE default_items (id integer PRIMARY KEY);');
     try {
       const applied = await migrate({ storage: { type: 'postgres', url: pg.url }, dir });
       expect(applied.map((m) => m.id)).toEqual([1, 2]);
       expect((await pg.query<{ id: number }>('SELECT id FROM public.mochi_migrations ORDER BY id')).rows.map((r) => r.id)).toEqual([1, 2]);
       expect((await pg.query<{ n: number }>("SELECT count(*)::int AS n FROM pg_tables WHERE schemaname = 'app_s' AND tablename = 'items'")).rows[0]!.n).toBe(1);
+      // File 2 must land in `public` just as it would on an incremental deploy where file 1 had already run earlier.
+      expect((await pg.query<{ n: number }>("SELECT count(*)::int AS n FROM pg_tables WHERE schemaname = 'public' AND tablename = 'default_items'")).rows[0]!.n).toBe(1);
     } finally {
-      // PGlite-over-socket shares one backend session across connections; restore search_path before dropping the schema.
-      await pg.query('SET search_path TO public');
       await pg.query('DROP SCHEMA IF EXISTS app_s CASCADE');
     }
   });

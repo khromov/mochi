@@ -15,6 +15,8 @@ export interface MigrationDialect {
   begin<T>(sql: SQL, fn: (tx: SQL) => Promise<T>): Promise<T>;
   /** Guard called after user SQL inside `begin` and before recording the migration, catching early `COMMIT`/`ROLLBACK`. */
   verifyTransaction?(tx: SQL): Promise<void>;
+  /** Reset per-file session state (e.g. Postgres `SET search_path`) without releasing the whole-run lock. */
+  afterFile?(sql: SQL): Promise<void>;
 }
 
 const postgresDialect: MigrationDialect = {
@@ -47,6 +49,11 @@ const postgresDialect: MigrationDialect = {
   },
   begin(sql, fn) {
     return sql.begin(fn) as ReturnType<typeof fn>;
+  },
+  async afterFile(sql) {
+    // Postgres `SET` inside a transaction persists on the session after COMMIT; RESET ALL restores session defaults
+    // (so file N+1 behaves the same on fresh and incremental runs) without releasing session advisory locks.
+    await sql.unsafe('RESET ALL');
   },
 };
 

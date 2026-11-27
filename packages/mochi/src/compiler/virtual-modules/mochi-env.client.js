@@ -116,6 +116,8 @@ export function getRequestCache() {
 export class MochiCache { constructor() { __serverOnly("MochiCache"); } }
 export class MemoryStorage { constructor() { __serverOnly("MemoryStorage"); } }
 export class FileStorage { constructor() { __serverOnly("FileStorage"); } }
+export class SqliteStorage { constructor() { __serverOnly("SqliteStorage"); } }
+export class PostgresStorage { constructor() { __serverOnly("PostgresStorage"); } }
 // Blob refs only exist in server-side cache reads; isBlobRef is safe
 // to answer false in the browser, readBlobRef is a usage error.
 export function isBlobRef() { return false; }

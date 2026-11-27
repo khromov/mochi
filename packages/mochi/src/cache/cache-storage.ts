@@ -632,3 +632,6 @@ export class FileStorage implements Storage {
     sweeperOwners.set(key, this.sweepOwner);
   }
 }
+
+export { SqliteStorage, PostgresStorage } from './sql-storage';
+export type { SqliteStorageOptions, PostgresStorageOptions } from './sql-storage';

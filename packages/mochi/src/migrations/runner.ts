@@ -126,6 +126,7 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<Applied
           logger.debug(`${label}migration already applied by a concurrent runner: ${m.filename}`);
           continue;
         }
+        await dialect.afterFile?.(sql);
         logger.info(`applied ${label}migration: ${m.filename}`);
         result.push({ id: m.id, filename: m.filename });
       }

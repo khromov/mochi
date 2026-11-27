@@ -65,10 +65,10 @@ export const mochiEvents = globalThis.__mochi_events__;
 export { MochiCache } from "__MOCHI_CACHE__";
 // Request-scoped cache. Server-only (it hangs off the request context).
 export { requestCache, requestMemo, getRequestCache } from "__MOCHI_REQUEST_CACHE__";
-// Cache storage adapters — server-only (FileStorage touches the fs).
+// Cache storage adapters — server-only (FileStorage/SqliteStorage/PostgresStorage touch fs/db).
 // isBlobRef/readBlobRef resolve the lazy blob references a
 // FileStorage-backed cache returns for binary fields.
-export { MemoryStorage, FileStorage, isBlobRef, readBlobRef } from "__MOCHI_CACHE_STORAGE__";
+export { MemoryStorage, FileStorage, SqliteStorage, PostgresStorage, isBlobRef, readBlobRef } from "__MOCHI_CACHE_STORAGE__";
 // Image helpers. Server-only (signing needs the secret key); re-exported
 // so .svelte files can `import { getImageUrl } from 'mochi-framework'`.
 export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, cachedImageDimensions, warmImagePlaceholder, invalidateImage } from "__MOCHI_IMAGE_API__";

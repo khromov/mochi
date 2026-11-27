@@ -132,7 +132,7 @@ A run that throws settles it like any other, so a failing upstream can't leave i
 | `serialize`      | none (`v => v`)   |
 | `deserialize`    | none (`v => v`)   |
 
-Two storage backends ship with the framework: `MemoryStorage` (the default) and `FileStorage`. Built-in SQLite and Postgres backends are planned; until then any other backend — SQLite, Postgres, Redis — needs a `storage` you write yourself, implementing `getItem` / `setItem` / `removeItem` / `clear`. Those methods may be synchronous or `async`. The cache awaits every call. When a backend needs a string or buffer, supply `serialize` / `deserialize` — for example `serialize: JSON.stringify, deserialize: JSON.parse`.
+Four storage backends ship with the framework: `MemoryStorage` (the default), `FileStorage`, `SqliteStorage`, and `PostgresStorage`. Any other backend — for example Redis — needs a `storage` you write yourself, implementing `getItem` / `setItem` / `removeItem` / `clear`. Those methods may be synchronous or `async`. The cache awaits every call. When a custom backend needs a string or buffer, supply `serialize` / `deserialize` — for example `serialize: JSON.stringify, deserialize: JSON.parse`.
 
 The default `MemoryStorage` accepts `{ maxAge, purgeInterval }` for age-based eviction. With no options it never evicts.
 
@@ -140,7 +140,7 @@ See [Persistence](/docs/persistence/) for how cache storage compares to the othe
 
 ### File-based storage
 
-`FileStorage` persists the cache to disk, so it survives restarts — the only built-in persistent backend (see [Persistence](/docs/persistence/)). It needs no `serialize` / `deserialize`:
+`FileStorage` persists each entry as a JSON file on disk, so it survives restarts without a database (see [Persistence](/docs/persistence/)). It needs no `serialize` / `deserialize`:
 
 ```ts
 import { MochiCache, FileStorage } from 'mochi-framework';
@@ -183,6 +183,48 @@ Only one background sweeper runs per cache directory per process. A new `FileSto
 
 If a `storage` call throws, the cache degrades instead of failing the request: a read error recomputes via `fn` (reported as a `miss`), a write error returns the freshly computed value uncached, and a `delete` error is re-thrown to the caller. Every case emits a `cache:error` event.
 
+### SQLite and Postgres storage
+
+<VersionNote since="0.10.0" message="SqliteStorage and PostgresStorage ship in 0.10.0." />
+
+`SqliteStorage` persists entries to a local SQLite file (in WAL mode), and `PostgresStorage` shares entries across multiple server instances in a `mochi_cache` schema. Both apply their schema migrations automatically on first use (`mochi_migrations_internal` — see [Database migrations](/docs/database-migrations/)) and round-trip JSON values plus inline `Uint8Array` / `Buffer` fields without `serialize` / `deserialize`:
+
+```ts
+// src/lib/cache.ts
+import { MochiCache, SqliteStorage, PostgresStorage } from 'mochi-framework';
+
+export const pokemonCache = new MochiCache({
+  minTimeToStale: 10_000,
+  maxTimeToLive: 300_000,
+  storage: new SqliteStorage({
+    path: './.db/cache.sqlite',
+    namespace: 'pokemon',
+    maxAge: 300_000, // must be >= maxTimeToLive
+  }),
+});
+
+export const sharedFeedCache = new MochiCache({
+  minTimeToStale: 10_000,
+  maxTimeToLive: 300_000,
+  crossProcessInflight: true,
+  storage: new PostgresStorage({
+    url: process.env.DATABASE_URL!,
+    namespace: 'feed',
+    maxAge: 300_000,
+  }),
+});
+```
+
+Multiple `MochiCache` instances can share one SQLite file or Postgres database by setting distinct `namespace` values — `clearItems()`, `count()`, `keys()`, `purgeOnInit`, and `sweep()` only affect that cache's namespace. Call `await storage.dispose()` to stop the background sweeper and close the database connection (for example in tests).
+
+| Option          | Default           |                                                                              |
+| --------------- | ----------------- | ---------------------------------------------------------------------------- |
+| `path` / `url`  | _(required)_      | SQLite file path (`SqliteStorage`) or `postgres://` URL (`PostgresStorage`). |
+| `namespace`     | `'default'`       | Keyspace isolating this cache from others sharing the same database.         |
+| `purgeOnInit`   | `false`           | Clear this namespace's existing entries before the first read or write.      |
+| `purgeInterval` | `60_000` (1min)   | Background sweep interval in ms. `<= 0` disables the sweeper.                |
+| `maxAge`        | `600_000` (10min) | Entries older than this are deleted by the sweep (`>= maxTimeToLive`).       |
+
 ### Subscribing to cache events
 
 `MochiCache` emits these events on `mochiEvents`:
@@ -192,7 +234,7 @@ If a `storage` call throws, the cache degrades instead of failing the request: a
 | `cache:read`              | `{ key, status }`                        | Every cache lookup.                                                |
 | `cache:revalidate`        | `{ key }`                                | A background refetch starts (stale read).                          |
 | `cache:delete`            | `{ key }`                                | A key was removed via `delete(key)`.                               |
-| `cache:sweep`             | `{ removed, durationMs }`                | A `FileStorage` background sweep deleted expired files.            |
+| `cache:sweep`             | `{ removed, durationMs }`                | A background storage sweep deleted expired entries.                |
 | `cache:pressure`          | `{ level, removed, caches, durationMs }` | The OS reported low memory and Mochi drained its in-memory caches. |
 | `cache:revalidate:failed` | `{ key, error }`                         | A background refetch threw; the stale value is still served.       |
 | `cache:error`             | `{ key, operation, error }`              | A `storage` `get` / `set` / `remove` call threw.                   |
@@ -206,8 +248,9 @@ in-memory cache before the kernel starts killing processes. `'critical'` (all pl
 `'warning'` (macOS only) drops just the aged-out entries, so a store without `maxAge` keeps everything. Each response
 emits one `cache:pressure` event and one `consoleLogger()` warning.
 
-Only `MemoryStorage` participates — it is the backend that holds bytes in RAM. `FileStorage` is disk-backed, so
-dropping it would not help. Turn the whole thing off with `Mochi.serve({ memoryPressure: false })`.
+Only `MemoryStorage` participates — it is the backend that holds bytes in RAM. `FileStorage`, `SqliteStorage`, and
+`PostgresStorage` live outside the JS heap, so dropping them would not help. Turn the whole thing off with
+`Mochi.serve({ memoryPressure: false })`.
 
 Reclamation runs in production only. In development (`development: true`) it is always disabled — the compile-heavy
 boot hair-triggers the OS signal (Linux reports only `'critical'`), so the reclaim would be a spurious no-op.

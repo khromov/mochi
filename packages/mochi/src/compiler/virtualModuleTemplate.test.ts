@@ -82,4 +82,15 @@ describe('client bundles resolve the virtual module, not utils/env.ts', () => {
     expect(out).toContain('var isServer = false');
     expect(out).toContain('var isBrowser = true');
   });
+
+  test('client bundles stub SqliteStorage and PostgresStorage without pulling server modules', async () => {
+    const out = await buildProbe(
+      'sql-cache-stubs',
+      false,
+      `import { SqliteStorage, PostgresStorage } from 'mochi-framework';\nglobalThis.__sqlCacheStubs = [SqliteStorage, PostgresStorage];\n`,
+    );
+    expect(out).toContain('SqliteStorage');
+    expect(out).toContain('PostgresStorage');
+    expect(out).not.toContain('mochi_migrations_internal');
+  });
 });
