@@ -2,15 +2,6 @@
 import { runTests } from 'mochi-framework';
 
 await runTests({
-  sequential: [
-    // Asserts a *single* write produces exactly one `reload` message, so it
-    // can't defend itself the way publicDirSpaces.test.ts does — re-touching to
-    // give the watcher another chance would emit extra reloads and break the
-    // assertion. Under full-suite parallel load chokidar/fsevents can drop an fs
-    // event outright, and a dropped event is unrecoverable: the test waits out
-    // its 30s timeout. Running it after the parallel batch removes the load.
-    'src/liveReloadFilter.test.ts',
-  ],
   // See testing.ts `windowsSkip`. Every suite's logic is OS-agnostic and fully
   // covered on Linux/macOS.
   windowsSkip: [
