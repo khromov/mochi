@@ -1,0 +1,38 @@
+# Temporary: macOS-only diagnostic for the liveReloadFilter.test.ts flake. Removed before the PR merges.
+name: lr-diag
+
+on:
+  push:
+    branches:
+      - fix/flaky-live-reload-filter
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install
+      - name: Stage diagnostic files
+        run: |
+          cp .github/lr-diag/primitive.ts.txt packages/mochi/lrdiag-primitive.ts
+          cp .github/lr-diag/zzLrDiagOrig.test.ts.txt packages/mochi/src/zzLrDiagOrig.test.ts
+          cp .github/lr-diag/zzLrDiagFixed.test.ts.txt packages/mochi/src/zzLrDiagFixed.test.ts
+          sysctl -n hw.ncpu; bun --version
+      - name: Primitive — write the instant chokidar is ready
+        working-directory: packages/mochi
+        run: ../../.github/lr-diag/run.sh prim-immediate 400 3 bun lrdiag-primitive.ts immediate
+      - name: Primitive — probe until live, then write
+        working-directory: packages/mochi
+        run: ../../.github/lr-diag/run.sh prim-probe 400 3 bun lrdiag-primitive.ts probe
+      - name: Original test (instrumented)
+        working-directory: packages/mochi
+        run: ../../.github/lr-diag/run.sh test-orig 150 3 bun test --timeout 30000 src/zzLrDiagOrig.test.ts
+      - name: Fixed test (instrumented)
+        working-directory: packages/mochi
+        run: |
+          ../../.github/lr-diag/run.sh test-fixed 150 3 bun test --timeout 30000 src/zzLrDiagFixed.test.ts
+          echo "## probe writes needed per run (fixed test)"; grep -E "^PROBE_TRY" /tmp/diag-test-fixed.log | sort | uniq -c || true
