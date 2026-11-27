@@ -28,6 +28,23 @@ describe('loadMigrationFiles', () => {
     expect(files[0]!.filename).toBe('1_init.sql');
   });
 
+  test('sorts filenames numerically rather than lexicographically (9 before 10, 99 before 100)', async () => {
+    const count = 105;
+    const names = Array.from({ length: count }, (_, i) => `${i + 1}_step_${i + 1}.sql`).sort();
+    expect(names.indexOf('10_step_10.sql')).toBeLessThan(names.indexOf('9_step_9.sql'));
+    expect(names.indexOf('100_step_100.sql')).toBeLessThan(names.indexOf('99_step_99.sql'));
+    for (const filename of names) {
+      writeFileSync(path.join(dir, filename), 'SELECT 1;');
+    }
+
+    const files = await loadMigrationFiles(dir);
+    expect(files.map((f) => f.id)).toEqual(Array.from({ length: count }, (_, i) => i + 1));
+    expect(files[8]!.filename).toBe('9_step_9.sql');
+    expect(files[9]!.filename).toBe('10_step_10.sql');
+    expect(files[98]!.filename).toBe('99_step_99.sql');
+    expect(files[99]!.filename).toBe('100_step_100.sql');
+  });
+
   test('ignores non-.sql files, dotfiles (including macOS AppleDouble), and returns [] for a missing dir', async () => {
     writeFileSync(path.join(dir, 'README.md'), 'docs');
     writeFileSync(path.join(dir, '.hidden.sql'), 'SELECT 1;');

@@ -65,10 +65,10 @@ describe('runMigrations (postgres)', () => {
     mkdirSync(appDir);
     writeFileSync(path.join(appDir, '1_app.sql'), 'CREATE TABLE app (x integer);');
 
-    await migrate({ storage: { type: 'postgres', url: pg.url }, dir, table: 'mochi_internal_migrations', label: 'mochi' });
+    await migrate({ storage: { type: 'postgres', url: pg.url }, dir, table: 'mochi_migrations_internal', label: 'mochi' });
     await migrate({ storage: { type: 'postgres', url: pg.url }, dir: appDir, label: 'app' });
 
-    expect((await pg.query<{ name: string }>('SELECT name FROM mochi_internal_migrations')).rows.map((r) => r.name)).toEqual(['fw']);
+    expect((await pg.query<{ name: string }>('SELECT name FROM mochi_migrations_internal')).rows.map((r) => r.name)).toEqual(['fw']);
     expect((await pg.query<{ name: string }>('SELECT name FROM mochi_migrations')).rows.map((r) => r.name)).toEqual(['app']);
   });
 

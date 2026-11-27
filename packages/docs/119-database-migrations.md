@@ -49,7 +49,7 @@ Migrations live in `migrations/sqlite/` or `migrations/postgres/` at the project
 - Mochi keeps track of the migrations that have already run and never reapplies them.
 - Startup migrations run once per boot — in development, restart the dev server after adding a new `.sql` file.
 
-Two tables appear in your database: `mochi_migrations` records your applied migrations, and `mochi_internal_migrations` records framework-internal ones, applied before yours. Leave both to Mochi.
+Two tables appear in your database: `mochi_migrations` records your applied migrations, and `mochi_migrations_internal` records framework-internal ones, applied before yours. Leave both to Mochi.
 
 <Callout type="warning">
 

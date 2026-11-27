@@ -20,7 +20,7 @@ function userMigrationsDir(dbType: 'sqlite' | 'postgres'): string {
 // Keyed per database so Mochi.serve() and Mochi.worker() on the same storage share one run per process.
 const runs = pinGlobal<Map<string, Promise<AppliedMigration[]>>>('__mochi_migrations_runs__', () => new Map());
 
-/** Apply framework-internal migrations (`mochi_internal_migrations`) and then the app's (`mochi_migrations`) against `storage`. */
+/** Apply framework-internal migrations (`mochi_migrations_internal`) and then the app's (`mochi_migrations`) against `storage`. */
 export async function runStartupMigrations(storage: MochiStorage): Promise<AppliedMigration[]> {
   const key = storageKey(storage);
   let run = runs.get(key);
@@ -45,7 +45,7 @@ async function migrateAll(storage: MochiStorage): Promise<AppliedMigration[]> {
   // Random jitter desynchronizes replicas booting simultaneously, so they don't contend for the lock at once.
   await new Promise((resolve) => setTimeout(resolve, Math.random() * 500));
   const dbType = storage.type;
-  const framework = await runMigrations({ storage, dir: path.join(FRAMEWORK_MIGRATIONS_DIR, dbType), table: 'mochi_internal_migrations', label: 'mochi' });
+  const framework = await runMigrations({ storage, dir: path.join(FRAMEWORK_MIGRATIONS_DIR, dbType), table: 'mochi_migrations_internal', label: 'mochi' });
   const app = await runMigrations({ storage, dir: userMigrationsDir(dbType), table: 'mochi_migrations', label: 'app' });
   return [...framework, ...app];
 }
