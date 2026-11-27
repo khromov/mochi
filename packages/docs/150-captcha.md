@@ -175,7 +175,7 @@ Every token failure returns the same message, so a probing bot cannot tell "too 
 
 <VersionNote since="0.10.0" message="Earlier versions create the nonces table directly when the store opens." />
 
-`store: 'sqlite'` sets up its table with [database migrations](/docs/database-migrations/) the first time it burns a nonce. They run against the `storePath` file only, never the app's `storage`, and are recorded in a `mochi_migrations_captcha` table in that file. A file from an earlier version keeps its spent nonces.
+`store: 'sqlite'` sets up its table with [database migrations](/docs/database-migrations/) when it opens the `storePath` file. They run against that file only, never the app's `storage`, and are recorded in a `mochi_migrations_captcha` table in it. A file from an earlier version keeps its spent nonces.
 
 ### The timing floor
 

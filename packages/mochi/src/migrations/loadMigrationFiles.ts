@@ -20,7 +20,7 @@ export interface MochiMigrationFile {
   id: number;
   name: string;
   filename: string;
-  /** Absolute path to the file. */
+  /** Absolute path to the file, or `dir` joined with `filename` for in-memory sources. */
   path: string;
   /** File contents with line endings normalized to LF. */
   contents: string;
@@ -100,8 +100,8 @@ export async function loadMigrationFiles(dir: string): Promise<MochiMigrationFil
 }
 
 /**
- * Parse and validate migrations already in memory, under the same rules as `loadMigrationFiles`. Framework stores
- * import their `.sql` files as text, which a bundler inlines, where a directory beside `import.meta.url` would not exist.
+ * Parse and validate migrations already in memory, under the same rules as `loadMigrationFiles`. Framework stores keep
+ * theirs in source as strings, which survive bundling where a directory beside `import.meta.url` would not.
  */
 export function parseMigrationSources(dir: string, sources: MochiMigrationSource[]): MochiMigrationFile[] {
   const migrations = sources.map((source) => parseMigrationFile(dir, source.filename, source.contents));
