@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import { tool } from 'tmcp/utils';
-import { mcpServer, respondMcp } from './mcp';
+import { MAX_MCP_BODY_BYTES, mcpServer, respondMcp } from './mcp';
 import { CHANGELOG_URL } from './changelog';
 
 const CHANGELOG_BODY = '# Changelog\n\n## [0.8.0] mochi-framework\n\n### Features\n\n- something\n';
@@ -236,5 +236,45 @@ describe('mcp resource bounds', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  test('the not-found log line stays short however many slugs are missing', async () => {
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await getSection(Array.from({ length: 50 }, (_, i) => ({ type: 'doc', slug: `${i}`.padEnd(100, '\u009b') })));
+      const logged = warn.mock.calls.flat().join(' ');
+      expect(logged).toContain('and 45 more');
+      expect(logged.length).toBeLessThan(5000);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('a section requested more than once is returned once', async () => {
+    const text = toolText(await getSection(Array.from({ length: 50 }, () => ({ type: 'doc', slug: 'intro' }))));
+    expect(text.split('==== doc:intro ====').length).toBe(2);
+  });
+
+  test('a POST body over the size cap gets 413 without reaching the transport', async () => {
+    const huge = JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'get_section', arguments: { sections: [{ type: 'doc', slug: '"'.repeat(MAX_MCP_BODY_BYTES) }] } },
+    });
+    const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
+    const declared = await respondMcp(new Request('http://localhost/mcp', { method: 'POST', headers, body: huge }));
+    expect(declared.status).toBe(413);
+    const bytes = new TextEncoder().encode(huge);
+    const chunked = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let i = 0; i < bytes.length; i += 4096) {
+          controller.enqueue(bytes.subarray(i, i + 4096));
+        }
+        controller.close();
+      },
+    });
+    const streamed = await respondMcp(new Request('http://localhost/mcp', { method: 'POST', headers, body: chunked }));
+    expect(streamed.status).toBe(413);
   });
 });
