@@ -5,9 +5,42 @@ import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from './Mochi';
 import { mochiEvents } from './events';
-import type { MochiRecompileCompleteEvent } from './events';
+import type { MochiFileChangeEvent, MochiRecompileCompleteEvent } from './events';
 
 const FIXTURE_DIR = path.join(import.meta.dir, '__fixtures__', 'live-reload-filter');
+
+const recompiled = (file: string) =>
+  new Promise<MochiRecompileCompleteEvent>((resolve) => {
+    const handler = (e: MochiRecompileCompleteEvent) => {
+      if (e.trigger === 'file' && path.resolve(e.path) === file) {
+        mochiEvents.off('recompile:complete', handler);
+        resolve(e);
+      }
+    };
+    mochiEvents.on('recompile:complete', handler);
+  });
+
+// On macOS, Bun rebuilds its single FSEvents stream asynchronously after every new fs.watch(), so an edit made the
+// moment serve() resolves can be dropped; touch a file no route uses until the watcher reports it.
+async function waitForLiveWatcher(probe: string): Promise<void> {
+  const rebuilt = recompiled(probe);
+  let seen = false;
+  const reported = new Promise<void>((resolve) => {
+    const handler = (e: MochiFileChangeEvent) => {
+      if (e.path === probe) {
+        mochiEvents.off('file:change', handler);
+        seen = true;
+        resolve();
+      }
+    };
+    mochiEvents.on('file:change', handler);
+  });
+  for (let i = 1; !seen; i++) {
+    writeFileSync(probe, `<p>probe ${i}</p>\n`);
+    await Promise.race([reported, Bun.sleep(500)]);
+  }
+  await rebuilt;
+}
 
 describe('live-reload only signals tabs whose entry was affected', () => {
   let server: Server<undefined>;
@@ -15,6 +48,7 @@ describe('live-reload only signals tabs whose entry was affected', () => {
   let workDir: string;
   let pageA: string;
   let pageB: string;
+  let probe: string;
   let port: number;
 
   beforeAll(async () => {
@@ -24,6 +58,8 @@ describe('live-reload only signals tabs whose entry was affected', () => {
     pageB = path.join(workDir, 'PageB.svelte');
     copyFileSync(path.join(FIXTURE_DIR, 'PageA.svelte'), pageA);
     copyFileSync(path.join(FIXTURE_DIR, 'PageB.svelte'), pageB);
+    probe = path.join(workDir, 'Probe.svelte');
+    writeFileSync(probe, '<p>probe</p>\n');
 
     server = await Mochi.serve({
       port: 0,
@@ -40,6 +76,7 @@ describe('live-reload only signals tabs whose entry was affected', () => {
       throw new Error('server.port not set');
     }
     port = server.port;
+    await waitForLiveWatcher(probe);
   });
 
   afterAll(() => {
@@ -71,15 +108,7 @@ describe('live-reload only signals tabs whose entry was affected', () => {
 
     // Capture the recompile:complete payload so the test can both wait for
     // the rebuild and assert on the affected `pages` set on the public event.
-    const completed = new Promise<MochiRecompileCompleteEvent>((resolve) => {
-      const handler = (e: MochiRecompileCompleteEvent) => {
-        if (e.trigger === 'file') {
-          mochiEvents.off('recompile:complete', handler);
-          resolve(e);
-        }
-      };
-      mochiEvents.on('recompile:complete', handler);
-    });
+    const completed = recompiled(pageA);
 
     writeFileSync(pageA, '<h1 class="lr-a">A v2</h1>\n');
 
@@ -121,15 +150,7 @@ describe('live-reload only signals tabs whose entry was affected', () => {
 
     // Go offline, then change the page the tab was on.
     first.ws.close();
-    const completed = new Promise<MochiRecompileCompleteEvent>((resolve) => {
-      const handler = (e: MochiRecompileCompleteEvent) => {
-        if (e.trigger === 'file') {
-          mochiEvents.off('recompile:complete', handler);
-          resolve(e);
-        }
-      };
-      mochiEvents.on('recompile:complete', handler);
-    });
+    const completed = recompiled(pageA);
     writeFileSync(pageA, '<h1 class="lr-a">A v3</h1>\n');
     await completed;
     await new Promise((r) => setTimeout(r, 200));
