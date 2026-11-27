@@ -38,7 +38,7 @@ await Mochi.serve({
 
 ### `stream.send(data, options?)`
 
-Push one SSE frame to the client. `data` is a string. `options` accepts `event` (named event type) and `id` (last-event-id).
+Push one SSE frame to the client. `data` is a string; any line break in it (`\n`, `\r\n` or `\r`) arrives at the client as `\n`. `options` accepts `event` (named event type) and `id` (last-event-id). Neither may contain a line break — `send()` throws a `TypeError` if one does.
 
 ```ts
 stream.send(JSON.stringify({ ok: true }), { event: 'tick', id: '42' });

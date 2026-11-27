@@ -30,6 +30,10 @@ export interface MochiRequestContext {
    * `renderComponent` clears it at the start of every render so sequential same-ctx renders (an error page after a failed render) don't clobber each other.
    */
   islandProps: Map<string, IslandPropsEntry>;
+  /** Internal per-render namespace for `islandProps` ref ids, set by `renderComponent` from a server island's `idPrefix` so a fragment's ids never repeat the page's. */
+  islandPropsPrefix?: string;
+  /** Internal per-render record of which styled components initialised (see `markRenderedCss`), so only their stylesheets get linked. Created by `renderComponent`. */
+  renderedCss?: Set<string>;
   /**
    * Internal backing store for the request-scoped cache, created on first use so requests that never touch it allocate nothing.
    * Entries die with the request, so an invalidation between requests is seen immediately. Application code goes through `getRequestCache()`.
@@ -39,6 +43,8 @@ export interface MochiRequestContext {
   debugBarData?: DebugBarData;
   /** Result of the form action that just ran, available during POST re-renders of an entry route with `actions`. */
   form?: MochiFormResult;
+  /** Per-request CSP nonce, set only under `Mochi.serve({ csp: true })`. Read it with `getCspNonce()`. */
+  cspNonce?: string;
   /**
    * The client's IP address, defaulting to Bun's connecting `remoteAddress`. Behind a reverse proxy, configure
    * `Mochi.serve({ proxy: { addressHeader: '...' } })`; for `'x-forwarded-for'`, `proxy.xffDepth` sets how many trusted

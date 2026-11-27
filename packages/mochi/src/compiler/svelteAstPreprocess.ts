@@ -6,6 +6,7 @@ import { walk } from 'zimmerframe';
 import { ALSO_HYDRATE_ENVELOPE_KEY, type AlsoHydrateMode } from '../types';
 import { FRAMEWORK_COMPONENTS_SPECIFIER, resolveFrameworkComponent } from './frameworkComponents';
 import { encodeSourcePath } from './manifestPaths';
+import { instrumentCssTracking } from './cssTracking';
 
 /** Svelte's AST nodes all have start/end, but estree types don't declare them. */
 interface Positioned {
@@ -80,6 +81,8 @@ export interface PreprocessResult {
   hydratables: HydratableComponent[];
   serverIslands: ServerIslandComponent[];
   errors: PreprocessIslandError[];
+  /** Whether the output got the `markRenderedCss` prologue (see `instrumentCssTracking`); `isCssTracked` decides after compile. */
+  cssMarked: boolean;
 }
 
 /**
@@ -95,13 +98,21 @@ export interface PreprocessResult {
  * - `mochi:clientOnly` → `<mochi-hydratable-island client-only>`, which skips the
  *   server entirely, turns any children into SSR placeholder markup, and mounts on
  *   the client
+ *
+ * Independently of directives, a component whose scoped CSS can only match its own markup gets a `markRenderedCss`
+ * prologue so the page links its stylesheet only when it rendered (see `cssTracking.ts`).
  */
 export function preprocessHydratable(source: string, filePath: string): PreprocessResult {
-  if (!source.includes('mochi:hydrate') && !source.includes('mochi:defer') && !source.includes('mochi:clientOnly')) {
-    return { transformed: source, hydratables: [], serverIslands: [], errors: [] };
+  const hasDirectives = source.includes('mochi:hydrate') || source.includes('mochi:defer') || source.includes('mochi:clientOnly');
+  if (!hasDirectives && !source.includes('<style')) {
+    return { transformed: source, hydratables: [], serverIslands: [], errors: [], cssMarked: false };
   }
   const ast = parse(source, { modern: true });
   const s = new MagicString(source);
+  if (!hasDirectives) {
+    const cssMarked = instrumentCssTracking(ast, s, filePath);
+    return { transformed: cssMarked ? s.toString() : source, hydratables: [], serverIslands: [], errors: [], cssMarked };
+  }
 
   // Svelte allows one `$props.id()` per component (`props_duplicate`), so an author's existing declaration has to be
   // reused rather than shadowed. Only top-level instance-script declarations are scanned; a `$props.id()` nested in a
@@ -267,6 +278,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         // The authored also-hydrate mode rides inside the encrypted envelope (`__mochi_ah`, transport-only, stripped before
         // render) and the endpoint reads it from the decrypted payload: were it trusted from a `?hydrate=` query param, an
         // attacker could append `hydrate=eager` to any sealed token and have the endpoint echo the props back in plaintext.
+        // Pure `mochi:defer` pins it to `null` rather than omitting it, so a user `{...spread}` can't supply it either.
         const alsoHydrateMode: AlsoHydrateMode | null = directives.hydrate ? (directives.hydrate.name === 'mochi:hydrate:visible' ? 'visible' : 'eager') : null;
         const isServerVisible = directives.server.name === 'mochi:defer:visible';
 
@@ -292,8 +304,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
         if (isServerVisible) {
           // `mochi:defer:visible` defers the fetch until the wrapper enters the viewport (`rootMargin` rides inside the
           // existing `server-options` JSON) — laziness is the point, so it is exempt from nested-island inlining.
-          const autoEntries = directives.hydrate ? [`islandId: __mochi_iid`, `${ALSO_HYDRATE_ENVELOPE_KEY}: ${JSON.stringify(alsoHydrateMode)}`] : [`islandId: __mochi_iid`];
-          const propsExpr = buildPropsFromAst(source, comp.attributes, autoEntries);
+          const propsExpr = buildPropsFromAst(source, comp.attributes, [`islandId: __mochi_iid`, `${ALSO_HYDRATE_ENVELOPE_KEY}: ${JSON.stringify(alsoHydrateMode)}`]);
           // Server islands always emit signed-props, since islandId is always injected and every prop must be encrypted
           // against reads and tampering via query parameters. The component name is bound as AAD, so a token sealed for
           // one component can't be replayed against another.
@@ -310,7 +321,7 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
           // `{@const}` bindings keep user props/options expressions evaluated exactly once whichever branch is taken.
           const userPropsExpr = buildPropsFromAst(source, comp.attributes);
           const optsRef = serverOptionsExpr ? '__mochi_sopts__' : null;
-          const envelope = `{ ...__mochi_props__, islandId: __mochi_iid${directives.hydrate ? `, ${ALSO_HYDRATE_ENVELOPE_KEY}: ${JSON.stringify(alsoHydrateMode)}` : ''} }`;
+          const envelope = `{ ...__mochi_props__, islandId: __mochi_iid, ${ALSO_HYDRATE_ENVELOPE_KEY}: ${JSON.stringify(alsoHydrateMode)} }`;
           // Server islands always emit signed-props, since islandId is always injected and every prop must be encrypted
           // against reads and tampering via query parameters. The component name is bound as AAD, so a token sealed for
           // one component can't be replayed against another. Spreading `__mochi_props__` first keeps the envelope's key
@@ -467,8 +478,9 @@ export function preprocessHydratable(source: string, filePath: string): Preproce
     }
     s.appendRight(contentStart, imports);
   }
+  const cssMarked = instrumentCssTracking(ast, s, filePath);
 
-  return { transformed: s.toString(), hydratables, serverIslands, errors };
+  return { transformed: s.toString(), hydratables, serverIslands, errors, cssMarked };
 }
 
 /**

@@ -63,6 +63,22 @@ export function getImageAttrs(src: string, size?: string): ImageAttrs {
   return { url, width: resolved?.width, height: resolved?.height };
 }
 
+/**
+ * `<Image>`'s `width`/`height` source: the real dimensions of the already-encoded variant, which under `fit: 'inside'`
+ * can differ from the size's declared box. `null` until the endpoint has served that variant once; never fetches.
+ * Internal: reachable from `.svelte` files through `mochi-env`, not exported from `index.ts`.
+ */
+export const cachedImageDimensions: (src: string, size: string) => Promise<{ width: number; height: number } | null> = requestMemo(readCachedDimensions, {
+  namespace: 'mochi:image:dimensions',
+  quiet: true,
+});
+
+async function readCachedDimensions(src: string, size: string): Promise<{ width: number; height: number } | null> {
+  const { options, cache } = getImageRuntime();
+  const resolved = options.enabled ? resolveNamed(size, options) : undefined;
+  return resolved ? cache.variantDimensions(src, variantId(src, resolved.configHash)) : null;
+}
+
 let warnedDisabled = false;
 
 // The `image:url` filter rewrites the minted URL (e.g. prepending a CDN origin) before it's recorded and returned, so

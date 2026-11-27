@@ -3,7 +3,7 @@
 </script>
 
 <div class="snippet">
-  <!-- eslint-disable-next-line svelte/no-at-html-tags -- trusted server-side Shiki output -->
+  <!-- eslint-disable-next-line svelte/no-at-html-tags -- trusted server-side highlighter output -->
   {@html html}
 </div>
 

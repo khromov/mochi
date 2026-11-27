@@ -1,12 +1,11 @@
-import js from '@eslint/js';
 import ts from 'typescript-eslint';
 import svelte from 'eslint-plugin-svelte';
 import prettier from 'eslint-config-prettier';
 
+// Hybrid lint setup: oxlint owns all .ts/.js linting (see .oxlintrc.json); ESLint is kept
+// solely for Svelte-template rules (eslint-plugin-svelte), which oxlint has no equivalent for.
 export default ts.config(
   { ignores: ['**/.mochi/', '**/.mochi-*/', '.claude/', 'node_modules/', 'out/', '**/CHANGELOG.md', '**/virtual-modules/'] },
-  js.configs.recommended,
-  ...ts.configs.recommended,
   ...svelte.configs['flat/recommended'],
   {
     files: ['**/*.svelte'],
@@ -22,24 +21,13 @@ export default ts.config(
       parserOptions: { parser: ts.parser },
     },
   },
-  // no-undef is redundant with TypeScript — TS already catches undefined variables
-  {
-    files: ['**/*.ts', '**/*.svelte'],
-    rules: { 'no-undef': 'off' },
-  },
-  // .cjs files are CommonJS — expose module/require/exports globals
-  {
-    files: ['**/*.cjs'],
-    languageOptions: { sourceType: 'commonjs' },
-  },
   prettier,
   ...svelte.configs['flat/prettier'],
   // Keep project rules last so they override prettier configs (which disable `curly`)
   {
+    files: ['**/*.svelte', '**/*.svelte.ts', '**/*.svelte.js'],
     rules: {
       curly: ['error', 'all'],
-      // Allow underscore-prefixed unused vars (common destructuring pattern)
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
 );

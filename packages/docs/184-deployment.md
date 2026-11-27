@@ -12,7 +12,7 @@ import Callout from './_components/Callout.svelte';
 
 Mochi is a **serverful** application, so it does not run on every serverless host. That is what gives Mochi its features: built-in SQLite, in-memory cache, WebSockets, and Server-Sent Events. You can build complex, data-driven realtime apps with no extra dependency and no external cloud services.
 
-You can host Bun and Mochi at hundreds of hosts. Some popular options are below. For how a build behaves once it is deployed — relocatable output, a persistent image cache — see [Production builds](/docs/production-builds/).
+You can host Bun and Mochi at hundreds of hosts. Some popular options are below. For how a build behaves once it is deployed — relocatable output, sub-path hosting, a persistent image cache — see [Production builds](/docs/production-builds/).
 
 <Callout type="info">
 

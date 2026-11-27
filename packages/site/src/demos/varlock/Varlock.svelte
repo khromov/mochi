@@ -2,14 +2,11 @@
   import DemoPage from '../../components/DemoPage.svelte';
   import CodeSnippet from '../../components/CodeSnippet.svelte';
   import Badge from '../../components/Badge.svelte';
-  import { loadSources } from '../../components/utils.ts';
+  import { sources } from './sources.prerender.ts';
   import { highlightCode } from '../../lib/highlight.server';
-  import { files } from './files.ts';
   import type { VarlockConfig } from './env.ts';
 
   let { config }: { config: VarlockConfig } = $props();
-
-  const sources = await loadSources(files);
 
   const codeInstall = await highlightCode('bun add varlock', 'bash');
   const codeUsage = await highlightCode(

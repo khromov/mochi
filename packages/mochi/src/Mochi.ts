@@ -5,6 +5,8 @@ import path from 'node:path';
 import { ComponentRegistry, formatCompileErrors } from './compiler/ComponentRegistry';
 import type { RenderResult } from './compiler/ComponentRegistry';
 import { loadSvelteConfig } from './compiler/svelteConfig';
+import { MINIFIER_ENV_VAR, resolveJsMinifier } from './compiler/jsMinifier';
+import { resolveOutDir } from './compiler/resolveOutDir';
 import { buildInlineWebComponent } from './compiler/buildInlineWebComponent';
 import { buildClientStatsRoutes, CLIENT_STATS_COMPONENT } from './dev/clientStatsRoutes';
 import { buildEmailViewerRoutes, EMAIL_VIEWER_COMPONENT } from './dev/emailViewerRoutes';
@@ -22,6 +24,7 @@ import {
   FRAMEWORK_OWNED_BUN_KEYS,
 } from './types';
 import { HYDRATABLE_CONTEXT_KEY } from './islands/isHydratable';
+import { BOOTSTRAP_MARKER_ATTR } from './islands/bootstrapMarker';
 import type {
   BunRouteValue,
   HttpMethod,
@@ -31,6 +34,7 @@ import type {
   MochiFileResolver,
   MochiPageConfig,
   MochiPageHandlerConfig,
+  MochiRedirect,
   MochiFormActionResult,
   MochiFormActions,
   MochiRouteValue,
@@ -45,9 +49,10 @@ import type {
   MochiWsHandlers,
   MochiWsData,
 } from './types';
-import { isFormFail, isFormSuccess, isRedirect } from './runtime/forms';
+import { isFormFail, isFormSuccess, isRedirect, SCRIPT_PROTOCOLS } from './runtime/forms';
 import { isEnhanceRequest, jsonError, jsonFailure, jsonRedirect, jsonSuccess } from './runtime/formsJson';
-import { csrfCheck, csrfBootWarning, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS } from './runtime/csrf';
+import { csrfCheck, csrfBootWarning, matchesAllowedOrigin, trustedSelfOrigin, DEFAULT_FORM_CONTENT_TYPES, DEFAULT_PROTECTED_METHODS, wsOriginCheck } from './runtime/csrf';
+import { addSecurityHeaders, resolveSecurityHeaders } from './runtime/security';
 import { applyFilter, initExtensions, runHook } from './extensions';
 import { escapeHtmlAttr } from './utils/htmlEscape';
 import { buildPublicUrl } from './runtime/proxy';
@@ -74,6 +79,7 @@ import { resolveWarmupEnabled, markWarmupRequest, isWarmablePattern } from './ru
 import { createErrorResponder, DEFAULT_ERROR_PAGE_PATH } from './runtime/errors';
 import { requestContext } from './runtime/requestContext';
 import type { MochiRequestContext } from './runtime/requestContext';
+import { cspNonceStore, generateCspNonce, getCspNonce, inlineScript, nonceAttr } from './runtime/csp';
 import type { SpeculationRules } from './runtime/speculationRules';
 import {
   startQueueRuntime,
@@ -98,7 +104,7 @@ import { runStartupMigrations } from './migrations/startup';
 import { resetStartupMilestones } from './lifecycle';
 import type { MochiQueue, MochiQueueOptions, MochiQueueDescriptor, MochiQueueStorage, MochiWorker } from './queue';
 import type { BunBoss } from 'bun-boss';
-import { finalizeCookieHeaders, MochiCookieJar } from './runtime/cookies';
+import { clientCookieDefaults, finalizeCookieHeaders, MochiCookieJar, type CookieSerializeOptions } from './runtime/cookies';
 import { makeRequestContextBuilder, mirrorsSlashForm } from './runtime/requestSetup';
 import { createRouteLimiter, applyRateLimitHeaders } from './runtime/rateLimit';
 import type { MochiRateLimitOptions, MochiRateLimitStore, RouteLimiter } from './runtime/rateLimit';
@@ -113,7 +119,8 @@ import { onDevEmailRecorded } from './email/devOutbox';
 import { sendEmail } from './email/mailer';
 import type { MochiEmailMessage, MochiEmailResult } from './email/types';
 import { initMochiConfig } from './mochiConfig';
-import { logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './utils/log';
+import { escapeControlChars, logger, setLogLevel, DEFAULT_LOG_LEVEL, type LogLevel } from './utils/log';
+import { SEEDED_IS_DEV, setDevelopment } from './utils/env';
 import { mochiEvents } from './events';
 import type { MochiActionResult, MochiErrorEvent, MochiErrorKind, MochiServerStartEvent, MochiServerStopEvent } from './events';
 import type { DebugBarData, DebugBarRuntimeData } from './runtime/requestContext';
@@ -125,6 +132,7 @@ import { installMemoryPressureHandler, removeMemoryPressureHandler } from './run
 import { registerStaticDirRoutes, resolveStaticDirs } from './runtime/staticDirs';
 import { createCronJob, cronSignature, type MochiCronHandler, type MochiCronJob, type MochiCronOptions } from './cron';
 import { startDevWatcher } from './dev/devWatcher';
+import { rangesByFamily } from './compiler/fontImportAttributes';
 import { buildPageCacheAdminRoutes, PAGE_CACHE_ADMIN_COMPONENT } from './dev/pageCacheAdminRoutes';
 import { liveReloadGreeting } from './dev/liveReloadGeneration';
 import { createProtectionRuntime } from './protection/gate';
@@ -172,6 +180,35 @@ function jsonForHtml(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
+// A reserved TLD, so a location that resolves back to this base carried no origin of its own and is relative.
+const RELATIVE_BASE = 'https://relative.invalid';
+
+/**
+ * Open-redirect guard for `redirect()`. `unsafe` (a control character, a script-capable scheme, an unparseable URL) is
+ * never waived; `off-origin` is an http(s) location `isAllowedOrigin` rejects, which `{ external: true }` waives.
+ */
+function redirectVerdict(location: string, isAllowedOrigin: (target: URL) => boolean, external: boolean): 'ok' | 'unsafe' | 'off-origin' {
+  for (let i = 0; i < location.length; i++) {
+    const code = location.charCodeAt(i);
+    if (code <= 0x1f || code === 0x7f) {
+      return 'unsafe';
+    }
+  }
+  // Detected rather than inferred from a parse: against a fixed base `https:/evil.example` reads as a path, while a
+  // browser on an `http:` page reads it as another host.
+  const trimmed = location.replace(/^ +/, '');
+  const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed);
+  const resolved = hasScheme ? URL.parse(trimmed) : URL.parse(trimmed, RELATIVE_BASE);
+  if (!resolved || SCRIPT_PROTOCOLS.has(resolved.protocol)) {
+    return 'unsafe';
+  }
+  // `mailto:`, `tel:` or an app deep link can't render the lookalike page an open redirect is used for.
+  if (external || (!hasScheme && resolved.origin === RELATIVE_BASE) || (resolved.protocol !== 'http:' && resolved.protocol !== 'https:')) {
+    return 'ok';
+  }
+  return isAllowedOrigin(resolved) ? 'ok' : 'off-origin';
+}
+
 /**
  * `createShellRenderer` bakes the static `window.__mochi_debug` fields into the cached body, so per-request headers and cookies have to be appended
  * afterwards for cache hits to stay accurate. The trailing script is synchronous so it lands before the deferred debug-bar module runs `onMount`.
@@ -191,7 +228,7 @@ async function appendDebugTail(response: Response, ctx: MochiRequestContext, dev
     requestCookies: ctx.cookies.peekAll().map(({ name, value }) => [name, value]),
   };
   const body = await response.text();
-  const tail = `<script>Object.assign((window.__mochi_debug||={}),${jsonForHtml(dynamic)})</script>`;
+  const tail = inlineScript(`Object.assign((window.__mochi_debug||={}),${jsonForHtml(dynamic)})`, nonceAttr(ctx.cspNonce));
   return new Response(body + tail, {
     status: response.status,
     statusText: response.statusText,
@@ -306,21 +343,28 @@ export class Mochi {
       /** Reads the current speculation rules (reassigned on dev entry edits). */
       getSpeculationRules: () => SpeculationRules | undefined;
       fontPreload: boolean;
+      cookieDefaults: CookieSerializeOptions;
     },
   ): (result: RenderResult, opts?: { debugInfo?: DebugBarData; pageEntry?: string }) => string {
-    const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate, getSpeculationRules, fontPreload } = config;
+    const { serverIslandClientJs, liveReloadClientJs, logLevel, getTemplate, getSpeculationRules, fontPreload, cookieDefaults } = config;
 
-    const logLevelScript = logLevel === DEFAULT_LOG_LEVEL ? '' : `<script>window.__mochi_log_level=${JSON.stringify(logLevel)}</script>`;
-    // Feeds the debug bar's Warnings panel. When the debug bar is off the
-    // single `window.__mochi_warn?.(...)` call site no-ops via optional chaining.
-    const warnShim = registry.debugBarEnabled
-      ? `<script>window.__mochi_warnings=[];window.__mochi_warn=function(m){console.warn("[mochi] "+m);window.__mochi_warnings.push(m)}</script>`
-      : '';
+    const clientCookies = clientCookieDefaults(cookieDefaults);
+    const buildStaticScripts = (attr: string) => ({
+      logLevel: logLevel === DEFAULT_LOG_LEVEL ? '' : inlineScript(`window.__mochi_log_level=${JSON.stringify(logLevel)}`, attr),
+      cookieDefaults: clientCookies ? inlineScript(`window.__mochi_cookie_defaults=${jsonForHtml(clientCookies)}`, attr) : '',
+      // Feeds the debug bar's Warnings panel. When the debug bar is off the
+      // single `window.__mochi_warn?.(...)` call site no-ops via optional chaining.
+      warnShim: registry.debugBarEnabled
+        ? inlineScript('window.__mochi_warnings=[];window.__mochi_warn=function(m){console.warn("[mochi] "+m);window.__mochi_warnings.push(m)}', attr)
+        : '',
+      serverIsland: inlineScript(serverIslandClientJs, attr),
+      liveReloadTail: liveReloadClientJs ? `${inlineScript(liveReloadClientJs, attr)}<mochi-live-reload></mochi-live-reload>` : '',
+    });
+    // Without `csp` every page shares one set; with it each request rebuilds its own, so no nonce outlives its response.
+    const unnoncedScripts = buildStaticScripts('');
     const cssStylePrefix = `<style>mochi-hydratable-island, mochi-server-island { display: contents; } mochi-server-island[defer-on="visible"]:empty, mochi-hydratable-island[hydrate-on="visible"]:empty { display: block; min-height: 1px; }${ISLAND_FAILURE_CSS}${
       registry.development ? ISLAND_FAILURE_DEV_CSS : ''
     }</style>\n`;
-    const serverIslandScript = `<script>(()=>{${serverIslandClientJs}})()</script>`;
-    const liveReloadTail = liveReloadClientJs ? `<script>${liveReloadClientJs}</script><mochi-live-reload></mochi-live-reload>` : '';
     const toolbarDiv = registry.debugBarEnabled ? '<div id="mochi-dev-toolbar"></div>' : '';
     const assetPrefixJson = JSON.stringify(registry.assetPrefix);
 
@@ -330,7 +374,7 @@ export class Mochi {
 
     // Same deal for the speculation-rules payload: serialize once, re-serialize only when a dev entry edit swaps the object.
     let specRulesFrom: SpeculationRules | undefined | null = null;
-    let speculationRulesScript = '';
+    let speculationRulesJson = '';
 
     return (result, opts) => {
       const template = getTemplate();
@@ -343,25 +387,35 @@ export class Mochi {
       if (specRules !== specRulesFrom) {
         specRulesFrom = specRules;
         const count = (specRules?.prefetch?.length ?? 0) + (specRules?.prerender?.length ?? 0);
-        speculationRulesScript = count > 0 ? `<script type="speculationrules">${jsonForHtml(specRules)}</script>` : '';
+        speculationRulesJson = count > 0 ? jsonForHtml(specRules) : '';
       }
+
+      // Only framework-built tags get the nonce, never `result.head`/`result.body`, which hold whatever the page emitted.
+      const attr = nonceAttr(getCspNonce());
+      const scripts = attr ? buildStaticScripts(attr) : unnoncedScripts;
+      const speculationRulesScript = speculationRulesJson ? `<script type="speculationrules"${attr}>${speculationRulesJson}</script>` : '';
 
       const bootstrapUrl = result.bootstrapUrl;
       // Preloads go ahead of the stylesheet links: the fonts are otherwise discovered only after the CSS arrives.
       const fontPreloads = fontPreload ? result.fontPreloadUrls.slice(0, FONT_PRELOAD_MAX).map(fontPreloadTag).join('\n') : '';
       const cssLinks = (fontPreloads ? `${fontPreloads}\n` : '') + result.cssUrls.map(cssLinkTag).join('\n');
       const debugBarUrl = registry.getDebugBarUrl();
-      const debugInfoScript = registry.debugBarEnabled && opts?.debugInfo ? `<script>window.__mochi_debug=${jsonForHtml(opts.debugInfo)}</script>` : '';
-      const pageEntryScript = liveReloadClientJs && opts?.pageEntry ? `<script>window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}</script>` : '';
+      const debugInfoScript = registry.debugBarEnabled && opts?.debugInfo ? inlineScript(`window.__mochi_debug=${jsonForHtml(opts.debugInfo)}`, attr) : '';
+      const pageEntryScript = liveReloadClientJs && opts?.pageEntry ? inlineScript(`window.__mochi_page_entry=${jsonForHtml(opts.pageEntry)}`, attr) : '';
 
-      const head = logLevelScript + warnShim + speculationRulesScript + result.head;
+      const head = scripts.logLevel + scripts.cookieDefaults + scripts.warnShim + speculationRulesScript + result.head;
       const css = cssStylePrefix + cssLinks;
       const body = result.body + debugInfoScript + pageEntryScript + toolbarDiv;
+      const fontSubsetCheck =
+        registry.fontSubsetCheckClientJs && result.fontSubsetFaces
+          ? inlineScript(`window.__mochi_font_subsets=${jsonForHtml(rangesByFamily(result.fontSubsetFaces))}`, attr) + inlineScript(registry.fontSubsetCheckClientJs, attr)
+          : '';
       const script =
-        (bootstrapUrl ? `<script type="module" src="${bootstrapUrl}"></script>` : '') +
-        (result.hasServerIslands ? serverIslandScript : '') +
-        (debugBarUrl ? `<script type="module" src="${debugBarUrl}"></script><script>window.__mochi_asset_prefix=${assetPrefixJson}</script>` : '') +
-        liveReloadTail;
+        (bootstrapUrl ? `<script type="module"${attr} src="${bootstrapUrl}"></script>` : '') +
+        (result.hasServerIslands ? scripts.serverIsland : '') +
+        (debugBarUrl ? `<script type="module"${attr} src="${debugBarUrl}"></script>${inlineScript(`window.__mochi_asset_prefix=${assetPrefixJson}`, attr)}` : '') +
+        fontSubsetCheck +
+        scripts.liveReloadTail;
 
       let out = '';
       for (const part of parts) {
@@ -470,6 +524,13 @@ export class Mochi {
 
     const { svelteVersion } = await checkEnvironment();
     const mochiVersion = await readMochiVersion();
+
+    // Same value `isDev` seeded from, so top-level reads — which already ran — agree by construction.
+    const development = options.development ?? SEEDED_IS_DEV;
+    // Published before initExtensions so an extension's `mochi:init` hook reads the resolved mode rather than the env
+    // seed, and before setLogLevel so a configured `logger.level` can't swallow the env-mismatch warning.
+    setDevelopment(development, { warnOnEnvMismatch: true });
+
     initExtensions(options);
     await runHook('mochi:init', { options });
     if (options.storage) {
@@ -477,28 +538,32 @@ export class Mochi {
       // whole serve() while the process stays retryable.
       await runStartupMigrations(options.storage);
     }
-    await initMochiConfig(options);
+    // Resolved, so downstream `options.development` readers can't re-default it differently.
+    await initMochiConfig({ ...options, development });
 
     // Resolved once at startup and captured by the per-request closures below. Each default Set is copied before it
     // reaches the user, so an in-place mutation can't poison the framework default for the next call.
     const formContentTypes: ReadonlySet<string> = applyFilter('csrf:formContentTypes', new Set(DEFAULT_FORM_CONTENT_TYPES), { options });
     const protectedMethods: ReadonlySet<string> = applyFilter('csrf:protectedMethods', new Set(DEFAULT_PROTECTED_METHODS), { options });
     const trustedOrigins: ReadonlySet<string> = applyFilter('csrf:trustedOrigins', new Set(options.csrf?.trustedOrigins ?? []), { options });
-    const cookieDefaults = applyFilter('cookie:defaults', {}, { options });
+    // Secure follows the mode, not the request's scheme: behind a TLS-terminating proxy Bun sees plain HTTP.
+    const secureCookieDefaults: CookieSerializeOptions = options.secureCookies ? { httpOnly: true, sameSite: 'lax', secure: !development } : {};
+    const cookieDefaults = applyFilter('cookie:defaults', secureCookieDefaults, { options });
+    const securityHeaderDefaults = resolveSecurityHeaders(options);
+    const redirectOrigins: ReadonlySet<string> = new Set(options.redirect?.trustedOrigins ?? []);
 
     const bootCsrfWarning = csrfBootWarning(options);
     if (bootCsrfWarning) {
       logger.warn(bootCsrfWarning);
     }
 
-    const development = options.development ?? true;
     const inlineNestedIslands = options.inlineNestedIslands !== false;
     const warmupEnabled = resolveWarmupEnabled(options.warmup, development);
     const debugBarEnabled = development && (options.debugBar ?? true);
     const liveReloadEnabled = options.liveReload ?? development;
     const middleware = options.handle;
     const protectionEnabled = options.protection?.enabled === true;
-    const baseOutDir = options.outDir ?? './.mochi';
+    const baseOutDir = resolveOutDir(options.outDir ?? './.mochi');
     // Nesting dev artifacts keeps a stale prod manifest and dev chunks apart across a later `start`, while prod stays at
     // the root so Docker and deploys are unaffected.
     const outDir = development ? path.join(baseOutDir, 'dev') : baseOutDir;
@@ -548,17 +613,26 @@ export class Mochi {
 
     logger.info(`Starting in ${development ? 'development' : 'production'} mode`);
 
+    const minifier = resolveJsMinifier({ configured: options.minifier });
+
     // In production, load prebuilt assets from manifest if available
     const manifestPath = options.manifest ?? `${outDir}/manifest.json`;
     let registry: ComponentRegistry;
     if (!development && existsSync(manifestPath)) {
-      logger.info(`Loading prebuilt manifest from ${manifestPath}`);
+      logger.info(`Loading prebuilt manifest from ${relForDisplay(manifestPath)}`);
       // The registry takes its outDir from the manifest's own directory, so an explicit `manifest` pointing elsewhere
       // relocates on-demand island compiles along with it.
       registry = await ComponentRegistry.fromManifest(manifestPath, development, { fonts: options.fonts });
       if (options.assetPrefix !== undefined && options.assetPrefix !== registry.assetPrefix) {
         logger.warn(
           `assetPrefix in Mochi.serve() (${JSON.stringify(options.assetPrefix)}) differs from the manifest (${JSON.stringify(registry.assetPrefix)}). Using the manifest value — URLs are baked in at build time.`,
+        );
+      }
+      // Only an explicit setting can disagree: `--minifier` never reaches the server, so an unset one is the normal case.
+      const minifierSet = options.minifier !== undefined || !!process.env[MINIFIER_ENV_VAR];
+      if (minifierSet && minifier !== registry.minifier) {
+        logger.warn(
+          `minifier ${JSON.stringify(minifier)} from Mochi.serve() or ${MINIFIER_ENV_VAR} differs from the manifest (${JSON.stringify(registry.minifier)}). Using the manifest value — the client bundle was minified at build time.`,
         );
       }
     } else {
@@ -572,6 +646,7 @@ export class Mochi {
         svelteCompiler: options.svelteCompiler,
         markdown: options.markdown,
         optimize: options.optimize,
+        minifier,
         barrelWarnings: options.barrelWarnings,
         fonts: options.fonts,
       });
@@ -589,7 +664,7 @@ export class Mochi {
         // Production without a prebuilt manifest is valid but much slower, compiling components at boot and server islands
         // on the request path; the error level keeps a forgotten build from masquerading as a healthy deploy.
         logger.error(
-          `Running in production without a prebuilt manifest (${manifestPath} not found). ` +
+          `Running in production without a prebuilt manifest (${relForDisplay(manifestPath)} not found). ` +
             `This is an unsupported configuration and is not recommended: components compile at startup ` +
             `and server islands compile on the first request, making cold starts and initial responses ` +
             `much slower. Run \`mochi-framework build\` before \`start\` to precompile and bake the manifest.`,
@@ -682,8 +757,8 @@ export class Mochi {
 
     // Prod-with-manifest restores this from disk (baked by `build()`); otherwise
     // build it on demand. LiveReload is dev-only, so it's never prebuilt.
-    const serverIslandClientJs = registry.serverIslandClientJs ?? (await buildInlineWebComponent('./web-components/ServerIsland.ts'));
-    const liveReloadClientJs = liveReloadEnabled ? await buildInlineWebComponent('./web-components/LiveReload.ts') : '';
+    const serverIslandClientJs = registry.serverIslandClientJs ?? (await buildInlineWebComponent('./web-components/ServerIsland.ts', registry.minifier));
+    const liveReloadClientJs = liveReloadEnabled ? await buildInlineWebComponent('./web-components/LiveReload.ts', registry.minifier) : '';
 
     // Precompute request-invariant shell fragments once; `getTemplate` reads the
     // live `shellTemplate` so dev shell edits (reloadShell) are picked up.
@@ -694,6 +769,7 @@ export class Mochi {
       getTemplate: () => shellTemplate,
       getSpeculationRules: () => speculationRules,
       fontPreload: options.fonts?.preload !== false,
+      cookieDefaults,
     });
 
     // The interstitial renders through the app shell like error pages do, so a custom `protection.page`
@@ -724,7 +800,7 @@ export class Mochi {
     // Mirrors the handleError logic in renderErrorResponse, skipping the HTML render for the enhanced JSON path.
     const handleEnhancedError = async (err: unknown, event: MochiEvent): Promise<Response> => {
       let status = err instanceof MochiHttpError ? err.status : 500;
-      let message = err instanceof Error ? err.message : 'Internal Error';
+      let message = err instanceof MochiHttpError ? err.message : development && err instanceof Error ? err.message : 'Internal Server Error';
       if (options.handleError) {
         try {
           const override = await options.handleError({ error: err, event, status, message });
@@ -758,6 +834,7 @@ export class Mochi {
       csrf: options.csrf,
       trailingSlashPolicy,
       cookieDefaults,
+      csp: options.csp ?? false,
       development,
       debugBarEnabled,
       formContentTypes,
@@ -767,6 +844,44 @@ export class Mochi {
       protection: protectionRuntime?.gate,
     });
 
+    // Outermost around each handler, so middleware's `filterResponseHeaders` cannot strip the baseline.
+    const withSecurityHeaders = <R extends Response | undefined>(handler: (req: Request, server: Server<undefined>) => R | Promise<R>) =>
+      Object.keys(securityHeaderDefaults).length === 0
+        ? handler
+        : async (req: Request, server: Server<undefined>): Promise<R> => {
+            const res = await handler(req, server);
+            // A `Mochi.ws` handler returns nothing once the socket is upgraded.
+            return (res && addSecurityHeaders(res, securityHeaderDefaults)) as R;
+          };
+
+    // Shared by the form-action and `serverProps` paths; returns the message to fail with, or `null` to send the redirect.
+    const blockedRedirect = (result: MochiRedirect, req: Request, url: URL): string | null => {
+      const selfOrigin = trustedSelfOrigin(req, url, options.proxy);
+      const requestUrl = new URL(req.url);
+      // Without proxy config the request's own Host stands in, scheme ignored, so a TLS-terminating proxy that keeps
+      // Host needs no setup.
+      const isAllowedOrigin = (target: URL): boolean =>
+        matchesAllowedOrigin(target.origin, selfOrigin ?? requestUrl.origin, redirectOrigins) || (selfOrigin === null && target.host === requestUrl.host);
+      const verdict = redirectVerdict(result.location, isAllowedOrigin, result.external === true);
+      if (verdict === 'ok') {
+        return null;
+      }
+      const location = JSON.stringify(result.location);
+      if (verdict === 'unsafe') {
+        logger.warn(
+          `Blocking redirect() to ${location}: a control character, a script-capable scheme or an unparseable URL is never a valid target, even with { external: true }.`,
+        );
+        return 'Unsafe redirect location';
+      }
+      const detail = `redirect() to off-origin ${location} (allowed: ${selfOrigin ?? `the request host ${requestUrl.host}`}). Add the origin to redirect.trustedOrigins, or pass { external: true } to this call, if intentional.`;
+      if (development) {
+        logger.warn(`${detail} This would be blocked in production.`);
+        return null;
+      }
+      logger.warn(`Blocking ${detail}`);
+      return 'Unsafe redirect location';
+    };
+
     const internalRoutes: Record<string, MochiPageConfig | MochiApiConfig> = {
       // Gated behind the debug bar, like the page-cache admin routes, since the stats page discloses every bundle's input
       // file paths and sizes — project structure and dependency names.
@@ -774,7 +889,7 @@ export class Mochi {
       ...(debugBarEnabled ? buildPageCacheAdminRoutes() : {}),
       ...(emailViewerEnabled ? buildEmailViewerRoutes(registry) : {}),
     };
-    const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...(options.routes ?? {}) } : options.routes;
+    const allRoutes = Object.keys(internalRoutes).length > 0 ? { ...internalRoutes, ...options.routes } : options.routes;
 
     const rateLimitStores = new Set<MochiRateLimitStore>();
     // Route closures look their limiter up per request so the dev watcher can swap one in place when a route's
@@ -821,7 +936,7 @@ export class Mochi {
       // use it, and its counters intentionally survive dev reloads.
       if (limiter && limiter !== sharedGlobalLimiter && limiter.ownsStore) {
         rateLimitStores.delete(limiter.store);
-        // sqliteStore's shutdown can throw synchronously from its finalize-verification guard, which a bare
+        // rateLimitSqliteStore's shutdown can throw synchronously from its finalize-verification guard, which a bare
         // `Promise.resolve()` would let escape into the dev watcher.
         (async () => limiter.store.shutdown?.())().catch((err: unknown) => {
           logger.warn(`Rate limit store shutdown failed: ${err instanceof Error ? err.message : err}`);
@@ -881,11 +996,17 @@ export class Mochi {
         const renderComponent = async (req: Request, ctx: MochiRequestContext, resolveOpts: MochiResolveOptions | undefined, statusOverride?: number): Promise<Response> => {
           const compileErrors = registry.getErrors();
           if (compileErrors.length > 0) {
-            throw new MochiHttpError(500, formatCompileErrors(compileErrors));
+            // A plain Error renders as a generic 500 in production, keeping file paths and diagnostics in the server log.
+            const detail = formatCompileErrors(compileErrors);
+            throw development ? new MochiHttpError(500, detail) : new Error(detail);
           }
           const liveServerProps = pageConfigMap ? pageConfigMap.get(pattern)?.serverProps : serverProps;
           const resolved = isServerPropsResolver(liveServerProps) ? ((await liveServerProps(req, ctx.params)) ?? {}) : (liveServerProps ?? {});
           if (isRedirect(resolved)) {
+            const blocked = blockedRedirect(resolved, req, ctx.url);
+            if (blocked) {
+              throw new MochiHttpError(500, blocked);
+            }
             const redirectResponse = new Response(null, {
               status: resolved.status,
               headers: { Location: resolved.location },
@@ -1038,7 +1159,8 @@ export class Mochi {
                   break;
                 }
               }
-              const actionHandler = livePostActions[actionName];
+              // The name comes off the query string, so inherited members like `toString` must not dispatch.
+              const actionHandler = Object.hasOwn(livePostActions, actionName) ? livePostActions[actionName] : undefined;
               if (!actionHandler) {
                 const unknownErr = new Error(`Unknown form action: ${actionName}`);
                 const response = enhanced
@@ -1114,6 +1236,13 @@ export class Mochi {
                 return applyResolveOptions(result, resolveOpts);
               }
               if (isRedirect(result)) {
+                const blocked = blockedRedirect(result, req, ctx.url);
+                if (blocked) {
+                  const response = enhanced ? jsonError(500, blocked) : await renderErrorResponse({ req, event, resolveOpts, status: 500, message: blocked, thrown: null });
+                  emitError('action', ctx.requestId, req, ctx.url, response.status, new Error(blocked), actionName);
+                  emitActionComplete(actionName, 'error', response.status);
+                  return response;
+                }
                 emitActionComplete(actionName, 'redirect', result.status);
                 if (enhanced) {
                   return jsonRedirect(result.status, result.location);
@@ -1164,8 +1293,8 @@ export class Mochi {
 
           return {
             bunRouteValue: withHead({
-              GET: getHandler,
-              POST: postHandler,
+              GET: withSecurityHeaders(getHandler),
+              POST: withSecurityHeaders(postHandler),
             } as unknown as BunRouteValue),
             type: 'page',
           };
@@ -1173,7 +1302,7 @@ export class Mochi {
         // A method-keyed object keeps a POST/PUT to an action-less page from matching (it falls through to the fetch
         // handler and 404s); a bare function runs for every method and would render 200 on POST in production,
         // diverging from dev, where `pageConfigMap` forces this path anyway.
-        return { bunRouteValue: withHead({ GET: getHandler } as unknown as BunRouteValue), type: 'page' };
+        return { bunRouteValue: withHead({ GET: withSecurityHeaders(getHandler) } as unknown as BunRouteValue), type: 'page' };
       } else if (isMochiApi(handler)) {
         if (apiHandlerMap) {
           apiHandlerMap.set(pattern, handler.handler);
@@ -1211,7 +1340,7 @@ export class Mochi {
                 return applyResolveOptions(response, resolveOpts);
               } catch (err) {
                 if (err instanceof MochiHttpError) {
-                  logger.error(`${event.request.method} ${event.url.pathname} → ${err.status}: ${err.message}`);
+                  logger.error(`${event.request.method} ${event.url.pathname} → ${err.status}: ${escapeControlChars(err.message)}`);
                   emitError('api', requestId, req, event.url, err.status, err);
                   return apiError(err.status, err.message);
                 }
@@ -1238,12 +1367,12 @@ export class Mochi {
             return final;
           });
         };
-        return { bunRouteValue: withHead(bunRouteValue), type: 'api' };
+        return { bunRouteValue: withHead(withSecurityHeaders(bunRouteValue)), type: 'api' };
       } else if (isMochiWs(handler)) {
         const wsHandlers = handler.handlers;
         wsHandlersMap.set(pattern, wsHandlers);
 
-        const bunRouteValue = (async (req: Request, server: Server<undefined>) => {
+        const bunRouteValue = withSecurityHeaders(async (req: Request, server: Server<undefined>) => {
           const setup = await buildRequestContext(req, server, { kind: 'ws', pattern });
           if ('earlyResponse' in setup) {
             return setup.earlyResponse;
@@ -1262,6 +1391,11 @@ export class Mochi {
               duration: performance.now() - start,
             });
           };
+          const wsOriginBlock = wsOriginCheck(req, wsUrl, options.csrf, trustedOrigins);
+          if (wsOriginBlock) {
+            emitWsReject(wsOriginBlock.status);
+            return wsOriginBlock;
+          }
           requestContext.run(wsHookCtx, () => {
             runHook('route:matched', {
               pattern,
@@ -1274,8 +1408,10 @@ export class Mochi {
           let userData: unknown = undefined;
 
           const liveWsHandlers = wsHandlersMap.get(pattern) ?? wsHandlers;
-          if (liveWsHandlers.upgrade) {
-            const result = await liveWsHandlers.upgrade(req, wsParams);
+          const upgradeHandler = liveWsHandlers.upgrade;
+          if (upgradeHandler) {
+            // The handshake is the only point in a socket's life with a Request to read, so `getRequestContext()` has to work here.
+            const result = await requestContext.run(wsHookCtx, () => upgradeHandler(req, wsParams));
             if (result === false) {
               emitWsReject(400);
               return new Response('WebSocket upgrade rejected', {
@@ -1367,6 +1503,9 @@ export class Mochi {
               mochiEvents.emit('sse:open', { path });
               const stream: MochiSseStream = {
                 send(data, opts) {
+                  if (/[\r\n]/.test(opts?.id ?? '') || /[\r\n]/.test(opts?.event ?? '')) {
+                    throw new TypeError('MochiSseStream.send(): `id` and `event` must not contain CR or LF characters.');
+                  }
                   let frame = '';
                   if (opts?.id) {
                     frame += `id: ${opts.id}\n`;
@@ -1374,7 +1513,8 @@ export class Mochi {
                   if (opts?.event) {
                     frame += `event: ${opts.event}\n`;
                   }
-                  for (const line of data.split('\n')) {
+                  // EventSource ends a line on CR, LF or CRLF, so splitting on LF alone lets a lone CR forge fields and events.
+                  for (const line of data.split(/\r\n|\r|\n/)) {
                     frame += `data: ${line}\n`;
                   }
                   frame += '\n';
@@ -1413,7 +1553,7 @@ export class Mochi {
             },
           });
         };
-        return { bunRouteValue, type: 'sse' };
+        return { bunRouteValue: withSecurityHeaders(bunRouteValue), type: 'sse' };
       } else if (isMochiFile(handler)) {
         const source = handler.source;
 
@@ -1478,7 +1618,7 @@ export class Mochi {
               return finish(new Response(file));
             } catch (err) {
               if (err instanceof MochiHttpError) {
-                logger.error(`${req.method} ${url.pathname} → ${err.status}: ${err.message}`);
+                logger.error(`${req.method} ${url.pathname} → ${err.status}: ${escapeControlChars(err.message)}`);
                 emitError('file', requestId, req, url, err.status, err);
                 return finish(new Response(err.message, { status: err.status, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
               }
@@ -1488,7 +1628,7 @@ export class Mochi {
             }
           });
         };
-        return { bunRouteValue, type: 'file' };
+        return { bunRouteValue: withSecurityHeaders(bunRouteValue), type: 'file' };
       }
       return null;
     }
@@ -1535,10 +1675,10 @@ export class Mochi {
     }
 
     // After the mirroring pass on purpose: a `/*` pattern must not be mirrored to `/*\/`.
-    registerStaticDirRoutes(bunRoutes, staticDirMounts);
+    registerStaticDirRoutes(bunRoutes, staticDirMounts, securityHeaderDefaults);
 
     // Register server island endpoint
-    bunRoutes[`${registry.assetPrefix}/island/:componentName`] = withHead(async (req: Request, server: Server<undefined>): Promise<Response> => {
+    const serverIslandHandler = async (req: Request, server: Server<undefined>): Promise<Response> => {
       const setup = await buildRequestContext(req, server, {
         kind: 'island',
         pattern: `${registry.assetPrefix}/island/:componentName`,
@@ -1553,19 +1693,14 @@ export class Mochi {
         return new Response('Missing component name', { status: 400 });
       }
 
-      const signedProps = url.searchParams.get('props') ?? '';
-
-      // Decrypt props (empty means no props)
-      let decodedProps: Record<string, unknown>;
-      if (signedProps) {
-        const propsJson = decryptProps(signedProps, componentName);
-        if (propsJson === null) {
-          return new Response('Invalid props', { status: 403 });
-        }
-        decodedProps = devalueParse(propsJson) as Record<string, unknown>;
-      } else {
-        decodedProps = {};
+      // Every emitted island carries a sealed token (its `islandId` at least), so a request without one was never minted
+      // by a page render and must not reach the component.
+      const signedProps = url.searchParams.get('props');
+      const propsJson = signedProps ? decryptProps(signedProps, componentName) : null;
+      if (propsJson === null) {
+        return new Response('Invalid props', { status: 403 });
       }
+      const decodedProps = devalueParse(propsJson) as Record<string, unknown>;
 
       // `islandId` and `__mochi_ah` ride inside the signed envelope as transport only, and are split into a fresh object
       // so neither reaches the component as a prop. The hydrate mode comes from the decrypted payload: trusting a
@@ -1586,7 +1721,7 @@ export class Mochi {
         ctx.islandInline = { budget: applyFilter('serverIsland:inlineBudget', DEFAULT_INLINE_BUDGET, { componentName, request: req }) };
       }
 
-      return requestContext.run(ctx, async () => {
+      const renderIsland = async (): Promise<Response> => {
         // A miss here means the build's eager discovery (see build.ts) didn't
         // find this island; `compileAll` warns about any manifest miss, so the
         // request-path compile this endpoint is supposed to prevent is never
@@ -1650,21 +1785,22 @@ export class Mochi {
           body = `<mochi-hydratable-island ${hydrateAttrs}>${body}</mochi-hydratable-island>`;
         }
 
-        // Appended whenever the rendered subtree carries hydratables — the also-hydrate island itself, plain
-        // mochi:hydrate children, or inlined also-hydrate islands — so the fragment self-hydrates even on a page that
-        // shipped no bootstrap of its own; duplicate module scripts are no-ops by src.
-        const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
-        if (bootstrapUrl) {
-          body += `<script type="module" src="${bootstrapUrl}"></script>`;
-        }
-
-        // CSS for islands rendered only inside this deferred content is gated out of the page `<head>`, so its `<link>`
-        // tags are prepended here along with side-effect CSS imports; browsers honour a `<link>` assigned via `innerHTML`.
-        // The island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
+        // The page `<head>` links none of this fragment's CSS, so its `<link>` tags lead the body, side-effect CSS imports
+        // included, where the wrapper element finds them and loads them before the swap (see ServerIsland.ts). The
+        // island's own scoped CSS is excluded, since the wrapper's `css-url` attribute already loads it.
+        // A font-subset stylesheet is left to the host page, whose variant holds this island's glyphs because its import
+        // graph includes the island; a second variant of the family would hide the page's text at a weight this one pins.
         const ownCss = registry.getComponentCssUrl(componentPath);
-        const extraCss = result.cssUrls.filter((url) => url !== ownCss);
+        const extraCss = result.cssUrls.filter((url) => url !== ownCss && !registry.isFontSubsetStylesheet(url));
         if (extraCss.length > 0) {
           body = extraCss.map(cssLinkTag).join('') + body;
+        }
+
+        // A page whose only hydratables are deferred ships no bootstrap, and a `<script>` in the fragment would stay
+        // inert, so the fragment names it in a marker that the wrapper element imports (see ServerIsland.ts).
+        const bootstrapUrl = result.bootstrapUrl ?? (isAlsoHydrateMode(hydrateMode) ? registry.getIslandBootstrapUrl() : null);
+        if (bootstrapUrl) {
+          body = `<template ${BOOTSTRAP_MARKER_ATTR}="${escapeHtmlAttr(bootstrapUrl)}"></template>` + body;
         }
 
         return new Response(body, {
@@ -1673,8 +1809,13 @@ export class Mochi {
             'Cache-Control': 'private, no-store',
           },
         });
-      });
-    });
+      };
+
+      const event: MochiEvent = { request: req, url, server, locals: ctx.locals, kind: 'island', isWarmup: ctx.isWarmup };
+      const innerResolve = async (_event: MochiEvent, resolveOpts?: MochiResolveOptions): Promise<Response> => applyResolveOptions(await renderIsland(), resolveOpts);
+      return requestContext.run(ctx, () => (middleware ? middleware({ event, resolve: innerResolve }) : innerResolve(event)));
+    };
+    bunRoutes[`${registry.assetPrefix}/island/:componentName`] = withHead(withSecurityHeaders(serverIslandHandler));
 
     // Gives `Mochi.email()` the live compile cache, so Svelte email templates render through the same registry as page routes.
     getEmailRuntime().registry = registry;
@@ -1697,7 +1838,7 @@ export class Mochi {
           status: response.status,
           duration: performance.now() - start,
         });
-        return response;
+        return addSecurityHeaders(response, securityHeaderDefaults);
       });
       stopImageSweeper = startImageCacheSweeper(imageRuntime.cache, imageRuntime.options.sweepIntervalMs);
     }
@@ -1705,12 +1846,12 @@ export class Mochi {
     // Plain static serving of locally-imported image assets (`import x from './x.png'`), so it registers independently
     // of `image.enabled`. The handler reads the global registry the build populated, letting new dev images appear
     // without a route reload.
-    bunRoutes[`${registry.assetPrefix}/asset/:filename`] = withHead(createLocalAssetHandler(development));
+    bunRoutes[`${registry.assetPrefix}/asset/:filename`] = withHead(withSecurityHeaders(createLocalAssetHandler(development)));
 
     // The debug bar's Cache tab reads the entry count (GET) and empties the image cache (POST). It registers with the
     // debug bar rather than the image endpoint, since the tab always shows and acting on an empty cache is a no-op.
     if (debugBarEnabled) {
-      const imageCacheHandler = async (req: Request): Promise<Response> => {
+      const imageCacheHandler = withSecurityHeaders(async (req: Request): Promise<Response> => {
         if (req.method === 'POST') {
           await imageRuntime.cache.clearAll();
           return Response.json({ ok: true, count: 0, keys: [] });
@@ -1721,9 +1862,9 @@ export class Mochi {
           return Response.json({ count: keys.length, keys });
         }
         return new Response('Method Not Allowed', { status: 405 });
-      };
+      });
       // Returns the raw stored entry for a single key (`?key=<url-encoded key>`).
-      const imageCacheEntryHandler = async (req: Request): Promise<Response> => {
+      const imageCacheEntryHandler = withSecurityHeaders(async (req: Request): Promise<Response> => {
         if (req.method !== 'GET') {
           return new Response('Method Not Allowed', { status: 405 });
         }
@@ -1738,7 +1879,7 @@ export class Mochi {
           return new Response('Gone', { status: 410 });
         }
         return Response.json({ key, value });
-      };
+      });
       // Register both slash variants so they work under any `trailingSlash` policy.
       bunRoutes[`${registry.assetPrefix}/image-cache`] = imageCacheHandler;
       bunRoutes[`${registry.assetPrefix}/image-cache/`] = imageCacheHandler;
@@ -1748,7 +1889,7 @@ export class Mochi {
 
     if (protectionRuntime) {
       const { verifyPath, options: protectionOptions } = protectionRuntime;
-      const verifyHandler = async (req: Request, server: Server<undefined>): Promise<Response> => {
+      const verifyHandler = withSecurityHeaders(async (req: Request, server: Server<undefined>): Promise<Response> => {
         if (req.method !== 'POST') {
           return new Response('Method Not Allowed', { status: 405 });
         }
@@ -1788,7 +1929,7 @@ export class Mochi {
           duration: performance.now() - start,
         });
         return final;
-      };
+      });
       // Both slash variants, like the image-cache routes, so the endpoint answers under any trailingSlash policy.
       bunRoutes[verifyPath] = verifyHandler;
       bunRoutes[`${verifyPath}/`] = verifyHandler;
@@ -1837,15 +1978,15 @@ export class Mochi {
             return blocked ?? finalizeCookieHeaders(await serve(), cookies);
           }
         : undefined;
-    registerPublicRoutes(bunRoutes, initialPublicFiles, publicRouteGuard);
+    registerPublicRoutes(bunRoutes, initialPublicFiles, publicRouteGuard, securityHeaderDefaults);
 
     const userFetch = options.fetch;
 
-    const composedFetch = async (req: Request, server: Server<undefined>): Promise<Response> => {
+    const fallbackFetch = async (req: Request, server: Server<undefined>): Promise<Response> => {
       const url = buildPublicUrl(req, options.proxy);
       const csrfResponse = csrfCheck(req, url, options.csrf, options.proxy, development, formContentTypes, protectedMethods, trustedOrigins);
       if (csrfResponse) {
-        return csrfResponse;
+        return addSecurityHeaders(csrfResponse, securityHeaderDefaults);
       }
 
       // Non-route requests run middleware too, so static-asset paths (`/_mochi/client/...` bundles) share the chain and a
@@ -1862,7 +2003,7 @@ export class Mochi {
         if (assetContent !== undefined) {
           // `getClientFile()` returns only registered `.js` or `.css`, so extension alone decides and this branch stays
           // independent of the asset prefix.
-          const contentType = url.pathname.endsWith('.css') ? 'text/css' : 'application/javascript';
+          const contentType = url.pathname.endsWith('.css') ? 'text/css; charset=utf-8' : 'application/javascript; charset=utf-8';
           const headers: Record<string, string> = { 'Content-Type': contentType, 'X-Content-Type-Options': 'nosniff' };
           // Content-hashed filenames change URL whenever bytes change, so prod can mark them immutable; dev skips it to
           // keep live-reload edits out of the browser cache.
@@ -1910,10 +2051,15 @@ export class Mochi {
         duration: performance.now() - start,
       });
       if (req.method === 'HEAD') {
-        return headResponse(response);
+        return addSecurityHeaders(await headResponse(response), securityHeaderDefaults);
       }
-      return response;
+      return addSecurityHeaders(response, securityHeaderDefaults);
     };
+
+    // The fallback builds no request context, so its nonce lives in an ambient store that middleware and the 404 page both read.
+    const composedFetch = options.csp
+      ? (req: Request, server: Server<undefined>): Promise<Response> => cspNonceStore.run(generateCspNonce(), () => fallbackFetch(req, server))
+      : fallbackFetch;
 
     const {
       routes: _routes,
@@ -2156,6 +2302,8 @@ export class Mochi {
         reloadShell,
         reloadSpeculationRules,
         publicRouteGuard,
+        securityHeaderDefaults,
+        trustedOrigins,
       });
     }
 

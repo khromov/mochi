@@ -62,6 +62,19 @@ function serializeCookie(name: string, value: string, options?: CookieSerializeO
   return serialized;
 }
 
+const CLIENT_COOKIE_DEFAULT_KEYS = ['path', 'domain', 'secure', 'sameSite', 'partitioned', 'priority'] as const;
+
+/** The `cookie:defaults` fields the browser jar applies: a browser drops a script-written `HttpOnly` cookie outright, and lifetime defaults apply to server writes only. */
+export function clientCookieDefaults(defaults: CookieSerializeOptions): CookieSerializeOptions | undefined {
+  const picked: Record<string, unknown> = {};
+  for (const key of CLIENT_COOKIE_DEFAULT_KEYS) {
+    if (defaults[key] !== undefined) {
+      picked[key] = defaults[key];
+    }
+  }
+  return Object.keys(picked).length > 0 ? picked : undefined;
+}
+
 export class MochiCookieJar {
   private parsed: Map<string, string>;
   private outgoing: string[] = [];
@@ -99,19 +112,11 @@ export class MochiCookieJar {
     this.outgoing.push(serializeCookie(name, value, { ...this.defaults, ...options }));
   }
 
-  delete(name: string, options?: Pick<CookieSerializeOptions, 'path' | 'domain'>): void {
+  delete(name: string, options?: Omit<CookieSerializeOptions, 'maxAge' | 'expires'>): void {
     this.accessed = true;
     this.parsed.delete(name);
-    // path/domain from the resolved defaults must apply, otherwise the browser
-    // won't match the original Set-Cookie and the cookie won't be deleted.
-    this.outgoing.push(
-      serializeCookie(name, '', {
-        path: this.defaults.path,
-        domain: this.defaults.domain,
-        ...options,
-        maxAge: 0,
-      }),
-    );
+    // The browser drops or mismatches the deletion unless it carries the original's path/domain, Secure (cookie prefixes) and Partitioned (CHIPS).
+    this.outgoing.push(serializeCookie(name, '', { ...this.defaults, ...options, expires: undefined, maxAge: 0 }));
   }
 
   /** Returns accumulated Set-Cookie header strings for the response. */

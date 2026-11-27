@@ -542,6 +542,29 @@ describe('FileStorage binary inline (offloadBinary off, the default)', () => {
   });
 });
 
+describe('FileStorage blob sentinels in cached data', () => {
+  test('a __mochiBlob field in cached data reads back as plain data, not a BlobRef', async () => {
+    const storage = makeStorage();
+    const escape = { __mochiBlob: `${'../'.repeat(16)}etc/passwd`, bytes: 1 };
+    const sibling = { __mochiBlob: `${'a'.repeat(64)}.json`, bytes: 1 };
+    await storage.setItem('profile', { value: { escape, sibling }, createdAt: 0 });
+
+    const raw = (await storage.getItem('profile')) as { value: { escape: unknown; sibling: unknown } };
+    expect(isBlobRef(raw.value.escape)).toBe(false);
+    expect(isBlobRef(raw.value.sibling)).toBe(false);
+    expect(raw.value).toEqual({ escape, sibling });
+  });
+
+  test('a BlobRef outside the storage directory round-trips verbatim', async () => {
+    const storage = makeStorage({ offloadBinary: true });
+    const foreign: BlobRef = { __mochiBlobRef: true, path: join(makeDir(), 'x.bin'), bytes: 3 };
+    await storage.setItem('k', { value: { foreign }, createdAt: 0 });
+
+    const raw = (await storage.getItem('k')) as { value: { foreign: BlobRef } };
+    expect(raw.value.foreign).toEqual(foreign);
+  });
+});
+
 // Two MochiCache instances over one shared directory model two load-balanced processes: each keeps its own in-process
 // `inflight` Map over a common FileStorage that reads fresh from disk on every getItem, so the advisory marker one
 // writes is visible to the other.
@@ -560,17 +583,6 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
   // and the entry reads stale instead of expired, handing the test a cached value — observed on Linux CI. Waiting far
   // longer costs milliseconds and removes the race.
   const AGE_PAST = 200;
-
-  async function waitForMarker(storage: FileStorage, key: string, present: boolean): Promise<void> {
-    for (let i = 0; i < 250; i++) {
-      const raw = await storage.getItem(markerKey(key));
-      if ((raw != null) === present) {
-        return;
-      }
-      await wait(2);
-    }
-    throw new Error(`marker for "${key}" never became ${present ? 'present' : 'absent'}`);
-  }
 
   function twoProcesses(opts: { minTimeToStale: number; maxTimeToLive: number; inflightTimeout: number }) {
     const dir = makeDir();
@@ -596,14 +608,20 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
     // holding the marker for the duration.
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
+    // A run writes its marker before calling fn, so fn being entered means the marker has landed — a deterministic
+    // signal, where polling for the marker on a fixed budget raced slow CI disks.
+    let entered!: () => void;
+    const inFn = new Promise<void>((r) => (entered = r));
     let aCalls = 0;
     const aStale = await cacheA.fetchWithStatus('k', async () => {
       aCalls++;
+      entered();
       await gate;
       return 2;
     });
     expect(aStale.status).toBe('stale');
-    await waitForMarker(storageA, 'k', true);
+    await inFn;
+    expect(await storageA.getItem(markerKey('k'))).not.toBeNull();
 
     // B hits the same stale entry, sees A's fresh marker, and defers.
     const deferred: string[] = [];
@@ -619,8 +637,10 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
     expect(deferred).toContain('k');
 
     // Release A: exactly one regeneration happened across both processes.
+    // whenIdle() settles only after the run's write and marker removal, so the marker must already be gone.
     release();
-    await waitForMarker(storageA, 'k', false);
+    await cacheA.whenIdle();
+    expect(await storageA.getItem(markerKey('k'))).toBeNull();
     expect(aCalls).toBe(1);
   });
 
@@ -632,14 +652,18 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
 
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
+    let entered!: () => void;
+    const inFn = new Promise<void>((r) => (entered = r));
     let aCalls = 0;
     // The expired path awaits run(), so A's read only resolves once fn releases.
     const aRead = cacheA.fetchWithStatus('k', async () => {
       aCalls++;
+      entered();
       await gate;
       return 2;
     });
-    await waitForMarker(storageA, 'k', true);
+    await inFn;
+    expect(await storageA.getItem(markerKey('k'))).not.toBeNull();
 
     let bCalls = 0;
     const bRead = await cacheB.fetchWithStatus('k', () => {
@@ -752,6 +776,6 @@ describe('MochiCache cross-process in-flight marker (shared FileStorage)', () =>
 
     releaseSecond();
     expect(await second).toBe(2);
-    await waitForMarker(storageA, 'k', false);
+    expect(await storageA.getItem(markerKey('k'))).toBeNull();
   });
 });

@@ -3,15 +3,16 @@ import type { Server } from 'bun';
 import type { MochiEvent } from '../runtime/hooks';
 import type { CompressionMethod } from '../utils';
 import { compress } from './compress';
+import { isDev, setDevelopment } from '../utils/env';
 
-// compress() reads dev mode from the Mochi.serve() config singleton; fake it via its global key.
-async function withMochiConfig<T>(development: boolean, fn: () => Promise<T>): Promise<T> {
-  const g = globalThis as unknown as Record<string, unknown>;
-  g['__mochi_config__'] = { options: { development }, secretKey: Buffer.alloc(32) };
+// compress() reads the same `isDev` export as the rest of the framework, which Mochi.serve() publishes at boot.
+async function withDevelopment<T>(development: boolean, fn: () => Promise<T>): Promise<T> {
+  const previous = isDev;
+  setDevelopment(development);
   try {
     return await fn();
   } finally {
-    delete g['__mochi_config__'];
+    setDevelopment(previous);
   }
 }
 
@@ -383,7 +384,7 @@ describe('compress()', () => {
   });
 
   test('skips compression entirely in dev mode', async () => {
-    await withMochiConfig(true, async () => {
+    await withDevelopment(true, async () => {
       const handle = compress();
       const body = '<!doctype html>' + 'hello '.repeat(500);
       const req = new Request('http://localhost/', {
@@ -403,7 +404,7 @@ describe('compress()', () => {
   });
 
   test('compresses when config is initialized with development: false', async () => {
-    await withMochiConfig(false, async () => {
+    await withDevelopment(false, async () => {
       const handle = compress();
       const body = '<!doctype html>' + 'hello '.repeat(500);
       const req = new Request('http://localhost/', {

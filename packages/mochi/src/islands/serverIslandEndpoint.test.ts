@@ -14,6 +14,7 @@ import { Mochi } from '../Mochi';
 import { encryptProps, decryptProps } from './serverIslandCrypto';
 
 const FIXTURE_PAGE = path.join(import.meta.dir, '..', '__fixtures__', 'server-island-endpoint', 'Page.svelte');
+const SPREAD_PAGE = path.join(import.meta.dir, '..', '__fixtures__', 'server-island-endpoint', 'SpreadPage.svelte');
 
 describe('server island endpoint', () => {
   let server: Server<undefined>;
@@ -37,6 +38,9 @@ describe('server island endpoint', () => {
       outDir,
       routes: {
         '/': Mochi.page(FIXTURE_PAGE),
+        '/spread': Mochi.page(SPREAD_PAGE, {
+          serverProps: (req) => ({ extra: Object.fromEntries(new URL(req.url).searchParams) }),
+        }),
       },
     });
     base = `http://localhost:${server.port}`;
@@ -147,6 +151,27 @@ describe('server island endpoint', () => {
     expect(body).not.toContain('<mochi-hydratable-island');
     // No raw serialized props echoed for client hydration.
     expect(body).not.toContain('props="');
+  });
+
+  // A pure `mochi:defer` site seals `__mochi_ah` itself, so a user spread carrying the key cannot opt the
+  // island into also-hydrate and have the endpoint echo every sealed prop back in plaintext.
+  test('a user spread cannot smuggle __mochi_ah into a pure mochi:defer envelope', async () => {
+    const html = await (await fetch(`${base}/spread?name=Spread&__mochi_ah=eager`)).text();
+    const wrappers = [...html.matchAll(/<mochi-server-island\b[^>]*>/g)].map((m) => m[0]);
+    expect(wrappers).toHaveLength(2);
+    expect(wrappers.filter((w) => w.includes('defer-on="visible"'))).toHaveLength(1);
+
+    for (const wrapper of wrappers) {
+      const key = wrapper.match(/component-name="([^"]+)"/)![1]!;
+      const sealed = wrapper.match(/signed-props="([^"]+)"/)![1]!;
+      const res = await fetch(`${base}/_mochi/island/${key}?props=${encodeURIComponent(sealed)}`);
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain('>Spread<');
+      expect(body).toContain('data-prop-keys="name,secret"');
+      expect(body).not.toContain('<mochi-hydratable-island');
+      expect(body).not.toContain('server-only-secret');
+    }
   });
 
   // CSS the host page never linked (here a side-effect import; in practice also

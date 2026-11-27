@@ -49,6 +49,9 @@ export async function paintBackground(ctx: SKRSContext2D): Promise<void> {
   ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
 
   const noise = ctx.createPattern(await (tile ??= noiseTile()), 'repeat');
+  if (!noise) {
+    throw new Error('paintBackground: failed to create the noise pattern');
+  }
   ctx.save();
   ctx.globalCompositeOperation = 'soft-light';
   ctx.fillStyle = noise;

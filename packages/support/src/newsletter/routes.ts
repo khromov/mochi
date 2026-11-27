@@ -2,7 +2,7 @@ import { Mochi, fail, success, logger, mintCaptcha, verifyCaptcha, consumeCaptch
 import type { MochiRouteValue } from 'mochi-framework';
 import { appendNewsletterLog, confirmSubscriber, requestSubscription, subscriberByConfirmToken, subscriberByUnsubscribeToken, unsubscribeSubscriber } from '../db.server';
 import { embedAncestors } from '../embedHeaders';
-import { CONFIRM_TTL_MS, RESEND_COOLDOWN_MS } from './config';
+import { CONFIRM_TTL_MS, RESEND_COOLDOWN_MS, SIGNUP_RESPONSE_FLOOR_MS } from './config';
 import { newsletterEmailQueue } from './jobs.server';
 
 export type TokenPageState = 'confirmed' | 'already' | 'expired' | 'unknown' | 'unsubscribed';
@@ -28,8 +28,10 @@ export const newsletterRoutes: Record<string, MochiRouteValue> = {
     },
     actions: {
       subscribe: async ({ formData }) => {
+        const floor = Bun.sleep(SIGNUP_RESPONSE_FLOOR_MS);
         // Honeypot, answered like a real signup so a bot learns nothing.
         if (String(formData.get('website') ?? '').trim() !== '') {
+          await floor;
           return success();
         }
         const captcha = await verifyCaptcha(formData, { consume: false });
@@ -63,16 +65,17 @@ export const newsletterRoutes: Record<string, MochiRouteValue> = {
         if (outcome.kind === 'throttled') {
           return success({ throttled: true, retryAfterMinutes: Math.max(1, Math.ceil(outcome.retryAfterMs / 60_000)) });
         }
-        if (outcome.kind !== 'already') {
-          appendNewsletterLog(outcome.id, { attempt: 0, event: 'queued', detail: `Confirmation to ${email}` });
-          try {
-            await newsletterEmailQueue.add({ id: outcome.id });
-          } catch (err) {
-            // The row stays `pending` and visible on the admin panel's newsletter tab, where Resend re-enqueues it.
-            logger.error('newsletter: could not enqueue confirmation', err);
-          }
+        // Queued for `already` too, which the processor skips: doing less work for a confirmed address answers sooner,
+        // and that latency would out it as surely as a different response.
+        appendNewsletterLog(outcome.id, { attempt: 0, event: 'queued', detail: `Confirmation to ${email}` });
+        try {
+          await newsletterEmailQueue.add({ id: outcome.id });
+        } catch (err) {
+          // The row stays `pending` and visible on the admin panel's newsletter tab, where Resend re-enqueues it.
+          logger.error('newsletter: could not enqueue confirmation', err);
         }
         // Identical for every remaining outcome — see requestSubscription.
+        await floor;
         return success();
       },
     },

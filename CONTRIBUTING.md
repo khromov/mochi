@@ -1,5 +1,15 @@
 # Contributing
 
+## Local setup
+
+`bun install` is enough on macOS and Linux. **On Windows you also need the Microsoft Visual C++ Redistributable:**
+
+```sh
+winget install --id Microsoft.VCRedist.2015+.x64 -e
+```
+
+`@mochi-framework/rsvelte` loads a prebuilt Rust binary that links against `VCRUNTIME140.dll`, which Windows does not ship in the box. Without it `bun run test` fails in `packages/mochi-rsvelte` and `packages/minimal-rsvelte` with `LoadLibrary failed: The specified module could not be found` — the binary is on disk, its C runtime is not. Everything else keeps working, because the framework falls back to `svelte/compiler`.
+
 ## Releases
 
 This repo uses [release-please](https://github.com/googleapis/release-please) for automated versioning and publishing. Write commits using [Conventional Commits](https://www.conventionalcommits.org/):

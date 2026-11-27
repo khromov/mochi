@@ -40,3 +40,8 @@ export function stripImageConfig(code: string): string {
 export function stripStaticDirs(code: string): string {
   return stripServeBlock(code, 'staticDirs');
 }
+
+export function delay(minMs: number, maxMs: number = minMs): Promise<void> {
+  const ms = minMs + Math.random() * (maxMs - minMs);
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

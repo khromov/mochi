@@ -67,6 +67,17 @@ export function isFormContentType(contentType: string | null, formContentTypes: 
   return formContentTypes.has(type);
 }
 
+/** Origin allow-list comparison with default ports stripped, the rule the CSRF check applies to `csrf.trustedOrigins`. */
+export function matchesAllowedOrigin(origin: string, expectedOrigin: string, trustedOrigins: ReadonlySet<string>): boolean {
+  const normalized = normalizeOrigin(origin);
+  return normalized === normalizeOrigin(expectedOrigin) || [...trustedOrigins].some((t) => normalizeOrigin(t) === normalized);
+}
+
+/** This server's public origin as configured through `proxy`, or `null` when only the client's own `Host` header vouches for it. */
+export function trustedSelfOrigin(request: Request, url: URL, proxy: MochiProxyOptions | undefined): string | null {
+  return proxy?.origin || proxy?.hostHeader ? resolveExpectedOrigin(request, url, proxy) : null;
+}
+
 /**
  * Boot-time visibility for a production-only failure: without a trusted origin every form-action POST 403s in
  * production while development only warns per-request — invisible until deploy. Returns the warning line, or null.
@@ -77,8 +88,13 @@ export function csrfBootWarning(options: {
   proxy?: MochiProxyOptions;
   filters?: { 'csrf:check'?: unknown };
   routes?: Record<string, unknown>;
+  bun?: { tls?: unknown };
 }): string | null {
-  if (options.csrf?.checkOrigin === false || options.filters?.['csrf:check'] !== undefined || options.proxy?.origin || options.proxy?.hostHeader) {
+  const proxy = options.proxy;
+  // Without a protocol header the expected origin takes Bun's own socket protocol, which is `http` behind a
+  // TLS-terminating proxy and so never matches the browser's `https` Origin.
+  const hostHeaderWithoutProtocol = Boolean(proxy?.hostHeader && !proxy.protocolHeader && !options.bun?.tls);
+  if (options.csrf?.checkOrigin === false || options.filters?.['csrf:check'] !== undefined || proxy?.origin || (proxy?.hostHeader && !hostHeaderWithoutProtocol)) {
     return null;
   }
   const actionRoutes = Object.entries(options.routes ?? {}).filter(([, handler]) => {
@@ -88,7 +104,32 @@ export function csrfBootWarning(options: {
   if (actionRoutes.length === 0) {
     return null;
   }
+  if (hostHeaderWithoutProtocol) {
+    return `CSRF: ${actionRoutes.length} route(s) declare form actions (e.g. "${actionRoutes[0]?.[0]}") and proxy.hostHeader is set without proxy.protocolHeader, so the expected origin uses the server's own http:// protocol — behind a TLS-terminating proxy their form POSTs will be blocked with 403 in production. Set Mochi.serve({ proxy: { protocolHeader: 'x-forwarded-proto' } }) or proxy.origin before deploying.`;
+  }
   return `CSRF: ${actionRoutes.length} route(s) declare form actions (e.g. "${actionRoutes[0]?.[0]}") but no proxy.origin or proxy.hostHeader is configured — their form POSTs will be blocked with 403 in production, because the expected origin can't be trusted. Set Mochi.serve({ proxy: { origin: '...' } }) before deploying.`;
+}
+
+/**
+ * Cross-site WebSocket hijacking guard: browsers apply neither the same-origin policy nor CORS to a WebSocket handshake,
+ * so without it any page can open a socket to this server carrying the visitor's cookies.
+ */
+export function wsOriginCheck(request: Request, url: URL, csrf: MochiCsrfOptions | undefined, trustedOrigins: ReadonlySet<string>): Response | null {
+  const origin = request.headers.get('origin');
+  // Browsers always send `Origin` on a handshake, so a client without one is not a browser and has no ambient credentials to hijack.
+  if (!origin || csrf?.checkOrigin === false) {
+    return null;
+  }
+  const normalized = normalizeOrigin(origin);
+  // The host comparison ignores the scheme, so a TLS-terminating proxy that keeps `Host` intact needs no `proxy` config.
+  const sameHost = URL.parse(origin)?.host === URL.parse(request.url)?.host;
+  if (sameHost || normalized === normalizeOrigin(url.origin) || [...trustedOrigins].some((t) => normalizeOrigin(t) === normalized)) {
+    return null;
+  }
+  logger.warn(
+    `CSRF: blocking WebSocket upgrade ${url.pathname} from origin ${origin} (allowed: ${url.origin}). Add it to csrf.trustedOrigins or set csrf.checkOrigin: false to allow.`,
+  );
+  return new Response('Cross-site WebSocket upgrades are forbidden', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 }
 
 /**

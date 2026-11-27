@@ -20,7 +20,7 @@ describe('defer-in-hydratable compile error', () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '.mochi-defer-in-hyd-'));
     server = await Mochi.serve({
       port: 0,
-      development: false,
+      development: true,
       logger: { enabled: false },
       outDir,
       routes: {

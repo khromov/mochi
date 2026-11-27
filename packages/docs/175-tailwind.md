@@ -48,7 +48,7 @@ import { setupTailwind } from 'mochi-framework/tailwind';
 await setupTailwind({
   input: './src/styles/app.css',
   output: './src/styles/app.generated.css',
-  minify: process.env.MODE !== 'development',
+  minify: process.env.NODE_ENV !== 'development',
 });
 
 await Mochi.serve({
@@ -80,7 +80,7 @@ The bundler strips the import from the JS bundle and serves the CSS at `/_mochi/
 | `input`  | —                    | Path to the input CSS (`@import`s and `@source` rules).       |
 | `output` | —                    | Path where the generated CSS is written, stable for `import`. |
 | `base`   | directory of `input` | Anchors `@source` patterns.                                   |
-| `minify` | `false`              | Minify the optimised output. Set from `process.env.MODE`.     |
+| `minify` | `false`              | Minify the optimised output. Set from `process.env.NODE_ENV`. |
 
 <Callout type="info">
 
@@ -90,7 +90,7 @@ The bundler strips the import from the JS bundle and serves the CSS at `/_mochi/
 
 ### Dev rebuilds
 
-In development, `setupTailwind` subscribes to `file:change` on `mochiEvents` and rebuilds on `.svelte` / `.ts` / `.js` / `.html` / `.md` / `.svx` / `.css` changes. The resulting write goes through Mochi's CSS fast-path — a stylesheet swap, not a full SSR rebuild. The watcher attaches only when `process.env.MODE === 'development'`.
+In development, `setupTailwind` subscribes to `file:change` on `mochiEvents` and rebuilds on `.svelte` / `.ts` / `.js` / `.html` / `.md` / `.svx` / `.css` changes. The resulting write goes through Mochi's CSS fast-path — a stylesheet swap, not a full SSR rebuild. The watcher attaches only when `process.env.NODE_ENV === 'development'`.
 
 ### Production builds
 
@@ -100,7 +100,7 @@ Generate the CSS at build time and dynamic-import the helper so production never
 
 ```ts
 // file: src/index.ts
-if (process.env.MODE === 'development') {
+if (process.env.NODE_ENV === 'development') {
   const { setupTailwind } = await import('mochi-framework/tailwind');
   await setupTailwind({
     input: './src/styles/app.css',
@@ -130,7 +130,7 @@ await compileTailwind({
 
 <Callout type="info">
 
-**Guard the `mochi-framework/tailwind` import dynamically.** A static import loads the oxide native binding even when the call site is gated by `MODE`. Put the `import()` inside the development guard so the binding is never resolved in production.
+**Guard the `mochi-framework/tailwind` import dynamically.** A static import loads the oxide native binding even when the call site is gated by `NODE_ENV`. Put the `import()` inside the development guard so the binding is never resolved in production.
 
 </Callout>
 

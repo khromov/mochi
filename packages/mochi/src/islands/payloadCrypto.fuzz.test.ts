@@ -54,7 +54,7 @@ describe('payloadCrypto — property-based fuzzing', () => {
   test('string round-trips across the compression threshold', () => {
     fc.assert(
       fc.property(fc.string({ minLength: 200, maxLength: 4000 }), (s) => {
-        expect(decryptPayload(encryptPayload(s))).toBe(s);
+        expect(decryptPayload(encryptPayload(s, { compress: true }))).toBe(s);
       }),
       RUNS,
     );
@@ -66,8 +66,8 @@ describe('payloadCrypto — property-based fuzzing', () => {
     fc.assert(
       fc.property(fc.string({ minLength: 1, maxLength: 20 }), fc.integer({ min: 200, max: 400 }), (chunk, n) => {
         const s = chunk.repeat(n);
-        const token = encryptPayload(s);
-        expect(token.length).toBeLessThan(encryptPayload(s, { compress: false }).length);
+        const token = encryptPayload(s, { compress: true });
+        expect(token.length).toBeLessThan(encryptPayload(s).length);
         expect(decryptPayload(token)).toBe(s);
       }),
       RUNS,

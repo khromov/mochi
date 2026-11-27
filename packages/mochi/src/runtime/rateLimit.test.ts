@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { sqliteStore as hitlimitSqliteStore } from '@joint-ops/hitlimit-bun/stores/sqlite';
-import { createRouteLimiter, sqliteStore, applyRateLimitHeaders } from './rateLimit';
+import { createRouteLimiter, rateLimitSqliteStore, applyRateLimitHeaders } from './rateLimit';
 import { requestContext } from './requestContext';
 import type { MochiRequestContext } from './requestContext';
 import type { MochiRateLimitStore } from './rateLimit';
@@ -197,7 +197,7 @@ describe('createRouteLimiter', () => {
   });
 });
 
-describe('sqliteStore persistence', () => {
+describe('rateLimitSqliteStore persistence', () => {
   // outDir must live under the package tree (see CLAUDE.md) — but sqlite dbs
   // just need a writable path, which mkdtemp under the package also gives us.
   const tempDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-ratelimit-sqlite-'));
@@ -208,13 +208,13 @@ describe('sqliteStore persistence', () => {
   });
 
   test('counters survive limiter recreation on the same db file', async () => {
-    const firstLimiter = createRouteLimiter({ limit: 2, window: '1m', store: sqliteStore({ path: dbPath }) });
+    const firstLimiter = createRouteLimiter({ limit: 2, window: '1m', store: rateLimitSqliteStore({ path: dbPath }) });
     await firstLimiter.check(makeRequest(), clientAddress('9.9.9.9'));
     await firstLimiter.check(makeRequest(), clientAddress('9.9.9.9'));
     expect((await firstLimiter.check(makeRequest(), clientAddress('9.9.9.9'))).kind).toBe('blocked');
     await firstLimiter.store.shutdown?.();
 
-    const secondLimiter = createRouteLimiter({ limit: 2, window: '1m', store: sqliteStore({ path: dbPath }) });
+    const secondLimiter = createRouteLimiter({ limit: 2, window: '1m', store: rateLimitSqliteStore({ path: dbPath }) });
     expect((await secondLimiter.check(makeRequest(), clientAddress('9.9.9.9'))).kind).toBe('blocked');
     await secondLimiter.store.shutdown?.();
   });
@@ -231,7 +231,7 @@ describe('sqliteStore persistence', () => {
     Object.values(store as Record<string, unknown>).find((v): v is Finalizable => typeof (v as { finalize?: unknown } | null)?.finalize === 'function');
 
   test('shutdown finalizes hitlimit statements so the close fully releases the handle', async () => {
-    const store = sqliteStore({ path: path.join(tempDir, 'finalize-check.db') });
+    const store = rateLimitSqliteStore({ path: path.join(tempDir, 'finalize-check.db') });
     await store.hit('k', 60_000, 5);
 
     const stmt = findStatement(store);
@@ -257,7 +257,7 @@ describe('sqliteStore persistence', () => {
     expect(() => stmt!.get()).toThrow(/finaliz/i);
 
     // Release the handle for real — otherwise Windows can't unlink finalize-control.db in
-    // afterAll (EBUSY). Mirror the production sqliteStore() shutdown: finalize the remaining
+    // afterAll (EBUSY). Mirror the production rateLimitSqliteStore() shutdown: finalize the remaining
     // statements, then close(true) releases the db/-wal/-shm files.
     for (const value of Object.values(raw)) {
       (value as { finalize?: () => void } | null)?.finalize?.();

@@ -5,11 +5,13 @@ import { existsSync } from 'node:fs';
 import { build } from './build';
 import { closeAllQueueResources } from '../queue';
 import { extractServeOptions } from './extractServeOptions';
+import { resolveJsMinifier } from '../compiler/jsMinifier';
 import { updateSkill, SKILL_TARGETS, SKILL_DESTS, DEFAULT_SKILL_TARGET, type SkillTarget } from './updateSkill';
 import { generateKey } from './generateKey';
 import { runMigrateCommand } from './migrate';
 import { relForDisplay } from '../utils';
 import { markBuilding } from '../utils/buildFlag';
+import { setDevelopment } from '../utils/env';
 
 const TARGET_ALIASES: Record<string, SkillTarget> = { agy: 'antigravity' };
 
@@ -28,6 +30,8 @@ Commands:
   build                  Produce a production bundle in the output directory.
   update-skill [agent]   Fetch the latest SKILL.md and write it into the current
                          project for the given agent. Default: ${DEFAULT_SKILL_TARGET}.
+                         Shows a diff and asks before overwriting. Use --force to
+                         accept the displayed update non-interactively.
                          Agents:
 ${SKILL_TARGETS.map((t) => {
   const aliasNote = ALIASES_BY_TARGET[t]?.length ? ` (alias: ${ALIASES_BY_TARGET[t]!.join(', ')})` : '';
@@ -53,6 +57,10 @@ Options for "build":
   --out-dir <path>         Build output directory. Default: ./.mochi
   --public-dir <path>      Static assets directory. Default: ./public
   --asset-prefix <path>    URL prefix for framework client assets. Default: /_mochi
+  --minifier <bun|oxc>     Which minifier prints the client JS. Wins over
+                           MOCHI_MINIFIER, which wins over the entry's
+                           \`minifier\`. \`oxc\` (experimental) needs the
+                           optional \`oxc-minify\` package. Default: bun
   --dev                    Build with development: true.
 
 The build reads its config straight from the entry's \`Mochi.serve()\` call, so
@@ -70,7 +78,7 @@ function resolveTarget(name: string): SkillTarget | null {
   return TARGET_ALIASES[name] ?? null;
 }
 
-async function runUpdateSkill(args: string[]) {
+async function runUpdateSkill(args: string[], force: boolean) {
   const requested = args[0] ?? DEFAULT_SKILL_TARGET;
   const target = resolveTarget(requested);
   if (!target) {
@@ -80,8 +88,30 @@ async function runUpdateSkill(args: string[]) {
   }
 
   try {
-    const { path: dest, created } = await updateSkill({ target });
+    const result = await updateSkill({
+      target,
+      confirmUpdate: ({ diff, url }) => {
+        process.stdout.write(`\n[mochi] Skill update fetched from ${url}:\n\n${diff}\n`);
+        if (force) {
+          return true;
+        }
+        // confirm() reads false at EOF, so without a terminal an unattended run would silently look like a decline.
+        if (!process.stdin.isTTY) {
+          throw new Error('Refusing to apply a SKILL.md update without a terminal to confirm at. Re-run with --force to accept the update shown above.');
+        }
+        return confirm('[mochi] Apply this update?');
+      },
+    });
+    const { path: dest, created, action } = result;
     const rel = relForDisplay(dest) || dest;
+    if (action === 'aborted') {
+      process.stdout.write(`[mochi] Aborted. ${rel} left unchanged.\n`);
+      return;
+    }
+    if (action === 'unchanged') {
+      process.stdout.write(`[mochi] ${rel} is already up to date.\n`);
+      return;
+    }
     process.stdout.write(`[mochi] ${created ? 'Created' : 'Updated'} ${rel}\n`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -121,6 +151,7 @@ async function main() {
       'out-dir': { type: 'string' },
       'public-dir': { type: 'string' },
       'asset-prefix': { type: 'string' },
+      minifier: { type: 'string' },
       dev: { type: 'boolean' },
       force: { type: 'boolean', short: 'f' },
       validate: { type: 'boolean' },
@@ -146,7 +177,7 @@ async function main() {
   }
 
   if (cmd === 'update-skill') {
-    await runUpdateSkill(positionals.slice(1));
+    await runUpdateSkill(positionals.slice(1), Boolean(values.force));
     return;
   }
 
@@ -176,6 +207,19 @@ async function main() {
   // Flipped before anything imports the app entry: this whole process is a build, so server-setup code must skip
   // real-boot side effects for its entire lifetime, not just while the entry is being read.
   markBuilding();
+  // extractServeOptions hands the entry graph a by-value snapshot, so a later setDevelopment() would be invisible.
+  setDevelopment(values.dev === true);
+
+  const resolveMinifierOrExit = (configured?: unknown) => {
+    try {
+      return resolveJsMinifier({ flag: values.minifier, configured });
+    } catch (err) {
+      process.stderr.write(`[mochi] ${err instanceof Error ? err.message : String(err)}\n`);
+      process.exit(1);
+    }
+  };
+  // Run once before the entry is read so a typo in the flag or env var fails fast.
+  resolveMinifierOrExit();
 
   const entryPath = path.resolve(process.cwd(), values.entry ?? './src/index.ts');
   let serveOptions: Awaited<ReturnType<typeof extractServeOptions>> = null;
@@ -199,6 +243,7 @@ async function main() {
     markdown: serveOptions?.markdown,
     svelteCompiler: serveOptions?.svelteCompiler,
     optimize: serveOptions && 'optimize' in serveOptions ? serveOptions.optimize : undefined,
+    minifier: resolveMinifierOrExit(serveOptions?.minifier),
     barrelWarnings: serveOptions?.barrelWarnings,
     fonts: serveOptions?.fonts,
     errorPage: serveOptions?.errorPage,

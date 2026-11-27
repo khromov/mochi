@@ -1,10 +1,18 @@
 <script lang="ts">
-  import { hydratable } from 'svelte';
+  import { getContext, hydratable } from 'svelte';
 
-  // Same key as the page's `hydratable()` call, so this closure never actually runs — the throw
-  // is an assertion that fires loudly if that invariant ever breaks.
-  const fact = await hydratable<{ sqliteVersion: string; computedAt: string }>('mochi-demo:fact', () => {
-    throw new Error('hydratable fallback should never run on this page');
+  type Fact = { sqliteVersion: string; computedAt: string };
+
+  // Set by the page during SSR; undefined in the browser, where Svelte context doesn't survive hydration.
+  const pageFact = getContext<Fact | undefined>('mochi-demo:fact');
+
+  // Same key as the page's `hydratable()` call. In the browser the value comes from window.__svelte.h, so this
+  // fallback must never run there. In dev, Svelte's server re-runs it to check it matches the page's value.
+  const fact = await hydratable<Fact>('mochi-demo:fact', () => {
+    if (!pageFact) {
+      throw new Error('hydratable fallback should never run in the browser on this page');
+    }
+    return pageFact;
   });
 
   let clicks = $state(0);

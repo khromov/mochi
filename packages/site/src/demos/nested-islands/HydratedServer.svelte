@@ -1,6 +1,6 @@
 <script>
   import { isServer } from 'mochi-framework';
-  import { delay } from '../../components/utils.ts';
+  import { delay } from '../../components/sourceUtils';
 
   let { label = 'Hydrated server island' } = $props();
   const islandId = $props.id();

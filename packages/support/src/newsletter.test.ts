@@ -1,10 +1,11 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, setSystemTime, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { parse } from 'devalue';
 import { Mochi, mintCaptcha, solveCaptcha, sequence } from 'mochi-framework';
 import type { ResolvedEmailMessage } from 'mochi-framework';
+import { analytics } from 'mochi-shared';
 
 // The db path and admin credentials must be set before `./routes` and its
 // transitive `./db.server` are evaluated.
@@ -30,7 +31,8 @@ const {
   getSubscriber,
 } = await import('./db.server');
 const { adminAuth } = await import('./adminAuth');
-const { embedHeaders, embedAncestors } = await import('./embedHeaders');
+const { embedHeaders, embedAncestors, NEWSLETTER_EMBED_PATH } = await import('./embedHeaders');
+const { NEWSLETTER_TOKEN_PATHS, RESEND_COOLDOWN_MS, SIGNUP_RESPONSE_FLOOR_MS } = await import('./newsletter/config');
 
 const sent: ResolvedEmailMessage[] = [];
 
@@ -86,7 +88,7 @@ describe('newsletter signup', () => {
           },
         },
       },
-      handle: sequence(adminAuth, embedHeaders),
+      handle: sequence(adminAuth, embedHeaders, analytics({ exclude: [NEWSLETTER_EMBED_PATH, ...NEWSLETTER_TOKEN_PATHS] })),
       queues: [newsletterEmailQueue],
       // Mirrors src/index.ts's durable storage; the file joins the temp dir the afterAll retry-loop already cleans up.
       queueStorage: { sqlite: path.join(outDir, 'queue.sqlite') },
@@ -117,10 +119,17 @@ describe('newsletter signup', () => {
     expect(res.headers.get('X-Robots-Tag')).toBe('noindex');
   });
 
-  test('the CSP is scoped to the embed', async () => {
-    const res = await fetch(`${base}/`);
-    expect(res.status).toBe(200);
-    expect(res.headers.get('Content-Security-Policy')).toBeNull();
+  // A framed /admin/ form POST carries the panel's own Origin, so the CSRF check can't stop a clickjacked delete.
+  test('every page outside the embed refuses to be framed', async () => {
+    for (const [pathname, headers] of [
+      ['/', {}],
+      ['/admin/', AUTH],
+    ] as const) {
+      const res = await fetch(`${base}${pathname}`, { headers });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Security-Policy')).toBe("frame-ancestors 'none'");
+      expect(res.headers.get('X-Frame-Options')).toBe('DENY');
+    }
   });
 
   // The widget loads on the blog index and every post, so page views must not
@@ -253,6 +262,30 @@ describe('newsletter signup', () => {
     expect(rowFor('linus@example.com')?.status).toBe('confirmed');
   });
 
+  // Identical bodies are not enough: a confirmed address that skipped the log
+  // write and the enqueue answered ~10 ms sooner, outing it by latency alone.
+  test('a confirmed address does the same work as any signup and answers no sooner', async () => {
+    sent.length = 0;
+    // Backdated past the cooldown, so the submit below reaches `already` rather than `throttled`.
+    setSystemTime(Date.now() - RESEND_COOLDOWN_MS - 60_000);
+    const member = requestSubscription({ email: 'quiet@example.com', source: '' }, { cooldownMs: 0, ttlMs: 60_000 });
+    setSystemTime();
+    confirmSubscriber(member.id);
+
+    const started = performance.now();
+    expect((await subscribe(base, validFields('quiet@example.com'))).status).toBe(200);
+    expect(performance.now() - started).toBeGreaterThanOrEqual(SIGNUP_RESPONSE_FLOOR_MS - 5);
+
+    for (let i = 0; i < 200 && (newsletterLogsBySubscriber()[member.id]?.length ?? 0) < 2; i++) {
+      await Bun.sleep(10);
+    }
+    const entries = newsletterLogsBySubscriber()[member.id] ?? [];
+    expect(entries.map((e) => e.event)).toEqual(['queued', 'sent']);
+    expect(entries.at(-1)?.detail).toBe('Skipped — already confirmed');
+    expect(sent).toHaveLength(0);
+    expect(getSubscriber(member.id)?.status).toBe('confirmed');
+  });
+
   test('a bogus token renders the invalid state rather than failing', async () => {
     const res = await fetch(`${base}/newsletter/confirm/?token=not-a-real-token`);
     expect(res.status).toBe(200);
@@ -279,6 +312,32 @@ describe('newsletter signup', () => {
     expect(row?.confirm_token).not.toBe(oldConfirm);
     const stale = await fetch(`${base}/newsletter/confirm/?token=${oldConfirm}`);
     expect(await stale.text()).toContain("doesn't work");
+  });
+
+  // The tracker reports location.href, and on these pages the URL is the credential.
+  test('the analytics tracker never loads on a mailed token link', async () => {
+    sent.length = 0;
+    expect((await subscribe(base, validFields('hedy@example.com'))).status).toBe(200);
+    await waitForSent(1);
+    const links = [...new Set([...(sent[0]?.text ?? '').matchAll(/https:\/\/support\.test(\/\S*\?token=[\w-]+)/g)].map((m) => m[1]))];
+    expect(links).toHaveLength(2);
+
+    const docker = process.env.MOCHI_DOCKER;
+    process.env.MOCHI_DOCKER = 'true';
+    try {
+      expect(await (await fetch(`${base}/`)).text()).toContain('data-website-id');
+      for (const link of links) {
+        const res = await fetch(`${base}${link}`);
+        expect(res.status).toBe(200);
+        expect(await res.text()).not.toContain('data-website-id');
+      }
+    } finally {
+      if (docker === undefined) {
+        delete process.env.MOCHI_DOCKER;
+      } else {
+        process.env.MOCHI_DOCKER = docker;
+      }
+    }
   });
 
   test('the delivery log records queued → sending → sent', async () => {
@@ -373,30 +432,25 @@ describe('newsletter signup', () => {
   });
 });
 
+// Env goes in per call rather than onto `process.env`: mutating the real one leaks into whatever else this file
+// evaluates afterwards, and NODE_ENV in particular is read by dependencies far outside this describe.
 describe('embed ancestors', () => {
-  const original = process.env.NEWSLETTER_EMBED_ANCESTORS;
-  const originalMode = process.env.MODE;
-
-  afterAll(() => {
-    process.env.NEWSLETTER_EMBED_ANCESTORS = original;
-    process.env.MODE = originalMode;
-  });
-
   test('an explicit allow-list wins', () => {
-    process.env.NEWSLETTER_EMBED_ANCESTORS = 'https://a.test  https://b.test';
-    expect(embedAncestors()).toEqual(['https://a.test', 'https://b.test']);
+    expect(embedAncestors({ NEWSLETTER_EMBED_ANCESTORS: 'https://a.test  https://b.test' })).toEqual(['https://a.test', 'https://b.test']);
   });
 
   test('production falls back to the mochi.fast origins alone', () => {
-    delete process.env.NEWSLETTER_EMBED_ANCESTORS;
-    process.env.MODE = 'production';
-    expect(embedAncestors()).toEqual(['https://mochi.fast', 'https://www.mochi.fast']);
+    expect(embedAncestors({ NODE_ENV: 'production' })).toEqual(['https://mochi.fast', 'https://www.mochi.fast']);
   });
 
   test('development also allows the local site and smoke-test ports', () => {
-    delete process.env.NEWSLETTER_EMBED_ANCESTORS;
-    process.env.MODE = 'development';
-    expect(embedAncestors()).toContain('http://localhost:3333');
-    expect(embedAncestors()).toContain('https://mochi.fast');
+    const ancestors = embedAncestors({ NODE_ENV: 'development', SUPPORT_DEV: '1' });
+    expect(ancestors).toContain('http://localhost:3333');
+    expect(ancestors).toContain('https://mochi.fast');
+  });
+
+  // A host or CI image exporting NODE_ENV=development must not open the allow-list on its own.
+  test('NODE_ENV alone does not allow localhost', () => {
+    expect(embedAncestors({ NODE_ENV: 'development' })).toEqual(['https://mochi.fast', 'https://www.mochi.fast']);
   });
 });

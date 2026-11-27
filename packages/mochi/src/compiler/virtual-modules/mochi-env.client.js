@@ -5,12 +5,15 @@ export const isBuilding = false;
 // declaration (tree-shaken when unused); this helper is pulled in only if one is.
 const __serverOnly = (n) => { throw new Error(n + " is only available on the server"); };
 export function getRequestContext() { __serverOnly("getRequestContext()"); }
+// Undefined rather than a throwing stub: an island's top-level code runs again during hydration, where there is no nonce.
+export function getCspNonce() { return undefined; }
 // Lazy cookie jar + /*@__PURE__*/ initializers keep this module tree-shakeable:
 // if an island imports only e.g. `logger`, the bundler drops `cookies` and the
 // whole cookies.client.ts tree instead of eagerly evaluating __cc() at load.
-import { createClientCookies as __cc } from "__MOCHI_COOKIES_CLIENT__";
+import { createClientCookies as __cc, cookieWriteChecks as __cw } from "__MOCHI_COOKIES_CLIENT__";
 let __clientCookies;
-const __getClientCookies = () => (__clientCookies ??= __cc());
+// The literal, not the exported DEV const (which Bun keeps as a variable), lets a production build drop the write checks.
+const __getClientCookies = () => (__clientCookies ??= __cc(__MOCHI_DEV__ ? __cw(devWarn) : undefined));
 export const cookies = /*@__PURE__*/ new Proxy({}, {
   get(_, p) {
     const c = __getClientCookies();
@@ -49,12 +52,15 @@ export function devWarn(msg) { if (typeof window !== "undefined" && window.__moc
 // Isomorphic: pins a value on globalThis (per realm in the browser). Real re-export,
 // not a server-only stub, so island code can dedupe singletons on the client too.
 export { pinGlobal } from "__MOCHI_GLOBAL_STATE__";
+export { escapeHtmlAttr } from "__MOCHI_HTML_ESCAPE__";
 export { stringify, parse } from "__MOCHI_DEVALUE__";
 export { trailingSlashIt } from "__MOCHI_TRAILING_SLASH__";
 // Server-only; the preprocessor never injects __mochi_emit_props__
 // into client bundles, but this stub keeps the module surface
 // symmetric and produces a clear error if anyone imports it.
 export function emitIslandProps() { __serverOnly("emitIslandProps()"); }
+// Only injected into server output; a no-op here keeps the module surface symmetric.
+export function markRenderedCss() {}
 // mochiEvents is a server-side bus. On the client we ship a stub so
 // bundles don't pull in mitt and accidental emits surface in the
 // console instead of silently misbehaving. Subscribers registered
@@ -124,12 +130,13 @@ export function warmImagePlaceholder() {}
 export function getImage() { __serverOnly("getImage()"); }
 export function getImagePlaceholder() { return Promise.resolve(null); }
 export function imagePlaceholder() { return Promise.resolve(null); }
+export function cachedImageDimensions() { return Promise.resolve(null); }
 export function invalidateImage() { __serverOnly("invalidateImage()"); }
 export { reloadDeferredIsland, reloadDeferredIslandAll } from "__MOCHI_DEFER_API__";
 export { deferReloadState, DeferReloadState } from "__MOCHI_DEFER_REACTIVE__";
-export function memoryStore() { __serverOnly("memoryStore()"); }
-export function sqliteStore() { __serverOnly("sqliteStore()"); }
-export function postgresStore() { __serverOnly("postgresStore()"); }
+export function rateLimitMemoryStore() { __serverOnly("rateLimitMemoryStore()"); }
+export function rateLimitSqliteStore() { __serverOnly("rateLimitSqliteStore()"); }
+export function rateLimitPostgresStore() { __serverOnly("rateLimitPostgresStore()"); }
 export { enhance, deserialize } from "__MOCHI_ENHANCE_CLIENT__";
 // Constant by construction: client bundles are built only for islands, so
 // every component that executes in the browser is part of a hydrating (or
@@ -137,3 +144,6 @@ export { enhance, deserialize } from "__MOCHI_ENHANCE_CLIENT__";
 export function isHydratable() { return true; }
 // Server filesystem path — meaningless in the browser.
 export const PROTECTION_SHELL_COMPONENT = undefined;
+export function moduleRef(specifier) {
+  throw new Error("moduleRef(" + JSON.stringify(specifier) + ") only works inside a *.prerender.ts module, which runs at build time.");
+}

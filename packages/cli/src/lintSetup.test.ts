@@ -65,7 +65,7 @@ describe('addLintTooling', () => {
     for (const dep of ['@eslint/js', 'eslint', 'eslint-plugin-svelte', 'typescript-eslint', 'prettier', 'prettier-plugin-svelte', 'eslint-config-prettier', 'typescript']) {
       expect(out.devDependencies[dep]).toBeString();
     }
-    expect(Object.keys(out.devDependencies)).toEqual([...Object.keys(out.devDependencies)].sort((a, b) => a.localeCompare(b)));
+    expect(Object.keys(out.devDependencies)).toEqual(Object.keys(out.devDependencies).sort((a, b) => a.localeCompare(b)));
   });
 
   test('eslint only: no prettier deps or scripts, no bridge', () => {

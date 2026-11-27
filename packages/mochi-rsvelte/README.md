@@ -41,14 +41,20 @@ The output rsvelte emits is verified byte-identical to upstream by this package'
 
 - **Pre-1.0.** rsvelte's own README warns that APIs and behaviour may change without notice.
 - **Function-valued compiler options are ignored.** `cssHash` and `warningFilter` cannot cross
-  the native boundary. This package strips them and warns once. For `cssHash`, use rsvelte's
-  `cssHashOverride: '<hash>'` to force a fixed value.
+  the native boundary. `cssHash` is stripped with a one-time warning; use rsvelte's
+  `cssHashOverride: '<hash>'` to force a fixed value. `warningFilter` is dropped silently, since
+  Mochi never surfaces compiler warnings, so it keeps working for `svelte-check` and editors.
 - **`$derived(await …)` in dev client builds** loses Svelte's dev-only reactivity-loss
   instrumentation. Server output and non-dev client output match upstream byte-for-byte.
 - **`compileModule()` output differs cosmetically** — a `vVERSION` placeholder in the generated
   header comment and different printer whitespace. Semantically identical.
 - **Platforms.** Prebuilt binaries cover macOS arm64/x64, Linux x64/arm64 (glibc) and Windows
   x64 (MSVC). There is no musl build, so Alpine-based images fall back to `svelte/compiler`.
+- **Windows needs the Visual C++ Redistributable.** The prebuilt `.node` links against
+  `VCRUNTIME140.dll`, which Windows does not ship in the box. Without it the binding fails with
+  `LoadLibrary failed: The specified module could not be found` — the file is present, its C
+  runtime is not. Install it with `winget install --id Microsoft.VCRedist.2015+.x64 -e`. GitHub's
+  `windows-latest` runners already have it.
 - **Switching backends invalidates compiled output.** Mochi's in-memory compile cache is keyed
   on the backend, but a prebuilt `manifest.json` is not — run `bun run clean` and rebuild after
   changing `svelteCompiler`.

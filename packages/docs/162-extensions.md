@@ -149,12 +149,40 @@ await Mochi.serve({
 
 #### `cookie:defaults`
 
-Default `CookieSerializeOptions` merged into every `cookies.set()` call. Per-call options win per field. Resolved once at startup. Sync.
+<VersionNote since="0.10.0" message="Before 0.10.0, cookies.set() and cookies.delete() in the browser ignored these defaults." />
+
+Default `CookieSerializeOptions` merged into every `cookies.set()` and `cookies.delete()` call. Per-call options win per field. Resolved once at startup. Sync. In the browser, `cookies.set()` and `cookies.delete()` apply `path`, `domain`, `secure`, `sameSite`, `partitioned` and `priority` from these defaults; `httpOnly`, `maxAge` and `expires` defaults apply to server writes only.
+
+With [`secureCookies`](/docs/serve-options/#secure-cookies) on, the filter receives `{ httpOnly: true, sameSite: 'lax', secure }` instead of `{}`, where `secure` is `true` outside development. Spread it to change one field and keep the others.
 
 ```ts
 await Mochi.serve({
   filters: {
     'cookie:defaults': () => ({ secure: true, httpOnly: true, sameSite: 'Lax', path: '/' }),
+  },
+  routes,
+});
+```
+
+<VersionNote since="0.10.0" message="Before 0.10.0, cookies.delete() took only path and domain from these defaults." />
+
+Pass `cookies.delete()` the per-call options that overrode these defaults in `cookies.set()`. Otherwise the browser can ignore the deletion without an error: with the defaults above, a bare `cookies.delete('theme')` for the cookie below sends `Secure`, which the browser rejects over plain HTTP.
+
+```ts
+cookies.set('theme', 'dark', { secure: false });
+cookies.delete('theme', { secure: false });
+```
+
+#### `security:headers`
+
+<VersionNote since="0.10.0" message="The security:headers filter is new in 0.10.0." />
+
+The security headers added to every framework response, as a `Record<string, string>` built from the `securityHeaders` option. Return the set to send: add HSTS or a static CSP, or drop a default. Resolved once at startup. Sync. See [Security](/docs/security/).
+
+```ts
+await Mochi.serve({
+  filters: {
+    'security:headers': (headers) => ({ ...headers, 'Strict-Transport-Security': 'max-age=63072000; includeSubDomains' }),
   },
   routes,
 });

@@ -1,7 +1,6 @@
 <script module>
   import { getImageUrl, getImage } from 'mochi-framework';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
+  import { sources } from './sources.prerender.ts';
   import { highlightCode } from '../../lib/highlight.server';
 
   const CDN = 'https://sta-public.fra1.cdn.digitaloceanspaces.com/mochi';
@@ -59,8 +58,6 @@
     );
     const codeFormat = await snippet("const { bytes } = await getImage(src, 'fmt-webp');");
 
-    const sources = await loadSources(files);
-
     return {
       codeSetup,
       metaImg,
@@ -83,7 +80,6 @@
       codeModulate,
       formats,
       codeFormat,
-      sources,
     };
   }
 
@@ -124,7 +120,6 @@
     codeModulate,
     formats,
     codeFormat,
-    sources,
   } = await buildPage();
 </script>
 

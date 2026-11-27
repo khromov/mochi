@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-// mochi publishes source, so a consumer's tsc/svelte-check type-checks transports.ts. nodemailer
+// mochi publishes source, so a consumer's tsc/svelte-check type-checks transports.ts. nodemailer <10
 // ships no bundled types and @types/nodemailer is not a runtime dep, so a *literal*
 // import('nodemailer') leaks a TS7016 into every consumer that never touches email (see #192 and
 // transports.ts). This guard reproduces a consumer's resolution and asserts the leak is gone.

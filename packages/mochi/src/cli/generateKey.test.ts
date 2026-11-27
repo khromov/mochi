@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { generateKey } from './generateKey';
@@ -19,6 +19,14 @@ describe('generateKey', () => {
     expect(res.action).toBe('created');
     expect(res.path).toBe(path.join(cwd, '.env'));
     expect(await Bun.file(res.path).text()).toBe(`MOCHI_KEY=${KEY}\n`);
+  });
+
+  it.skipIf(process.platform === 'win32')('creates .env readable only by its owner', async () => {
+    const cwd = freshCwd();
+
+    const res = await generateKey({ cwd, key: KEY });
+
+    expect(statSync(res.path).mode & 0o777).toBe(0o600);
   });
 
   it('generates a key that decodes to exactly 32 bytes', async () => {

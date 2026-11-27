@@ -2,10 +2,7 @@
   import { highlightCode } from '../../lib/highlight.server';
   import DemoPage from '../../components/DemoPage.svelte';
   import CodeSnippet from '../../components/CodeSnippet.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
-
-  const sources = await loadSources(files);
+  import { sources } from './sources.prerender.ts';
 
   const handleErrorSnippet = `const handleError: HandleError = ({ error, event, status, message }) => {
   logger.info(

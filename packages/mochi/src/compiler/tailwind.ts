@@ -66,7 +66,8 @@ export async function setupTailwind(opts: TailwindOptions): Promise<void> {
   const outputAbs = path.resolve(opts.output);
   await compileTailwind(opts);
 
-  if (process.env.MODE !== 'development') {
+  // `MODE` is the pre-0.10 spelling, still honoured so an existing dev script doesn't silently lose the watcher.
+  if (process.env.NODE_ENV !== 'development' && process.env.MODE !== 'development') {
     return;
   }
 

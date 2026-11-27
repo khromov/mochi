@@ -1,15 +1,14 @@
 <script lang="ts">
   import DemoPage from '../../components/DemoPage.svelte';
   import StylingDemo from './StylingDemo.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
+  import { sources } from './sources.prerender.ts';
   import { themes, defaultsSample, rule, markup } from './themes.ts';
   import { highlightCode } from '../../lib/highlight.server';
   import type { MintedCaptcha } from 'mochi-framework';
 
   let { captchas }: { captchas: MintedCaptcha[] } = $props();
 
-  // Highlighted here rather than in the island: Shiki is server-only.
+  // Highlighted here rather than in the island: the highlighter is server-only.
   const css = {
     defaults: await highlightCode(defaultsSample, 'css'),
     themed: await highlightCode(rule('.themed', themes.themed.css), 'css'),
@@ -23,8 +22,6 @@
     candy: await highlightCode(markup(themes.candy), 'svelte'),
     terminal: await highlightCode(markup(themes.terminal), 'svelte'),
   };
-
-  const sources = await loadSources(files);
 </script>
 
 <DemoPage

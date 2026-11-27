@@ -964,9 +964,9 @@ export async function startCronRuntime(jobs: MochiCronJob[], opts: StartCronOpti
   registry.cronOwnedSql = ownedSql;
   registry.cronShutdownTimeout = opts.shutdownTimeout ?? DEFAULT_QUEUE_SHUTDOWN_TIMEOUT;
 
-  // Reconcile: drop any schedule this runtime owns that is no longer declared (a removed Mochi.cron line, or a
-  // dev-skipped job) so an orphaned schedule can't keep enqueuing jobs no worker consumes.
-  const declaredQueues = new Set(active.map((job) => cronQueueName(job.name)));
+  // Reconcile: drop any schedule that is no longer declared (a removed Mochi.cron line) so an orphan can't keep
+  // enqueuing jobs no worker consumes; a dev-skipped job is still declared, so a dev boot on shared storage keeps it.
+  const declaredQueues = new Set(jobs.map((job) => cronQueueName(job.name)));
   for (const schedule of await boss.getSchedules()) {
     if (!declaredQueues.has(schedule.name)) {
       await boss.unschedule(schedule.name);
@@ -1085,7 +1085,7 @@ async function registerQueueWorker(boss: BunBoss, config: MountableQueue): Promi
   const o = config.options;
   const workOptions = omitUndefined({
     // Escape hatch first; Mochi-owned keys below win where they overlap.
-    ...omitUndefined({ ...(o?.worker ?? {}) }),
+    ...omitUndefined({ ...o?.worker }),
     batchSize: 1,
     includeMetadata: true,
     perJobResults: true,

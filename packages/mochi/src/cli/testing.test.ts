@@ -245,7 +245,7 @@ async function runProbeFile(source: string, { killAfterMs }: { killAfterMs?: num
   try {
     writeFileSync(join(dir, 'probe.test.ts'), source);
     const reportPath = join(dir, 'report.xml');
-    const proc = Bun.spawn(['bun', 'test', '--reporter=junit', `--reporter-outfile=${reportPath}`, 'probe.test.ts'], {
+    const proc = Bun.spawn([process.execPath, 'test', '--reporter=junit', `--reporter-outfile=${reportPath}`, 'probe.test.ts'], {
       cwd: dir,
       stdin: 'ignore',
       stdout: 'pipe',

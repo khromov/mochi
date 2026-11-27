@@ -1,11 +1,13 @@
-FROM oven/bun:1.4.0-alpine
+FROM oven/bun:1.4.4-alpine
 WORKDIR /app
+RUN chown bun:bun /app
+USER bun
 
-COPY package.json bun.lock* ./
-COPY patches ./patches
+COPY --chown=bun:bun package.json bun.lock* ./
+COPY --chown=bun:bun patches ./patches
 RUN bun install --production
 
-COPY . .
+COPY --chown=bun:bun . .
 RUN bun run build
 
 ENV PORT=3333

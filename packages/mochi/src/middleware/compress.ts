@@ -1,5 +1,5 @@
 import type { Handle } from '../runtime/hooks';
-import { getMochiConfig } from '../mochiConfig';
+import { isDev } from '../utils/env';
 import { appendVary, COMPRESSION_FORMAT, COMPRESSION_TOKEN, negotiateEncoding } from '../utils';
 import type { CompressionMethod } from '../utils';
 import { logger } from '../utils/log';
@@ -13,15 +13,6 @@ export interface CompressOptions {
 function isCompressible(contentType: string): boolean {
   const lower = contentType.toLowerCase();
   return COMPRESSIBLE_TYPES.some((prefix) => lower.startsWith(prefix));
-}
-
-function isDev(): boolean {
-  try {
-    return getMochiConfig().options.development ?? true;
-  } catch {
-    // Mochi.serve() hasn't initialized config (e.g. unit tests) — assume prod.
-    return false;
-  }
 }
 
 /**
@@ -44,7 +35,7 @@ export function compress(opts: CompressOptions = {}): Handle {
   return async ({ event, resolve }) => {
     const response = await resolve(event);
 
-    if (isDev()) {
+    if (isDev) {
       return response;
     }
 

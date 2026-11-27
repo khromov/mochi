@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { compile as mdsvexCompile } from 'mdsvex';
+import { pinGlobal } from 'mochi-framework';
 import { SITE_ROOT } from './siteRoot';
 
 export const BLOG_DIR = path.resolve(SITE_ROOT, 'src/blog');
@@ -26,12 +27,14 @@ export interface PostEntry {
   raw: string;
 }
 
-let cachedPosts: PostEntry[] | null = null;
-let cachedBySlug: Map<string, PostEntry> | null = null;
+const cache = pinGlobal('__mochi_site_blog_cache__', () => ({
+  posts: null as PostEntry[] | null,
+  bySlug: null as Map<string, PostEntry> | null,
+}));
 
 export function clearBlogCaches(): void {
-  cachedPosts = null;
-  cachedBySlug = null;
+  cache.posts = null;
+  cache.bySlug = null;
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -45,8 +48,8 @@ async function parsePostFrontmatter(markdown: string): Promise<Partial<PostMetad
 }
 
 async function loadAllPosts(): Promise<PostEntry[]> {
-  if (cachedPosts) {
-    return cachedPosts;
+  if (cache.posts) {
+    return cache.posts;
   }
 
   const glob = new Bun.Glob('*.md');
@@ -91,9 +94,14 @@ async function loadAllPosts(): Promise<PostEntry[]> {
   // Newest first; filename tiebreak keeps the order reproducible across filesystems.
   entries.sort((a, b) => b.date.localeCompare(a.date) || b.filename.localeCompare(a.filename));
 
-  cachedPosts = entries;
-  cachedBySlug = new Map(entries.map((e) => [e.slug, e]));
+  cache.posts = entries;
+  cache.bySlug = new Map(entries.map((e) => [e.slug, e]));
   return entries;
+}
+
+// The deployed image runs NODE_ENV=development for the debug bar, so dev mode alone doesn't mean a local preview.
+export function draftsVisible(env: Record<string, string | undefined> = process.env): boolean {
+  return env.NODE_ENV === 'development' && env.MOCHI_DOCKER !== 'true';
 }
 
 export async function loadPosts(opts?: { includeDrafts?: boolean }): Promise<PostEntry[]> {
@@ -102,10 +110,10 @@ export async function loadPosts(opts?: { includeDrafts?: boolean }): Promise<Pos
 }
 
 export async function getPost(slug: string, opts?: { includeDrafts?: boolean }): Promise<PostEntry | null> {
-  if (!cachedBySlug) {
+  if (!cache.bySlug) {
     await loadAllPosts();
   }
-  const post = cachedBySlug?.get(slug) ?? null;
+  const post = cache.bySlug?.get(slug) ?? null;
   if (post?.draft && !opts?.includeDrafts) {
     return null;
   }

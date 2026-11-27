@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { getMochiConfig } from '../mochiConfig';
 import { ImageCache } from './imageCache';
+import type { Storage } from '../cache/cache';
 import type { ImageFormat, ImageSize, MochiImageOptions, ResolvedImageOptions, ResolvedImageSize } from './types';
 
 const ALL_FORMATS: ImageFormat[] = ['webp', 'jpeg', 'png', 'avif'];
@@ -69,6 +70,14 @@ function resolveSize(
   return resolved;
 }
 
+// Zero or a fraction would leave every remote fetch waiting out `fetchTimeoutMs`, so it fails at boot instead.
+function checkFetchConcurrency(value: number): number {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`image.maxConcurrentFetches must be a positive integer, got ${value}`);
+  }
+  return value;
+}
+
 export function resolveImageOptions(opts: MochiImageOptions | undefined): ResolvedImageOptions {
   const o = opts ?? {};
   const defaultFormat = o.defaultFormat ?? 'webp';
@@ -99,6 +108,7 @@ export function resolveImageOptions(opts: MochiImageOptions | undefined): Resolv
     blockPrivateNetworks: o.blockPrivateNetworks ?? true,
     fetchTimeoutMs: o.fetchTimeoutMs ?? 10_000,
     maxResponseBytes: o.maxResponseBytes ?? 20 * 1024 * 1024,
+    maxConcurrentFetches: checkFetchConcurrency(o.maxConcurrentFetches ?? 8),
     timeToStale: o.timeToStale ?? 14_400_000,
     timeToEvict: o.timeToEvict ?? 86_400_000,
     compressPayload: o.compressPayload ?? true,
@@ -134,6 +144,28 @@ export function getImageRuntime(): ImageRuntime {
     g[GLOBAL_KEY] = runtime;
   }
   return runtime;
+}
+
+// Each is baked into the cache instance, its sweeper, or the endpoint route at boot, so a dev entry reload can't apply it.
+const BOOT_ONLY_FIELDS = ['enabled', 'cacheDir', 'storage', 'timeToStale', 'timeToEvict', 'sweepIntervalMs'] as const;
+
+// The entry builds a new storage instance on every reload, so only a different backend class counts as a change.
+function storageClass(storage: Storage | undefined): string | undefined {
+  return storage?.constructor?.name;
+}
+
+// Changed boot-only fields keep their boot values, so minted URLs stay consistent with the running cache and endpoint.
+export function reloadImageOptions(opts: MochiImageOptions | undefined): string[] {
+  const runtime = getImageRuntime();
+  const next = resolveImageOptions(opts);
+  const prev = runtime.options;
+  const changed = BOOT_ONLY_FIELDS.filter((field) => (field === 'storage' ? storageClass(prev.storage) !== storageClass(next.storage) : prev[field] !== next[field]));
+  for (const field of BOOT_ONLY_FIELDS) {
+    Object.assign(next, { [field]: prev[field] });
+  }
+  runtime.options = next;
+  runtime.cache.setSizes(next.sizes);
+  return changed;
 }
 
 /** Look up a resolved named size, or `undefined` if the name is unknown/absent. */

@@ -25,8 +25,6 @@ messages. It does not change code logic or identifiers already fixed by an API
 
 ## The core rules (apply every time)
 
-These are non-negotiable. Follow all of them in every sentence you write.
-
 1. **One idea per sentence.** Max ~20 words for an instruction, ~25 for a
    description. Split anything longer. Avoid semicolons — use two sentences.
 2. **One concept, one word.** Pick a single canonical term per concept and

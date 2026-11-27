@@ -25,7 +25,7 @@
       } else if (result.type === 'failure' && result.data) {
         errorMessage = result.data.error;
       } else if (result.type === 'error') {
-        errorMessage = 'Network error. Try again.';
+        errorMessage = result.status === 429 ? 'Too many messages from this network. Try again later, or email support@mochi.fast directly.' : 'Network error. Try again.';
       }
     };
   };

@@ -6,6 +6,7 @@ import type { Server } from 'bun';
 import { parse as devalueParse } from 'devalue';
 import { Mochi } from '../Mochi';
 import { fail, redirect, success } from './forms';
+import { error } from '../utils';
 
 const FIXTURE_PAGE = path.join(import.meta.dir, '..', '__fixtures__', 'css-imports', 'Page.svelte');
 
@@ -41,6 +42,7 @@ describe('enhance JSON envelope', () => {
             exploding: () => {
               throw new Error('boom');
             },
+            explicitError: () => error(409, 'Conflict from application'),
             random: () => success({ value: Math.floor(Math.random() * 100) + 1 }),
             uploadFile: async ({ formData }) => {
               const file = formData.get('file');
@@ -146,7 +148,16 @@ describe('enhance JSON envelope', () => {
       const body = (await res.json()) as { type: string; status?: number; error?: { message: string } };
       expect(body.type).toBe('error');
       expect(body.status).toBe(500);
-      expect(body.error?.message).toBe('boom');
+      expect(body.error?.message).toBe('Internal Server Error');
+    });
+
+    test('explicit HTTP errors preserve their application-safe message', async () => {
+      const res = await post('?/explicitError', '');
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { type: string; status?: number; error?: { message: string } };
+      expect(body.type).toBe('error');
+      expect(body.status).toBe(409);
+      expect(body.error?.message).toBe('Conflict from application');
     });
   });
 
@@ -278,6 +289,27 @@ describe('enhance JSON envelope', () => {
       expect(body.type).toBe('error');
       expect(body.status).toBe(404);
       expect(body.error?.message).toContain('Unknown form action');
+    });
+
+    test.each(['toString', 'valueOf', 'hasOwnProperty', 'constructor', '__proto__'])('inherited Object.prototype name ?/%s → 404, not dispatched', async (name) => {
+      const res = await post(`?/${name}`, '');
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { type: string; error?: { message: string } };
+      expect(body.type).toBe('error');
+      expect(body.error?.message).toContain('Unknown form action');
+    });
+
+    test('non-enhanced POST to an inherited Object.prototype name → 404 page', async () => {
+      const res = await fetch(`${base}/page?/toString`, {
+        method: 'POST',
+        headers: {
+          accept: 'text/html',
+          'content-type': 'application/x-www-form-urlencoded',
+          origin: base,
+        },
+        body: '',
+      });
+      expect(res.status).toBe(404);
     });
 
     test('non-enhanced POST (no Accept JSON) → HTML re-render, not JSON', async () => {

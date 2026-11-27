@@ -1,6 +1,6 @@
 <script>
   import { isServer } from 'mochi-framework';
-  import { delay } from '../../components/utils.ts';
+  import { delay } from '../../components/sourceUtils';
   import FlakyContent from './FlakyContent.svelte';
 
   let { label = '' } = $props();

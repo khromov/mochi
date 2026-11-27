@@ -15,7 +15,7 @@ import {
   internalDemoLlmsRoutes,
   loadDocs,
 } from './lib/docs';
-import { loadPosts, getPost } from './lib/blog';
+import { draftsVisible, loadPosts, getPost } from './lib/blog';
 import { buildFeedXml, FEED_CONTENT_TYPE } from './lib/feed';
 import { CHANGELOG_SLUG, CHANGELOG_TITLE, CHANGELOG_DESCRIPTION, getChangelogHtml, getChangelogTxt } from './lib/changelog';
 import { respondMcp } from './lib/mcp';
@@ -86,8 +86,10 @@ import { routes as viewTransitionsRoutes } from './demos/view-transitions/routes
 import { routes as customTransitionsRoutes } from './demos/custom-transitions/routes';
 import { routes as yourFirstMochiAppRoutes } from './demos/your-first-mochi-app/routes';
 
-const DEVELOPMENT = process.env.MODE === 'development';
+const DEVELOPMENT = process.env.NODE_ENV === 'development';
 const HEAP_SNAPSHOTS_ENABLED = process.env.HEAP_SNAPSHOTS_ENABLED === 'true';
+// Set by `bun run test:leak`, which runs the site in production mode.
+const LEAK_TEST = process.env.MOCHI_MEMORY_PROBE === '1';
 
 // Served by packages/support; NEWSLETTER_EMBED_URL overrides it. The trailing
 // slash is required — support is `trailingSlash: 'always'`, so a slashless src
@@ -137,19 +139,14 @@ const supportRoute = vanityRedirect(SUPPORT_ORIGIN);
 const mcpRoute = Mochi.api(({ request }) => respondMcp(request));
 
 export const routes: Record<string, MochiRouteValue> = {
-  ...(DEVELOPMENT
+  // Gating on the mode would put these out of reach of their only caller, which profiles the production build.
+  ...(profilerEnabled()
     ? {
         '/_profiler/start': Mochi.api(async () => {
-          if (!profilerEnabled()) {
-            return new Response('Not Found', { status: 404 });
-          }
           await startProfiler();
           return Response.json({ ok: true });
         }),
         '/_profiler/stop': Mochi.api(async () => {
-          if (!profilerEnabled()) {
-            return new Response('Not Found', { status: 404 });
-          }
           const profile = await stopProfiler();
           return Response.json(profile);
         }),
@@ -161,6 +158,9 @@ export const routes: Record<string, MochiRouteValue> = {
   ...(HEAP_SNAPSHOTS_ENABLED
     ? {
         '/_heapsnapshot': Mochi.api(() => {
+          // Bun.generateHeapSnapshot() does not collect first, so without this the dump mixes live
+          // objects with uncollected garbage and every size read off it comes out high.
+          Bun.gc(true);
           const snapshot = Bun.generateHeapSnapshot('v8');
           const filename = `mochi-${Date.now()}.heapsnapshot`;
           return new Response(snapshot, {
@@ -228,7 +228,7 @@ export const routes: Record<string, MochiRouteValue> = {
   }),
   '/blog': Mochi.page('./src/Blog.svelte', {
     serverProps: async () => {
-      const posts = await loadPosts({ includeDrafts: DEVELOPMENT });
+      const posts = await loadPosts({ includeDrafts: draftsVisible() });
       return {
         docsNav: await buildDocsNav(),
         posts: posts.map(({ slug, title, description, date, draft }) => ({ slug, title, description, date, draft })),
@@ -240,7 +240,7 @@ export const routes: Record<string, MochiRouteValue> = {
     serverProps: async () => {
       const { params } = getRequestContext();
       const slug = params.slug ?? '';
-      const post = await getPost(slug, { includeDrafts: DEVELOPMENT });
+      const post = await getPost(slug, { includeDrafts: draftsVisible() });
       if (!post) {
         error(404, `No post '${slug}'`);
       }
@@ -274,6 +274,12 @@ export const routes: Record<string, MochiRouteValue> = {
     },
     { rateLimit: { limit: 30, window: '1m' } },
   ),
+  ...(DEVELOPMENT
+    ? {
+        '/stickers': Mochi.page('./src/stickers/Sticker.svelte'),
+        '/stickers/logo': Mochi.page('./src/stickers/StickerLogo.svelte'),
+      }
+    : {}),
   '/sitemap.xml': Mochi.api(async () => {
     return new Response(await buildSitemapXml(), {
       headers: { 'Content-Type': 'application/xml; charset=utf-8' },
@@ -378,7 +384,7 @@ export const routes: Record<string, MochiRouteValue> = {
   ...islandPropsRoutes,
   ...lazyRoutes,
   ...lazyServerIslandRoutes,
-  ...(DEVELOPMENT ? leakTestRoutes : {}),
+  ...(DEVELOPMENT || LEAK_TEST ? leakTestRoutes : {}),
   ...islandDepthRoutes,
   ...loginRoutes,
   ...mdsvexRoutes,

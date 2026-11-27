@@ -6,21 +6,31 @@ description: 'What the development flag enables: live reload, file watcher, rout
 
 <script>
   import Callout from './_components/Callout.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Development mode
 
-Set the `development` flag on `Mochi.serve()` to switch between the dev and production runtime. It defaults to `true`.
+Mochi runs in development mode when `NODE_ENV=development`, and in production mode otherwise. Set the variable in your `dev` script and leave it unset everywhere else:
+
+```json
+// file: package.json
+{
+  "scripts": {
+    "dev": "NODE_ENV=development bun src/index.ts",
+    "start": "bun src/index.ts"
+  }
+}
+```
+
+`Mochi.serve()` needs no flag for this — the environment decides:
 
 ```ts
 // file: src/index.ts
-await Mochi.serve({
-  development: true, // the default
-  routes,
-});
+await Mochi.serve({ routes });
 ```
 
-When `development` is true, Mochi enables:
+In development mode, Mochi enables:
 
 - **Live reload** — a `mochi-live-reload` web component connects to `/__mochi_live_reload` and refreshes the page on file changes.
 - **File watcher** — watches `src/` and `public/`. An edit invalidates the SSR compile cache and emits `file:change` on `mochiEvents`.
@@ -31,33 +41,23 @@ When `development` is true, Mochi enables:
 
 <Callout type="warning">
 
-Never run `development: true` in production. Stack traces leak through the `error` event and the error overlay, the file watcher holds open file descriptors, and SSR bundles recompile on every change instead of loading from the prebuilt manifest.
+Never run development mode in production — whether from a stray `NODE_ENV=development` or a forced `development: true`. Stack traces leak through the `error` event and the error overlay, the file watcher holds open file descriptors, and SSR bundles recompile on every change instead of loading from the prebuilt manifest.
 
 </Callout>
 
-### `MODE=development` convention
+### Overriding the mode
 
-Drive the flag from an env var so one entry file serves both `bun run dev` and `bun run start`:
+Pass `development` to force a mode regardless of the environment:
 
 ```ts
 // file: src/index.ts
 await Mochi.serve({
-  development: process.env.MODE === 'development',
+  development: true, // ignores NODE_ENV
   routes,
 });
 ```
 
-```json
-// file: package.json
-{
-  "scripts": {
-    "dev": "MODE=development bun src/index.ts",
-    "start": "bun src/index.ts"
-  }
-}
-```
-
-`MODE` is a user-space convention. Mochi reads only `options.development`.
+Reach for it sparingly. Everything that runs outside `Mochi.serve()` still reads `NODE_ENV` — [`isDev`](/docs/environment-constants/#isdev) in module top-level code, and [`setupTailwind`](/docs/tailwind/#dev-rebuilds), which you call yourself — so an override makes those disagree with the running server. Mochi warns at boot when it contradicts `NODE_ENV=development`.
 
 ### Live reload
 
@@ -129,6 +129,12 @@ await Mochi.serve({
 ```
 
 Returning `null` drops the line; returning it unchanged keeps it. This suppresses only the churn warning — every other log line is untouched.
+
+#### Image config
+
+<VersionNote since="0.10.0" message="Earlier versions kept the boot-time image config until restart." />
+
+An entry reload also applies the [`image`](/docs/images/) config. Edits to `sizes`, `allowedHosts`, and the other per-request options take effect on the next request. `enabled`, `cacheDir`, `storage`, `timeToStale`, `timeToEvict`, and `sweepIntervalMs` apply only at boot: changing one logs a warning, and a restart applies it. A `storage` change is detected only when the backend class changes.
 
 ### `file:change` event
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test, type Mock } from 'bun:test';
-import { csrfBootWarning, csrfCheck, isFormContentType } from './csrf';
+import { csrfBootWarning, csrfCheck, isFormContentType, wsOriginCheck } from './csrf';
 import { initExtensions } from '../extensions';
 
 const SAME = 'http://localhost:3333';
@@ -493,11 +493,61 @@ describe('csrfBootWarning', () => {
 
   test('stays silent when a trusted origin is configured', () => {
     expect(csrfBootWarning({ routes: routesWithActions, proxy: { origin: 'https://app.example' } })).toBeNull();
-    expect(csrfBootWarning({ routes: routesWithActions, proxy: { hostHeader: 'x-forwarded-host' } })).toBeNull();
+    expect(csrfBootWarning({ routes: routesWithActions, proxy: { hostHeader: 'x-forwarded-host', protocolHeader: 'x-forwarded-proto' } })).toBeNull();
+    expect(csrfBootWarning({ routes: routesWithActions, proxy: { hostHeader: 'x-forwarded-host' }, bun: { tls: {} } })).toBeNull();
+  });
+
+  test('warns when hostHeader is set without protocolHeader, whose http:// origin a TLS-terminating proxy never matches', () => {
+    const warning = csrfBootWarning({ routes: routesWithActions, proxy: { hostHeader: 'x-forwarded-host' } });
+    expect(warning).toContain('1 route(s) declare form actions (e.g. "/contact")');
+    expect(warning).toContain('proxy.hostHeader is set without proxy.protocolHeader');
+    expect(warning).toContain("protocolHeader: 'x-forwarded-proto'");
+    expect(csrfBootWarning({ routes: { '/about': page() }, proxy: { hostHeader: 'x-forwarded-host' } })).toBeNull();
   });
 
   test('stays silent when the check is disabled or overridden by a csrf:check filter', () => {
     expect(csrfBootWarning({ routes: routesWithActions, csrf: { checkOrigin: false } })).toBeNull();
     expect(csrfBootWarning({ routes: routesWithActions, filters: { 'csrf:check': () => null } })).toBeNull();
+  });
+});
+
+describe('wsOriginCheck', () => {
+  let warn: Mock<typeof console.warn>;
+  beforeEach(() => {
+    warn = spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  const upgrade = (origin: string, host = 'app.example', proxyHost?: string): Request => {
+    const headers = new Headers({ origin, host });
+    if (proxyHost) {
+      headers.set('x-forwarded-host', proxyHost);
+    }
+    return new Request(`http://${host}/ws`, { headers });
+  };
+
+  test('csrf.checkOrigin: false lets a foreign origin through', () => {
+    const r = upgrade('https://evil.example');
+    expect(wsOriginCheck(r, new URL(r.url), undefined, new Set())?.status).toBe(403);
+    expect(wsOriginCheck(r, new URL(r.url), { checkOrigin: false }, new Set())).toBeNull();
+  });
+
+  test('rejects the opaque `null` origin a sandboxed iframe sends', () => {
+    const r = upgrade('null');
+    expect(wsOriginCheck(r, new URL(r.url), undefined, new Set())?.status).toBe(403);
+  });
+
+  test('accepts the https page behind a TLS-terminating proxy that keeps Host', () => {
+    const r = upgrade('https://app.example');
+    expect(wsOriginCheck(r, new URL(r.url), undefined, new Set())).toBeNull();
+  });
+
+  test('accepts the proxy-resolved public origin when the proxy rewrites Host', () => {
+    const r = upgrade('https://app.example', '10.0.0.5:3000', 'app.example');
+    const publicUrl = new URL('https://app.example/ws');
+    expect(wsOriginCheck(r, publicUrl, undefined, new Set())).toBeNull();
+    expect(wsOriginCheck(upgrade('https://evil.example', '10.0.0.5:3000', 'app.example'), publicUrl, undefined, new Set())?.status).toBe(403);
   });
 });

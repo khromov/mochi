@@ -60,7 +60,7 @@ type NodemailerTransporter = {
 };
 
 // Typing against a local interface rather than `typeof import('nodemailer')` spares consumers from resolving
-// nodemailer's types, which it ships none of, since mochi publishes source they type-check.
+// nodemailer's types (absent before v10, and `@types/nodemailer` is no runtime dep), since mochi publishes source they type-check.
 type NodemailerModule = { createTransport(opts: unknown): NodemailerTransporter };
 
 /** Delivers over SMTP. nodemailer is imported lazily on first send. */
@@ -90,7 +90,7 @@ class SmtpTransport implements EmailTransport {
     let nodemailer: NodemailerModule;
     try {
       // Consumers type-check this file, since mochi publishes source, and a *literal* `import('nodemailer')` would make
-      // their tsc/svelte-check demand nodemailer's absent types (TS7016). An indirect specifier keeps the runtime
+      // their tsc/svelte-check resolve nodemailer's types (TS7016 wherever they're absent). An indirect specifier keeps the runtime
       // import intact while opting this line out of static module-type resolution.
       const nodemailerSpecifier = 'nodemailer';
       nodemailer = (await import(nodemailerSpecifier)) as unknown as NodemailerModule;
@@ -100,7 +100,7 @@ class SmtpTransport implements EmailTransport {
         { cause: err },
       );
     }
-    const { host, port, secure, auth, pool, tls } = this.config;
+    const { host, port, secure, auth, pool, tls, requireTLS } = this.config;
     const resolvedSecure = secure ?? port === 465;
     return nodemailer.createTransport({
       host,
@@ -109,6 +109,11 @@ class SmtpTransport implements EmailTransport {
       ...(auth ? { auth } : {}),
       ...(pool ? { pool: true } : {}),
       ...(tls ? { tls } : {}),
+      // nodemailer's STARTTLS is opportunistic, so an on-path attacker who strips it from EHLO would otherwise receive the credentials in cleartext.
+      ...((requireTLS ?? (!resolvedSecure && !!auth)) ? { requireTLS: true } : {}),
+      // Attachments are content-only, and nodemailer otherwise reads a `path` from disk or fetches an `href` named by any message key.
+      disableFileAccess: true,
+      disableUrlAccess: true,
     });
   }
 
@@ -123,9 +128,8 @@ class SmtpTransport implements EmailTransport {
 
   private async deliver(message: ResolvedEmailMessage): Promise<MochiEmailResult> {
     const transporter = await this.getTransporter();
-    // `ResolvedEmailMessage`'s fields map 1:1 onto nodemailer's `sendMail`
-    // options (from/to/cc/bcc/replyTo/subject/html/text/attachments/headers) and
-    // its optional keys are already absent (not undefined), so spread it directly.
+    // Declared fields map 1:1 onto nodemailer's `sendMail` options and absent optionals are omitted, so spread it
+    // directly; undeclared keys reach nodemailer too, which is why the transporter disables file and URL access.
     const info = await transporter.sendMail({ ...message });
     return {
       transport: 'smtp',

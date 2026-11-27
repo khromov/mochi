@@ -5,13 +5,7 @@
 import 'mochi-framework';
 
 declare module 'mochi-framework' {
-  /** True when rendering on the server (SSR build). */
-  export const isServer: boolean;
-  /** True when running in the browser (client build). */
-  export const isBrowser: boolean;
-  export const DEV: boolean;
-  /** True when the server was started with `development: true`. */
-  export const isDev: boolean;
+  // `isServer` / `isBrowser` / `isDev` are real exports of `utils/env.ts`; augmenting them here would duplicate them.
 
   type CookieSerializeOptions = import('./runtime/cookies').CookieSerializeOptions;
 
@@ -20,7 +14,7 @@ declare module 'mochi-framework' {
     getAll(): import('./runtime/cookies').Cookie[];
     has(name: string): boolean;
     set(name: string, value: string, options?: CookieSerializeOptions): void;
-    delete(name: string, options?: Pick<CookieSerializeOptions, 'path' | 'domain'>): void;
+    delete(name: string, options?: Omit<CookieSerializeOptions, 'maxAge' | 'expires'>): void;
   }
 
   // `logger`, `LogLevel`, `setLogLevel`, `getLogLevel` are real exports of the
@@ -60,10 +54,20 @@ declare module 'mochi-framework' {
   export { stringify, parse } from 'devalue';
 
   /**
+   * Mark a module to import rather than a value to serialize. Only meaningful in a `*.prerender.ts` module, where the
+   * build turns each marker into a real `import` in the generated module — which is how a prerendered module hands back
+   * components it could never serialize.
+   */
+  export function moduleRef<T = unknown>(specifier: string): T;
+
+  /**
    * Internal: registers a hydratable island's props in the per-request dedup registry and returns a stable ref id. The
    * preprocessor injects the calls for `mochi:hydrate` islands, and the client virtual module stubs it with a throw.
    */
   export function emitIslandProps(value: unknown): string;
+
+  /** Internal: `<Image>`'s served `width`/`height` once the variant is cached, else `null`. The client virtual module stubs it with `null`. */
+  export function cachedImageDimensions(src: string, size: string): Promise<{ width: number; height: number } | null>;
 
   /**
    * Svelte attachment that progressively enhances a `<form method="POST">`. The server's action handler runs as usual

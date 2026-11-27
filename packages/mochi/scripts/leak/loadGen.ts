@@ -100,7 +100,8 @@ export async function startLoad(opts: StartLoadOpts): Promise<LoadStats> {
         const res = await fetch(url, {
           method: route.method,
           body: route.body,
-          headers: route.headers,
+          // Sent like a browser would; without it the site's CSRF check rejects every form action with a 403.
+          headers: route.method === 'POST' ? { Origin: opts.baseUrl, ...route.headers } : route.headers,
           keepalive: true,
           redirect: 'manual',
           signal: opts.signal,
@@ -119,7 +120,12 @@ export async function startLoad(opts: StartLoadOpts): Promise<LoadStats> {
         } else if (s >= 500) {
           routeStats.status5xx++;
         }
-        stats.totalRequests++;
+        if (s === (route.expectStatus ?? 200)) {
+          stats.totalRequests++;
+        } else {
+          routeStats.errors++;
+          stats.totalErrors++;
+        }
       } catch (err) {
         if ((err as { name?: string })?.name === 'AbortError') {
           return;

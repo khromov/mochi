@@ -2,6 +2,7 @@ import * as devalue from 'devalue';
 import type { Attachment } from 'svelte/attachments';
 import type { MochiEnhanceOptions, MochiEnhanceResult, MochiFormShape, MochiSubmitFunction } from '../types';
 import { logger } from '../utils/log';
+import { SCRIPT_PROTOCOLS } from './forms';
 
 const noop = (): void => {};
 
@@ -31,7 +32,7 @@ function clone<T extends HTMLElement>(element: T): T {
  * Default fallback:
  * - `success` → `form.reset()` (skip with `update({ reset: false })`)
  * - `failure` → no-op (provide a callback to update UI)
- * - `redirect` → `window.location.assign(result.location)`
+ * - `redirect` → `window.location.assign(result.location)`, refusing (and logging) a script URL such as `javascript:` or `data:`, as the server's redirect guard does
  * - `error` → logged via `console.error('[mochi] enhance:', error)` before any callback runs, so a
  *   custom handler cannot silently swallow it
  *
@@ -58,6 +59,11 @@ export function enhance<Success extends MochiFormShape = MochiFormShape, Failure
         return;
       }
       if (result.type === 'redirect') {
+        // `location.assign()` runs a `javascript:` URL inside this page, which a native submit's `Location` header never would.
+        if (SCRIPT_PROTOCOLS.has(new URL(result.location, document.baseURI).protocol)) {
+          logger.error('enhance: refused to follow a redirect to a script URL:', result.location);
+          return;
+        }
         window.location.assign(result.location);
         return;
       }

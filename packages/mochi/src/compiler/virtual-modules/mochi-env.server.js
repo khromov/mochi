@@ -6,6 +6,10 @@ export function getRequestContext() {
   if (!ctx) throw new Error("getRequestContext() called outside of a request.");
   return ctx;
 }
+// Mirrors runtime/csp.ts: the fetch fallback (unmatched-route 404) carries its nonce outside any request context.
+export function getCspNonce() {
+  return globalThis.__mochi_request_context__?.getStore()?.cspNonce ?? globalThis.__mochi_csp_nonce__?.getStore();
+}
 function __mochiCtxProxy(key) {
   return new Proxy({}, {
     get(_, p) {
@@ -36,6 +40,7 @@ export function devWarn(msg) { __mochi_logger.warn(msg); }
 // Isomorphic: pins a value on globalThis so duplicate bundled copies share one
 // instance per process. Re-exported so .svelte-graph modules can dedupe singletons.
 export { pinGlobal } from "__MOCHI_GLOBAL_STATE__";
+export { escapeHtmlAttr } from "__MOCHI_HTML_ESCAPE__";
 // Re-export devalue so .svelte files (and the preprocessor's
 // injected hydration-prop import) can use stringify/parse without
 // a separate install. Resolved from the framework's own deps.
@@ -44,6 +49,8 @@ export { trailingSlashIt } from "__MOCHI_TRAILING_SLASH__";
 // Per-request hydratable-island props dedup helper. Used by the
 // preprocessor's injected `__mochi_emit_props__` import.
 export { emitIslandProps } from "__MOCHI_ISLAND_PROPS__";
+// Per-render record of which styled components initialised. Used by the preprocessor's injected `__mochi_css__` import.
+export { markRenderedCss } from "__MOCHI_RENDERED_CSS__";
 // Context-backed: true anywhere inside an island subtree that will hydrate
 // (seeded by the preprocessor's injected prologue on the island root).
 export { isHydratable } from "__MOCHI_IS_HYDRATABLE__";
@@ -64,7 +71,7 @@ export { requestCache, requestMemo, getRequestCache } from "__MOCHI_REQUEST_CACH
 export { MemoryStorage, FileStorage, isBlobRef, readBlobRef } from "__MOCHI_CACHE_STORAGE__";
 // Image helpers. Server-only (signing needs the secret key); re-exported
 // so .svelte files can `import { getImageUrl } from 'mochi-framework'`.
-export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, warmImagePlaceholder, invalidateImage } from "__MOCHI_IMAGE_API__";
+export { getImageUrl, getImageAttrs, getImage, getImagePlaceholder, imagePlaceholder, cachedImageDimensions, warmImagePlaceholder, invalidateImage } from "__MOCHI_IMAGE_API__";
 // Server-safe: the island registry is empty during SSR, so these resolve to a no-op here.
 export { reloadDeferredIsland, reloadDeferredIslandAll } from "__MOCHI_DEFER_API__";
 export { deferReloadState, DeferReloadState } from "__MOCHI_DEFER_REACTIVE__";
@@ -73,7 +80,11 @@ export { deferReloadState, DeferReloadState } from "__MOCHI_DEFER_REACTIVE__";
 // if user code calls them on the server — which is a usage error.
 export { enhance, deserialize } from "__MOCHI_ENHANCE_SSR__";
 // Rate-limit stores — server-only (bun:sqlite / Bun SQL).
-export { memoryStore, sqliteStore, postgresStore } from "__MOCHI_RATE_LIMIT__";
+export { rateLimitMemoryStore, rateLimitSqliteStore, rateLimitPostgresStore } from "__MOCHI_RATE_LIMIT__";
 // The built-in protection interstitial's absolute path — lets a docs/tooling
 // component read the default `protection.page` source straight from disk.
 export const PROTECTION_SHELL_COMPONENT = "__MOCHI_PROTECTION_SHELL_PATH__";
+// A *.prerender.ts module is replaced before the bundler resolves its imports, so this is only ever reached from a component.
+export function moduleRef(specifier) {
+  throw new Error("moduleRef(" + JSON.stringify(specifier) + ") only works inside a *.prerender.ts module, which runs at build time.");
+}

@@ -10,13 +10,13 @@ export interface LintToolingOptions {
 // Kept identical to the monorepo root package.json's lint stack (enforced by lintSetup.test.ts) — bump them together.
 const ESLINT_DEV_DEPENDENCIES: Record<string, string> = {
   '@eslint/js': '^10.0.1',
-  eslint: '^10.8.0',
-  'eslint-plugin-svelte': '^3.22.0',
-  'typescript-eslint': '^8.65.0',
+  eslint: '^10.14.0',
+  'eslint-plugin-svelte': '^3.24.1',
+  'typescript-eslint': '^8.72.2',
 };
 
 const PRETTIER_DEV_DEPENDENCIES: Record<string, string> = {
-  prettier: '^3.9.6',
+  prettier: '^3.10.1',
   'prettier-plugin-svelte': '^4.1.1',
 };
 

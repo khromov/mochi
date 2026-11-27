@@ -46,7 +46,10 @@ function sivKey(): Buffer {
 export interface EncryptOptions {
   /** Additional authenticated data — bound to the ciphertext but not stored in it. */
   aad?: string;
-  /** Deflate payloads ≥ 80 bytes when it shrinks them. Default: true. */
+  /**
+   * Deflate payloads ≥ 80 bytes when it shrinks them. Default: false, because the token length then leaks how well the
+   * plaintext compresses — only enable it when no part of the payload is attacker-influenced alongside a secret.
+   */
   compress?: boolean;
 }
 
@@ -62,7 +65,7 @@ export function encryptPayloadBytes(input: Uint8Array, opts: EncryptOptions = {}
   let payload = Buffer.from(input);
   let flags = 0;
   const minBytes = applyFilter('payload:compressMinBytes', DEFAULT_COMPRESS_MIN_BYTES, { options: getMochiConfig().options, payload });
-  if ((opts.compress ?? true) && payload.length >= minBytes) {
+  if (opts.compress && payload.length >= minBytes) {
     const deflated = Buffer.from(Bun.deflateSync(payload));
     if (deflated.length < payload.length) {
       payload = deflated;

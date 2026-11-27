@@ -58,7 +58,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `handle` — a `Handle` (or `sequence(...)`) wrapping every request. See [Middleware](/docs/middleware/).
 - `errorPage` — component rendered for uncaught page errors and unmatched routes. Default: built-in. See [Error handling](/docs/error-handling/).
 - `handleError` — `HandleError` hook run before the error page renders. See [Error handling](/docs/error-handling/).
-- `compressServerIslandProps` — deflate server-island props when it reduces size. Default: `true`.
+- `compressServerIslandProps` — deflate server-island props when it reduces size. Default: `false` (`true` before 0.10.0). A compressed token's length reveals whether one prop repeats text from another, so enable it only when no island mixes request-controlled props with server-only values.
 - `inlineNestedIslands` — render nested `mochi:defer` islands in-process during an island fetch instead of emitting more client fetches. `mochi:defer:visible` children keep their own fetch; one call site opts out with `mochi:defer={{ inline: false }}`. Default: `true`. See [Server islands](/docs/server-islands/).
 - `logger` — built-in request logger. Default: `{ enabled: true }`.
 - `publicDir` — directory served as static assets. Default: `./public`. Scanned from disk at startup in every mode, so it must ship with a production deploy.
@@ -74,10 +74,15 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 - `svelteConfigPath` — path to a Svelte config file. Default: `./svelte.config.js`. See [Svelte config](/docs/svelte-config/).
 - `svelteCompiler` — which compiler emits component JS. Default: `'svelte'`. `'rsvelte'` needs `@mochi-framework/rsvelte`. See [rsvelte](/docs/rsvelte/).
 - `optimize` — run the whole-program svelte-shaker pass over `.svelte` source before compiling, so the compiler emits less code. **Production only**, and needs `@mochi-framework/svelte-shaker`. `true` shakes everything; `{ enabled, exclude }` gives finer control. Default: `false`. See [Svelte Shaker](/docs/svelte-shaker/).
+- `minifier` (since 0.10.0) — which minifier prints the client JS. `'oxc'` (experimental) runs a second oxc pass over the chunks Bun emitted and needs `oxc-minify`. Default: `'bun'`. See [Production builds](/docs/production-builds/#javascript-minifier).
 - `protection` — Cloudflare-style browser verification: unverified clients get an interstitial that auto-solves the captcha proof-of-work and redeems it for a signed clearance cookie. Default: disabled. See [Protection Mode](/docs/protection/).
 - `storage` — the app database (`{ type: 'sqlite', path }` or `{ type: 'postgres', url }`). Pending `.sql` migrations from `migrations/<sqlite|postgres>/` are applied against it on startup, before the server binds; `startOnFail: true` boots despite a failed migration. Default: unset (no migrations run). See [Migrations](/docs/migrations/).
 - `csrf` — `MochiCsrfOptions` for the origin-header check. See below.
 - `proxy` — `MochiProxyOptions` for trusted reverse-proxy headers. See below.
+- `securityHeaders` (since 0.10.0) — baseline security headers on every framework response: `nosniff` and `Referrer-Policy` by default, `X-Frame-Options` opt-in. `boolean | MochiSecurityHeadersOptions`. Default: on. See [Security](/docs/security/).
+- `csp` (since 0.10.0) — mint a per-request nonce and stamp it on every script Mochi emits, for a nonce-based `Content-Security-Policy`. Default: `false`. See [Content-Security-Policy nonce](#content-security-policy-nonce).
+- `redirect` (since 0.10.0) — where `redirect()` may send a visitor (`trustedOrigins`). Default: same-origin only. See [Redirects](#redirects).
+- `secureCookies` (since 0.10.0) — give every cookie the app sets `HttpOnly` and `SameSite=Lax`, plus `Secure` outside development. Default: `false`. See [Secure cookies](#secure-cookies).
 - `hooks` / `filters` — named lifecycle hooks and value filters. See [Extensions](/docs/extensions/).
 - `warmup` — warm the SSR pipeline at startup by invoking every static page route once. `boolean | { enabledInProd, enabledInDev }`. Default: `false`. See below.
 - `bun` — escape hatch for raw `Bun.serve()` options Mochi does not surface — `idleTimeout`, `maxRequestBodySize`, `reusePort`, `tls`. `fetch` / `websocket` / `routes` / `error` are framework-owned and throw if set. See below.
@@ -92,7 +97,7 @@ In production (`development: false`), prebuilt JS/CSS bundles served from `asset
 
 <VersionNote since="0.10.0" message="staticDirs ships in the next Mochi release (0.10.0). This section describes the upcoming API." />
 
-Mount a directory tree under a URL prefix. Each entry becomes one Bun directory route, so a large tree costs one route rather than one per file, and `Content-Type`, `ETag`, `If-None-Match`, `Range`, `index.html` and sendfile streaming all come from Bun.
+Mount a directory tree under a URL prefix. Each entry becomes one wildcard route that streams files from disk, so a large tree costs one route rather than one per file. Responses carry `Content-Type`, `ETag` and `Last-Modified`, answer `Range` and `If-None-Match` / `If-Modified-Since`, and a directory URL serves its `index.html`.
 
 ```ts
 // file: src/index.ts
@@ -104,9 +109,11 @@ await Mochi.serve({
 
 This is for **large or generated** trees — a media library, a docs export, a build directory from another tool. For ordinary site assets keep using `publicDir`, which scans and registers each file individually.
 
+Like `publicDir`, a mount does not serve dotfiles or dot-directories (`.env`, `.git/…`), apart from a top-level `.well-known/`. The check runs on every request, so it covers files added after startup and every URL spelling of a name. A symlink is followed only while it stays inside the directory and does not resolve to a dot entry.
+
 <Callout type="warning">
 
-A mount is a native Bun directory route, matched **before** Mochi's request pipeline — so your middleware never sees it. `handle` hooks, `filterResponseHeaders`, `transformPage`, rate limiting, CSRF, trailing-slash normalization and the `request` event all skip `/prefix/*`, and a miss returns Bun's bare 404 rather than your `errorPage`. If you need any of that — auth, custom headers, logging — serve those files through `publicDir` (which can be gated with `protection.protectFiles`) or your own `Mochi.api` / `Mochi.file` route instead.
+A mount is a raw Bun route, matched **before** Mochi's request pipeline — so your middleware never sees it. `handle` hooks, `filterResponseHeaders`, `transformPage`, rate limiting, CSRF, trailing-slash normalization and the `request` event all skip `/prefix/*`, and a miss returns a bare 404 rather than your `errorPage`. If you need any of that — auth, custom headers, logging — serve those files through `publicDir` (which can be gated with `protection.protectFiles`) or your own `Mochi.api` / `Mochi.file` route instead.
 
 </Callout>
 
@@ -164,6 +171,41 @@ const analytics: Handle = async ({ event, resolve }) => {
 };
 ```
 
+### Secure cookies
+
+<VersionNote since="0.10.0" message="secureCookies ships in the next Mochi release (0.10.0). This section describes the upcoming API." />
+
+Turn on `secureCookies` to give every cookie the app sets `HttpOnly` and `SameSite=Lax`, plus `Secure` outside development. It is off by default, but we recommend it: `HttpOnly` keeps a session cookie away from injected scripts, and `Secure` keeps it off plain-HTTP connections.
+
+```ts
+// file: src/index.ts
+await Mochi.serve({
+  secureCookies: true,
+  routes,
+});
+```
+
+`cookies.set('session', 'abc')` then sends `session=abc; Path=/; Secure; HttpOnly; SameSite=Lax` in production, and the same without `Secure` in development so `http://localhost` keeps working. A bare `cookies.delete('session')` sends the same attributes, so it clears the cookie.
+
+<Callout type="warning">
+
+Browser code cannot read or overwrite an `HttpOnly` cookie, so a cookie that an island reads or writes needs `cookies.set('theme', 'dark', { httpOnly: false })` where the server sets it. A production site served over plain HTTP keeps none of these cookies, because the browser drops a `Secure` cookie that arrives over HTTP. The flag follows `development`, not the request's scheme, so it stays on behind a TLS-terminating proxy.
+
+</Callout>
+
+A field you pass to `cookies.set()` wins for that call. The `secureCookies` fields are also the value the [`cookie:defaults`](/docs/extensions/#cookiedefaults) filter receives, and its return value replaces them: spread them, as below, to keep the fields you do not change. In the browser, `cookies.set()` applies the resulting `secure` and `sameSite`, but never `httpOnly`.
+
+```ts
+await Mochi.serve({
+  secureCookies: true,
+  filters: {
+    // Served over plain HTTP: keep HttpOnly and SameSite, drop Secure.
+    'cookie:defaults': (defaults) => ({ ...defaults, secure: false }),
+  },
+  routes,
+});
+```
+
 ### CSRF
 
 `csrf` gates state-mutating form submissions (`POST`/`PUT`/`PATCH`/`DELETE` with a form content type) against an origin-header check. The request's `Origin` must match the expected origin or appear in `csrf.trustedOrigins`. JSON endpoints rely on the browser's CORS preflight and are not checked.
@@ -179,7 +221,33 @@ await Mochi.serve({
 });
 ```
 
-In production, the check refuses every form mutation until `proxy.origin` (or `proxy.hostHeader`) is set, so the deployment break is loud. In development the request is allowed through with a `[mochi]` warning. Routes declaring form `actions` without either option also warn once at boot — in both modes — so the misconfiguration is visible before deploy, not first discovered as a production 403.
+In production, the check refuses every form mutation until `proxy.origin` (or `proxy.hostHeader`) is set, so the deployment break is loud. In development the request is allowed through with a `[mochi]` warning. Routes declaring form `actions` without either option also warn once at boot — in both modes — so the misconfiguration is visible before deploy, not first discovered as a production 403. So does `proxy.hostHeader` without `proxy.protocolHeader`: the expected origin then keeps the server's own `http://` protocol, which never matches the browser's `https://` origin behind a TLS-terminating proxy.
+
+The same two options govern the [WebSocket origin check](/docs/websocket-routes/#origin-check), which runs in both modes.
+
+### Redirects
+
+<VersionNote since="0.10.0" message="The redirect guard is new in mochi-framework 0.10.0. Older versions send any redirect() location as given." />
+
+`redirect` controls where `redirect()` may send a visitor from a form action or a `serverProps` resolver. A relative path always passes. An absolute `http:` or `https:` location must be same-origin or have its origin in `trustedOrigins`, so a `?next=` value passed to `redirect()` cannot send visitors to another site.
+
+- `trustedOrigins` — extra origins `redirect()` may target. Default: `[]`.
+
+```ts
+await Mochi.serve({
+  proxy: { origin: 'https://app.example.com' },
+  redirect: { trustedOrigins: ['https://accounts.google.com'] },
+  routes,
+});
+```
+
+This list is separate from `csrf.trustedOrigins`. That list says which origins may send your server a form POST; this one says where your server may send its visitors.
+
+Same-origin means the origin from `proxy.origin` or `proxy.hostHeader`. Without either, it means the request's own `Host` with any scheme, so a TLS-terminating proxy that keeps `Host` needs no config. A client can set any `Host`, so if a shared cache in front of the app ignores `Host` in its cache key, set `proxy.origin`, or one request can store a redirect to another host for every visitor.
+
+In production an off-origin location fails the request with `500`. In development it is sent, with a `[mochi]` warning. Pass `{ external: true }` to [`redirect()`](/docs/utility-helpers/#form-action-helpers) to allow one call without listing its origin.
+
+In every mode, `{ external: true }` included, a location fails with `500` if it has a control character, does not parse as a URL, or uses a script-capable scheme (`javascript:`, `data:`, `vbscript:`, `blob:`, `filesystem:`, `file:`, `view-source:`). The [`enhance()`](/docs/progressively-enhancing-forms-with-enhance/) client refuses the same schemes. Other schemes, such as `mailto:`, `tel:` and app deep links, pass without a list entry.
 
 ### Proxy
 
@@ -218,9 +286,16 @@ await Mochi.serve({
 spoofed, client, proxy1, proxy2   # xffDepth: 3 → "client" (spoofed entry ignored)
 ```
 
+Set `xffDepth` to the number of proxies that append to the header, never higher. With one proxy and `xffDepth: 2`, a client can send its own `X-Forwarded-For`, and the entry the framework reads is the one the client wrote:
+
+```
+client            # no header sent → "client" (too short: falls back to the rightmost entry and warns)
+1.2.3.4, client   # client sent "1.2.3.4" → "1.2.3.4" (the client chose its own address)
+```
+
 <Callout type="warning">
 
-**Use `getClientAddress()` for a trusted client IP.** Reading `x-forwarded-for` directly could return a spoofable address. Pass the right `xffDepth`.
+**Use `getClientAddress()` for a trusted client IP.** Reading `x-forwarded-for` directly could return a spoofable address. Pass the right `xffDepth`: a value larger than the number of proxies that append lets a client choose its own address. Mochi warns once when a request has fewer entries than `xffDepth`.
 
 </Callout>
 
@@ -236,3 +311,37 @@ export const handler = Mochi.api(() => {
 ```
 
 Without `proxy.addressHeader`, this returns Bun's connecting `remoteAddress` (or `null` if unavailable).
+
+### Content-Security-Policy nonce
+
+<VersionNote since="0.10.0" message="The csp option ships in the next Mochi release (0.10.0)." />
+
+`csp: true` mints a fresh nonce for every request and stamps it on each `<script>` Mochi emits: the island bootstrap, the server-island loader, the shell's inline config, speculation rules, Svelte's `hydratable()` payload, and the dev-only live reload and debug bar. Mochi sets no header itself. Read the nonce with [`getCspNonce()`](/docs/request-context/#getcspnonce) and send the policy from middleware:
+
+```ts
+// file: src/index.ts
+import { Mochi, getCspNonce, type Handle } from 'mochi-framework';
+
+const csp: Handle = async ({ event, resolve }) => {
+  const response = await resolve(event);
+  const nonce = getCspNonce();
+  if (nonce) {
+    response.headers.set('Content-Security-Policy', `script-src 'nonce-${nonce}'; object-src 'none'; base-uri 'self'`);
+  }
+  return response;
+};
+
+await Mochi.serve({ csp: true, handle: csp, routes });
+```
+
+Islands and deferred server islands load through the nonced scripts, so a plain `'nonce-…'` source is enough. The fall-through 404 and the error page carry the nonce too. Island props travel in `<script type="application/json">` blocks, which CSP does not gate, so they get none.
+
+Scripts your own markup emits are not stamped: pass `getCspNonce()` to them yourself. With `csp` off the HTML is unchanged.
+
+<Callout type="warning">
+
+The nonce changes on every response, so do not cache rendered HTML with `csp` on. A page replayed from a `MochiCache` carries an old nonce that no longer matches the header, and a CDN that caches the header too serves every visitor the same nonce, which an injected script can then reuse.
+
+</Callout>
+
+Responses sent before middleware runs, such as the [protection](/docs/protection/) interstitial for a page route and the CSRF `403`, never reach the handle above and go out without a policy.

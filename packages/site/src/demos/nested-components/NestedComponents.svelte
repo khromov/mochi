@@ -1,10 +1,7 @@
 <script>
   import DemoPage from '../../components/DemoPage.svelte';
   import Level from './Level.svelte';
-  import { loadSources } from '../../components/utils.ts';
-  import { files } from './files.ts';
-
-  const sources = await loadSources(files);
+  import { sources } from './sources.prerender.ts';
 </script>
 
 <DemoPage

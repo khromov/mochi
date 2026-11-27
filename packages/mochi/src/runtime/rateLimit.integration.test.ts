@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { Server } from 'bun';
 import { Mochi } from '../Mochi';
-import { memoryStore } from './rateLimit';
+import { rateLimitMemoryStore } from './rateLimit';
 import { getRequestContext } from './requestContext';
 import { json } from '../utils';
 
@@ -13,11 +13,11 @@ describe('rateLimit route option', () => {
   let server: Server<undefined>;
   let outDir: string;
   let base: string;
-  let sharedStore: ReturnType<typeof memoryStore>;
+  let sharedStore: ReturnType<typeof rateLimitMemoryStore>;
 
   beforeAll(async () => {
     outDir = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-ratelimit-'));
-    sharedStore = memoryStore();
+    sharedStore = rateLimitMemoryStore();
     server = await Mochi.serve({
       port: 0,
       development: false,

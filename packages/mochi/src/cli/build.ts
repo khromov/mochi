@@ -8,19 +8,23 @@ import { isMochiPage, isMochiApi, isMochiWs, isMochiSse } from '../types';
 import type { MarkdownConfig, MochiBarrelWarningOptions, MochiFontOptions, MochiRouteValue, MochiSvelteShakerOptions } from '../types';
 import type { MochiProtectionOptions } from '../protection/types';
 import type { MochiSvelteCompiler } from '../compiler/svelteCompilerBackend';
-import { rmSync, mkdirSync } from 'node:fs';
+import { parseJsMinifier, resolveJsMinifier, type MochiJsMinifier } from '../compiler/jsMinifier';
+import { rmSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { scanPublicDir, publicRouteKey } from '../runtime/publicDir';
 import { scanEmailTemplates } from '../email/templates';
 import { encodeSourcePath } from '../compiler/manifestPaths';
+import { resolveOutDir } from '../compiler/resolveOutDir';
 import { loadSvelteConfig } from '../compiler/svelteConfig';
 import { logger, setLogLevel } from '../utils/log';
+import { relForDisplay, toPosixPath } from '../utils/index';
 import { consoleLogger } from '../dev/consoleLogger';
 import { mochiEvents } from '../events';
 import type { MochiCompileCompleteEvent } from '../events';
 import { styleText } from 'node:util';
 import prettyBytes from '../vendor/pretty-bytes';
 import { collectFontResources, collectImageResources, mergeResourceRows, printResourceTree } from './resourceReport';
+import { printPrerenderModules } from './prerenderReport';
 
 export interface MochiBuildOptions {
   routes: Record<string, MochiRouteValue>;
@@ -39,6 +43,8 @@ export interface MochiBuildOptions {
   markdown?: MarkdownConfig;
   /** Mirror the value passed to `Mochi.serve({ optimize })` so the prebuilt manifest and the runtime agree. Default: `false`. See `MochiServeOptions['optimize']`. */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /** Taken as already resolved: the CLI applies `--minifier` > `MOCHI_MINIFIER` > the entry's `minifier` before calling this. Omitted means `MOCHI_MINIFIER`, else `'bun'`. See `MochiServeOptions['minifier']`. */
+  minifier?: MochiJsMinifier;
   /** Mirror the value passed to `Mochi.serve({ barrelWarnings })`; a build collapses offenders into one grouped summary line. Default: enabled. See `MochiServeOptions['barrelWarnings']`. */
   barrelWarnings?: boolean | MochiBarrelWarningOptions;
   /** Mirror the value passed to `Mochi.serve({ fonts })` so the prebuilt CSS and extracted font files match the runtime. See `MochiServeOptions['fonts']`. */
@@ -60,6 +66,7 @@ interface RouteEntry {
 }
 
 export async function build(options: MochiBuildOptions): Promise<void> {
+  const minifier = options.minifier === undefined ? resolveJsMinifier() : parseJsMinifier(options.minifier, 'build({ minifier })');
   await checkEnvironment();
   setLogLevel('info');
   consoleLogger({ compile: false });
@@ -95,13 +102,14 @@ export async function build(options: MochiBuildOptions): Promise<void> {
   mochiEvents.on('compile:complete', onCompileComplete);
   try {
     const development = options.development ?? false;
-    const baseOutDir = options.outDir ?? './.mochi';
+    const baseOutDir = resolveOutDir(options.outDir ?? './.mochi');
     // Mirror the dev/prod split in Mochi.serve(): a `--dev` build nests under
     // `dev/` so it can't clobber the production manifest at the root.
     const outDir = development ? path.join(baseOutDir, 'dev') : baseOutDir;
     const publicDir = options.publicDir ?? './public';
 
     // Clean previous build artifacts
+    assertClearableOutDir(outDir, [publicDir, ...Object.values(options.routes).flatMap((r) => (isMochiPage(r) ? [r.componentPath] : []))]);
     rmSync(outDir, { recursive: true, force: true });
     mkdirSync(path.join(outDir, 'svelte-compile'), { recursive: true });
     mkdirSync(path.join(outDir, 'svelte-client'), { recursive: true });
@@ -110,7 +118,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     // Started now so it overlaps the compile phases, and awaited before the manifest. The `.catch(() => {})` guard only
     // marks a rejection handled in case compileAll throws first; the real error still surfaces at the trailing `await`.
     // `timed` wraps the work rather than that await, so the phase line reports real duration, not residual wait.
-    const serverIslandScriptPromise = timed('island-script', () => buildInlineWebComponent('./web-components/ServerIsland.ts'));
+    const serverIslandScriptPromise = timed('island-script', () => buildInlineWebComponent('./web-components/ServerIsland.ts', minifier));
     serverIslandScriptPromise.catch(() => {});
     // The runtime serves static files straight from publicDir in every mode, so all the build adds is proof that no
     // public file shadows a declared route and a deploy silently drops an asset. The runtime's own
@@ -145,6 +153,7 @@ export async function build(options: MochiBuildOptions): Promise<void> {
       svelteCompiler: options.svelteCompiler,
       markdown: options.markdown,
       optimize: options.optimize,
+      minifier,
       barrelWarnings: options.barrelWarnings,
       fonts: options.fonts,
       // Group offenders into one summary for the one-shot production build; a
@@ -249,6 +258,8 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     // island-only and client-only barrels are in the summary.
     registry.flushBarrelWarnings();
 
+    printPrerenderModules(registry.getPrerenderModules().map(relForDisplay));
+
     allRoutes.sort((a, b) => a.pattern.localeCompare(b.pattern, undefined, { numeric: true }));
     printBuildTree({
       routes: allRoutes,
@@ -296,11 +307,42 @@ export async function build(options: MochiBuildOptions): Promise<void> {
     const emailSummary = emailTemplates.length > 0 ? `, ${emailTemplates.length} email template(s)` : '';
     const fontSummary = fontAssets.size > 0 ? `, ${fontAssets.size} font(s)` : '';
     logger.info(
-      `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s), ${imageAssets.size} image asset(s)${fontSummary}${emailSummary}. Manifest written to ${manifestPath}`,
+      `build: done in ${elapsed}. ${compiledPages.length} page(s), ${clientFileCount} client file(s), ${publicFileCount} public file(s), ${imageAssets.size} image asset(s)${fontSummary}${emailSummary}. Manifest written to ${relForDisplay(manifestPath)}`,
     );
   } finally {
     mochiEvents.off('client-bundle:complete', onClientBundle);
     mochiEvents.off('compile:complete', onCompileComplete);
+  }
+}
+
+// `outDir` is canonicalised, so the recursive delete lands on a symlink's target, wherever that is.
+function assertClearableOutDir(outDir: string, sources: string[]): void {
+  const contains = (dir: string, p: string): boolean => {
+    const rel = path.relative(dir, resolveOutDir(p));
+    return rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
+  };
+  const refuse = (why: string): never => {
+    throw new Error(`[mochi:build] Refusing to clear the out-dir ${toPosixPath(outDir)}: ${why}. Choose a dedicated out-dir such as ./.mochi.`);
+  };
+  const held = ['.', ...sources].find((p) => contains(outDir, p));
+  if (held !== undefined) {
+    refuse(`it contains ${held === '.' ? 'the project directory' : toPosixPath(held)}`);
+  }
+  if (contains(resolveOutDir('.'), outDir)) {
+    return;
+  }
+  let entries: string[];
+  try {
+    entries = readdirSync(outDir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return;
+    }
+    throw err;
+  }
+  // A dev server writes only `dev/`, so an out-dir it used holds a Mochi build too.
+  if (entries.length > 0 && !entries.includes('svelte-compile') && !existsSync(path.join(outDir, 'dev', 'svelte-compile'))) {
+    refuse('it is outside the project and does not hold a previous Mochi build');
   }
 }
 

@@ -74,9 +74,19 @@ import { redirect } from 'mochi-framework';
 return redirect(303, '/dashboard');
 ```
 
+<VersionNote since="0.10.0" message="The redirect guard and the external option are new in mochi-framework 0.10.0." />
+
+An off-origin location fails the request unless its origin is in [`redirect.trustedOrigins`](/docs/serve-options/#redirects). To waive that for one call, pass `{ external: true }`:
+
+```ts
+return redirect(303, `${tenant.ssoUrl}?state=${state}`, { external: true });
+```
+
+Pass it only for a location your own code builds. A location taken from request data, such as a `?next=` parameter, is the open redirect the guard exists to stop. Script-capable schemes and control characters stay blocked with the flag set.
+
 ### Sealed tokens
 
-`encryptPayload(plaintext, { aad?, compress? })` and `decryptPayload(token, { aad? })` seal a string into an opaque, tamper-proof base64url token (AES-256-SIV keyed from `MOCHI_KEY`) and open it again. `decryptPayload` returns `null` on any tamper or `aad` mismatch. This is the same primitive Mochi uses for server-island props. Use it for short-lived signed values such as form challenges or magic links.
+`encryptPayload(plaintext, { aad?, compress? })` and `decryptPayload(token, { aad? })` seal a string into an opaque, tamper-proof base64url token (AES-256-SIV keyed from `MOCHI_KEY`) and open it again. `decryptPayload` returns `null` on any tamper or `aad` mismatch. This is the same primitive Mochi uses for server-island props. Use it for short-lived signed values such as form challenges or magic links. `compress: true` deflates the payload first (the default before 0.10.0). Do not use it when the payload mixes a secret with user-controlled text: the token length then leaks the secret.
 
 ```ts
 import { encryptPayload, decryptPayload } from 'mochi-framework';
@@ -84,6 +94,20 @@ import { encryptPayload, decryptPayload } from 'mochi-framework';
 const token = encryptPayload(JSON.stringify({ iat: Date.now() }), { aad: 'my-form' });
 const opened = decryptPayload(token, { aad: 'my-form' }); // string | null
 ```
+
+### HTML escaping
+
+<VersionNote since="0.10.0" message="escapeHtmlAttr became a public export in 0.10.0." />
+
+`escapeHtmlAttr(value)` replaces `&`, `"`, `<` and `>` with entities. It is the framework's single attribute encoder, so values round-trip exactly through `getAttribute()` — including payloads that already contain entity sequences like `&quot;`, which a bare `"`-only replace would corrupt. It works for text content too.
+
+```ts
+import { escapeHtmlAttr } from 'mochi-framework';
+
+const html = `<pre><code>${escapeHtmlAttr(source)}</code></pre>`;
+```
+
+It has zero imports on purpose, so server modules, SSR, hydrated components and client-bundled web components all share the one implementation.
 
 ### Process singletons
 

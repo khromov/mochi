@@ -98,6 +98,125 @@ describe('emitIslandProps', () => {
   });
 });
 
+// These cover that the identity shortcut agrees with the serializing path, and never fires when the two would disagree.
+describe('emitIslandProps identity fast path', () => {
+  test('two call sites sharing prop references dedupe, and the second never walks the payload', () => {
+    withCtx((ctx) => {
+      // Only devalue recurses, so a getter one level down is read once per serialization and not at all on a fast-path hit.
+      let walks = 0;
+      const docsNav = {
+        get entries() {
+          walks++;
+          return [{ level: 2, text: 'Intro', slug: 'intro' }];
+        },
+      };
+      const demos = [{ slug: 'url' }];
+
+      const a = emitIslandProps({ docsNav, demos, currentSlug: 'intro' });
+      const b = emitIslandProps({ docsNav, demos, currentSlug: 'intro' });
+
+      expect(a).toBe(b);
+      expect(walks).toBe(1);
+      expect(ctx.islandProps.size).toBe(1);
+      expect([...ctx.islandProps.values()][0]!.emitCount).toBe(2);
+    });
+  });
+
+  test('same references but a different primitive prop stay distinct', () => {
+    withCtx((ctx) => {
+      const docsNav = [{ level: 2, text: 'Intro', slug: 'intro' }];
+      const a = emitIslandProps({ docsNav, currentSlug: 'intro' });
+      const b = emitIslandProps({ docsNav, currentSlug: 'cache' });
+      expect(a).not.toBe(b);
+      expect(ctx.islandProps.size).toBe(2);
+    });
+  });
+
+  test('equal-but-distinct references still dedupe, via the serializing path', () => {
+    withCtx((ctx) => {
+      const a = emitIslandProps({ items: [1, 2, 3] });
+      const b = emitIslandProps({ items: [1, 2, 3] });
+      expect(a).toBe(b);
+      expect(ctx.islandProps.size).toBe(1);
+      expect([...ctx.islandProps.values()][0]!.emitCount).toBe(2);
+    });
+  });
+
+  test('a bag equal to an earlier one but built from distinct references joins the same entry, and later calls sharing either set of references hit the fast path', () => {
+    withCtx((ctx) => {
+      let walks = 0;
+      const build = () => ({
+        get items() {
+          walks++;
+          return [1, 2, 3];
+        },
+      });
+      const first = build();
+      const second = build();
+
+      expect(emitIslandProps({ nav: first })).toBe('mochi-props-0');
+      expect(emitIslandProps({ nav: second })).toBe('mochi-props-0');
+      expect(walks).toBe(2);
+
+      expect(emitIslandProps({ nav: second })).toBe('mochi-props-0');
+      expect(emitIslandProps({ nav: first })).toBe('mochi-props-0');
+      expect(walks).toBe(2);
+      expect(ctx.islandProps.size).toBe(1);
+      expect([...ctx.islandProps.values()][0]!.emitCount).toBe(4);
+    });
+  });
+
+  test('0 and -0 do not collide, since devalue round-trips them differently', () => {
+    withCtx((ctx) => {
+      const a = emitIslandProps({ n: 0 });
+      const b = emitIslandProps({ n: -0 });
+      expect(a).not.toBe(b);
+      expect(ctx.islandProps.size).toBe(2);
+    });
+  });
+
+  test('non-plain and symbol-keyed bags decline the fast path and let devalue rule', () => {
+    withCtx(() => {
+      class Bag {
+        constructor(public x: number) {}
+      }
+      // The fast path must not paper over a value devalue rejects by answering from identity instead.
+      expect(() => emitIslandProps(new Bag(1))).toThrow(/non-POJO/);
+      expect(() => emitIslandProps({ x: 1, [Symbol('s')]: 'one' })).toThrow(/symbolic keys/);
+    });
+  });
+
+  test('clearing the registry drops the bags with it, so ids never outlive their block', () => {
+    withCtx((ctx) => {
+      const docsNav = [{ level: 2, text: 'Intro', slug: 'intro' }];
+      const first = emitIslandProps({ docsNav });
+      expect(first).toBe('mochi-props-0');
+
+      ctx.islandProps.clear();
+      expect(ctx.islandProps.size).toBe(0);
+
+      const second = emitIslandProps({ docsNav });
+      expect(second).toBe('mochi-props-0');
+      expect(ctx.islandProps.size).toBe(1);
+      expect([...ctx.islandProps.values()][0]!.emitCount).toBe(1);
+    });
+  });
+
+  test('two requests sharing prop references keep independent registries', () => {
+    const docsNav = [{ level: 2, text: 'Intro', slug: 'intro' }];
+    const one = withCtx((ctx) => {
+      const id = emitIslandProps({ docsNav });
+      return { id, size: ctx.islandProps.size };
+    });
+    const two = withCtx((ctx) => {
+      const id = emitIslandProps({ docsNav });
+      return { id, size: ctx.islandProps.size };
+    });
+    expect(one).toEqual({ id: 'mochi-props-0', size: 1 });
+    expect(two).toEqual({ id: 'mochi-props-0', size: 1 });
+  });
+});
+
 describe('renderIslandPropsScript', () => {
   test('stamps data-shared only when two or more islands share the payload', () => {
     expect(renderIslandPropsScript('mochi-props-0', '{"a":1}', 1)).toBe('<script type="application/json" id="mochi-props-0">{"a":1}</script>');

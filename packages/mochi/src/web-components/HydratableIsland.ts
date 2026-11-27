@@ -8,6 +8,8 @@ import './IslandFailure';
 import { islandFailureStub } from './islandFailureStub';
 import { observeVisible } from './sharedVisibilityObserver';
 import { isLoadedCss, markLoadedCss } from './sharedCssTracker';
+import { resolveIslandProps } from './resolveIslandProps';
+import { resolveComponentUrl } from './resolveComponentUrl';
 
 const componentRegistry: Record<string, Component> = {};
 
@@ -54,12 +56,12 @@ class HydratableIsland extends HTMLElement {
     try {
       await this._doHydrateInner(name);
     } catch (err) {
-      // Defensive belt — `transformError` on `hydrate()` covers errors raised
-      // by the boundary; this catches synchronous throws from the bundle import,
-      // CSS load, or `hydrate()` itself before the boundary takes effect.
+      // Defensive belt — `transformError` on `hydrate()` covers errors raised by the boundary; this catches throws from
+      // the bundle import, CSS load, props parse, or `hydrate()` itself, all before the component took over the DOM, so
+      // the server-rendered markup is intact and worth keeping next to the marker.
       const e = err instanceof Error ? err : new Error(String(err));
       logger.error(`Island "${name}" failed to hydrate:`, e);
-      this.innerHTML = islandFailureStub(name ?? '', isDev ? e.message : undefined);
+      this.insertAdjacentHTML('beforeend', islandFailureStub(name ?? '', isDev ? e.message : undefined));
     }
   }
 
@@ -73,7 +75,7 @@ class HydratableIsland extends HTMLElement {
     const propsRef = this.getAttribute('props-ref');
     let propsRaw: string | null;
     if (propsRef) {
-      propsRaw = document.getElementById(propsRef)?.textContent ?? null;
+      propsRaw = resolveIslandProps(this, propsRef);
     } else {
       propsRaw = this.getAttribute('props');
     }
@@ -104,7 +106,7 @@ class HydratableIsland extends HTMLElement {
     // Load the component's JS bundle (calls registerComponent on import)
     if (!componentRegistry[name] && componentUrl) {
       logger.log('Loading component', name, componentUrl);
-      await import(componentUrl);
+      await import(resolveComponentUrl(componentUrl, document.baseURI));
     }
 
     // Everything past here is synchronous, so one check after the awaits covers the whole method.

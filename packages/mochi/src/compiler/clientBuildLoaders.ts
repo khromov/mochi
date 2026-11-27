@@ -7,9 +7,21 @@ import type { PluginBuilder } from 'bun';
 import type { CompileOptions } from 'svelte/compiler';
 import { renderMochiEnvClient } from './virtualModuleTemplate';
 import type { SvelteCompilerBackend } from './svelteCompilerBackend';
+import { CLIENT_BUILD_DEFINE } from './serverOnlyModuleGuard';
 import { toPosixPath } from '../utils';
 
 const SRC_DIR = path.resolve(import.meta.dir, '..');
+
+// One definition so the island bundle and the tests that assert about it can't drift: `registerEsmEnvStrip` leaves
+// DEV/BROWSER/NODE as free identifiers, and these are the literals Bun folds them to.
+export function clientBuildDefine(development: boolean): Record<string, string> {
+  return {
+    DEV: String(development),
+    BROWSER: 'true',
+    NODE: 'false',
+    ...CLIENT_BUILD_DEFINE,
+  };
+}
 
 // Bun can't propagate constants through esm-env's conditional exports, so stripping the imports turns DEV/BROWSER/NODE
 // into free variables that Bun's `define` replaces with literal booleans, letting `if (DEV)` blocks be eliminated.
@@ -33,14 +45,21 @@ export function registerMochiEnvClient(build: PluginBuilder, development: boolea
   }));
 }
 
-export function registerSvelteModuleLoader(build: PluginBuilder, backend: SvelteCompilerBackend, options: CompileOptions): void {
+export function registerSvelteModuleLoader(
+  build: PluginBuilder,
+  backend: SvelteCompilerBackend,
+  options: CompileOptions,
+  onCompiled?: (filePath: string, source: string, compiled: string) => void,
+): void {
   build.onLoad({ filter: /\.svelte\.[jt]s$/ }, async (args) => {
-    let source = await Bun.file(args.path).text();
+    const original = await Bun.file(args.path).text();
+    let source = original;
     if (args.path.endsWith('.ts')) {
       const transpiler = new Bun.Transpiler({ loader: 'ts' });
       source = transpiler.transformSync(source);
     }
     const { js } = backend.compileModule(source, { ...options, filename: args.path });
+    onCompiled?.(args.path, original, js.code);
     return { contents: js.code, loader: 'js' };
   });
 }

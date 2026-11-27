@@ -16,6 +16,7 @@ import {
 } from '../utils';
 import { injectIslandPropsBlock } from '../islands/islandPropsRegistry';
 import { requestContext, renderDetached } from '../runtime/requestContext';
+import { getCspNonce } from '../runtime/csp';
 import type { DebugBarData } from '../runtime/requestContext';
 import { logger } from '../utils/log';
 import { mochiEvents } from '../events';
@@ -29,29 +30,46 @@ import {
   fontChangedSinceResolved,
   fontContentHash,
   substituteFontUrls,
+  type FontRef,
 } from './cssFontAssets';
 import { type HydratableComponent, type PreprocessIslandError, type ServerIslandComponent } from './svelteAstPreprocess';
 import { cachedPreprocessHydratable, createPreprocessCacheStats } from './preprocessCache';
+import { isCssTracked } from './cssTracking';
 import { CompileCache, compileFingerprint, createCompileCacheStats, type CompileCacheStats } from './compileCache';
 import { mergeCompilerOptions, type MochiSvelteConfig } from './svelteConfig';
 import { backendId, resolveSvelteCompiler, type MochiSvelteCompiler, type SvelteCompilerBackend } from './svelteCompilerBackend';
 import { applyFilter } from '../extensions';
 import { decodeSourcePath, encodeSourcePath } from './manifestPaths';
+import { HYDRATABLE_CONTEXT_KEY } from '../islands/isHydratable';
+import { resolveOutDir } from './resolveOutDir';
 import { buildServerOnlyStubModule, scanServerOnlyExports } from './serverOnlyScan';
-import { CLIENT_BUILD_DEFINE, serverOnlyModuleGuard } from './serverOnlyModuleGuard';
+import { serverOnlyModuleGuard } from './serverOnlyModuleGuard';
 import { registerServerOnlyComponentStubs, SSR_ONLY_COMPONENT_NAMESPACE } from './serverOnlyComponents';
 import { cleanInputs, SERVER_ONLY_MODULE_NAMESPACE } from './bundleInputPaths';
 import { renderMochiEnvServer } from './virtualModuleTemplate';
 import { buildDebugBarBundle, type DebugBarBundle } from './buildDebugBarBundle';
+import { buildInlineWebComponent } from './buildInlineWebComponent';
 import { formatBuildMessages } from './formatBuildMessages';
-import { registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
+import { clientBuildDefine, registerEsmEnvStrip, registerMochiEnvClient, registerSvelteModuleLoader } from './clientBuildLoaders';
 import { createImageAssetLoader, IMAGE_FILE_FILTER } from './imageAssetLoader';
+import { PRERENDER_MODULE_FILTER, createPrerenderModuleLoader, currentPrerenderEvaluationCache, type PrerenderContext, type PrerenderEvaluationCache } from './prerenderModules';
 import { EMAIL_TEMPLATE_DIR } from '../email/templates';
 import { registerLocalImageAsset } from '../image/localAssetRegistry';
 import type { LocalImageAsset } from '../image/types';
 import { freshImport } from './freshImport';
 import { resolveSvelteShaker } from './svelteShaker';
+import { clientBundleNaming, minifyBuildOutputs, parseJsMinifier, resolveJsMinifier, resolveOxcMinify, type MochiJsMinifier } from './jsMinifier';
+import { findOxcDroppedCalls, formatOxcDroppedCall } from './oxcDroppedCalls';
 import prettyBytes from '../vendor/pretty-bytes';
+import { formatRanges, mergeFontSubsetSpecs, parseFontSubsetSpec, scanImportAttributes, scriptKindOf, type FontSubsetGroup, type FontSubsetSpec } from './fontImportAttributes';
+import { applyFontSubsets } from './fontSubset';
+import type { CodepointRange } from './cssAst';
+
+/** A subsetted `@font-face`, as the dev-mode browser check needs it: which family, and which codepoints it can render. */
+export interface FontSubsetFace {
+  family: string;
+  ranges: CodepointRange[];
+}
 
 // The `compile:preprocessors` filter is sync; only applying its preprocessors through Svelte's `preprocess()` is async.
 async function applyUserPreprocessors(source: string, filename: string, target: 'server' | 'client', development: boolean): Promise<string> {
@@ -95,7 +113,16 @@ const builtinTsPreprocessor: PreprocessorGroup = {
 const SRC_DIR = path.join(path.dirname(Bun.fileURLToPath(import.meta.url)), '..');
 
 /** Manifest schema version this runtime writes; see `MochiManifest.version` for the path families it implies. */
-const MANIFEST_VERSION = 3;
+const MANIFEST_VERSION = 4;
+
+// `.native` also canonicalises case on a case-insensitive disk, which the JS fallback does not.
+function realpathOrSelf(p: string): string {
+  try {
+    return fs.realpathSync.native(p);
+  } catch {
+    return p;
+  }
+}
 
 const MARKDOWN_EXTENSIONS = ['.md', '.svx'];
 const MARKDOWN_FILE_FILTER = /\.(md|svx)$/;
@@ -115,6 +142,7 @@ function createMarkdownLoader(opts: {
     allServerIslands: ServerIslandComponent[];
     filePreprocessErrors: Map<string, PreprocessIslandError[]>;
     preprocessCacheStats: ReturnType<typeof createPreprocessCacheStats>;
+    recordCssTracking: (filePath: string, tracked: boolean) => void;
   };
 }) {
   const highlight = opts.markdown.highlight;
@@ -132,6 +160,7 @@ function createMarkdownLoader(opts: {
         opts.hydration.allHydratables.push(...cached.hydratables);
         opts.hydration.allServerIslands.push(...cached.serverIslands);
         opts.hydration.filePreprocessErrors.set(args.path, cached.preprocessErrors);
+        opts.hydration.recordCssTracking(args.path, cached.cssTracked);
       }
       if (opts.target === 'server' && cached.css && opts.cssMap) {
         opts.cssMap.set(args.path, cached.css);
@@ -157,11 +186,13 @@ function createMarkdownLoader(opts: {
     let hydratables: HydratableComponent[] = [];
     let serverIslands: ServerIslandComponent[] = [];
     let preprocessErrors: PreprocessIslandError[] = [];
+    let cssMarked = false;
     if (opts.hydration) {
       const preprocessed = cachedPreprocessHydratable(svelteSource, args.path, opts.hydration.preprocessCacheStats);
       hydratables = preprocessed.hydratables;
       serverIslands = preprocessed.serverIslands;
       preprocessErrors = preprocessed.errors;
+      cssMarked = preprocessed.cssMarked;
       opts.hydration.fileHydratables.set(args.path, hydratables);
       opts.hydration.allHydratables.push(...hydratables);
       opts.hydration.allServerIslands.push(...serverIslands);
@@ -176,11 +207,13 @@ function createMarkdownLoader(opts: {
         ...(opts.target === 'client' ? { dev: opts.development } : {}),
       }),
     );
+    const cssTracked = isCssTracked(cssMarked, css);
+    opts.hydration?.recordCssTracking(args.path, cssTracked);
     const cssCode = opts.target === 'server' ? (css?.code ?? null) : null;
     if (cssCode && opts.cssMap) {
       opts.cssMap.set(args.path, cssCode);
     }
-    opts.compileCache.set(opts.target, args.path, raw, fingerprint, { js: js.code, css: cssCode, hydratables, serverIslands, preprocessErrors });
+    opts.compileCache.set(opts.target, args.path, raw, fingerprint, { js: js.code, css: cssCode, hydratables, serverIslands, preprocessErrors, cssTracked });
     return { contents: js.code, loader: 'js' as const };
   };
 }
@@ -203,6 +236,13 @@ export type MochiCompileError =
   | {
       kind: 'css-bundle-failed';
       cssPath: string;
+      message: string;
+    }
+  | {
+      kind: 'font-subset-invalid';
+      filePath: string;
+      specifier: string;
+      line: number;
       message: string;
     }
   | {
@@ -250,6 +290,8 @@ function formatCompileError(e: MochiCompileError): string {
       return `mochi:defer inside a hydratable: <${e.child}> is a server island inside <${e.parent}>, whose subtree re-renders on the client where a server island cannot exist — remove mochi:defer from ${e.child} or the hydrate/clientOnly directive from ${e.parent}`;
     case 'css-bundle-failed':
       return `CSS bundle failed: ${e.cssPath} — ${e.message}`;
+    case 'font-subset-invalid':
+      return `Font subset: \`import '${e.specifier}'\` in ${relForDisplay(e.filePath)}:${e.line} — ${e.message}`;
     case 'unresolved-island':
       return formatUnresolvedIsland(e);
     case 'server-only-island':
@@ -278,6 +320,8 @@ export interface RenderResult {
   cssUrls: string[];
   /** Served URLs of preload-worthy fonts extracted from this entry's CSS imports; the shell may emit `<link rel="preload">` for them. */
   fontPreloadUrls: string[];
+  /** Dev only: subsetted faces this entry's CSS imports declare, so the shell can warn in the browser about glyphs the subset lacks. */
+  fontSubsetFaces?: FontSubsetFace[];
   bootstrapUrl: string | null;
   hasServerIslands: boolean;
   /** Dev-only snapshot of `ctx.debugBarData`, taken at end of render before the per-request bag is cleared and surfaced to the toolbar as `window.__mochi_debug`. */
@@ -307,6 +351,8 @@ export interface ComponentRegistryOptions {
   markdown?: MarkdownConfig;
   /** Run the whole-program svelte-shaker pass before compiling. Production only — `prepareShake()` is a no-op in dev. */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /** Which minifier prints the client bundle. `'oxc'` (experimental) needs the optional `oxc-minify` package. Default: `'bun'`. */
+  minifier?: MochiJsMinifier;
   /** See `MochiServeOptions.barrelWarnings`. */
   barrelWarnings?: boolean | MochiBarrelWarningOptions;
   /** See `MochiServeOptions.fonts`. */
@@ -380,20 +426,26 @@ export class ComponentRegistry {
   private clientFiles: Map<string, string> = new Map();
   /** Maps component file path → CSS URL */
   private cssFileUrls: Map<string, string> = new Map();
+  /** Component path → the key its SSR output reports through `markRenderedCss`; absent for components whose CSS is never pruned (global rules, no styles). */
+  private trackedCss: Map<string, string> = new Map();
+  /** Hydrated island path → every styled component in its import graph, all linked whenever the island renders so a client-only branch stays styled. */
+  private islandCss: Map<string, Set<string>> = new Map();
   /**
    * Last-extracted raw CSS per component path, letting `compileAll`'s write-CSS-files loop decide on content equality
    * rather than mere presence in `cssFileUrls` — otherwise an HMR recompile of a child short-circuits and leaves the stale hashed URL.
    */
   private cssRawByPath: Map<string, string> = new Map();
-  /** Maps resolved CSS-import path → served URL (e.g. /import-css/inter-<hash>.css) */
+  /** Maps stylesheet variant → served URL (e.g. /import-css/inter-<hash>.css). A variant is a resolved CSS-import path, with `#<hash>` appended when it was bundled for a font-subset request. */
   private importedCssUrls: Map<string, string> = new Map();
-  /** Maps page entry .svelte path → set of resolved CSS-import paths reachable from it */
+  /** Maps page entry .svelte path → the stylesheet variants it links */
   private entryImportedCss: Map<string, Set<string>> = new Map();
   /**
    * Maps page entry path → every absolute file that contributed to its SSR bundle, taken from Bun's metafile, so the dev
    * watcher's `recompileChanged()` invalidates only the pages whose dep graph contains the changed file.
    */
   private entryDeps: Map<string, Set<string>> = new Map();
+  /** A prerendered module's imports vanish from the bundle, so the metafile cannot say which first-party files feed it. */
+  private prerenderInputs: Map<string, Set<string>> = new Map();
   private clientStats: {
     outputs: {
       name: string;
@@ -419,9 +471,17 @@ export class ComponentRegistry {
   private fontAssets: Map<string, { diskPath: string; contentType: string }> = new Map();
   /** Superseded font URLs, kept so dev HTML rendered before a re-bundle keeps resolving them. */
   private readonly devStaleFontAssets: Map<string, { diskPath: string; contentType: string }> = new Map();
+  /** Maps subsetted stylesheet variant → the stylesheet it bundles and the merged request it was built for, which a re-bundle needs to reproduce it. */
+  private readonly importedCssSubsets: Map<string, { cssPath: string; groups: FontSubsetGroup[] }> = new Map();
+  /** Font-subset warnings already printed, so one that many pages share is reported once. */
+  private readonly fontSubsetWarnings: Set<string> = new Set();
+  /** Dev only: the browser-side missing-glyph check, built when the first subsetted stylesheet is bundled so an app without one never builds it. */
+  fontSubsetCheckClientJs = '';
+  /** Dev only: maps stylesheet variant → the subsetted faces it declares, for the browser-side missing-glyph check. */
+  private readonly importedCssSubsetFaces: Map<string, FontSubsetFace[]> = new Map();
   /** Maps served URL → non-font asset Bun emitted beside a bundled stylesheet; content-hashed by the bundler, so never retired. */
   private readonly importCssAssets: Map<string, { diskPath: string; contentType: string }> = new Map();
-  /** Maps resolved CSS-import path → served URLs of its preload-worthy extracted fonts (woff2, latin-visible). */
+  /** Maps stylesheet variant → served URLs of its preload-worthy extracted fonts (woff2, latin-visible). */
   private importedCssFontPreloads: Map<string, string[]> = new Map();
   /** Tail of the serialized `bundleImportedCss` chain; see the comment there for why batches may not overlap. */
   private importedCssBatches: Promise<unknown> = Promise.resolve();
@@ -437,6 +497,8 @@ export class ComponentRegistry {
   private readonly svelteCompiler: MochiSvelteCompiler | undefined;
   readonly markdown: MarkdownConfig | undefined;
   readonly optimize: boolean | MochiSvelteShakerOptions;
+  readonly minifier: MochiJsMinifier;
+  private warnedOxcFallback = false;
   private readonly fontInlineThreshold: number;
   private readonly fontDropLegacyWoff: boolean;
   private readonly barrelWarningsEnabled: boolean;
@@ -446,6 +508,7 @@ export class ComponentRegistry {
   /** Packages already warned about this process, so the warning fires once, not on every rebuild. */
   private readonly warnedBarrels = new Set<string>();
   private readonly warnedRetainedStubs = new Set<string>();
+  private readonly warnedOxcDroppedCalls = new Set<string>();
   /** Buffer used when `bufferBarrelWarnings` is on: barrels collected across the build, flushed as one grouped summary by `flushBarrelWarnings()`. */
   private pendingBarrels: HeavyBarrel[] = [];
   /** absPath → slimmed `.svelte` source from the last `prepareShake()`; empty when shaking is off. */
@@ -456,18 +519,41 @@ export class ComponentRegistry {
   /** Instance-scoped so two registries with different markdown/preprocessor config can't serve each other stale output for the same path — see {@link CompileCache}. */
   readonly compileCache = new CompileCache();
 
+  private prerenderContext(evaluations: PrerenderEvaluationCache): PrerenderContext {
+    return {
+      development: this.development,
+      isPrebuilt: () => this.loadedFromManifest,
+      onInputs: (prerenderPath, inputs) => this.prerenderInputs.set(path.resolve(prerenderPath), inputs),
+      evaluations,
+    };
+  }
+
+  /** Distinct `*.prerender.ts` modules across every compiled page's dep graph, for the build report and the dev watcher. */
+  getPrerenderModules(): string[] {
+    const files = new Set<string>();
+    for (const deps of this.entryDeps.values()) {
+      for (const dep of deps) {
+        if (PRERENDER_MODULE_FILTER.test(dep)) {
+          files.add(dep);
+        }
+      }
+    }
+    return [...files].sort();
+  }
+
   constructor(opts: ComponentRegistryOptions = {}) {
     this.development = opts.development ?? true;
     this.debugBarEnabled = this.development && (opts.debugBar ?? true);
     // A relative outDir resolves against whoever's cwd asks, and compile and `toManifest()` ask at different moments, so
     // a `process.chdir()` in between would make every artifact look like it escaped the out-dir and bake absolute paths
     // into an otherwise relocatable build.
-    this.outDir = path.resolve(opts.outDir ?? './.mochi');
+    this.outDir = resolveOutDir(opts.outDir ?? './.mochi');
     this.assetPrefix = normalizeAssetPrefix(opts.assetPrefix);
     this.svelteConfig = opts.svelteConfig ?? {};
     this.svelteCompiler = opts.svelteCompiler;
     this.markdown = opts.markdown;
     this.optimize = opts.optimize ?? false;
+    this.minifier = opts.minifier === undefined ? resolveJsMinifier() : parseJsMinifier(opts.minifier, 'ComponentRegistry({ minifier })');
     this.fontInlineThreshold = opts.fonts?.inlineThreshold ?? 4096;
     this.fontDropLegacyWoff = opts.fonts?.dropLegacyWoff ?? true;
     const bw = opts.barrelWarnings;
@@ -508,6 +594,8 @@ export class ComponentRegistry {
       let excluded = 0;
       if (exclude.length > 0) {
         const globs = exclude.map((p) => new Bun.Glob(p));
+        // Snapshot the keys: the loop deletes from `shaken` while iterating it.
+        // oxlint-disable-next-line no-useless-spread
         for (const id of [...shaken.keys()]) {
           // Glob patterns are written with forward slashes, so match against
           // POSIX-ified paths or Windows never excludes anything.
@@ -591,6 +679,40 @@ export class ComponentRegistry {
     return this.localImageAssets;
   }
 
+  /**
+   * The minifier for a client rebuild. A prebuilt deploy only rebuilds on a manifest miss, and its install may have
+   * omitted the `oxc-minify` dev dependency, so there a missing package degrades to Bun instead of failing the request.
+   */
+  private async clientMinifier(): Promise<MochiJsMinifier> {
+    if (this.minifier !== 'oxc' || !this.loadedFromManifest) {
+      return this.minifier;
+    }
+    try {
+      await resolveOxcMinify();
+      return 'oxc';
+    } catch (err) {
+      if (!this.warnedOxcFallback) {
+        this.warnedOxcFallback = true;
+        logger.warn(
+          `This build was minified with oxc, but oxc-minify can't be loaded at runtime, so the client bundle rebuilt for the manifest miss uses Bun's minifier. ` +
+            `Bundle sizes and chunk URLs will differ from the build until the next deploy. Fix the manifest miss, or install oxc-minify as a regular dependency. ` +
+            `(${err instanceof Error ? err.message : String(err)})`,
+        );
+      }
+      return 'bun';
+    }
+  }
+
+  private warnOxcDroppedCalls(filePath: string, source: string, compiled: string): void {
+    for (const dropped of findOxcDroppedCalls(source, filePath, compiled)) {
+      const line = formatOxcDroppedCall(relForDisplay(filePath), dropped);
+      if (!this.warnedOxcDroppedCalls.has(line)) {
+        this.warnedOxcDroppedCalls.add(line);
+        logger.warn(line);
+      }
+    }
+  }
+
   /** Record the prebuilt ServerIsland inline script (content + disk path for the manifest). */
   setServerIslandScript(diskPath: string, content: string): void {
     this.serverIslandScriptFile = diskPath;
@@ -648,6 +770,8 @@ export class ComponentRegistry {
       mochiEvents.emit('compile:start', { path: f });
     }
     const compileStart = performance.now();
+    // Captured before either pass so a watcher reset landing between them cannot inline different values into one island.
+    const evaluations = currentPrerenderEvaluationCache();
 
     const cssMap = new Map<string, string>();
     const importedCssPaths = new Set<string>();
@@ -665,6 +789,10 @@ export class ComponentRegistry {
     const compileCache = this.compileCache;
     const markdown = this.markdown;
     const shakenSources = this.shakenSources;
+    const cssTrackingUpdates = new Map<string, boolean>();
+    const recordCssTracking = (filePath: string, tracked: boolean): void => {
+      cssTrackingUpdates.set(filePath, tracked);
+    };
     const imageAssetLoader = createImageAssetLoader({
       outDir: this.outDir,
       assetPrefix: this.assetPrefix,
@@ -672,10 +800,13 @@ export class ComponentRegistry {
       rejectUnknown: this.loadedFromManifest && !this.development,
     });
 
+    const prerenderModuleLoader = createPrerenderModuleLoader(this.prerenderContext(evaluations));
+
     const sveltePlugin: BunPlugin = {
       name: 'svelte-ssr',
       setup(build) {
         build.onLoad({ filter: applyFilter('image:fileFilter', IMAGE_FILE_FILTER, { target: 'server' }) }, imageAssetLoader);
+        build.onLoad({ filter: PRERENDER_MODULE_FILTER }, prerenderModuleLoader);
         // Bun resolves bare specifiers like `@fontsource-variable/inter` through package.json#main to the real `.css`,
         // so filtering on the resolved path catches direct and package imports alike. The path is recorded and the import
         // stripped from the SSR JS bundle; the CSS is bundled out-of-band below and served as `/import-css/*`.
@@ -733,24 +864,22 @@ export class ComponentRegistry {
             filePreprocessErrors.set(args.path, cached.preprocessErrors);
             allHydratables.push(...cached.hydratables);
             allServerIslands.push(...cached.serverIslands);
+            recordCssTracking(args.path, cached.cssTracked);
             if (cached.css) {
               cssMap.set(args.path, cached.css);
             }
             return { contents: cached.js, loader: 'js' };
           }
           const preprocessed = await applyUserPreprocessors(raw, args.path, 'server', development);
-          // Vendored .svelte from node_modules can never carry `mochi:*` directives
-          const isVendored = args.path.includes(`${path.sep}node_modules${path.sep}`);
-          const preprocessResult = isVendored
-            ? { transformed: preprocessed, hydratables: [] as HydratableComponent[], serverIslands: [] as ServerIslandComponent[], errors: [] as PreprocessIslandError[] }
-            : cachedPreprocessHydratable(preprocessed, args.path, preprocessCacheStats);
-          const { hydratables, serverIslands, errors } = preprocessResult;
+          // Vendored components from node_modules run through the same pass: they carry no `mochi:*` directives, but their
+          // scoped CSS is tracked like any other.
+          const preprocessResult = cachedPreprocessHydratable(preprocessed, args.path, preprocessCacheStats);
+          const { hydratables, serverIslands, errors, cssMarked } = preprocessResult;
           fileHydratables.set(args.path, hydratables);
           fileServerIslands.set(args.path, serverIslands);
           filePreprocessErrors.set(args.path, errors);
           allHydratables.push(...hydratables);
           allServerIslands.push(...serverIslands);
-
           const { js, css } = backend.compile(
             preprocessResult.transformed,
             mergeCompilerOptions(userCompilerOptions, {
@@ -758,6 +887,8 @@ export class ComponentRegistry {
               filename: args.path,
             }),
           );
+          const cssTracked = isCssTracked(cssMarked, css);
+          recordCssTracking(args.path, cssTracked);
           const cssCode = css?.code ?? null;
           if (cssCode) {
             cssMap.set(args.path, cssCode);
@@ -768,6 +899,7 @@ export class ComponentRegistry {
             hydratables,
             serverIslands,
             preprocessErrors: errors,
+            cssTracked,
           });
           return { contents: js.code, loader: 'js' };
         });
@@ -783,7 +915,7 @@ export class ComponentRegistry {
               backend,
               compileCache,
               compileCacheStats,
-              hydration: { fileHydratables, allHydratables, allServerIslands, filePreprocessErrors, preprocessCacheStats },
+              hydration: { fileHydratables, allHydratables, allServerIslands, filePreprocessErrors, preprocessCacheStats, recordCssTracking },
             }),
           );
         }
@@ -903,14 +1035,15 @@ export class ComponentRegistry {
     }
 
     // Attribution walks Bun's output graph: `outputs[outKey].inputs` is a flat record of every source file that fed that
-    // chunk, keyed in the same shape as `inputs[]` and so stable to compare against `cssMap` / `importedCssPaths`. The
-    // source-import walk via `inputs[].imports[].path` is unusable, since Bun stores those importer-relative and
-    // `path.resolve` against cwd fabricates absolutes that miss `inputs[]`, killing the BFS one hop in.
+    // chunk, keyed in the same shape as `inputs[]` and so stable to compare against `cssMap`.
     const outputsMeta = result.metafile?.outputs ?? {};
+    const inputsMeta = result.metafile?.inputs ?? {};
     const entryToOutKey = new Map<string, string>();
+    const entryToInputKey = new Map<string, string>();
     for (const [outKey, outMeta] of Object.entries(outputsMeta)) {
       if (outMeta.entryPoint) {
         entryToOutKey.set(path.resolve(outMeta.entryPoint), outKey);
+        entryToInputKey.set(path.resolve(outMeta.entryPoint), outMeta.entryPoint);
       }
     }
 
@@ -938,6 +1071,49 @@ export class ComponentRegistry {
       return inputs;
     };
 
+    // Side-effect CSS gets stripped to an empty module, and an empty module shared by two entrypoints is hoisted by
+    // `splitting` into a chunk nothing emits an import statement for — so the output walk above reaches neither the
+    // chunk nor the stylesheet, and it ends up attributed to no page at all. The pre-chunking input graph still records
+    // the import edge, so CSS is walked there instead. Unbundled specifiers (`svelte`, `node:fs`) appear as edges with
+    // no `inputs[]` entry of their own, which is why this compares raw metafile keys rather than resolving every hop.
+    const transitiveSourceInputs = (rootInputKey: string, followDynamic = false): Set<string> => {
+      const visited = new Set<string>();
+      const queue = [rootInputKey];
+      while (queue.length > 0) {
+        const key = queue.shift()!;
+        const meta = inputsMeta[key];
+        if (visited.has(key) || !meta) {
+          continue;
+        }
+        visited.add(key);
+        for (const imp of meta.imports) {
+          // A dynamic import's `path` is the output chunk; Bun names its source input on the record only from 1.4.3.
+          const dynamicEntry = followDynamic && imp.kind === 'dynamic-import' ? (imp.entryPoint ?? outputsMeta[imp.path]?.entryPoint) : undefined;
+          queue.push(dynamicEntry ?? imp.path);
+        }
+      }
+      return visited;
+    };
+
+    // The CSS plugin records absolute paths while metafile keys are cwd-relative, so bridge the two once per build.
+    const cssInputKeyByPath = new Map<string, string>();
+    for (const key of Object.keys(inputsMeta)) {
+      if (key.endsWith('.css')) {
+        cssInputKeyByPath.set(path.resolve(key), key);
+      }
+    }
+
+    // Requests render between the per-entry imports below, so a flag is dropped before the new modules swap in and added
+    // after: either way a stale module meets an always-linked stylesheet rather than a pruned one.
+    for (const [filePath, tracked] of cssTrackingUpdates) {
+      if (!tracked) {
+        this.trackedCss.delete(filePath);
+      }
+    }
+
+    const subsetRequests = await this.scanFontSubsetRequests(inputsMeta);
+    const attributedCss = new Set<string>();
+
     const compileDuration = performance.now() - compileStart;
     for (const filename of todo) {
       const outKey = entryToOutKey.get(filename);
@@ -956,16 +1132,25 @@ export class ComponentRegistry {
 
       const entryInputs = transitiveInputs(outKey);
 
-      // Side-effect CSS imports reachable from this entry. The plugin records
-      // every `.css` load globally; intersect with the entry's transitive
-      // input set to get the per-entry subset.
+      // Side-effect CSS imports reachable from this entry. The plugin records every `.css` load globally, so the
+      // per-entry subset comes from the source-import walk.
+      const entrySourceInputs = transitiveSourceInputs(entryToInputKey.get(filename)!);
       const entryCss = new Set<string>();
       for (const p of importedCssPaths) {
-        if (entryInputs.has(path.resolve(p))) {
-          entryCss.add(p);
+        const cssKey = cssInputKeyByPath.get(path.resolve(p));
+        if (cssKey && entrySourceInputs.has(cssKey)) {
+          attributedCss.add(p);
+          entryCss.add(this.cssVariantFor(p, filename, entrySourceInputs, subsetRequests));
         }
       }
       this.entryImportedCss.set(filename, entryCss);
+      // A module holding only a stylesheet import compiles to nothing and drops out of the output graph, so it is added
+      // here for an edit to its import attributes to recompile the page.
+      for (const key of subsetRequests.keys()) {
+        if (entrySourceInputs.has(key)) {
+          entryInputs.add(path.resolve(key));
+        }
+      }
 
       // Dev-watcher dep tracking: every absolute file path that contributed
       // to this entry's bundle (via its own output and any shared chunks).
@@ -1006,6 +1191,52 @@ export class ComponentRegistry {
         serverIslandCount: entryServerIslands.length,
         durationMs: compileDuration,
       });
+    }
+
+    for (const [filePath, tracked] of cssTrackingUpdates) {
+      if (tracked) {
+        this.trackedCss.set(filePath, encodeSourcePath(filePath));
+      }
+    }
+
+    // An island can render, in the browser, components its SSR pass never reached, so its CSS need is the whole graph
+    // below it, dynamic imports included. Walked on the pre-chunking input graph like side-effect CSS, keyed by island
+    // file since several entries can share one.
+    const inputKeyByPath = new Map<string, string>();
+    for (const key of Object.keys(inputsMeta)) {
+      inputKeyByPath.set(path.resolve(key), key);
+    }
+    let inputKeyByRealPath: Map<string, string> | undefined;
+    for (const islandPath of new Set(allHydratables.map((h) => h.resolvedPath))) {
+      let rootKey = inputKeyByPath.get(islandPath);
+      if (!rootKey) {
+        // The import spelled the path differently from Bun's key (case on a case-insensitive disk, a symlinked folder).
+        inputKeyByRealPath ??= new Map([...inputKeyByPath].map(([abs, key]) => [realpathOrSelf(abs), key]));
+        rootKey = inputKeyByRealPath.get(realpathOrSelf(islandPath));
+      }
+      if (!rootKey) {
+        this.islandCss.set(islandPath, new Set(cssMap.keys()));
+        continue;
+      }
+      const css = new Set<string>();
+      for (const key of transitiveSourceInputs(rootKey, true)) {
+        const abs = path.resolve(key);
+        if (cssMap.has(abs)) {
+          css.add(abs);
+        }
+      }
+      this.islandCss.set(islandPath, css);
+    }
+
+    // The build's entrypoints are exactly `todo`, so every stylesheet the plugin loaded must belong to at least one of
+    // them; one that belongs to none is bundled and served but linked by nothing, which only shows up as an unstyled page.
+    const unattributedCss = [...importedCssPaths].filter((p) => !attributedCss.has(p));
+    if (unattributedCss.length > 0) {
+      logger.warn(
+        `${unattributedCss.length} imported stylesheet(s) could not be attributed to any page, so nothing will link them:\n` +
+          unattributedCss.map((p) => `  - ${relForDisplay(p)}`).join('\n') +
+          `\nThis is a Mochi bug — please report it with a reproduction.`,
+      );
     }
 
     mochiEvents.emit('compile:batch-complete', {
@@ -1071,7 +1302,7 @@ export class ComponentRegistry {
     }
 
     if (importedCssPaths.size > 0) {
-      await this.bundleImportedCss(importedCssPaths);
+      await this.bundleImportedCss(new Set([...todo.flatMap((f) => [...(this.entryImportedCss.get(f) ?? [])]), ...unattributedCss]));
     }
 
     // Register server island component paths
@@ -1086,7 +1317,7 @@ export class ComponentRegistry {
 
     this.hydratableComponents.push(...allHydratables);
     if (!opts.deferClientBundle && allHydratables.length > 0) {
-      await this.buildClientBundle();
+      await this.buildClientBundle(evaluations);
     }
   }
 
@@ -1100,7 +1331,7 @@ export class ComponentRegistry {
     }
   }
 
-  private async buildClientBundle(): Promise<void> {
+  private async buildClientBundle(evaluations: PrerenderEvaluationCache = currentPrerenderEvaluationCache()): Promise<void> {
     this.clientBundleCallCount += 1;
     const bundleStart = performance.now();
     const development = this.development;
@@ -1130,7 +1361,7 @@ export class ComponentRegistry {
     // The debug bar builds standalone (production-mode Svelte, own runtime) and only once per process — framework
     // sources don't change under a running user app, so watcher rebuilds skip it entirely.
     if (debugBarEnabled && !this.debugBarBundle) {
-      this.debugBarBuildPromise ??= buildDebugBarBundle({ development, backend });
+      this.debugBarBuildPromise ??= buildDebugBarBundle({ development, backend, minifier: this.minifier });
       // If the main build below throws before the swap-time await, a rejection here would otherwise go unhandled.
       this.debugBarBuildPromise.catch(() => {});
     }
@@ -1165,10 +1396,17 @@ export class ComponentRegistry {
       rejectUnknown: this.loadedFromManifest && !this.development,
     });
 
+    const prerenderModuleLoader = createPrerenderModuleLoader(this.prerenderContext(evaluations));
+
+    const minifier = await this.clientMinifier();
+    // Only the client bundle goes through oxc, and only what oxc deletes is worth a warning.
+    const onCompiled = minifier === 'oxc' ? (filePath: string, source: string, compiled: string) => this.warnOxcDroppedCalls(filePath, source, compiled) : undefined;
+
     const clientPlugin: BunPlugin = {
       name: 'svelte-client',
       setup(build) {
         build.onLoad({ filter: applyFilter('image:fileFilter', IMAGE_FILE_FILTER, { target: 'client' }) }, imageAssetLoader);
+        build.onLoad({ filter: PRERENDER_MODULE_FILTER }, prerenderModuleLoader);
         // Mirrors the SSR side-effect-CSS strip, since the SSR-rendered `<head>` already links the bundle via
         // entryImportedCss → importedCssUrls. Bun's default CSS handling would otherwise inline JS-injected styles or
         // fail the build for any hydratable component importing a stylesheet.
@@ -1210,11 +1448,15 @@ export class ComponentRegistry {
           path: path.join(SRC_DIR, 'islands/HydratableBoundary.svelte'),
         }));
         registerEsmEnvStrip(build);
-        registerSvelteModuleLoader(build, backend, mergeCompilerOptions(userCompilerOptions, { generate: 'client', dev: development }));
+        registerSvelteModuleLoader(build, backend, mergeCompilerOptions(userCompilerOptions, { generate: 'client', dev: development }), onCompiled);
         build.onLoad({ filter: /\.svelte$/ }, async (args) => {
-          const source = shakenSources.get(args.path) ?? (await Bun.file(args.path).text());
+          const shaken = shakenSources.get(args.path);
+          const source = shaken ?? (await Bun.file(args.path).text());
+          // Line numbers must be the author's, which a shaken source no longer has.
+          const reportCompiled = async (compiled: string) => onCompiled?.(args.path, shaken === undefined ? source : await Bun.file(args.path).text(), compiled);
           const cached = compileCache.get('client', args.path, source, clientFingerprint, compileCacheStats);
           if (cached) {
+            await reportCompiled(cached.js);
             return { contents: cached.js, loader: 'js' };
           }
           const preprocessed = await applyUserPreprocessors(source, args.path, 'client', development);
@@ -1232,7 +1474,9 @@ export class ComponentRegistry {
             hydratables: [],
             serverIslands: [],
             preprocessErrors: [],
+            cssTracked: false,
           });
+          await reportCompiled(js.code);
           return { contents: js.code, loader: 'js' };
         });
         if (markdown) {
@@ -1252,15 +1496,10 @@ export class ComponentRegistry {
       plugins: [serverOnlyModuleGuard, clientPlugin],
       target: 'browser',
       conditions: ['svelte', ...(development ? ['development'] : ['production'])],
-      define: {
-        DEV: String(development),
-        BROWSER: 'true',
-        NODE: 'false',
-        ...CLIENT_BUILD_DEFINE,
-      },
+      define: clientBuildDefine(development),
       minify: true,
       splitting: true,
-      naming: '[name]-[hash].[ext]',
+      naming: await clientBundleNaming(minifier),
       publicPath: `${this.assetPrefix}/client/`,
       outdir: path.resolve(`${this.outDir}/svelte-client`),
       metafile: true,
@@ -1271,9 +1510,18 @@ export class ComponentRegistry {
       throw new Error(`Svelte client build failed:\n${formatBuildMessages(result.logs)}`);
     }
 
+    // Post-bundle, because a plugin can't reach the printed chunks: `onLoad` only sees pre-bundle modules Bun then
+    // re-prints, and `onEnd` returns `void` after `outdir` is already written. Every chunk is minified before any is
+    // swapped in, so a failure can't leave half the bundle re-minified.
+    const reminified = await minifyBuildOutputs(result.outputs, minifier);
+    if (reminified) {
+      // `outdir` above already wrote Bun's version; the manifest boot reads these files back off disk.
+      await Promise.all([...reminified].map(([outPath, code]) => Bun.write(outPath, code)));
+    }
+
     for (const output of result.outputs) {
       const filename = path.basename(output.path);
-      newClientFiles.set(`${this.assetPrefix}/client/${filename}`, await output.text());
+      newClientFiles.set(`${this.assetPrefix}/client/${filename}`, reminified?.get(output.path) ?? (await output.text()));
     }
 
     // Map entry-point outputs back to components using metafile.entryPoint
@@ -1309,9 +1557,13 @@ export class ComponentRegistry {
         }));
         inputs.sort((a, b) => b.size - a.size);
         const imports = (outMeta.imports ?? []).filter((i) => i.kind === 'import-statement').map((i) => path.basename(i.path));
+        const name = path.basename(outPath);
+        // Bun's metafile counts what Bun printed, so an oxc pass leaves it stale — the chunk total is corrected from
+        // the bytes actually written, while the per-input attribution stays Bun's and no longer sums to it.
+        const emitted = newClientFiles.get(`${this.assetPrefix}/client/${name}`);
         return {
-          name: path.basename(outPath),
-          size: outMeta.bytes,
+          name,
+          size: reminified && emitted !== undefined ? Buffer.byteLength(emitted) : outMeta.bytes,
           inputs,
           imports,
         };
@@ -1326,6 +1578,8 @@ export class ComponentRegistry {
     // succeeded. Replace only the client-prefix JS entries; the per-component CSS
     // entries in `clientFiles` are stable and preserved.
     const clientPrefix = `${this.assetPrefix}/client/`;
+    // Snapshot the keys: the loop deletes from `clientFiles` while iterating it.
+    // oxlint-disable-next-line no-useless-spread
     for (const key of [...this.clientFiles.keys()]) {
       if (key.startsWith(clientPrefix)) {
         this.clientFiles.delete(key);
@@ -1503,11 +1757,17 @@ export class ComponentRegistry {
       transformError: typeof transformError;
       idPrefix?: string;
       context?: Map<unknown, unknown>;
+      csp?: { nonce: string };
     } = {
       transformError,
     };
     if (props) {
       renderOptions.props = props;
+    }
+    // Svelte inlines a <script> for hydratable() values, which a nonce-based CSP would otherwise block.
+    const cspNonce = getCspNonce();
+    if (cspNonce) {
+      renderOptions.csp = { nonce: cspNonce };
     }
     if (opts?.idPrefix) {
       renderOptions.idPrefix = opts.idPrefix;
@@ -1520,7 +1780,17 @@ export class ComponentRegistry {
     // HTMLRewriter pass below drains it, so clearing up front keeps sequential same-ctx renders self-contained — an
     // error page after a failed render, an action's POST re-render.
     const ctx = requestContext.getStore();
-    ctx?.islandProps.clear();
+    if (ctx) {
+      ctx.islandProps.clear();
+      ctx.islandPropsPrefix = opts?.idPrefix;
+    }
+    // Filled by `markRenderedCss` as styled components initialise. A render whose whole tree hydrates (an also-hydrate
+    // island's standalone render) keeps every stylesheet, since any component in it may render client-side.
+    let renderedCss: Set<string> | undefined;
+    if (ctx && opts?.context?.get(HYDRATABLE_CONTEXT_KEY) !== true) {
+      renderedCss = ctx.renderedCss ??= new Set();
+      renderedCss.clear();
+    }
 
     const component = opts?.exportName && opts.exportName !== 'default' ? mod[opts.exportName] : mod.default;
     if (!component) {
@@ -1685,6 +1955,22 @@ export class ComponentRegistry {
       }
     }
 
+    // Every styled component below a rendered island stays linked whether or not SSR reached it. A deferred island's
+    // placeholder keeps nothing: its fragment names the stylesheets it rendered, and the wrapper loads them before the swap.
+    let islandCssNeeds: Set<string> | undefined;
+    if (renderedCss) {
+      for (const name of renderedIslandNames) {
+        const h = hydratablesByName.get(name);
+        const needs = h && this.islandCss.get(h.resolvedPath);
+        if (needs) {
+          islandCssNeeds ??= new Set();
+          for (const p of needs) {
+            islandCssNeeds.add(p);
+          }
+        }
+      }
+    }
+
     const cssUrls: string[] = [];
     for (const componentPath of cssComponents) {
       const cssUrl = this.cssFileUrls.get(componentPath);
@@ -1694,11 +1980,16 @@ export class ComponentRegistry {
       if (lazyIslandPaths.has(componentPath)) {
         continue;
       }
-      if (islandPaths.has(componentPath)) {
+      const trackedKey = renderedCss ? this.trackedCss.get(componentPath) : undefined;
+      const rendered = trackedKey !== undefined && renderedCss!.has(trackedKey);
+      if (islandPaths.has(componentPath) && !rendered && !islandCssNeeds?.has(componentPath)) {
         const hs = hydratablesByPath.get(componentPath);
         if (hs && hs.every((h) => !renderedIslandNames.has(h.name))) {
           continue;
         }
+      }
+      if (trackedKey !== undefined && !rendered && !islandCssNeeds?.has(componentPath)) {
+        continue;
       }
       cssUrls.push(cssUrl);
     }
@@ -1708,6 +1999,7 @@ export class ComponentRegistry {
     // Deduped: two CSS imports sharing a font produce the same content-hashed URL, and a duplicate would burn one of
     // the FONT_PRELOAD_MAX slots.
     const fontPreloadUrls = new Set<string>();
+    const fontSubsetFaces: FontSubsetFace[] = [];
     const imported = this.entryImportedCss.get(entryKey);
     if (imported) {
       for (const cssPath of imported) {
@@ -1721,6 +2013,7 @@ export class ComponentRegistry {
             fontPreloadUrls.add(preloadUrl);
           }
         }
+        fontSubsetFaces.push(...(this.importedCssSubsetFaces.get(cssPath) ?? []));
       }
     }
 
@@ -1733,6 +2026,7 @@ export class ComponentRegistry {
       head: shouldStrip ? stripHydrationMarkers(headStr) : headStr,
       cssUrls,
       fontPreloadUrls: [...fontPreloadUrls],
+      fontSubsetFaces: fontSubsetFaces.length > 0 ? fontSubsetFaces : undefined,
       // Gated on wrappers actually present in the output — the entry's compile-time hydratables may all sit in branches
       // this render never took.
       bootstrapUrl: renderedIslandNames.size > 0 ? this.islandBootstrapUrl : null,
@@ -1914,6 +2208,8 @@ export class ComponentRegistry {
     this.clientFiles.clear();
     this.cssFileUrls.clear();
     this.cssRawByPath.clear();
+    this.trackedCss.clear();
+    this.islandCss.clear();
     this.importedCssUrls.clear();
     this.entryImportedCss.clear();
     this.entryDeps.clear();
@@ -1928,6 +2224,9 @@ export class ComponentRegistry {
     this.localImageAssets.clear();
     this.retireFontAssets();
     this.importedCssFontPreloads.clear();
+    this.importedCssSubsets.clear();
+    this.fontSubsetWarnings.clear();
+    this.importedCssSubsetFaces.clear();
   }
 
   /** Dev-only: bridges the async gap during a re-bundle by keeping old hashed font URLs resolvable via `devStaleFontAssets` while the manifest reads only the live map. */
@@ -1941,12 +2240,12 @@ export class ComponentRegistry {
   }
 
   /**
-   * Bundle a set of side-effect CSS import paths in parallel, pushing a `css-bundle-failed` entry into `this.errors` on
+   * Bundle a set of side-effect CSS import variants in parallel, pushing a `css-bundle-failed` entry into `this.errors` on
    * failure so the dev overlay surfaces it. Hashed naming keeps entrypoints sharing a filename — every fontsource package
    * ships `index.css` — from colliding.
    */
-  private bundleImportedCss(cssPaths: Iterable<string>): Promise<void> {
-    return this.serializeCssBundling(() => this.bundleImportedCssBatch(cssPaths));
+  private bundleImportedCss(variants: Iterable<string>): Promise<void> {
+    return this.serializeCssBundling(() => this.bundleImportedCssBatch(variants));
   }
 
   /**
@@ -1986,9 +2285,9 @@ export class ComponentRegistry {
     });
   }
 
-  private async bundleImportedCssBatch(cssPaths: Iterable<string>): Promise<void> {
+  private async bundleImportedCssBatch(variants: Iterable<string>): Promise<void> {
     const importCssOutDir = path.resolve(`${this.outDir}/import-css`);
-    const todo = [...cssPaths].filter((p) => !this.importedCssUrls.has(p));
+    const todo = [...variants].filter((variant) => !this.importedCssUrls.has(variant));
     if (todo.length === 0) {
       return;
     }
@@ -1997,141 +2296,181 @@ export class ComponentRegistry {
     const deadArtifacts = new Set<string>();
     // The same copy can be adopted by one stylesheet and left in place by another, whose url() still names it.
     const liveArtifacts = new Set<string>();
-    await Promise.all(
-      todo.map(async (cssPath) => {
-        // Bun's CSS bundler resolves every url() itself and runs plugin hooks for them, so font discovery rides the
-        // bundler: large fonts become tiny marker data: URIs (see createFontMarkerPlugin) substituted below.
-        const { plugin: fontPlugin, refs: fontRefs } = createFontMarkerPlugin(this.fontInlineThreshold);
-        // Entrypoints bundle in parallel and two importing the same font emit the same content-hashed copy, so without
-        // a per-build suffix they are concurrent writers to one path and a reader can catch it half-written. Stripped
-        // again by reconcileEmittedAssets below, which puts the canonical name back.
-        const token = randomUUID().slice(0, 8);
-        const cssResult = await Bun.build({
-          entrypoints: [cssPath],
-          outdir: importCssOutDir,
-          naming: { entry: '[name]-[hash].[ext]', asset: `[name]-[hash]-${token}.[ext]` },
-          minify: true,
-          plugins: Number.isFinite(this.fontInlineThreshold) ? [fontPlugin] : [],
-          throw: false,
-        });
-        if (!cssResult.success) {
-          const message = `\n${formatBuildMessages(cssResult.logs)}`;
-          logger.error(`Failed to bundle CSS import ${cssPath}:${message}`);
-          this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
-          return;
+    const bundleVariant = async (variant: string): Promise<void> => {
+      const { cssPath, groups } = this.importedCssSubsets.get(variant) ?? { cssPath: variant, groups: [] };
+      // Bun's CSS bundler resolves every url() itself and runs plugin hooks for them, so font discovery rides the
+      // bundler: large fonts become tiny marker data: URIs (see createFontMarkerPlugin) substituted below.
+      const { plugin: fontPlugin, refs: fontRefs } = createFontMarkerPlugin(this.fontInlineThreshold, { markAll: groups.length > 0 });
+      // Entrypoints bundle in parallel and two importing the same font emit the same content-hashed copy, so without
+      // a per-build suffix they are concurrent writers to one path and a reader can catch it half-written. Stripped
+      // again by reconcileEmittedAssets below, which puts the canonical name back.
+      const token = randomUUID().slice(0, 8);
+      const cssResult = await Bun.build({
+        entrypoints: [cssPath],
+        outdir: importCssOutDir,
+        naming: { entry: '[name]-[hash].[ext]', asset: `[name]-[hash]-${token}.[ext]` },
+        minify: true,
+        plugins: Number.isFinite(this.fontInlineThreshold) || groups.length > 0 ? [fontPlugin] : [],
+        throw: false,
+      });
+      if (!cssResult.success) {
+        const message = `\n${formatBuildMessages(cssResult.logs)}`;
+        logger.error(`Failed to bundle CSS import ${cssPath}:${message}`);
+        this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
+        return;
+      }
+      const out = cssResult.outputs.find((o) => o.path.endsWith('.css'));
+      if (!out) {
+        const message = 'bundle produced no .css output';
+        logger.error(`CSS bundle for ${cssPath}: ${message}`);
+        this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
+        return;
+      }
+      // Read from disk: when Bun.build writes via `outdir`, the output's
+      // .text() may return empty — the file on disk is the source of truth.
+      const rawCss = await Bun.file(out.path).text();
+      const suffixed = cssResult.outputs.filter((o) => o !== out).map((o) => o.path);
+      const emitted = this.reconcileEmittedAssets(suffixed, token);
+      let cssText = rawCss;
+      // Exact filenames rather than the bare suffix, which could collide with an unrelated run of the same characters.
+      suffixed.forEach((original, i) => {
+        cssText = cssText.replaceAll(path.basename(original), path.basename(emitted[i]!));
+      });
+      const adopted = await adoptEmittedFontAssets(
+        cssText,
+        emitted.map((path) => ({ path })),
+        fontRefs,
+      );
+      cssText = adopted.css;
+      for (const assetPath of adopted.adopted) {
+        deadArtifacts.add(assetPath);
+      }
+      for (const assetPath of adopted.missing) {
+        const message = `the bundler's copy of ${relForDisplay(assetPath)} vanished before it could be read, so its @font-face still points at a file no route serves. Please report this.`;
+        logger.error(`CSS bundle for ${cssPath}: ${message}`);
+        this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
+      }
+      // Bun printed these relative to the stylesheet, so serving them under its `import-css/` prefix is what makes
+      // the URL it already wrote resolve.
+      for (const assetPath of adopted.otherAssets) {
+        liveArtifacts.add(assetPath);
+        const name = path.basename(assetPath);
+        const file = Bun.file(assetPath);
+        this.importCssAssets.set(`${this.assetPrefix}/import-css/${name}`, { diskPath: assetPath, contentType: file.type });
+        // Deduped against the stats rather than the map, which a dev re-bundle rebuilds while leaving entries in place.
+        const statName = path.posix.join('import-css', name);
+        if (!this.importedCssStats.some((s) => s.name === statName)) {
+          this.importedCssStats.push({ name: statName, size: file.size, inputs: [], imports: [] });
         }
-        const out = cssResult.outputs.find((o) => o.path.endsWith('.css'));
-        if (!out) {
-          const message = 'bundle produced no .css output';
-          logger.error(`CSS bundle for ${cssPath}: ${message}`);
-          this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
-          return;
-        }
-        // Read from disk: when Bun.build writes via `outdir`, the output's
-        // .text() may return empty — the file on disk is the source of truth.
-        const rawCss = await Bun.file(out.path).text();
-        const suffixed = cssResult.outputs.filter((o) => o !== out).map((o) => o.path);
-        const emitted = this.reconcileEmittedAssets(suffixed, token);
-        let cssText = rawCss;
-        // Exact filenames rather than the bare suffix, which could collide with an unrelated run of the same characters.
-        suffixed.forEach((original, i) => {
-          cssText = cssText.replaceAll(path.basename(original), path.basename(emitted[i]!));
-        });
-        const adopted = await adoptEmittedFontAssets(
-          cssText,
-          emitted.map((path) => ({ path })),
-          fontRefs,
-        );
-        cssText = adopted.css;
-        for (const assetPath of adopted.adopted) {
-          deadArtifacts.add(assetPath);
-        }
-        for (const assetPath of adopted.missing) {
-          const message = `the bundler's copy of ${relForDisplay(assetPath)} vanished before it could be read, so its @font-face still points at a file no route serves. Please report this.`;
-          logger.error(`CSS bundle for ${cssPath}: ${message}`);
-          this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
-        }
-        // Bun printed these relative to the stylesheet, so serving them under its `import-css/` prefix is what makes
-        // the URL it already wrote resolve.
-        for (const assetPath of adopted.otherAssets) {
-          liveArtifacts.add(assetPath);
-          const name = path.basename(assetPath);
-          const file = Bun.file(assetPath);
-          this.importCssAssets.set(`${this.assetPrefix}/import-css/${name}`, { diskPath: assetPath, contentType: file.type });
-          // Deduped against the stats rather than the map, which a dev re-bundle rebuilds while leaving entries in place.
-          const statName = path.posix.join('import-css', name);
-          if (!this.importedCssStats.some((s) => s.name === statName)) {
-            this.importedCssStats.push({ name: statName, size: file.size, inputs: [], imports: [] });
-          }
-        }
-        const fontPass = classifyFontAssets(cssText, fontRefs, { dropLegacyWoff: this.fontDropLegacyWoff });
-        cssText = fontPass.css;
-        if (fontPass.parseFailed) {
-          const message = 'the bundled stylesheet could not be parsed, so any extracted font is still a marker where its bytes should be. Please report this.';
-          logger.error(`CSS bundle for ${cssPath}: ${message}`);
-          this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
-        }
-        const preloadUrls: string[] = [];
-        const fontUrlByMarker = new Map<string, string>();
-        for (const font of fontPass.fonts) {
-          const bytes = font.ref.bytes ?? (await Bun.file(font.ref.path).bytes());
-          if (fontChangedSinceResolved(font.ref, bytes)) {
-            const message = `the source font ${relForDisplay(font.ref.path)} was ${font.ref.size} bytes when the bundle resolved it but read back ${bytes.length}, so it changed mid-build. If this persists the file is corrupt.`;
-            logger.error(`CSS bundle for ${cssPath}: ${message}`);
-            this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
-          }
-          const fileName = fontAssetFileName(font.ref, bytes);
-          const diskPath = path.join(this.outDir, 'fonts', fileName);
-          const fontUrl = `${this.assetPrefix}/fonts/${fileName}`;
-          fontUrlByMarker.set(font.markerUri, fontUrl);
-          if (font.preload) {
-            preloadUrls.push(fontUrl);
-          }
-          // Registering before the first await keeps the check-then-set atomic across the concurrently bundling
-          // entrypoints, so a font shared between stylesheets is written and counted in the stats exactly once.
-          if (!this.fontAssets.has(fontUrl)) {
-            this.fontAssets.set(fontUrl, { diskPath, contentType: font.contentType });
-            this.importedCssStats.push({
-              name: path.posix.join('fonts', fileName),
-              size: bytes.length,
-              inputs: [{ path: relForDisplay(font.ref.path), size: bytes.length }],
-              imports: [],
-            });
-            // The content-hashed name means an existing file already holds these exact bytes; skipping the rewrite
-            // keeps a dev-rebundle from truncating a file a concurrent request may be reading.
-            if (!(await Bun.file(diskPath).exists())) {
-              await Bun.write(diskPath, bytes);
+      }
+      const fontPass = classifyFontAssets(cssText, fontRefs, { dropLegacyWoff: this.fontDropLegacyWoff });
+      cssText = fontPass.css;
+      if (fontPass.parseFailed) {
+        const message = 'the bundled stylesheet could not be parsed, so any extracted font is still a marker where its bytes should be. Please report this.';
+        logger.error(`CSS bundle for ${cssPath}: ${message}`);
+        this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
+      }
+      const preloadUrls: string[] = [];
+      const subsetFaces: FontSubsetFace[] = [];
+      let subsetOutcome: 'none' | 'applied' | 'failed' = 'none';
+      if (groups.length > 0 && fontPass.fonts.length > 0) {
+        try {
+          const applied = await applyFontSubsets(cssText, fontPass.fonts, groups, {
+            inlineThreshold: this.fontInlineThreshold,
+            readSource: async (ref) => ref.bytes ?? (await Bun.file(ref.path).bytes()),
+            emit: (ref, bytes, contentType) => this.emitFontAsset(ref, bytes, contentType),
+          });
+          cssText = applied.css;
+          for (const variant of applied.variants) {
+            if (variant.preload && variant.url) {
+              preloadUrls.push(variant.url);
             }
+            if (variant.family) {
+              subsetFaces.push({ family: variant.family, ranges: variant.ranges });
+            }
+            const detail = [
+              formatRanges(variant.ranges),
+              variant.weight !== null && `weight ${variant.weight}`,
+              !variant.layoutClosure && 'no layout closure',
+              variant.inlined ? 'inlined' : 'served',
+            ]
+              .filter(Boolean)
+              .join(', ');
+            logger.info(`font subset: ${path.basename(variant.ref.path)} ${prettyBytes(variant.ref.size)} → ${prettyBytes(variant.bytes.length)} (${detail})`);
           }
-        }
-        cssText = substituteFontUrls(cssText, fontUrlByMarker);
-        for (const font of fontPass.fonts) {
-          if (cssText.includes(font.ref.markerB64)) {
-            const message = `extracted font ${relForDisplay(font.ref.path)} kept its marker after URL substitution — the bundler printed a url() form the substitution missed. Please report this.`;
-            logger.error(`CSS bundle for ${cssPath}: ${message}`);
-            this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
+          if (applied.variants.length > 0 || applied.droppedFaces > 0) {
+            subsetOutcome = 'applied';
           }
+        } catch (e) {
+          subsetOutcome = 'failed';
+          const message = e instanceof Error ? e.message : String(e);
+          logger.error(`CSS bundle for ${cssPath}: ${message}`);
+          this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
         }
-        let outPath = out.path;
-        if (cssText !== rawCss) {
-          // Bun hashed the pre-substitution text, so the served bytes (font URLs carrying font-content hashes,
-          // `dropLegacyWoff` pruning) must re-hash into the immutable filename or a redeploy reuses a stale cached copy.
-          outPath = path.join(importCssOutDir, `${path.basename(out.path, '.css')}-${fontContentHash(Buffer.from(cssText))}.css`);
-          await Bun.write(outPath, cssText);
-          fs.rmSync(out.path, { force: true });
+      }
+      if (groups.length > 0 && subsetOutcome === 'none') {
+        logger.warn(
+          `CSS bundle for ${relForDisplay(cssPath)}: a \`subset\` import attribute names it, but it declares no @font-face source that can be subsetted (woff2, woff, ttf or otf).`,
+        );
+      }
+      const fontUrlByMarker = new Map<string, string>();
+      for (const font of fontPass.fonts) {
+        // A marker the subset pass already replaced needs no full-size copy.
+        if (groups.length > 0 && !cssText.includes(font.ref.markerB64)) {
+          continue;
         }
-        const urlPath = `${this.assetPrefix}/import-css/${path.basename(outPath)}`;
-        if (preloadUrls.length > 0) {
-          this.importedCssFontPreloads.set(cssPath, preloadUrls);
+        const bytes = font.ref.bytes ?? (await Bun.file(font.ref.path).bytes());
+        if (fontChangedSinceResolved(font.ref, bytes)) {
+          const message = `the source font ${relForDisplay(font.ref.path)} was ${font.ref.size} bytes when the bundle resolved it but read back ${bytes.length}, so it changed mid-build. If this persists the file is corrupt.`;
+          logger.error(`CSS bundle for ${cssPath}: ${message}`);
+          this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
         }
-        this.clientFiles.set(urlPath, cssText);
-        this.importedCssUrls.set(cssPath, urlPath);
-        this.importedCssStats.push({
-          name: path.basename(outPath),
-          size: cssText.length,
-          inputs: [{ path: relForDisplay(cssPath), size: cssText.length }],
-          imports: [],
-        });
+        const fontUrl = await this.emitFontAsset(font.ref, bytes, font.contentType);
+        fontUrlByMarker.set(font.markerUri, fontUrl);
+        if (font.preload) {
+          preloadUrls.push(fontUrl);
+        }
+      }
+      cssText = substituteFontUrls(cssText, fontUrlByMarker);
+      for (const font of fontPass.fonts) {
+        if (cssText.includes(font.ref.markerB64)) {
+          const message = `extracted font ${relForDisplay(font.ref.path)} kept its marker after URL substitution — the bundler printed a url() form the substitution missed. Please report this.`;
+          logger.error(`CSS bundle for ${cssPath}: ${message}`);
+          this.errors.push({ kind: 'css-bundle-failed', cssPath, message });
+        }
+      }
+      let outPath = out.path;
+      if (cssText !== rawCss) {
+        // Bun hashed the pre-substitution text, so the served bytes (font URLs carrying font-content hashes,
+        // `dropLegacyWoff` pruning) must re-hash into the immutable filename or a redeploy reuses a stale cached copy.
+        outPath = path.join(importCssOutDir, `${path.basename(out.path, '.css')}-${fontContentHash(Buffer.from(cssText))}.css`);
+        await Bun.write(outPath, cssText);
+        fs.rmSync(out.path, { force: true });
+      }
+      const urlPath = `${this.assetPrefix}/import-css/${path.basename(outPath)}`;
+      if (preloadUrls.length > 0) {
+        this.importedCssFontPreloads.set(variant, preloadUrls);
+      }
+      if (subsetFaces.length > 0 && this.development) {
+        this.importedCssSubsetFaces.set(variant, subsetFaces);
+        this.fontSubsetCheckClientJs ||= await buildInlineWebComponent('./dev/FontSubsetCheck.ts', this.minifier);
+      }
+      this.clientFiles.set(urlPath, cssText);
+      this.importedCssUrls.set(variant, urlPath);
+      this.importedCssStats.push({
+        name: path.basename(outPath),
+        size: cssText.length,
+        inputs: [{ path: relForDisplay(cssPath), size: cssText.length }],
+        imports: [],
+      });
+    };
+    // Variants of one stylesheet share the bundler's entry output path, so they bundle one after another.
+    const bySheet = Map.groupBy(todo, (variant) => this.importedCssSubsets.get(variant)?.cssPath ?? variant);
+    await Promise.all(
+      [...bySheet.values()].map(async (sameSheet) => {
+        for (const variant of sameSheet) {
+          await bundleVariant(variant);
+        }
       }),
     );
     for (const artifact of deadArtifacts) {
@@ -2139,6 +2478,123 @@ export class ComponentRegistry {
         fs.rmSync(artifact, { force: true });
       }
     }
+  }
+
+  /**
+   * What each of this build's modules asks of the stylesheets it imports: subset specs, or `null` for the whole font.
+   * Bun strips import attributes before any plugin hook runs, so the metafile names the importers and those are parsed at source.
+   */
+  private async scanFontSubsetRequests(inputs: Record<string, { imports: { path: string; original?: string }[] }>): Promise<Map<string, Map<string, FontSubsetSpec[] | null>>> {
+    const modules = await Promise.all(
+      Object.entries(inputs).map(async ([key, meta]) => {
+        const importer = path.resolve(key);
+        const kind = scriptKindOf(importer);
+        const stylesheets = new Map(meta.imports.filter((imp) => imp.path.endsWith('.css')).map((imp) => [imp.original ?? imp.path, path.resolve(imp.path)]));
+        const scannable = kind && stylesheets.size > 0 && !importer.includes(`${path.sep}node_modules${path.sep}`);
+        const found = scannable ? await scanImportAttributes(await Bun.file(importer).text(), kind) : [];
+        if (!found) {
+          this.warnOnce(`Font subset: ${relForDisplay(importer)} could not be parsed to read its import attributes, so the stylesheets it imports ship unsubsetted.`);
+        }
+        return { key, importer, stylesheets, found: found ?? [] };
+      }),
+    );
+    const built = new Set(modules.map((module) => module.importer));
+    this.errors = this.errors.filter((e) => !(e.kind === 'font-subset-invalid' && built.has(e.filePath)));
+    const requests = new Map<string, Map<string, FontSubsetSpec[] | null>>();
+    for (const { key, importer, stylesheets, found } of modules) {
+      if (stylesheets.size === 0) {
+        continue;
+      }
+      const byStylesheet = new Map<string, FontSubsetSpec[] | null>([...stylesheets.values()].map((cssPath) => [cssPath, null]));
+      for (const { specifier, attributes, line } of found) {
+        // Attributes on any other import (`type: 'json'`, Bun's `embed`) belong to the runtime.
+        const cssPath = stylesheets.get(specifier);
+        if (!cssPath) {
+          continue;
+        }
+        const { spec, error } = parseFontSubsetSpec(attributes);
+        if (error) {
+          const compileError: MochiCompileError = { kind: 'font-subset-invalid', filePath: importer, specifier, line, message: error };
+          this.errors.push(compileError);
+          logger.error(`\n${formatCompileError(compileError)}\n`);
+        } else if (spec) {
+          byStylesheet.set(cssPath, [...(byStylesheet.get(cssPath) ?? []), spec]);
+        }
+      }
+      requests.set(key, byStylesheet);
+    }
+    return requests;
+  }
+
+  /**
+   * The variant of a stylesheet one entry links: the whole sheet when a module in the entry's graph imports it without a
+   * subset, else the subset those modules' requests merge into. Named after the request, so entries asking alike share it.
+   */
+  private cssVariantFor(cssPath: string, entry: string, entryInputs: Set<string>, requests: Map<string, Map<string, FontSubsetSpec[] | null>>): string {
+    const asked: { importer: string; specs: FontSubsetSpec[] | null }[] = [];
+    for (const [key, byStylesheet] of requests) {
+      const specs = byStylesheet.get(path.resolve(cssPath));
+      if (specs !== undefined && entryInputs.has(key)) {
+        asked.push({ importer: path.resolve(key), specs });
+      }
+    }
+    const whole = asked.some((ask) => ask.specs === null);
+    const specs = asked.flatMap((ask) => ask.specs ?? []);
+    const groups = whole ? [] : mergeFontSubsetSpecs(specs);
+    if (specs.some((spec) => !groups.some((group) => group.weight === spec.weight && group.layoutClosure === spec.layoutClosure))) {
+      const describe = (spec: FontSubsetSpec) => `${spec.weight === null ? 'any weight' : `weight ${spec.weight}`}${spec.layoutClosure ? '' : ', no layout closure'}`;
+      const importers = asked.map((ask) => `${relForDisplay(ask.importer)} (${ask.specs === null ? 'no subset' : ask.specs.map(describe).join(' and ')})`).join(', ');
+      const outcome = whole
+        ? 'the whole font, so the subset has no effect there'
+        : 'one font that satisfies all of them, so a pinned weight or dropped layout closure is not applied there';
+      this.warnOnce(
+        `Font subset: ${relForDisplay(cssPath)} is imported with different subsetting on one page: ${importers}. That page ships ${outcome}.`,
+        ` First seen on ${relForDisplay(entry)}.`,
+      );
+    }
+    if (groups.length === 0) {
+      return cssPath;
+    }
+    const variant = `${cssPath}#${fontContentHash(Buffer.from(JSON.stringify(groups)))}`;
+    this.importedCssSubsets.set(variant, { cssPath, groups });
+    return variant;
+  }
+
+  /** Logs a font-subset warning the first time it comes up; `detail` is appended without counting towards that. */
+  private warnOnce(message: string, detail = ''): void {
+    if (!this.fontSubsetWarnings.has(message)) {
+      this.fontSubsetWarnings.add(message);
+      logger.warn(message + detail);
+    }
+  }
+
+  /** Whether a served stylesheet URL is a variant bundled for a font-subset request. */
+  isFontSubsetStylesheet(urlPath: string): boolean {
+    return [...this.importedCssSubsets.keys()].some((variant) => this.importedCssUrls.get(variant) === urlPath);
+  }
+
+  /** Register a font under its content-hashed served URL, writing the file once, and return that URL. */
+  private async emitFontAsset(ref: FontRef, bytes: Uint8Array, contentType: string): Promise<string> {
+    const fileName = fontAssetFileName(ref, bytes);
+    const diskPath = path.join(this.outDir, 'fonts', fileName);
+    const fontUrl = `${this.assetPrefix}/fonts/${fileName}`;
+    // Registering before the first await keeps the check-then-set atomic across the concurrently bundling
+    // entrypoints, so a font shared between stylesheets is written and counted in the stats exactly once.
+    if (!this.fontAssets.has(fontUrl)) {
+      this.fontAssets.set(fontUrl, { diskPath, contentType });
+      this.importedCssStats.push({
+        name: path.posix.join('fonts', fileName),
+        size: bytes.length,
+        inputs: [{ path: relForDisplay(ref.path), size: ref.size }],
+        imports: [],
+      });
+      // The content-hashed name means an existing file already holds these exact bytes; skipping the rewrite
+      // keeps a dev-rebundle from truncating a file a concurrent request may be reading.
+      if (!(await Bun.file(diskPath).exists())) {
+        await Bun.write(diskPath, bytes);
+      }
+    }
+    return fontUrl;
   }
 
   /** Re-bundles every previously seen side-effect CSS import for the dev watcher's CSS-only fast-path, leaving page modules and entry tracking alone. */
@@ -2158,6 +2614,8 @@ export class ComponentRegistry {
       // Drop existing import-css entries from clientFiles so stale URLs don't
       // linger when content (and therefore hash) changes.
       const importCssPrefix = `${this.assetPrefix}/import-css/`;
+      // Snapshot the keys: the loop deletes from `clientFiles` while iterating it.
+      // oxlint-disable-next-line no-useless-spread
       for (const key of [...this.clientFiles.keys()]) {
         if (key.startsWith(importCssPrefix)) {
           this.clientFiles.delete(key);
@@ -2167,6 +2625,7 @@ export class ComponentRegistry {
       this.importedCssStats = [];
       this.retireFontAssets();
       this.importedCssFontPreloads.clear();
+      this.importedCssSubsetFaces.clear();
       await this.bundleImportedCssBatch(cssPaths);
     });
   }
@@ -2210,15 +2669,33 @@ export class ComponentRegistry {
    * reload for edits outside the page graph (server entry, package.json), which need a process restart anyway. Paths in
    * `pages` are absolute, matching the `window.__mochi_page_entry` value injected into SSR'd HTML.
    */
-  async recompileChanged(changedPath: string): Promise<{ pages: Set<string>; clientBundleCount: number }> {
+  async recompileChanged(changedPath: string, opts: { withPrerenderModules?: boolean } = {}): Promise<{ pages: Set<string>; clientBundleCount: number }> {
     const changed = path.resolve(changedPath);
-    const affected = new Set<string>();
-    if (this.compiledComponents.has(changed)) {
-      affected.add(changed);
+    const seeds = new Set([changed]);
+    for (const [prerenderModule, inputs] of this.prerenderInputs) {
+      if (inputs.has(changed)) {
+        seeds.add(prerenderModule);
+      }
     }
-    for (const [entry, deps] of this.entryDeps) {
-      if (deps.has(changed)) {
-        affected.add(entry);
+    // A prerendered module may read files the import graph knows nothing about, so the watcher cannot narrow this to one module.
+    if (opts.withPrerenderModules) {
+      for (const prerenderModule of this.getPrerenderModules()) {
+        seeds.add(prerenderModule);
+      }
+    }
+    return this.recompileDependents(seeds, 'Targeted rebuild failed');
+  }
+
+  private async recompileDependents(seeds: Iterable<string>, label: string): Promise<{ pages: Set<string>; clientBundleCount: number }> {
+    const affected = new Set<string>();
+    for (const seed of seeds) {
+      if (this.compiledComponents.has(seed)) {
+        affected.add(seed);
+      }
+      for (const [entry, deps] of this.entryDeps) {
+        if (deps.has(seed)) {
+          affected.add(entry);
+        }
       }
     }
     if (affected.size === 0) {
@@ -2228,7 +2705,7 @@ export class ComponentRegistry {
     this.clientBundleCallCount = 0;
     // Rebuild every affected entry in a single Bun.build so transitive deps
     // dedupe across them.
-    await this.safeBatchCompile([...affected], 'Targeted rebuild failed');
+    await this.safeBatchCompile([...affected], label);
     this.rebuildHydratables();
     // `compileAll` already calls `buildClientBundle` once when the cohort contributes hydratables, so a trailing call is
     // forced only where this recompile removed the cohort's hydratables while other cached pages still have some, leaving
@@ -2316,6 +2793,7 @@ export class ComponentRegistry {
     const manifest: MochiManifest = {
       version: MANIFEST_VERSION,
       assetPrefix: this.assetPrefix,
+      minifier: this.minifier,
       bootstrapUrl: this.islandBootstrapUrl,
       componentEntryUrls: Object.fromEntries(this.componentEntryUrls),
       cssFileUrls: Object.fromEntries([...this.cssFileUrls].map(([componentPath, url]) => [encodeSourcePath(componentPath), url])),
@@ -2342,8 +2820,19 @@ export class ComponentRegistry {
     if (this.importedCssFontPreloads.size > 0) {
       manifest.importedCssFontPreloads = Object.fromEntries([...this.importedCssFontPreloads].map(([cssPath, urls]) => [encodeSourcePath(cssPath), urls]));
     }
+    if (this.importedCssSubsets.size > 0) {
+      manifest.importedCssSubsets = Object.fromEntries(
+        [...this.importedCssSubsets].map(([variant, subset]) => [encodeSourcePath(variant), { cssPath: encodeSourcePath(subset.cssPath), groups: subset.groups }]),
+      );
+    }
     if (this.entryImportedCss.size > 0) {
       manifest.entryImportedCss = Object.fromEntries([...this.entryImportedCss].map(([k, v]) => [encodeSourcePath(k), [...v].map((p) => encodeSourcePath(p))]));
+    }
+    if (this.trackedCss.size > 0) {
+      manifest.trackedCss = [...this.trackedCss.values()];
+    }
+    if (this.islandCss.size > 0) {
+      manifest.islandCss = Object.fromEntries([...this.islandCss].map(([islandPath, paths]) => [encodeSourcePath(islandPath), [...paths].map((p) => encodeSourcePath(p))]));
     }
     if (this.serverIslandScriptFile) {
       manifest.serverIslandScript = relToOutDir(this.serverIslandScriptFile);
@@ -2370,7 +2859,7 @@ export class ComponentRegistry {
     // own directory *is* the build out-dir. Deriving the artifact root from the
     // manifest's own location makes the pairing intrinsic — there's no caller-
     // supplied out-dir that could desync from where the artifacts actually live.
-    const artifactRoot = path.dirname(path.resolve(manifestPath));
+    const artifactRoot = resolveOutDir(path.dirname(manifestPath));
     // Absolute entries are the escape hatch for artifacts that landed outside
     // the out-dir (toManifest() warns when it bakes one) — pass them through.
     const resolveManifestPath = (p: string): string => (path.isAbsolute(p) ? p : path.resolve(artifactRoot, p));
@@ -2380,6 +2869,8 @@ export class ComponentRegistry {
       outDir: artifactRoot,
       assetPrefix: manifest.assetPrefix,
       fonts: options.fonts,
+      // Taken from the build, so a manifest-miss rebuild doesn't swap its chunks for another minifier's names.
+      minifier: parseJsMinifier(manifest.minifier, `${relForDisplay(manifestPath)} minifier`),
     });
     registry.loadedFromManifest = true;
     registry.publicFileCountAtBuild = manifest.publicFileCount ?? 0;
@@ -2425,10 +2916,22 @@ export class ComponentRegistry {
         registry.importedCssFontPreloads.set(decodeSourcePath(cssPath), urls);
       }
     }
+    if (manifest.importedCssSubsets) {
+      for (const [variant, subset] of Object.entries(manifest.importedCssSubsets)) {
+        registry.importedCssSubsets.set(decodeSourcePath(variant), { cssPath: decodeSourcePath(subset.cssPath), groups: subset.groups });
+      }
+    }
     if (manifest.entryImportedCss) {
       for (const [entryPath, cssPaths] of Object.entries(manifest.entryImportedCss)) {
         registry.entryImportedCss.set(decodeSourcePath(entryPath), new Set(cssPaths.map((p) => decodeSourcePath(p))));
       }
+    }
+    // The encoded key is what the built SSR module reports verbatim, so it is kept as written rather than re-encoded.
+    for (const key of manifest.trackedCss ?? []) {
+      registry.trackedCss.set(decodeSourcePath(key), key);
+    }
+    for (const [islandPath, paths] of Object.entries(manifest.islandCss ?? {})) {
+      registry.islandCss.set(decodeSourcePath(islandPath), new Set(paths.map((p) => decodeSourcePath(p))));
     }
 
     // Load SSR modules and populate compiledComponents

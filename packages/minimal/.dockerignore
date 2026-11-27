@@ -1,6 +1,7 @@
 node_modules
 .git
 .mochi
+.env*
 Dockerfile
 .dockerignore
 *.log

@@ -66,6 +66,8 @@ export interface MochiSmtpConfig {
   pool?: boolean;
   /** Extra TLS options passed through to nodemailer. */
   tls?: Record<string, unknown>;
+  /** Fail the send unless a plaintext connection upgrades via STARTTLS. Default: `true` when `auth` is set and `secure` is not. */
+  requireTLS?: boolean;
 }
 
 /**

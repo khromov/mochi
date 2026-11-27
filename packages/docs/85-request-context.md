@@ -7,6 +7,7 @@ description: 'Access the current URL, route params, cookies, and locals from ser
 <script>
   import Callout from './_components/Callout.svelte';
   import SeeItInAction from './_components/SeeItInAction.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
 </script>
 
 ## Request context
@@ -63,7 +64,11 @@ Route parameters matched by the Bun router. Server-only.
 
 ### `cookies`
 
-Read and write cookies on the server and the client through one API. See the [Cookies demo](/demos/cookies/).
+<VersionNote since="0.10.0" message="Before 0.10.0, cookies.set() and cookies.delete() in the browser wrote nothing when passed httpOnly: true and gave no development warnings, and cookies.set() in the browser ignored maxAge." />
+
+Read and write cookies on the server and the client through one API. In the browser, `cookies.set()` and `cookies.delete()` ignore `httpOnly`, because a browser discards any `document.cookie` write that carries it. See the [Cookies demo](/demos/cookies/).
+
+In development, the browser jar warns in the console and the debug bar when a call passes `httpOnly`, and when a `set()` or `delete()` has no effect, for example a `set()` that would replace a cookie the server set with `httpOnly`. A cookie scoped to a path the page is not under is not checked, because the page cannot read it back.
 
 ```svelte
 <script>
@@ -72,6 +77,10 @@ Read and write cookies on the server and the client through one API. See the [Co
   const theme = cookies.get('theme') ?? 'light';
 </script>
 ```
+
+`maxAge` (seconds) and `expires` (days, or a `Date`) set the same cookie lifetime on the server and in the browser. Delete a cookie with the same per-call options you set it with. See [`cookie:defaults`](/docs/extensions/#cookiedefaults).
+
+With [`secureCookies`](/docs/serve-options/#secure-cookies) on, a cookie the server sets is `HttpOnly`, so the browser can neither read nor overwrite it. Pass `{ httpOnly: false }` where the server sets a cookie that an island reads or writes.
 
 ### `locals`
 
@@ -117,6 +126,27 @@ serverProps: async () => {
   return { posts: await loadPosts() };
 };
 ```
+
+### `getCspNonce()`
+
+<VersionNote since="0.10.0" message="getCspNonce() ships in the next Mochi release (0.10.0)." />
+
+Returns the current request's CSP nonce, or `undefined` when the [`csp` serve option](/docs/serve-options/#content-security-policy-nonce) is off. Use it to build the `Content-Security-Policy` header in middleware, or to stamp a script of your own:
+
+```svelte
+<!-- file: src/Analytics.svelte -->
+<script>
+  import { getCspNonce } from 'mochi-framework';
+
+  const nonce = getCspNonce();
+</script>
+
+<svelte:head>
+  <script {nonce} src="/analytics.js"></script>
+</svelte:head>
+```
+
+It also works in middleware for the fall-through 404, which has no full request context. In the browser it returns `undefined`.
 
 <SeeItInAction
 demos={[

@@ -386,6 +386,7 @@ describe('enhance attachment', () => {
     // generate the boundary string.
     expect(headers.has('content-type')).toBe(false);
     expect(captured!.init?.body).toBeInstanceOf(FormData);
+    // oxlint-disable-next-line no-unsafe-optional-chaining -- asserted as FormData on the line above
     expect((captured!.init?.body as FormData).get('note')).toBe('hello');
 
     cleanup();
@@ -475,5 +476,54 @@ describe('error results are always logged', () => {
     expect(errorSpy.mock.calls.filter(([label]) => label === 'enhance:')).toHaveLength(1);
     errorSpy.mockRestore();
     cleanup();
+  });
+});
+
+describe('redirect results', () => {
+  async function submitRedirect(location: string): Promise<{ assigned: unknown[][]; logged: unknown[][] }> {
+    const form = makeForm();
+    setFetch(() => Promise.resolve(new Response(JSON.stringify({ type: 'redirect', status: 303, location }))));
+    const assignSpy = spyOn(window.location, 'assign').mockImplementation(() => {});
+    const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+
+    const settled = deferred();
+    const cleanup = attach(form, {
+      onPending: (v) => {
+        if (!v) {
+          settled.resolve();
+        }
+      },
+    });
+    dispatchSubmit(form);
+    await settled.promise;
+
+    const result = { assigned: [...assignSpy.mock.calls], logged: [...errorSpy.mock.calls] };
+    assignSpy.mockRestore();
+    errorSpy.mockRestore();
+    cleanup();
+    return result;
+  }
+
+  test.each(['/elsewhere', 'https://example.com/next', 'mailto:support@example.com', 'tel:+15551234567', 'myapp://open/thing'])(
+    'the default fallback navigates to %p',
+    async (location) => {
+      const { assigned, logged } = await submitRedirect(location);
+      expect(assigned).toEqual([[location]]);
+      expect(logged).toEqual([]);
+    },
+  );
+
+  test.each([
+    'javascript:alert(document.domain)',
+    ' JavaScript:alert(1)',
+    'java\tscript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'vbscript:msgbox(1)',
+    'blob:https://evil.example/u',
+    'file:///etc/passwd',
+  ])('the default fallback refuses to navigate to the script URL %p', async (location) => {
+    const { assigned, logged } = await submitRedirect(location);
+    expect(assigned).toEqual([]);
+    expect(logged).toHaveLength(1);
   });
 });

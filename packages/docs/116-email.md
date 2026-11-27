@@ -8,6 +8,7 @@ description: 'Send transactional email with Mochi.email() over SMTP, a custom se
 <script>
   import { Image } from 'mochi-framework/image';
   import Callout from './_components/Callout.svelte';
+  import VersionNote from './_components/VersionNote.svelte';
   import emailOutbox from './images/email-outbox.png';
 </script>
 
@@ -106,9 +107,14 @@ email: {
     secure: false,       // default: port === 465
     auth: { user: '…', pass: '…' },
     pool: true,
+    requireTLS: true,    // default: true when auth is set and secure is not
   },
 }
 ```
+
+With `auth` on a non-`secure` connection, a send fails unless the server upgrades it via STARTTLS, so a relay or on-path attacker that hides STARTTLS never receives your credentials in plaintext. Set `requireTLS: false` only for a trusted relay without TLS.
+
+<VersionNote since="0.10.0" message="Before 0.10.0 STARTTLS was opportunistic: an authenticated SMTP send fell back to plaintext when the server did not offer it." />
 
 **Custom** — an escape hatch for any HTTP email API (Resend, SES, Postmark) with no SDK. Receives the resolved message. No SMTP library is loaded:
 
@@ -149,7 +155,7 @@ The outbox is in-memory and dev-only. It holds the most recent 100 messages, is 
 
 </Callout>
 
-Leaving `transport` unset gives you the dev/log split automatically. To pick the transport by hand, branch on `NODE_ENV` (the `isDev` constant is only available inside compiled code, not a server entry):
+Leaving `transport` unset gives you the dev/log split automatically. To pick the transport by hand, branch on `NODE_ENV` — this options object is evaluated before `Mochi.serve()` resolves [`isDev`](/docs/environment-constants/#isdev), so read the env var directly here:
 
 ```ts
 await Mochi.serve({

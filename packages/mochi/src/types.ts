@@ -1,4 +1,4 @@
-import type { BunFile, Server, ServerWebSocket } from 'bun';
+import type { BunFile, Server, ServerWebSocket, WebSocketHandler } from 'bun';
 import type { Handle, HandleError, MochiEvent } from './runtime/hooks';
 import type { MochiCookieJar } from './runtime/cookies';
 import type { MochiCsrfOptions } from './runtime/csrf';
@@ -13,7 +13,10 @@ import type { MochiProcessor, MochiQueueListeners, MochiQueueRuntimeOptions, Moc
 import type { MochiRateLimitOptions } from './runtime/rateLimit';
 import type { MochiStorage } from './migrations/storage';
 import type { MochiSvelteCompiler } from './compiler/svelteCompilerBackend';
+import type { MochiJsMinifier } from './compiler/jsMinifier';
+import type { FontSubsetGroup } from './compiler/fontImportAttributes';
 import type { SpeculationRules } from './runtime/speculationRules';
+import type { MochiSecurityHeadersOptions } from './runtime/security';
 
 export type MochiServerPropsResolver = (req: Request, params: Record<string, string>) => Record<string, unknown> | MochiRedirect | Promise<Record<string, unknown> | MochiRedirect>;
 
@@ -123,6 +126,22 @@ export interface MochiRedirect {
   readonly __mochiRedirect: true;
   readonly status: 301 | 302 | 303 | 307 | 308;
   readonly location: string;
+  /** Set by `redirect(status, location, { external: true })`; waives the same-origin guard for this one call. */
+  readonly external?: boolean;
+}
+
+export interface MochiRedirectInit {
+  /**
+   * Send the visitor off-origin without listing the destination in `redirect.trustedOrigins`. Only for a location your
+   * own code builds: one derived from request data is the open redirect the guard exists to stop. Script-capable
+   * schemes and control characters stay blocked.
+   */
+  external?: boolean;
+}
+
+export interface MochiRedirectOptions {
+  /** Absolute origins `redirect()` may target, beyond this server's own. */
+  trustedOrigins?: string[];
 }
 
 /** Returned by `success()`; re-renders the entry component with a `form` prop marking the action succeeded, with status 200. */
@@ -332,7 +351,7 @@ export interface MochiManifestComponent {
 
 export interface MochiManifest {
   /**
-   * Schema version of the on-disk build output; the runtime loads only the exact version it writes (currently 3)
+   * Schema version of the on-disk build output; the runtime loads only the exact version it writes (currently 4)
    * and throws on anything else, so build and serve must use the same `mochi-framework` version.
    *
    * Every manifest path is relative, in one of three families:
@@ -341,7 +360,7 @@ export interface MochiManifest {
    *   resolved against the manifest's own directory.
    * - **Sources** used as lookup keys (`components` keys, `hydratables[].resolvedPath`,
    *   `cssComponents`, `cssFileUrls` keys, `serverIslandPaths`, `importedCssUrls` keys,
-   *   `entryImportedCss` keys and values) — POSIX, project-root relative, with framework-owned
+   *   `entryImportedCss` keys and values, `trackedCss`, `islandCss` keys and values) — POSIX, project-root relative, with framework-owned
    *   sources under a `$mochi/` sentinel. Both ends take the root from `process.cwd()`, so
    *   `mochi-framework build` and the server must run from the same working directory.
    * - **`stats.outputs[].inputs[].path`** — build-cwd relative, as Bun's metafile emits it, and diagnostic only.
@@ -352,6 +371,8 @@ export interface MochiManifest {
   version: number;
   /** URL prefix under which framework client assets and the server island endpoint are served. */
   assetPrefix: string;
+  /** The minifier the build used; a serve-time client rebuild reuses it rather than the serve process's own setting. */
+  minifier: MochiJsMinifier;
   bootstrapUrl: string | null;
   componentEntryUrls: Record<string, string>;
   /** Maps encoded source path (see `version`) → the URL of that component's scoped CSS. */
@@ -374,16 +395,22 @@ export interface MochiManifest {
   serverIslandExports?: Record<string, string>;
   /** Maps served asset URL → emitted asset details for locally-imported images (`import x from './x.png'`). `diskPath` is outDir-relative. */
   localImageAssets?: Record<string, LocalImageAsset>;
-  /** Maps encoded CSS-import source path (see `version`) → served URL (e.g. /import-css/inter-<hash>.css) */
+  /** Maps encoded stylesheet variant (see `version`) → served URL (e.g. /import-css/inter-<hash>.css). A variant is a CSS-import source path, with `#<hash>` appended when it was bundled for a font-subset request. */
   importedCssUrls?: Record<string, string>;
   /** Maps served font URL → binary font extracted from imported CSS. `diskPath` is outDir-relative. */
   fontAssets?: Record<string, { diskPath: string; contentType: string }>;
   /** Maps served URL → non-font asset the bundler emitted beside a stylesheet. `diskPath` is outDir-relative. */
   importCssAssets?: Record<string, { diskPath: string; contentType: string }>;
-  /** Maps encoded CSS-import source path (see `version`) → served URLs of its preload-worthy extracted fonts. */
+  /** Maps encoded stylesheet variant (see `version`) → served URLs of its preload-worthy extracted fonts. */
   importedCssFontPreloads?: Record<string, string[]>;
-  /** Maps encoded page entry path (see `version`) → the CSS-import paths reachable from it, likewise encoded. */
+  /** Maps encoded subsetted stylesheet variant → the stylesheet it bundles, likewise encoded, and the merged font-subset request it was built for. */
+  importedCssSubsets?: Record<string, { cssPath: string; groups: FontSubsetGroup[] }>;
+  /** Maps encoded page entry path (see `version`) → the stylesheet variants it links, likewise encoded. */
   entryImportedCss?: Record<string, string[]>;
+  /** Encoded source paths (see `version`) of components whose SSR output reports itself on render, so their stylesheets are linked only when they rendered. */
+  trackedCss?: string[];
+  /** Maps encoded hydrated island source path (see `version`) → every styled component in its import graph, likewise encoded; all linked whenever that island renders. */
+  islandCss?: Record<string, string[]>;
   /** Prebuilt, minified ServerIsland inline web-component script, emitted by `build()` so production loads it from disk in place of a startup `Bun.build`. */
   serverIslandScript?: string;
   /**
@@ -426,7 +453,7 @@ export interface MarkdownConfig {
   remarkPlugins?: unknown[];
   /**
    * Syntax highlighter for fenced code blocks; omit for mdsvex's bare `<pre><code>` output.
-   * Wrap Shiki, highlight.js, or any other library in a `(code, lang) => string | Promise<string>` function.
+   * Build one with `createTwinkleplopHighlighter` (or wrap any other library in a `(code, lang) => string | Promise<string>` function with `createHighlighter`) from `mochi-framework/highlight`.
    */
   highlight?: { highlighter: MarkdownHighlighter };
 }
@@ -452,15 +479,28 @@ export const FRAMEWORK_OWNED_BUN_KEYS = ['fetch', 'websocket', 'routes', 'error'
  */
 export type BunServeOverrides = Omit<NonNullable<Parameters<typeof Bun.serve>[0]>, (typeof FRAMEWORK_OWNED_BUN_KEYS)[number]>;
 
+/**
+ * Raw Bun WebSocket options, merged underneath the handlers Mochi installs for `Mochi.ws()` routes. `maxPayloadLength`
+ * is the only inbound size bound that runs before a frame is buffered — Bun defaults it to 16 MB, so `maxPayloadLength`
+ * caps what the server allocates while a check inside a `message` handler caps what you store.
+ */
+export type MochiWebSocketOptions = Omit<WebSocketHandler<MochiWsData>, 'open' | 'message' | 'close' | 'drain'>;
+
 export interface MochiServeOptions {
   port?: number;
   hostname?: string;
+  /** Bun WebSocket tuning shared by every `Mochi.ws()` route — see {@link MochiWebSocketOptions}. */
+  websocket?: MochiWebSocketOptions;
   /**
    * Escape hatch for raw `Bun.serve()` options Mochi doesn't surface — e.g.
    * `idleTimeout` (seconds; HTTP default 10, max 255, 0 disables), `maxRequestBodySize`,
    * `reusePort`, `tls`. Spread into `Bun.serve()`; framework-owned keys are rejected.
    */
   bun?: BunServeOverrides;
+  /**
+   * Force development mode on or off. Defaults to `NODE_ENV === 'development'`, which is also what `isDev` and
+   * `setupTailwind` read, so an override makes module top-level code — which already ran — disagree with the server.
+   */
   development?: boolean;
   /** Mount the dev-only debug toolbar. Default: `true`, and ignored entirely when `development` is `false`. */
   debugBar?: boolean;
@@ -534,7 +574,10 @@ export interface MochiServeOptions {
   errorPage?: string;
   /** Hook invoked before rendering the error page; may override status/message or return a `Response` to take over. See `HandleError`. */
   handleError?: HandleError;
-  /** Deflate-compress server island props when it reduces size. Default: true. */
+  /**
+   * Deflate-compress server island props when it reduces size. Default: false — a compressed token's length reveals
+   * whether request-controlled props repeat other props, leaking server-only values.
+   */
   compressServerIslandProps?: boolean;
   /**
    * Render nested `mochi:defer` islands in-process during an island fetch instead of emitting further client fetches,
@@ -574,13 +617,15 @@ export interface MochiServeOptions {
    */
   memoryPressure?: boolean;
   /**
-   * Extra directory trees mounted under a URL prefix, as `{ "/assets": "./media" }`. Each becomes one Bun directory
-   * route, so a large tree costs one route instead of one per file, and Range, ETag, `If-None-Match`, `index.html`
-   * and sendfile streaming come from Bun.
+   * Extra directory trees mounted under a URL prefix, as `{ "/assets": "./media" }`. Each becomes one wildcard route,
+   * so a large tree costs one route instead of one per file; it serves Range, ETag, `If-None-Match`, `index.html`
+   * and sendfile streaming.
    *
-   * Unlike `publicDir` these mounts do no dotfile filtering, do not run the `publicDir:scan` filter, and cannot be
-   * gated by `protection.protectFiles`. A miss under the prefix answers with Bun's own 404 rather than the configured
-   * `errorPage`; paths outside the prefix are unaffected, which is why the site root cannot be mounted.
+   * Like `publicDir`, dotfiles and dot-directories other than a top-level `.well-known/` are not served, checked per
+   * request on the decoded URL and again after symlinks resolve; a symlink cannot leave the directory. Unlike
+   * `publicDir` these mounts do not run the `publicDir:scan` filter and cannot be gated by `protection.protectFiles`.
+   * A miss under the prefix answers with a bare 404 rather than the configured `errorPage`; paths outside the prefix
+   * are unaffected, which is why the site root cannot be mounted.
    */
   staticDirs?: import('./runtime/staticDirs').MochiStaticDirs;
   /** Directory served as static assets (cwd-relative). Default: `./public`. */
@@ -635,10 +680,39 @@ export interface MochiServeOptions {
    */
   csrf?: MochiCsrfOptions;
   /**
+   * Mint a CSP nonce per request and stamp it on every executable `<script>` the framework emits. Off by default, and
+   * the HTML is unchanged when off. The framework sets no `Content-Security-Policy` header: build one from
+   * `getCspNonce()`, typically in middleware.
+   */
+  csp?: boolean;
+  /**
    * Reverse-proxy trust configuration, deriving the expected CSRF origin and `getClientAddress()`'s client IP from forwarded headers.
    * Set the header options only when the proxy is trusted to overwrite them, since clients can otherwise spoof them.
    */
   proxy?: MochiProxyOptions;
+  /**
+   * Baseline security headers added to every framework response: `X-Content-Type-Options: nosniff` and
+   * `Referrer-Policy: strict-origin-when-cross-origin` by default. `X-Frame-Options` is opt-in (`{ frameOptions: 'DENY' }`)
+   * and skipped on a response that sends a CSP `frame-ancestors` directive. Pass `false` to drop them all, or extend the
+   * set (HSTS, CSP) through the `security:headers` filter. A header the route or middleware already set is never overwritten.
+   */
+  securityHeaders?: boolean | MochiSecurityHeadersOptions;
+  /**
+   * Where `redirect()` may send a visitor. Relative and same-origin locations always pass; list an absolute origin here
+   * to allow it too. Separate from `csrf.trustedOrigins` on purpose: that list says who may send *us* requests.
+   */
+  redirect?: MochiRedirectOptions;
+  /**
+   * Give every cookie the app sets `HttpOnly` and `SameSite=Lax`, plus `Secure` outside development, unless that
+   * `cookies.set()` call overrides the field. Default: `false`.
+   *
+   * `HttpOnly` hides the cookie from browser code, so a cookie an island reads or writes needs `{ httpOnly: false }`
+   * where the server sets it. A production site served over plain HTTP keeps none of these cookies, as they are `Secure`.
+   *
+   * These fields become the value the `cookie:defaults` filter receives, and its return value replaces them, so spread
+   * them there to keep the fields you do not change.
+   */
+  secureCookies?: boolean;
   /**
    * Trailing-slash policy for `Mochi.page()` routes. When set, each page is registered under both `/foo` and `/foo/`,
    * and the non-canonical form redirects:
@@ -718,6 +792,24 @@ export interface MochiServeOptions {
    * it Mochi warns once at boot and compiles from the original sources.
    */
   optimize?: boolean | MochiSvelteShakerOptions;
+  /**
+   * Which minifier prints the browser-facing JS: Bun's built-in one, or a second
+   * [oxc](https://oxc.rs/docs/guide/usage/minifier) pass over the chunks Bun emitted (experimental).
+   *
+   * `'oxc'` takes roughly another 3–4% off the island bundle for a few tens of milliseconds of build time. It covers
+   * the hydration bundle, the debug-bar bundle and the inline web-component scripts; CSS, static assets and the SSR
+   * build are untouched either way. Its chunk names carry a tag of the `oxc-minify` version and options, so switching
+   * or upgrading changes every URL. Unlike Bun, `'oxc'` strips legal (`/*!`, `@license`) comments. `mochi-framework build` reads this straight from your entry's `Mochi.serve()` call.
+   *
+   * Precedence: `mochi-framework build --minifier`, then `MOCHI_MINIFIER`, then this option. Unknown values throw.
+   *
+   * Requires the optional `oxc-minify` package (`bun add -d oxc-minify`); the build fails with install instructions
+   * rather than falling back, so a deploy's bundle sizes always match the mode you asked for. A prebuilt server keeps
+   * the build's minifier, and if it has to rebuild the client bundle without `oxc-minify` installed it warns and uses Bun.
+   *
+   * Default: `'bun'`.
+   */
+  minifier?: MochiJsMinifier;
   /**
    * Warning when a dependency drags a large module into the build graph that is then almost entirely tree-shaken away — the
    * "barrel import" smell, e.g. `import { Sun } from '@lucide/svelte'` in place of `@lucide/svelte/icons/sun`. Bun re-parses

@@ -5,6 +5,7 @@ import { logger } from '../utils/log';
 import { MochiHttpError } from '../utils';
 import { getClientAddress, type MochiProxyOptions } from './proxy';
 import { requestContext, type MochiRequestContext } from './requestContext';
+import { cspNonceStore } from './csp';
 import { finalizeCookieHeaders, MochiCookieJar, type CookieSerializeOptions } from './cookies';
 
 export const DEFAULT_ERROR_PAGE_PATH = Bun.fileURLToPath(new URL('../templates/DefaultError.svelte', import.meta.url));
@@ -53,6 +54,7 @@ export function createErrorResponder(deps: ErrorResponderDeps): {
       isWarmup: false,
       cookies: new MochiCookieJar(input.req.headers.get('Cookie'), cookieDefaults),
       islandProps: new Map(),
+      cspNonce: cspNonceStore.getStore(),
       // Wired like buildRequestContext's, so an error page sees the same client address on a 404 as on a 500.
       getClientAddress: () => getClientAddress(input.req, input.event.server.requestIP(input.req)?.address ?? null, proxy),
     };

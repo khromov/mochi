@@ -26,6 +26,14 @@ export const DEFAULT_LOG_LEVEL: LogLevel = 'warn';
 type LogState = { level: LogLevel };
 const state = pinGlobal<LogState>('__mochi_log_state__', () => ({ level: DEFAULT_LOG_LEVEL }));
 
+const CONTROL_CHARS = /\p{Cc}/gu;
+const NAMED_ESCAPES: Record<string, string> = { '\n': '\\n', '\r': '\\r', '\t': '\\t' };
+
+// Error messages can echo URL-decoded request input, where a raw CR/LF or ESC would forge log lines or inject terminal escapes.
+export function escapeControlChars(text: string): string {
+  return text.replace(CONTROL_CHARS, (c) => NAMED_ESCAPES[c] ?? `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+}
+
 export function setLogLevel(level: LogLevel): void {
   state.level = level;
 }

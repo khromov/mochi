@@ -37,6 +37,8 @@ The sitemap hardcodes the production origin, so each <loc> is re-pointed at
 Writes a human-readable REPORT.md and exits 1 if any page failed.
 
 Chrome is discovered automatically; set BUN_CHROME_PATH to pick a specific binary.
+Chrome's sandbox stays on unless CI is set to something other than 0/false (GitHub
+Actions runners can't start it).
 
 Arguments:
   base             Origin to check (default: https://mochi.fast)
@@ -131,6 +133,10 @@ const SETTLE_MS = 1500;
 
 /** Load attempts per page: a flaky first timeout is retried once before the page fails. */
 const LOAD_ATTEMPTS = 2;
+
+/** GitHub Actions runners can't initialize Chrome's sandbox, so only CI turns it off; local runs keep it on. */
+const UNDER_CI = !!process.env.CI && !['0', 'false'].includes(process.env.CI.toLowerCase());
+const CHROME_BACKEND = { type: 'chrome', argv: UNDER_CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : ['--disable-dev-shm-usage'] } as const;
 
 /** Run thunks with a bounded number in flight at once. */
 async function pool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
@@ -279,7 +285,7 @@ async function checkPage(url: string, timeout: number): Promise<PageResult> {
   // Console output must come through this option, not a `Runtime.consoleAPICalled` listener: Bun consumes that CDP
   // event internally to implement the option and never re-dispatches it, so a listener silently sees nothing.
   const view = new Bun.WebView({
-    backend: 'chrome',
+    backend: CHROME_BACKEND,
     console: (type: string, ...args: unknown[]) => {
       if (type === 'error' || type === 'assert') {
         add('error', renderArgs(args));
@@ -462,7 +468,7 @@ async function main() {
 
   // Preflight so a missing browser exits 2 (a setup problem) instead of reporting every page as a failure.
   try {
-    const probe = new Bun.WebView({ backend: 'chrome' });
+    const probe = new Bun.WebView({ backend: CHROME_BACKEND });
     try {
       await probe.navigate('about:blank');
     } finally {
@@ -470,7 +476,7 @@ async function main() {
     }
   } catch (err) {
     console.error(styleText('red', `Could not launch Chrome: ${err instanceof Error ? err.message : String(err)}`));
-    console.error(styleText('dim', 'Set BUN_CHROME_PATH to a Chrome/Chromium executable.'));
+    console.error(styleText('dim', 'Set BUN_CHROME_PATH to a Chrome/Chromium executable, or CI=1 if Chrome cannot start its sandbox here.'));
     process.exit(2);
   }
 

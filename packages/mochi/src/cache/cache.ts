@@ -78,6 +78,12 @@ interface CacheEntry {
 
 const identity = (value: unknown) => value;
 
+/** A key's invalidation counter plus how many fetches/runs currently hold it, so the entry is reclaimed at zero. */
+interface KeyGeneration {
+  generation: number;
+  holders: number;
+}
+
 // Racing against a timeout keeps a hung `fn` from holding the per-key in-flight lock forever. `Promise.race` attaches a
 // reaction to `work`, so a rejection arriving after the timeout wins still counts as handled and `run`'s stored-write
 // guard discards its result.
@@ -98,6 +104,7 @@ export class MochiCache {
   private inflightTimeout: number;
   private crossProcessInflight: boolean;
   private inflight = new Map<string, Promise<unknown>>();
+  private generations = new Map<string, KeyGeneration>();
 
   constructor(options: MochiCacheOptions = {}) {
     this.storage = options.storage ?? new MemoryStorage();
@@ -119,10 +126,20 @@ export class MochiCache {
   }
 
   async fetchWithStatus<T>(key: string, fn: () => T | Promise<T>): Promise<CacheResult<T>> {
+    // Captured before the storage read, so a set/delete/markStale landing during that await still supersedes this run's write.
+    const generation = this.retainGeneration(key);
+    try {
+      return await this.lookup(key, fn, generation);
+    } finally {
+      this.releaseGeneration(key);
+    }
+  }
+
+  private async lookup<T>(key: string, fn: () => T | Promise<T>, generation: number): Promise<CacheResult<T>> {
     const entry = await this.read(key);
 
     if (entry == null) {
-      const value = await this.run(key, fn);
+      const value = await this.run(key, fn, generation);
       return this.emitRead(key, value, 'miss');
     }
 
@@ -142,7 +159,7 @@ export class MochiCache {
       // Serving stale while refreshing in the background would hide a failing upstream until `maxTimeToLive`, so the
       // event surfaces the degradation to logging and metrics.
       mochiEvents.emit('cache:revalidate', { key });
-      void this.run(key, fn).catch((error) => {
+      void this.run(key, fn, generation).catch((error) => {
         mochiEvents.emit('cache:revalidate:failed', { key, error });
       });
       return this.emitRead(key, cached, 'stale');
@@ -155,18 +172,19 @@ export class MochiCache {
       return this.emitRead(key, cached, 'stale');
     }
 
-    const value = await this.run(key, fn);
+    const value = await this.run(key, fn, generation);
     return this.emitRead(key, value, 'expired');
   }
 
   async delete(key: string): Promise<void> {
-    this.inflight.delete(key);
+    this.supersedeRuns(key);
     try {
       await this.storage.removeItem(key);
     } catch (error) {
       mochiEvents.emit('cache:error', { key, operation: 'remove', error });
       throw error;
     }
+    this.bumpGeneration(key);
     // Dropping the advisory marker keeps a just-invalidated key from making peers defer to a regeneration that will no longer happen.
     await this.removeMarker(key);
     mochiEvents.emit('cache:delete', { key });
@@ -194,12 +212,13 @@ export class MochiCache {
    * miss and each start their own recompute; on `FileStorage` this is a single atomic replace, so a reader sees the old
    * value or the new one.
    *
-   * It drops the key's in-flight run, so a recompute already underway settles without writing. As with `delete` and
-   * `markStale`, that reaches only a run that has registered: a `fetch` still awaiting its initial storage read hasn't
-   * claimed the slot, and its write lands after this one.
+   * It supersedes the key's in-flight recompute, so a run already underway settles without writing. As with `delete`
+   * and `markStale`, that covers a `fetch` at any point after entry — including one still awaiting its initial storage
+   * read. The one gap is a recompute that had already cleared its own write guard and handed `setItem` to the backend
+   * before this call: both writes are then in flight and whichever lands last wins.
    */
   async set<T>(key: string, value: T): Promise<void> {
-    this.inflight.delete(key);
+    this.supersedeRuns(key);
     const entry = this.serialize({ value, createdAt: this.now() } satisfies CacheEntry);
     try {
       await this.storage.setItem(key, entry);
@@ -207,6 +226,8 @@ export class MochiCache {
       mochiEvents.emit('cache:error', { key, operation: 'set', error });
       throw error;
     }
+    // Bumped again once the write lands, so a fetch that entered during it and read the old value can't overwrite this one either.
+    this.bumpGeneration(key);
   }
 
   /**
@@ -215,9 +236,8 @@ export class MochiCache {
    * already at-or-past that age, so an entry can only move staler. Runs through the `Storage` interface, covering both backends.
    */
   async markStale(key: string): Promise<void> {
-    // Drop any in-flight run first so its supersession guard trips and a pending
-    // revalidation can't overwrite the backdated timestamp.
-    this.inflight.delete(key);
+    // Supersede any fetch in progress first, so a pending revalidation can't overwrite the backdated timestamp.
+    this.supersedeRuns(key);
     let raw: unknown;
     try {
       raw = await this.storage.getItem(key);
@@ -239,6 +259,7 @@ export class MochiCache {
     } catch (error) {
       mochiEvents.emit('cache:error', { key, operation: 'set', error });
     }
+    this.bumpGeneration(key);
   }
 
   /**
@@ -253,19 +274,57 @@ export class MochiCache {
    */
   async whenIdle(): Promise<void> {
     while (this.inflight.size > 0) {
-      await Promise.allSettled([...this.inflight.values()]);
+      await Promise.allSettled(this.inflight.values());
     }
   }
 
   async clearItems(): Promise<void> {
-    // Drop in-flight runs first so a pending revalidation can't repopulate a key
-    // after the storage is cleared.
+    // Supersede every fetch in progress first, so a pending revalidation can't repopulate a key after the storage is cleared.
     this.inflight.clear();
+    for (const key of this.generations.keys()) {
+      this.bumpGeneration(key);
+    }
     try {
       await this.storage.clear();
     } catch (error) {
       mochiEvents.emit('cache:error', { key: '*', operation: 'clear', error });
       throw error;
+    }
+    for (const key of this.generations.keys()) {
+      this.bumpGeneration(key);
+    }
+  }
+
+  // Both halves of superseding a key's recompute: a registered run loses its slot, and one still awaiting its initial
+  // read — which has no slot yet — loses the generation it captured at entry.
+  private supersedeRuns(key: string): void {
+    this.inflight.delete(key);
+    this.bumpGeneration(key);
+  }
+
+  // The entry exists only while a fetch or run holds the key, so the map can't grow with caller-shaped keys.
+  private retainGeneration(key: string): number {
+    let state = this.generations.get(key);
+    if (!state) {
+      state = { generation: 0, holders: 0 };
+      this.generations.set(key, state);
+    }
+    state.holders++;
+    return state.generation;
+  }
+
+  private releaseGeneration(key: string): void {
+    const state = this.generations.get(key);
+    if (state && --state.holders === 0) {
+      this.generations.delete(key);
+    }
+  }
+
+  // A key nobody is fetching has no pending write to reject, so bumping it is a no-op rather than an allocation.
+  private bumpGeneration(key: string): void {
+    const state = this.generations.get(key);
+    if (state) {
+      state.generation++;
     }
   }
 
@@ -282,8 +341,11 @@ export class MochiCache {
     return raw == null ? null : (this.deserialize(raw) as CacheEntry);
   }
 
-  // Run `fn` once per key even under concurrent callers, then persist the result.
-  private run<T>(key: string, fn: () => T | Promise<T>): Promise<T> {
+  // Run `fn` once per key even under concurrent callers, then persist the result. `generation` is what the owning fetch
+  // captured at entry; a coalesced caller shares the owner's run and its verdict, so a caller that entered after an
+  // invalidation is dropped along with the owner — its value came from the owner's `fn`, which may predate that
+  // invalidation — and the next fetch recomputes.
+  private run<T>(key: string, fn: () => T | Promise<T>, generation: number): Promise<T> {
     const existing = this.inflight.get(key) as Promise<T> | undefined;
     if (existing) {
       return existing;
@@ -293,15 +355,17 @@ export class MochiCache {
     // Owns this run's advisory marker: a timed-out/superseded run that settles
     // late must not delete the marker a newer run has since written.
     const runId = randomUUID();
+    // Held until the work itself settles — past a timeout abandonment — so the write guard below reads a live generation.
+    this.retainGeneration(key);
     const work = (async () => {
-      // Published before the expensive `fn` so a peer starting moments later sees it and defers, and removed once this run settles.
-      await this.writeMarker(key, runId);
       try {
+        // Published before the expensive `fn` so a peer starting moments later sees it and defers, and removed once this run settles.
+        await this.writeMarker(key, runId);
         const value = await fn();
         const serialized = this.serialize({ value, createdAt: this.now() } satisfies CacheEntry);
-        // A run superseded while `fn` was pending — by an inflight takeover, a timeout, or a delete/markStale/clear —
-        // skips its write, so a late revalidation can't resurrect a key the caller removed.
-        if (this.inflight.get(key) === ref.current) {
+        // A run superseded since its fetch entered — by an inflight takeover, a timeout, or a set/delete/markStale/clear
+        // at any point, even during the initial read — skips its write, so it can't clobber newer state or resurrect a key.
+        if (this.inflight.get(key) === ref.current && this.generations.get(key)?.generation === generation) {
           // Emitting and continuing keeps a storage write failure from discarding the freshly computed value the caller
           // is waiting on; the next read recomputes.
           try {
@@ -316,7 +380,11 @@ export class MochiCache {
       } finally {
         await this.removeMarker(key, runId);
       }
-    })();
+    })().finally(() => {
+      // Released out here rather than in the `finally` above, because a throwing `cache:error` subscriber can reject
+      // either marker call and a skipped release would strand this key's generation entry for the process's lifetime.
+      this.releaseGeneration(key);
+    });
 
     const guarded = this.inflightTimeout > 0 && Number.isFinite(this.inflightTimeout) ? withTimeout(work, this.inflightTimeout, key) : work;
     const promise = guarded.finally(() => {
