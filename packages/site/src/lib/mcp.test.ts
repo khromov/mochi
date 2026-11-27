@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mcpServer } from './mcp';
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
+import { tool } from 'tmcp/utils';
+import { MAX_MCP_BODY_BYTES, mcpServer, respondMcp } from './mcp';
 import { CHANGELOG_URL } from './changelog';
 
 const CHANGELOG_BODY = '# Changelog\n\n## [0.8.0] mochi-framework\n\n### Features\n\n- something\n';
@@ -151,5 +152,129 @@ describe('mcp docs server', () => {
       },
     });
     expect(res.result?.isError).toBe(true);
+  });
+});
+
+describe('mcp resource bounds', () => {
+  async function post(body: unknown, sessionId: string): Promise<JsonRpcResult> {
+    const res = await respondMcp(
+      new Request('http://localhost/mcp', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'mcp-session-id': sessionId },
+        body: JSON.stringify(body),
+      }),
+    );
+    const sse = await res.text();
+    return JSON.parse(sse.slice(sse.indexOf('data: ') + 'data: '.length)) as JsonRpcResult;
+  }
+
+  function getSection(sections: unknown[]): Promise<JsonRpcResult> {
+    return call('tools/call', { name: 'get_section', arguments: { sections } });
+  }
+
+  test('the HTTP transport keeps no initialize payload under a client-chosen session id', async () => {
+    mcpServer.tool({ name: 'session_probe', description: 'test-only' }, async () => tool.text(mcpServer.ctx.sessionInfo?.clientInfo?.name ?? 'none'));
+    await post(
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'retained', version: '1' } } },
+      'attacker-chosen',
+    );
+    const res = await post({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'session_probe', arguments: {} } }, 'attacker-chosen');
+    expect(toolText(res)).toBe('none');
+  });
+
+  test('get_section accepts up to 50 sections and rejects more', async () => {
+    const intro = { type: 'doc', slug: 'intro' };
+    expect((await getSection(Array.from({ length: 50 }, () => intro))).result?.isError).toBeUndefined();
+    const res = await getSection(Array.from({ length: 51 }, () => intro));
+    expect(res.result?.isError).toBe(true);
+    expect(toolText(res)).toContain('Invalid length');
+  });
+
+  test('get_section rejects an oversized slug', async () => {
+    const res = await getSection([
+      { type: 'doc', slug: 'intro' },
+      { type: 'doc', slug: 'a'.repeat(101) },
+    ]);
+    expect(res.result?.isError).toBe(true);
+    expect(toolText(res)).toContain('Invalid length');
+  });
+
+  test('a long array of invalid entries gets an error response proportional to the request', async () => {
+    const sections = Array.from({ length: 500 }, () => ({ type: 'nope', slug: 'x' }));
+    const res = await getSection(sections);
+    expect(res.result?.isError).toBe(true);
+    expect(toolText(res).length).toBeLessThan(10 * JSON.stringify(sections).length);
+  });
+
+  test('an unknown demo slug is not memoized', async () => {
+    await getSection([{ type: 'demo', slug: 'no-such-demo-cache-probe' }]);
+    const cache = (globalThis as unknown as { __mochi_site_docs_cache__: { demoLlmsTxt: Map<string, unknown> } }).__mochi_site_docs_cache__;
+    expect(cache.demoLlmsTxt.has('no-such-demo-cache-probe')).toBe(false);
+  });
+
+  test('a missing slug cannot write a raw newline or escape code into the log', async () => {
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await getSection([{ type: 'doc', slug: 'x\n\u001b[2m[mochi]\u001b[0m forged line' }]);
+      const logged = warn.mock.calls.flat().join(' ');
+      expect(logged).toContain('get_section not found');
+      expect(logged).not.toContain('\n');
+      expect(logged).not.toContain('\u001b[2m');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('a missing slug cannot write an 8-bit escape code or Unicode line break into the log', async () => {
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await getSection([{ type: 'doc', slug: 'x\u009b2m\u0085\u2028\u2029\u007fforged line' }]);
+      const logged = warn.mock.calls.flat().join(' ');
+      expect(logged).toContain('get_section not found');
+      expect(logged).toContain('\\u009b2m\\u0085\\u2028\\u2029\\u007fforged line');
+      expect(logged).not.toMatch(/[\u007f-\u009f\u2028\u2029]/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('the not-found log line stays short however many slugs are missing', async () => {
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await getSection(Array.from({ length: 50 }, (_, i) => ({ type: 'doc', slug: `${i}`.padEnd(100, '\u009b') })));
+      const logged = warn.mock.calls.flat().join(' ');
+      expect(logged).toContain('and 45 more');
+      expect(logged.length).toBeLessThan(5000);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('a section requested more than once is returned once', async () => {
+    const text = toolText(await getSection(Array.from({ length: 50 }, () => ({ type: 'doc', slug: 'intro' }))));
+    expect(text.split('==== doc:intro ====').length).toBe(2);
+  });
+
+  test('a POST body over the size cap gets 413 without reaching the transport', async () => {
+    const huge = JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'get_section', arguments: { sections: [{ type: 'doc', slug: '"'.repeat(MAX_MCP_BODY_BYTES) }] } },
+    });
+    const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
+    const declared = await respondMcp(new Request('http://localhost/mcp', { method: 'POST', headers, body: huge }));
+    expect(declared.status).toBe(413);
+    const bytes = new TextEncoder().encode(huge);
+    const chunked = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let i = 0; i < bytes.length; i += 4096) {
+          controller.enqueue(bytes.subarray(i, i + 4096));
+        }
+        controller.close();
+      },
+    });
+    const streamed = await respondMcp(new Request('http://localhost/mcp', { method: 'POST', headers, body: chunked }));
+    expect(streamed.status).toBe(413);
   });
 });

@@ -62,7 +62,7 @@ const cache = pinGlobal('__mochi_site_docs_cache__', () => ({
   // frozen into this string.
   llmsFullBaseTxt: null as string | null,
   sitemapXml: null as string | null,
-  demoLlmsTxt: new Map<string, string | null>(),
+  demoLlmsTxt: new Map<string, string>(),
 }));
 
 export function clearDocsCaches(): void {
@@ -211,9 +211,11 @@ export async function getDemoLlmsTxt(slug: string): Promise<string | null> {
     return cache.demoLlmsTxt.get(slug)!;
   }
   const result = await buildDemoLlmsTxt(slug);
-  // Source files never change at runtime, so cache the rendered bundle (including
-  // the null "no such demo" result) to avoid re-reading every file on each request.
-  cache.demoLlmsTxt.set(slug, result);
+  // Source files never change at runtime, so cache the rendered bundle to avoid re-reading every file on
+  // each request; a miss reads nothing and its slug can be caller-chosen (MCP get_section), so never cache it.
+  if (result !== null) {
+    cache.demoLlmsTxt.set(slug, result);
+  }
   return result;
 }
 
