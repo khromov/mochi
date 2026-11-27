@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterAll } from 'bun:test';
+import { describe, expect, test, beforeEach, afterAll, spyOn } from 'bun:test';
 import { SQL } from 'bun';
 import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -92,6 +92,38 @@ describe('runMigrations (sqlite)', () => {
     await runMigrations({ storage: { type: 'sqlite', path: db }, dir });
     rmSync(path.join(dir, '2_b.sql'));
     await expect(runMigrations({ storage: { type: 'sqlite', path: db }, dir })).rejects.toThrow(/2 applied migration\(s\) but only 1 file\(s\)/);
+  });
+
+  test('with tolerateHistoryMismatch, a database migrated by a newer release warns and boots', async () => {
+    writeFileSync(path.join(dir, '1_a.sql'), 'CREATE TABLE a (x integer);');
+    writeFileSync(path.join(dir, '2_b.sql'), 'CREATE TABLE b (y integer);');
+    await runMigrations({ storage: { type: 'sqlite', path: db }, dir, label: 'mochi' });
+    rmSync(path.join(dir, '2_b.sql'));
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(await runMigrations({ storage: { type: 'sqlite', path: db }, dir, label: 'mochi', tolerateHistoryMismatch: true })).toEqual([]);
+      const logged = warn.mock.calls.flat().join(' ');
+      expect(logged).toContain('Database mochi migration is at version 2 ("b") but you are booting an older version');
+      expect(logged).toMatch(/\(mochi-framework \d+\.\d+\.\d+[^,]*, which knows mochi migrations up to 1\)/);
+      expect(logged).toContain('Some features might not work correctly.');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('with tolerateHistoryMismatch, a changed applied migration warns and applies nothing after it', async () => {
+    writeFileSync(path.join(dir, '1_a.sql'), 'CREATE TABLE a (x integer);');
+    await runMigrations({ storage: { type: 'sqlite', path: db }, dir, label: 'mochi' });
+    writeFileSync(path.join(dir, '1_a.sql'), 'CREATE TABLE a (x integer, y integer);');
+    writeFileSync(path.join(dir, '2_b.sql'), 'CREATE TABLE b (y integer);');
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(await runMigrations({ storage: { type: 'sqlite', path: db }, dir, label: 'mochi', tolerateHistoryMismatch: true })).toEqual([]);
+      expect(warn.mock.calls.flat().join(' ')).toContain('Database mochi migration 1 ("a") does not match the "1_a.sql"');
+    } finally {
+      warn.mockRestore();
+    }
+    expect(await rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'b'")).toEqual([]);
   });
 
   test('a failing migration rolls back its statements and is not recorded; earlier ones stay', async () => {

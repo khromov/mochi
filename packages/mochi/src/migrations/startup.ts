@@ -45,7 +45,13 @@ async function migrateAll(storage: MochiStorage): Promise<AppliedMigration[]> {
   // Random jitter desynchronizes replicas booting simultaneously, so they don't contend for the lock at once.
   await new Promise((resolve) => setTimeout(resolve, Math.random() * 500));
   const dbType = storage.type;
-  const framework = await runMigrations({ storage, dir: path.join(FRAMEWORK_MIGRATIONS_DIR, dbType), table: 'mochi_migrations_internal', label: 'mochi' });
+  const framework = await runMigrations({
+    storage,
+    dir: path.join(FRAMEWORK_MIGRATIONS_DIR, dbType),
+    table: 'mochi_migrations_internal',
+    label: 'mochi',
+    tolerateHistoryMismatch: true,
+  });
   const app = await runMigrations({ storage, dir: userMigrationsDir(dbType), table: 'mochi_migrations', label: 'app' });
   return [...framework, ...app];
 }
