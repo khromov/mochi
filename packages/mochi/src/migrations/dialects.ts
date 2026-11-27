@@ -1,6 +1,7 @@
 import { SQL } from 'bun';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { parsePostgresUrl } from '../utils/postgresUrl';
 import type { MochiStorage } from './storage';
 
 /** Fixed key for the Postgres session-level advisory lock that serializes concurrent migration runs ('moch' in ASCII). */
@@ -15,7 +16,7 @@ export interface MigrationDialect {
   begin<T>(sql: SQL, fn: (tx: SQL) => Promise<T>): Promise<T>;
   /** Guard called after user SQL inside `begin` and before recording the migration, catching early `COMMIT`/`ROLLBACK`. */
   verifyTransaction?(tx: SQL): Promise<void>;
-  /** Reset per-file session state (e.g. Postgres `SET search_path`) without releasing the whole-run lock. */
+  /** Reset per-file session state (e.g. Postgres `SET search_path`, `SET ROLE`) without releasing the whole-run lock. */
   afterFile?(sql: SQL): Promise<void>;
 }
 
@@ -23,7 +24,7 @@ const postgresDialect: MigrationDialect = {
   async open(storage) {
     // One pinned connection (the session advisory lock must share a session with every statement of the run) and
     // no named prepared statements (each statement runs once, and PGlite-over-socket shares one backend session).
-    return new SQL({ adapter: 'postgres', url: (storage as { url: string }).url.trim(), max: 1, prepare: false });
+    return new SQL({ adapter: 'postgres', ...parsePostgresUrl((storage as { url: string }).url).options, max: 1, prepare: false });
   },
   async lock(sql) {
     // Session-level advisory lock held for the whole run so concurrent runners (e.g. replicas booting) serialize.
@@ -51,9 +52,9 @@ const postgresDialect: MigrationDialect = {
     return sql.begin(fn) as ReturnType<typeof fn>;
   },
   async afterFile(sql) {
-    // Postgres `SET` inside a transaction persists on the session after COMMIT; RESET ALL restores session defaults
-    // (so file N+1 behaves the same on fresh and incremental runs) without releasing session advisory locks.
-    await sql.unsafe('RESET ALL');
+    // A `SET` inside a migration outlives its COMMIT, so file N+1 would behave differently on a fresh run than on an
+    // incremental one; RESET ALL skips the role and session authorization, and none of the three releases the advisory lock.
+    await sql.unsafe('RESET SESSION AUTHORIZATION; RESET ROLE; RESET ALL');
   },
 };
 
