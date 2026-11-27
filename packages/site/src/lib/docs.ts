@@ -125,8 +125,16 @@ export async function loadDocs(): Promise<DocEntry[]> {
     });
   }
 
+  const bySlug = new Map<string, DocEntry>();
+  for (const entry of entries) {
+    const existing = bySlug.get(entry.slug);
+    if (existing) {
+      throw new Error(`Duplicate doc slug "${entry.slug}" in "${existing.filename}" and "${entry.filename}".`);
+    }
+    bySlug.set(entry.slug, entry);
+  }
   cache.docs = entries;
-  cache.bySlug = new Map(entries.map((e) => [e.slug, e]));
+  cache.bySlug = bySlug;
   return entries;
 }
 

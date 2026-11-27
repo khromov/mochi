@@ -3,6 +3,7 @@ import { language as css } from '@twinkleplop/css';
 import { language as html } from '@twinkleplop/html';
 import { language as javascript } from '@twinkleplop/javascript';
 import { language as json } from '@twinkleplop/json';
+import { language as sql } from '@twinkleplop/sql';
 import { language as svelte } from '@twinkleplop/svelte';
 import { language as toml } from '@twinkleplop/toml';
 import { language as typescript } from '@twinkleplop/typescript';
@@ -12,7 +13,7 @@ import { escapeHtmlAttr, logger, pinGlobal } from 'mochi-framework';
 
 export type Grammar = () => (code: string) => string;
 
-const GRAMMARS: Record<string, Grammar> = { bash, css, html, javascript, json, svelte, toml, typescript, yaml };
+const GRAMMARS: Record<string, Grammar> = { bash, css, html, javascript, json, sql, svelte, toml, typescript, yaml };
 
 // twinkleplop ships one package per language and carries no alias table of its own, so the names our
 // fences and file extensions actually use have to be mapped here or every ts block renders as plaintext.

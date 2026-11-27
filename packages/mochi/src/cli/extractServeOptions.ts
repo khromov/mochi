@@ -14,17 +14,19 @@ function isHalt(err: unknown): err is HaltSignal {
 
 let pluginRegistrationDone = false;
 let captured: Partial<MochiServeOptions> | null = null;
+let interceptWorkerMode = false;
 
 /**
- * Import a Mochi entry module far enough to capture the options object it passes to `Mochi.serve()`, leaving the server
- * unstarted. A `Bun.plugin` virtual module overrides the bare `mochi-framework` specifier, re-exporting the real
- * framework entry by absolute file path so the plugin can't intercept itself, and replacing `Mochi.serve` with a stub
- * that records its argument and throws a sentinel to halt the entry's top-level await. The captured object is fully
- * evaluated, so options like `optimize` match what the runtime would use.
+ * Import a Mochi entry module far enough to capture the options object it passes to `Mochi.serve()` (or
+ * `Mochi.worker()`, when `opts.interceptWorker` is set), leaving the server/worker unstarted. A `Bun.plugin` virtual
+ * module overrides the bare `mochi-framework` specifier, re-exporting the real framework entry by absolute file path so
+ * the plugin can't intercept itself, and replacing `Mochi.serve` with a stub that records its argument and throws a
+ * sentinel to halt the entry's top-level await. The captured object is fully evaluated, so options like `optimize`
+ * match what the runtime would use.
  *
- * Returns the captured options, or `null` if the entry never called `serve()`.
+ * Returns the captured options, or `null` if the entry never called `serve()` (or `worker()`).
  */
-export async function extractServeOptions(entryPath: string, opts?: { fresh?: boolean }): Promise<Partial<MochiServeOptions> | null> {
+export async function extractServeOptions(entryPath: string, opts?: { fresh?: boolean; interceptWorker?: boolean }): Promise<Partial<MochiServeOptions> | null> {
   // The real framework entry, by absolute path — NOT the bare specifier, so the
   // plugin below does not intercept this import (no recursion). This file lives
   // in `src/cli/`, so climb one level to reach it.
@@ -35,7 +37,7 @@ export async function extractServeOptions(entryPath: string, opts?: { fresh?: bo
   if (!pluginRegistrationDone) {
     // A Proxy preserves Mochi's non-enumerable static methods
     // (page/api/ws/sse) so route modules still build during extraction; only
-    // `serve` is swapped for the capturing stub.
+    // `serve` (and optionally `worker`) is swapped for the capturing stub.
     const mochiProxy = new Proxy(realMod.Mochi, {
       get(target, prop, receiver) {
         if (prop === 'serve') {
@@ -52,6 +54,17 @@ export async function extractServeOptions(entryPath: string, opts?: { fresh?: bo
             }
             captured = options;
             throw { [HALT]: true } as HaltSignal;
+          };
+        }
+        if (prop === 'worker' && interceptWorkerMode) {
+          return (options: { storage?: MochiServeOptions['storage'] }) => {
+            captured ??= { storage: options?.storage };
+            return {
+              start: () => {
+                throw { [HALT]: true } as HaltSignal;
+              },
+              stop: async () => {},
+            };
           };
         }
         const value = Reflect.get(target, prop, receiver);
@@ -79,6 +92,7 @@ export async function extractServeOptions(entryPath: string, opts?: { fresh?: bo
   }
 
   captured = null;
+  interceptWorkerMode = opts?.interceptWorker === true;
   try {
     // Scoped, not a process-wide flag: the dev watcher calls this inside a live server, where the entry's side effects
     // must be suppressed only for the duration of the import.
@@ -93,6 +107,8 @@ export async function extractServeOptions(entryPath: string, opts?: { fresh?: bo
     if (!isHalt(err)) {
       throw err;
     }
+  } finally {
+    interceptWorkerMode = false;
   }
 
   return captured;

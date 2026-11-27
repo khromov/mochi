@@ -8,6 +8,7 @@ import { extractServeOptions } from './extractServeOptions';
 import { resolveJsMinifier } from '../compiler/jsMinifier';
 import { updateSkill, SKILL_TARGETS, SKILL_DESTS, DEFAULT_SKILL_TARGET, type SkillTarget } from './updateSkill';
 import { generateKey } from './generateKey';
+import { runMigrateCommand } from './migrate';
 import { relForDisplay } from '../utils';
 import { markBuilding } from '../utils/buildFlag';
 import { setDevelopment } from '../utils/env';
@@ -41,6 +42,14 @@ ${SKILL_TARGETS.map((t) => {
                          before overwriting an existing key.
                          Options:
                            -f, --force  Overwrite an existing MOCHI_KEY without prompting.
+  migrate                Apply pending SQL migrations from migrations/<sqlite|postgres>/,
+                         against the \`storage\` read from the entry's \`Mochi.serve()\` or
+                         \`Mochi.worker()\` call.
+                         Options:
+                           --entry <path>  Entry calling Mochi.serve({ storage }) or
+                                           Mochi.worker({ storage }). Default: ./src/index.ts
+                           --validate      Only check file naming/ordering in both
+                                           migration folders — no entry import, no database.
 
 Options for "build":
   --entry <path>           Runtime entry whose \`Mochi.serve()\` call supplies
@@ -146,6 +155,7 @@ async function main() {
       minifier: { type: 'string' },
       dev: { type: 'boolean' },
       force: { type: 'boolean', short: 'f' },
+      validate: { type: 'boolean' },
     },
   });
 
@@ -175,6 +185,23 @@ async function main() {
   if (cmd === 'generate-key') {
     await runGenerateKey(Boolean(values.force));
     return;
+  }
+
+  if (cmd === 'migrate') {
+    if (positionals.length > 1) {
+      process.stderr.write(`[mochi] Unexpected argument "${positionals[1]}". Pass the entry via --entry <path>.\n`);
+      process.exit(1);
+    }
+    try {
+      await runMigrateCommand({ entry: values.entry, validate: Boolean(values.validate) });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[mochi] ${msg}\n`);
+      process.exit(1);
+    }
+    // Reading the entry imports it for real; a queue runtime it started would keep the event loop alive. Drain and exit.
+    await closeAllQueueResources();
+    process.exit(0);
   }
 
   if (cmd !== 'build') {

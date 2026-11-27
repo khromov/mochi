@@ -39,6 +39,7 @@ describe('highlightCode', () => {
     ['bash', 'echo "hi"'],
     ['dockerfile', 'RUN echo "hi"'],
     ['json', '{ "a": 1 }'],
+    ['sql', 'SELECT id FROM users WHERE id = 1;'],
     ['css', 'p { color: red; }'],
     ['toml', 'a = 1'],
     ['yaml', 'a: 1'],

@@ -121,7 +121,7 @@ await emails.stop();
 
 ### Standalone workers
 
-`Mochi.worker()` is the consuming counterpart: a process that polls and runs `process` without serving HTTP. `start()` connects to the app's queue storage — from the descriptors, or the worker's own `storage` option — ensures the queues exist, and begins polling:
+`Mochi.worker()` is the consuming counterpart: a process that polls and runs `process` without serving HTTP. `start()` connects to the app's queue storage — from the descriptors, or the worker's own `queueStorage` option — ensures the queues exist, and begins polling:
 
 ```ts
 // worker.ts — a standalone worker script

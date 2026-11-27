@@ -8,6 +8,9 @@ import path from 'node:path';
 import { toPosixPath } from './utils';
 import { isBuildingEntry } from './utils/buildFlag';
 import { pinGlobal } from './utils/globalState';
+import { isValidStorage } from './migrations/storage';
+import type { MochiStorage } from './migrations/storage';
+import { runStartupMigrations } from './migrations/startup';
 import { applyFilter } from './extensions';
 import { startupMilestoneReached } from './lifecycle';
 import { mochiEvents } from './events';
@@ -1104,9 +1107,10 @@ export interface MochiWorker {
 /** Implements `Mochi.worker(options)` — see its JSDoc there. */
 export function createWorker(
   queues: MountableQueue[],
-  storage?: MochiQueueStorage,
+  queueStorage?: MochiQueueStorage,
   queueConfig?: 'verify' | 'sync',
   shutdownTimeout: number = DEFAULT_QUEUE_SHUTDOWN_TIMEOUT,
+  appStorage?: MochiStorage,
 ): MochiWorker {
   if (queues.length === 0) {
     throw new Error('Mochi.worker(): declare at least one queue.');
@@ -1125,15 +1129,18 @@ export function createWorker(
       declared ??= { name: q.name, storage: q.storage };
     }
   }
-  if (storage !== undefined) {
-    if (!isValidQueueStorage(storage)) {
-      throw new Error(`Mochi.worker({ storage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
+  if (queueStorage !== undefined) {
+    if (!isValidQueueStorage(queueStorage)) {
+      throw new Error(`Mochi.worker({ queueStorage }): expected 'memory', { sqlite: 'path/to.db' }, { postgres: url }, or { pglite: instance }.`);
     }
-    if (declared && !storageEquals(declared.storage, storage)) {
-      throw new Error(`Mochi.worker({ storage }): "${declared.name}" declares a different storage — an app has one queue storage.`);
+    if (declared && !storageEquals(declared.storage, queueStorage)) {
+      throw new Error(`Mochi.worker({ queueStorage }): "${declared.name}" declares a different storage — an app has one queue storage.`);
     }
   }
-  const workerStorage = storage ?? declared?.storage;
+  if (appStorage !== undefined && !isValidStorage(appStorage)) {
+    throw new Error(`Mochi.worker({ storage }): expected { type: 'sqlite', path: 'path/to.db' } or { type: 'postgres', url }.`);
+  }
+  const workerStorage = queueStorage ?? declared?.storage;
   let started = false;
   return {
     async start() {
@@ -1144,10 +1151,14 @@ export function createWorker(
         return;
       }
       if (!workerStorage) {
-        throw new Error('Mochi.worker(): no storage declared. Give a queue descriptor (or the worker) a storage to connect to.');
+        throw new Error("Mochi.worker(): no queue storage declared. Give a queue descriptor (or the worker's queueStorage) a storage to connect to.");
       }
       started = true;
       try {
+        if (appStorage) {
+          // Before the queue runtime and any job processing — same "migrations precede user code" contract as serve().
+          await runStartupMigrations(appStorage);
+        }
         while (!registry.boss) {
           if (registry.starting) {
             await registry.starting.catch(() => {});
