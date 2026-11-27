@@ -53,13 +53,90 @@ async function queryDb<T = Record<string, unknown>>(dbPath: string, query: strin
 }
 
 describe('SqliteStorage validation & lifecycle', () => {
-  test('rejects invalid paths and empty namespaces synchronously on construction', () => {
+  test('rejects invalid options, paths, namespaces, maxAge, and purgeInterval synchronously', () => {
     expect(() => new SqliteStorage({ path: '' })).toThrow(/SqliteStorage/);
     expect(() => new SqliteStorage({ path: '   ' })).toThrow(/SqliteStorage/);
+    expect(() => new SqliteStorage({ path: './bad\0path.sqlite' })).toThrow(/SqliteStorage/);
     expect(() => new SqliteStorage({ path: ':memory:' })).toThrow(/MemoryStorage/);
     expect(() => new SqliteStorage({ path: 'file::memory:?cache=shared' })).toThrow(/MemoryStorage/);
     expect(() => new SqliteStorage({ path: './dir?query/cache.sqlite' })).toThrow(/SqliteStorage/);
     expect(() => new SqliteStorage({ path: makeDbPath(), namespace: '' })).toThrow(/namespace/);
+    expect(() => new SqliteStorage({ path: makeDbPath(), namespace: '   ' })).toThrow(/namespace/);
+    expect(() => new SqliteStorage({ path: makeDbPath(), namespace: 'bad\0ns' })).toThrow(/namespace/);
+    expect(() => new SqliteStorage({ path: makeDbPath(), maxAge: 0 })).toThrow(/maxAge/);
+    expect(() => new SqliteStorage({ path: makeDbPath(), maxAge: -10 })).toThrow(/maxAge/);
+    expect(() => new SqliteStorage({ path: makeDbPath(), maxAge: Number.NaN })).toThrow(/maxAge/);
+    expect(() => new SqliteStorage({ path: makeDbPath(), purgeInterval: Number.NaN })).toThrow(/purgeInterval/);
+    expect(() => new SqliteStorage({ path: makeDbPath(), purgeInterval: Number.POSITIVE_INFINITY })).toThrow(/purgeInterval/);
+    expect(() => new SqliteStorage({ path: makeDbPath(), maxAgeMs: 1_000 } as never)).toThrow(/unknown option "maxAgeMs"/);
+  });
+
+  test('trims surrounding whitespace on path and clamps 32-bit timer-overflow purgeIntervals without 1ms sweep storms', async () => {
+    const rawDir = makeDir();
+    const actualPath = join(rawDir, 'trimmed.sqlite');
+    let sweeps = 0;
+    mochiEvents.on('cache:sweep', () => sweeps++);
+
+    // 30 days exceeds signed int32 max (2_147_483_647) and would clamp to 1ms if unclamped.
+    const storage = makeStorage({ path: `  ${actualPath}  `, purgeInterval: 30 * 24 * 60 * 60 * 1_000, maxAge: 5 });
+    await storage.setItem('k', { value: 1, createdAt: 0 });
+    expect(existsSync(actualPath)).toBe(true);
+    await wait(50);
+    expect(sweeps).toBe(0);
+
+    await expect(storage.sweep(Number.NaN)).rejects.toThrow(/finite timestamp/);
+  });
+
+  test('maxAge: Infinity never expires entries during sweep', async () => {
+    const storage = makeStorage({ maxAge: Number.POSITIVE_INFINITY });
+    await storage.setItem('forever', { value: 1, createdAt: 0 });
+    expect(await storage.sweep(Date.now() + 1e12, { reportKeys: true })).toEqual({ removed: 0, removedKeys: [] });
+    expect(await storage.getItem('forever')).toEqual({ value: 1, createdAt: 0 });
+  });
+
+  test('waits out a cross-process BEGIN IMMEDIATE write lock when enabling WAL on open', async () => {
+    const dbPath = makeDbPath('wal-lock.sqlite');
+    const initDb = new SQL({ adapter: 'sqlite', filename: dbPath });
+    await initDb.unsafe('CREATE TABLE seed_check (x integer)');
+    await initDb.close();
+
+    // Hold a brief write lock in a child process (SQLite's busy_timeout sleeps the calling thread, so locks must be cross-process).
+    const proc = Bun.spawn(
+      [
+        process.execPath,
+        '-e',
+        `import { SQL } from 'bun';
+         const sql = new SQL({ adapter: 'sqlite', filename: process.argv[1] });
+         await sql.unsafe('BEGIN IMMEDIATE');
+         process.stdout.write('locked\\n');
+         await Bun.sleep(120);
+         await sql.unsafe('COMMIT');
+         await sql.close();`,
+        dbPath,
+      ],
+      { stdout: 'pipe', stderr: 'inherit' },
+    );
+    const reader = proc.stdout.getReader();
+    await reader.read();
+    reader.releaseLock();
+
+    const contender = makeStorage({ path: dbPath });
+    await contender.setItem('seed', { value: 7, createdAt: 1 });
+    expect(await contender.getItem('seed')).toEqual({ value: 7, createdAt: 1 });
+    expect(await proc.exited).toBe(0);
+  });
+
+  test('concurrent dispose() calls all wait until in-flight initialization and close finish', async () => {
+    const dir = makeDir();
+    const dbPath = join(dir, 'concurrent-dispose.sqlite');
+    const storage = new SqliteStorage({ path: dbPath, purgeInterval: 0, purgeOnInit: true });
+    const pendingWrite = storage.setItem('k', { value: 1, createdAt: 0 }).catch(() => {});
+    const [d1, d2] = await Promise.all([storage.dispose(), storage.dispose()]);
+    expect(d1).toBeUndefined();
+    expect(d2).toBeUndefined();
+    await pendingWrite;
+    rmSync(dir, { recursive: true, force: true });
+    expect(existsSync(dir)).toBe(false);
   });
 
   test('opens lazily so construction and build-entry inspection touch neither disk nor timers', async () => {
@@ -148,6 +225,23 @@ describe('SqliteStorage core operations', () => {
     expect(raw.value.nested[0]).toBeInstanceOf(Uint8Array);
     expect(Array.from(raw.value.nested[0] as Uint8Array)).toEqual([1, 2, 3, 4, 5]);
     expect(Array.from(raw.value.nested[1] as Uint8Array)).toEqual([9, 8, 7]);
+  });
+
+  test('preserves ["__proto__"] own properties, multi-key __mochiBinary user objects, and undefined setItem safely', async () => {
+    const storage = makeStorage();
+    const withProto = JSON.parse('{"__proto__":{"polluted":123},"safe":1}') as Record<string, unknown>;
+    const multiKeyBinary = { __mochiBinary: 'not-a-sentinel', extra: 42 };
+    await storage.setItem('proto', { value: { withProto, multiKeyBinary }, createdAt: 1 });
+
+    const decoded = (await storage.getItem('proto')) as {
+      value: { withProto: Record<string, unknown>; multiKeyBinary: { __mochiBinary: string; extra: number } };
+    };
+    expect(Object.getPrototypeOf(decoded.value.withProto)).toBe(Object.prototype);
+    expect(Object.getOwnPropertyDescriptor(decoded.value.withProto, '__proto__')?.value).toEqual({ polluted: 123 });
+    expect(decoded.value.multiKeyBinary).toEqual({ __mochiBinary: 'not-a-sentinel', extra: 42 });
+
+    await storage.setItem('undef', undefined);
+    expect(await storage.getItem('undef')).toBeNull();
   });
 
   test('a corrupt JSON row surfaces as a read error and MochiCache degrades to a miss', async () => {

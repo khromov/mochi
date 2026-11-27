@@ -25,7 +25,7 @@ const SQLITE_MEMORY_RE = /^(sqlite:\/\/|file:)?(?::memory:|.*mode=memory)/i;
 const POSTGRES_URL_RE = /^postgres(?:ql)?:\/\/\S+$/i;
 
 function isValidSqlitePath(value: unknown): value is string {
-  if (typeof value !== 'string') {
+  if (typeof value !== 'string' || value.includes('\0')) {
     return false;
   }
   const trimmed = value.trim();
@@ -49,7 +49,7 @@ export function isValidStorage(value: unknown): value is MochiStorage {
   if (backing === 'path' && !isValidSqlitePath(record.path)) {
     return false;
   }
-  if (backing === 'url' && (typeof record.url !== 'string' || !POSTGRES_URL_RE.test(record.url.trim()))) {
+  if (backing === 'url' && (typeof record.url !== 'string' || record.url.includes('\0') || !POSTGRES_URL_RE.test(record.url.trim()))) {
     return false;
   }
   if (record.startOnFail !== undefined && typeof record.startOnFail !== 'boolean') {
@@ -60,5 +60,5 @@ export function isValidStorage(value: unknown): value is MochiStorage {
 
 /** Stable per-database identity, used to dedupe startup migration runs within one process. */
 export function storageKey(storage: MochiStorage): string {
-  return storage.type === 'sqlite' ? `sqlite:${path.resolve(storage.path)}` : `postgres:${storage.url}`;
+  return storage.type === 'sqlite' ? `sqlite:${path.resolve(storage.path.trim())}` : `postgres:${storage.url.trim()}`;
 }

@@ -23,7 +23,7 @@ const postgresDialect: MigrationDialect = {
   async open(storage) {
     // One pinned connection (the session advisory lock must share a session with every statement of the run) and
     // no named prepared statements (each statement runs once, and PGlite-over-socket shares one backend session).
-    return new SQL({ adapter: 'postgres', url: (storage as { url: string }).url, max: 1, prepare: false });
+    return new SQL({ adapter: 'postgres', url: (storage as { url: string }).url.trim(), max: 1, prepare: false });
   },
   async lock(sql) {
     // Session-level advisory lock held for the whole run so concurrent runners (e.g. replicas booting) serialize.
@@ -59,9 +59,9 @@ const postgresDialect: MigrationDialect = {
 
 const sqliteDialect: MigrationDialect = {
   // No `lock`: cross-process SQLite runners rely on BEGIN IMMEDIATE per migration plus the in-transaction
-  // already-applied re-check in the runner, so a losing racer skips instead of re-running.
+  // already-applied re-checks in the runner, so a losing racer skips instead of re-running.
   async open(storage) {
-    const resolved = path.resolve((storage as { path: string }).path);
+    const resolved = path.resolve((storage as { path: string }).path.trim());
     // bun:sqlite won't create the parent directory.
     mkdirSync(path.dirname(resolved), { recursive: true });
     const sql = new SQL({ adapter: 'sqlite', filename: resolved });

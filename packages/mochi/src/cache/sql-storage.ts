@@ -15,6 +15,10 @@ interface SweeperOwner {
 
 const sweeperOwners = pinGlobal('__mochi_cache_sweeper_owners__', () => new Map<string, SweeperOwner>());
 
+// Signed 32-bit timer ceiling in Bun/Node; larger delays overflow `setInterval` and clamp to 1ms.
+const MAX_TIMER_MS = 2_147_483_647;
+const COMMON_OPTION_KEYS = new Set(['namespace', 'purgeOnInit', 'purgeInterval', 'maxAge']);
+
 interface InlineBinary {
   __mochiBinary: string;
 }
@@ -24,11 +28,19 @@ interface ValueEnvelope {
 }
 
 function isInlineBinary(value: unknown): value is InlineBinary {
-  return typeof value === 'object' && value !== null && typeof (value as { __mochiBinary?: unknown }).__mochiBinary === 'string';
+  return typeof value === 'object' && value !== null && typeof (value as { __mochiBinary?: unknown }).__mochiBinary === 'string' && Object.keys(value).length === 1;
 }
 
 function isValueEnvelope(value: unknown): value is ValueEnvelope {
   return typeof value === 'object' && value !== null && '__mochiValue' in value;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object') {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
 }
 
 function encodeInlineValue(value: unknown): unknown {
@@ -38,10 +50,10 @@ function encodeInlineValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(encodeInlineValue);
   }
-  if (value !== null && typeof value === 'object') {
+  if (isPlainObject(value)) {
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = encodeInlineValue(v);
+    for (const [k, v] of Object.entries(value)) {
+      Object.defineProperty(out, k, { value: encodeInlineValue(v), enumerable: true, writable: true, configurable: true });
     }
     return out;
   }
@@ -55,14 +67,25 @@ function decodeInlineValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(decodeInlineValue);
   }
-  if (value !== null && typeof value === 'object') {
+  if (isPlainObject(value)) {
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = decodeInlineValue(v);
+    for (const [k, v] of Object.entries(value)) {
+      Object.defineProperty(out, k, { value: decodeInlineValue(v), enumerable: true, writable: true, configurable: true });
     }
     return out;
   }
   return value;
+}
+
+function assertAllowedKeys(options: unknown, primaryKey: string, label: string): void {
+  if (typeof options !== 'object' || options === null || Array.isArray(options)) {
+    return;
+  }
+  for (const key of Object.keys(options)) {
+    if (key !== primaryKey && !COMMON_OPTION_KEYS.has(key)) {
+      throw new Error(`${label}: unknown option "${key}".`);
+    }
+  }
 }
 
 interface CommonSqlStorageOptions {
@@ -94,6 +117,7 @@ abstract class SqlCacheStorage implements Storage {
   private sql?: SQL;
   private initPromise?: Promise<SQL>;
   private activeSweep?: Promise<void>;
+  private disposePromise?: Promise<void>;
   private initialTimer?: ReturnType<typeof setTimeout>;
   private intervalTimer?: ReturnType<typeof setInterval>;
   private sweepKey?: string;
@@ -107,17 +131,28 @@ abstract class SqlCacheStorage implements Storage {
     options: CommonSqlStorageOptions,
   ) {
     const namespace = options.namespace ?? 'default';
-    if (typeof namespace !== 'string' || namespace.length === 0) {
-      throw new Error(`${label}: namespace must be a non-empty string.`);
+    if (typeof namespace !== 'string' || namespace.trim().length === 0 || namespace.includes('\0')) {
+      throw new Error(`${label}: namespace must be a non-empty string without null bytes.`);
     }
+    const maxAge = options.maxAge ?? 600_000;
+    if (typeof maxAge !== 'number' || Number.isNaN(maxAge) || maxAge <= 0) {
+      throw new Error(`${label}: maxAge must be a positive number.`);
+    }
+    const purgeInterval = options.purgeInterval ?? 60_000;
+    if (typeof purgeInterval !== 'number' || !Number.isFinite(purgeInterval)) {
+      throw new Error(`${label}: purgeInterval must be a finite number (or <= 0 to disable).`);
+    }
+    if (options.purgeOnInit !== undefined && typeof options.purgeOnInit !== 'boolean') {
+      throw new Error(`${label}: purgeOnInit must be a boolean.`);
+    }
+
     this.namespace = namespace;
-    this.maxAge = options.maxAge ?? 600_000;
+    this.maxAge = maxAge;
     this.purgeOnInit = options.purgeOnInit ?? false;
 
-    const purgeInterval = options.purgeInterval ?? 60_000;
-    // Skip timers while `mochi-framework build` / `migrate` imports the entry only to inspect options.
-    if (purgeInterval > 0 && !isBuildingEntry()) {
-      this.startSweeper(purgeInterval);
+    // Skip timers when maxAge is Infinity (nothing ever expires) or while `mochi-framework build` / `migrate` inspects the entry.
+    if (purgeInterval > 0 && Number.isFinite(maxAge) && !isBuildingEntry()) {
+      this.startSweeper(Math.min(purgeInterval, MAX_TIMER_MS));
     }
   }
 
@@ -139,7 +174,7 @@ abstract class SqlCacheStorage implements Storage {
 
   async setItem(key: string, value: unknown): Promise<void> {
     const sql = await this.ensureReady();
-    const envelope: ValueEnvelope = { __mochiValue: encodeInlineValue(value) };
+    const envelope: ValueEnvelope = { __mochiValue: value === undefined ? null : encodeInlineValue(value) };
     const serialized = JSON.stringify(envelope);
     // Ascending `$1..$4` order is required by Bun's sqlite adapter, which binds array parameters positionally.
     await sql.unsafe(
@@ -172,8 +207,14 @@ abstract class SqlCacheStorage implements Storage {
   }
 
   async sweep(now: number = Date.now(), options: SweepOptions = {}): Promise<SweepResult> {
+    if (typeof now !== 'number' || !Number.isFinite(now)) {
+      throw new Error(`${this.label}.sweep(): now must be a finite timestamp.`);
+    }
+    if (!Number.isFinite(this.maxAge)) {
+      return options.reportKeys ? { removed: 0, removedKeys: [] } : { removed: 0 };
+    }
     const sql = await this.ensureReady();
-    const cutoff = now - this.maxAge;
+    const cutoff = Math.floor(now - this.maxAge);
     if (options.reportKeys) {
       const rows = (await sql.unsafe(`DELETE FROM ${this.table} WHERE namespace = $1 AND written_at < $2 RETURNING key`, [this.namespace, cutoff])) as { key: string }[];
       return { removed: rows.length, removedKeys: rows.map((row) => row.key) };
@@ -183,7 +224,7 @@ abstract class SqlCacheStorage implements Storage {
   }
 
   /** Stop the background sweep and close the underlying database connection. */
-  async dispose(): Promise<void> {
+  dispose(): Promise<void> {
     this.disposed = true;
     this.stopSweepTimers();
     if (this.sweepKey !== undefined && sweeperOwners.get(this.sweepKey) === this.sweepOwner) {
@@ -193,6 +234,11 @@ abstract class SqlCacheStorage implements Storage {
     this.sweepOwner = undefined;
     clearInternalMigrationsCache(this.storageConfig);
 
+    this.disposePromise ??= this.runDispose();
+    return this.disposePromise;
+  }
+
+  private async runDispose(): Promise<void> {
     const pendingInit = this.initPromise;
     this.initPromise = undefined;
     if (pendingInit) {
@@ -237,6 +283,9 @@ abstract class SqlCacheStorage implements Storage {
       }
       if (this.purgeOnInit && !this.purgedOnInit) {
         await sql.unsafe(`DELETE FROM ${this.table} WHERE namespace = $1`, [this.namespace]);
+        if (this.disposed) {
+          throw new Error(`${this.label} has been disposed.`);
+        }
         this.purgedOnInit = true;
       }
       this.sql = sql;
@@ -308,20 +357,23 @@ export class SqliteStorage extends SqlCacheStorage {
   private readonly filePath: string;
 
   constructor(options: SqliteStorageOptions) {
-    const storageConfig: MochiSqliteStorage = { type: 'sqlite', path: options?.path };
+    assertAllowedKeys(options, 'path', 'SqliteStorage');
+    const trimmedPath = typeof options?.path === 'string' ? options.path.trim() : (options?.path as unknown as string);
+    const storageConfig: MochiSqliteStorage = { type: 'sqlite', path: trimmedPath };
     if (!isValidStorage(storageConfig)) {
       throw new Error('SqliteStorage: expected a non-empty file `path` (":memory:" and "?" URI query strings are not supported; use MemoryStorage for in-memory caching).');
     }
     super(storageConfig, 'mochi_cache', 'SqliteStorage', options);
-    this.filePath = resolve(options.path);
+    this.filePath = resolve(trimmedPath);
   }
 
   protected async openSql(): Promise<SQL> {
     mkdirSync(dirname(this.filePath), { recursive: true });
     const sql = new SQL({ adapter: 'sqlite', filename: this.filePath });
     try {
-      await sql.unsafe('PRAGMA journal_mode = WAL');
+      // Set busy_timeout before switching journal_mode so a concurrent startup write lock waits instead of failing at 0ms.
       await sql.unsafe('PRAGMA busy_timeout = 30000');
+      await sql.unsafe('PRAGMA journal_mode = WAL');
       return sql;
     } catch (err) {
       await sql.close().catch(() => {});
@@ -338,12 +390,14 @@ export class PostgresStorage extends SqlCacheStorage {
   private readonly url: string;
 
   constructor(options: PostgresStorageOptions) {
-    const storageConfig: MochiPostgresStorage = { type: 'postgres', url: options?.url };
+    assertAllowedKeys(options, 'url', 'PostgresStorage');
+    const trimmedUrl = typeof options?.url === 'string' ? options.url.trim() : (options?.url as unknown as string);
+    const storageConfig: MochiPostgresStorage = { type: 'postgres', url: trimmedUrl };
     if (!isValidStorage(storageConfig)) {
       throw new Error('PostgresStorage: expected a `postgres://` or `postgresql://` connection `url`.');
     }
     super(storageConfig, 'mochi_cache.entries', 'PostgresStorage', options);
-    this.url = options.url;
+    this.url = trimmedUrl;
   }
 
   protected async openSql(): Promise<SQL> {

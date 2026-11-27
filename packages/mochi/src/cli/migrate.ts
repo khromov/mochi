@@ -58,5 +58,5 @@ export async function runMigrateCommand(opts: MigrateCommandOptions): Promise<vo
     process.stdout.write('[mochi] No migrations to apply.\n');
     return;
   }
-  process.stdout.write(`[mochi] Applied ${applied.length} migration(s): ${applied.map((m) => m.filename).join(', ')}\n`);
+  process.stdout.write(`[mochi] Applied ${applied.length} migration(s): ${applied.map((m) => (m.label === 'mochi' ? `mochi/${m.filename}` : m.filename)).join(', ')}\n`);
 }

@@ -215,7 +215,7 @@ export const sharedFeedCache = new MochiCache({
 });
 ```
 
-Multiple `MochiCache` instances can share one SQLite file or Postgres database by setting distinct `namespace` values — `clearItems()`, `count()`, `keys()`, `purgeOnInit`, and `sweep()` only affect that cache's namespace. Call `await storage.dispose()` to stop the background sweeper and close the database connection (for example in tests).
+Multiple `MochiCache` instances can share one SQLite file or Postgres database by setting distinct `namespace` values — `clearItems()`, `count()`, `keys()`, `purgeOnInit`, and `sweep()` only affect that cache's namespace. Only one background sweeper runs per `(database, namespace)` per process, transferring to the newest instance on dev-server reloads. Values must be JSON-serializable (`Uint8Array` / `Buffer` fields round-trip as `Uint8Array`; `Date`, `Map`, `BigInt`, and `undefined` do not). Call `await storage.dispose()` to stop the background sweeper and close the database connection (for example in tests).
 
 | Option          | Default           |                                                                              |
 | --------------- | ----------------- | ---------------------------------------------------------------------------- |

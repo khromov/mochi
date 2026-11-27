@@ -46,12 +46,25 @@ function makeStorage(options: Partial<ConstructorParameters<typeof PostgresStora
 }
 
 describe('PostgresStorage validation & core operations', () => {
-  test('rejects invalid URLs and empty namespaces synchronously on construction', () => {
+  test('rejects invalid URLs, namespaces, maxAge, purgeInterval, and unknown options synchronously', async () => {
     expect(() => new PostgresStorage({ url: '' })).toThrow(/PostgresStorage/);
     expect(() => new PostgresStorage({ url: '   ' })).toThrow(/PostgresStorage/);
+    expect(() => new PostgresStorage({ url: `${pg.url}\0bad` })).toThrow(/PostgresStorage/);
     expect(() => new PostgresStorage({ url: './local.sqlite' })).toThrow(/PostgresStorage/);
     expect(() => new PostgresStorage({ url: 'http://localhost:5432/db' })).toThrow(/PostgresStorage/);
     expect(() => new PostgresStorage({ url: pg.url, namespace: '' })).toThrow(/namespace/);
+    expect(() => new PostgresStorage({ url: pg.url, namespace: '   ' })).toThrow(/namespace/);
+    expect(() => new PostgresStorage({ url: pg.url, maxAge: Number.NaN })).toThrow(/maxAge/);
+    expect(() => new PostgresStorage({ url: pg.url, maxAge: 0 })).toThrow(/maxAge/);
+    expect(() => new PostgresStorage({ url: pg.url, purgeInterval: Number.NaN })).toThrow(/purgeInterval/);
+    expect(() => new PostgresStorage({ url: pg.url, purgeInterval: Number.POSITIVE_INFINITY })).toThrow(/purgeInterval/);
+    expect(() => new PostgresStorage({ url: pg.url, extraOption: true } as never)).toThrow(/unknown option "extraOption"/);
+
+    // Trims trailing newline on URLs (common in mounted secret files) and rejects NaN timestamps in sweep().
+    const trimmed = makeStorage({ url: `  ${pg.url}\n` });
+    await trimmed.setItem('k', { value: 1, createdAt: 0 });
+    await expect(trimmed.sweep(Number.NaN)).rejects.toThrow(/finite timestamp/);
+    expect(await trimmed.getItem('k')).toEqual({ value: 1, createdAt: 0 });
   });
 
   test('round-trips get/set/overwrite/remove/clear/count/keys with JS number counts', async () => {
