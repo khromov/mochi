@@ -171,6 +171,12 @@ await Mochi.serve({
 
 Every token failure returns the same message, so a probing bot cannot tell "too fast" from "tampered".
 
+#### The SQLite store's schema
+
+<VersionNote since="0.10.0" message="Earlier versions create the nonces table directly when the store opens." />
+
+`store: 'sqlite'` sets up its table with [database migrations](/docs/database-migrations/) when it opens the `storePath` file. They run against that file only, never the app's `storage`, and are recorded in a `mochi_migrations_captcha` table in it. A file from an earlier version keeps its spent nonces.
+
 ### The timing floor
 
 `minAgeMs` is the only check that a submission took human time. The proof-of-work bounds an attacker's **cost** (~2^`bits` hashes per token), not any single solver's latency. A form with fields to type into runs past the 2s default. A form with nothing to fill in may not, so tune it per form with the [`captcha:minAgeMs`](/docs/extensions/#captchaminagems) filter.

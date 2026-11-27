@@ -1,4 +1,6 @@
 import { Database } from 'bun:sqlite';
+import { runSqliteMigrationsSync } from '../migrations/runner';
+import { CAPTCHA_SQLITE_MIGRATIONS } from './migrations';
 import type { NonceStore } from './types';
 
 export class MemoryNonceStore implements NonceStore {
@@ -26,10 +28,15 @@ export class SqliteNonceStore implements NonceStore {
 
   constructor(path: string) {
     this.db = new Database(path, { create: true });
-    this.db.run('CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)');
-    // Without this the prune below is a full table scan on every consume — the
-    // primary key indexes `nonce`, not `expires_at`.
-    this.db.run('CREATE INDEX IF NOT EXISTS nonces_expires_at ON nonces (expires_at)');
+    try {
+      // Wait briefly for a sibling process migrating the same file (the wait blocks, hence 1s), then let consume fail fast as before.
+      this.db.run('PRAGMA busy_timeout = 1000');
+      runSqliteMigrationsSync(this.db, { dir: 'mochi-framework/captcha', sources: CAPTCHA_SQLITE_MIGRATIONS, table: 'mochi_migrations_captcha', label: 'captcha' });
+      this.db.run('PRAGMA busy_timeout = 0');
+    } catch (err) {
+      this.db.close();
+      throw err;
+    }
   }
 
   consume(nonce: string, expiresAt: number): boolean {

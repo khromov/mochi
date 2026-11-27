@@ -50,6 +50,16 @@ const postgresDialect: MigrationDialect = {
   },
 };
 
+/** Shared with `runSqliteMigrationsSync`, so both SQLite runners create the same tracking table. */
+export function sqliteTrackingTableSql(quoted: string): string {
+  return `CREATE TABLE IF NOT EXISTS ${quoted} (
+    id         integer PRIMARY KEY,
+    name       text NOT NULL,
+    hash       text NOT NULL,
+    applied_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  )`;
+}
+
 const sqliteDialect: MigrationDialect = {
   // No `lock`: cross-process SQLite runners rely on BEGIN IMMEDIATE per migration plus the in-transaction
   // already-applied re-check in the runner, so a losing racer skips instead of re-running.
@@ -63,14 +73,7 @@ const sqliteDialect: MigrationDialect = {
   },
   async ensureTable(sql, table) {
     const quoted = `"${table}"`;
-    await sql.unsafe(
-      `CREATE TABLE IF NOT EXISTS ${quoted} (
-        id         integer PRIMARY KEY,
-        name       text NOT NULL,
-        hash       text NOT NULL,
-        applied_at text NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-      )`,
-    );
+    await sql.unsafe(sqliteTrackingTableSql(quoted));
     return quoted;
   },
   async begin(sql, fn) {
