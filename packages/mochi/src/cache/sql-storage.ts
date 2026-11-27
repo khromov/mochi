@@ -1,13 +1,12 @@
-import { SQL } from 'bun';
-import { mkdirSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import type { Storage, SweepOptions, SweepResult } from './cache';
+import { acquireSqlBackend, sqlCacheTuning, type OpKind, type SqlBackendHandle, type SqlOp, type SqlTarget } from './sql-backend';
 import { mochiEvents } from '../events';
-import { clearInternalMigrationsCache, ensureInternalMigrations } from '../migrations/startup';
-import { isValidStorage, storageKey, type MochiPostgresStorage, type MochiSqliteStorage, type MochiStorage } from '../migrations/storage';
+import { isValidStorage } from '../migrations/storage';
 import { isBuildingEntry } from '../utils/buildFlag';
 import { pinGlobal } from '../utils/globalState';
 import { logger } from '../utils/log';
+import { parsePostgresUrl } from '../utils/postgresUrl';
 
 interface SweeperOwner {
   stop(): void;
@@ -35,14 +34,8 @@ function isValueEnvelope(value: unknown): value is ValueEnvelope {
   return typeof value === 'object' && value !== null && '__mochiValue' in value;
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (value === null || typeof value !== 'object') {
-    return false;
-  }
-  const proto = Object.getPrototypeOf(value);
-  return proto === Object.prototype || proto === null;
-}
-
+// Mirrors `FileStorage.encodeBlobs` with offloading off — every non-null object is walked, class instances included —
+// so a value reads back the same from any backend.
 function encodeInlineValue(value: unknown): unknown {
   if (value instanceof Uint8Array) {
     return { __mochiBinary: Buffer.from(value).toString('base64') } satisfies InlineBinary;
@@ -50,7 +43,7 @@ function encodeInlineValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(encodeInlineValue);
   }
-  if (isPlainObject(value)) {
+  if (value !== null && typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value)) {
       Object.defineProperty(out, k, { value: encodeInlineValue(v), enumerable: true, writable: true, configurable: true });
@@ -67,7 +60,7 @@ function decodeInlineValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(decodeInlineValue);
   }
-  if (isPlainObject(value)) {
+  if (value !== null && typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value)) {
       Object.defineProperty(out, k, { value: decodeInlineValue(v), enumerable: true, writable: true, configurable: true });
@@ -75,6 +68,26 @@ function decodeInlineValue(value: unknown): unknown {
     return out;
   }
   return value;
+}
+
+// Rows are keyed by this digest, as `FileStorage` names its files, so a key of any length or content fits the index.
+function hashKey(key: string): string {
+  return new Bun.CryptoHasher('sha256').update(key).digest('hex');
+}
+
+const yieldToEventLoop = (): Promise<void> => new Promise((done) => setImmediate(done));
+
+/**
+ * One sweep batch: delete up to `$3` rows of namespace `$1` older than `$2` (`$4` repeats `$2`). The batch is
+ * addressed by physical row id because, for any lookup by column, each planner can decide (Postgres on stale statistics)
+ * to walk the whole namespace once per batch. Exported for the tests that pin its plan.
+ */
+export function sweepBatchSql(type: SqlTarget['type'], table: string, reportKeys: boolean): string {
+  const rowId = type === 'sqlite' ? 'rowid' : 'ctid';
+  const batch = `SELECT ${rowId} FROM ${table} WHERE namespace = $1 AND written_at < $2 ORDER BY written_at LIMIT $3`;
+  const picked = type === 'sqlite' ? `rowid IN (${batch})` : `ctid = ANY (ARRAY(${batch}))`;
+  // The outer age check spares an entry rewritten since the batch picked it; its unary plus keeps it off every index.
+  return `DELETE FROM ${table} WHERE ${picked} AND +written_at < $4${reportKeys ? ' RETURNING key_json' : ''}`;
 }
 
 function assertAllowedKeys(options: unknown, primaryKey: string, label: string): void {
@@ -113,9 +126,9 @@ abstract class SqlCacheStorage implements Storage {
   protected readonly namespace: string;
   private readonly maxAge: number;
   private readonly purgeOnInit: boolean;
-  private purgedOnInit = false;
-  private sql?: SQL;
-  private initPromise?: Promise<SQL>;
+  private purged = false;
+  private purging?: Promise<void>;
+  private backend?: SqlBackendHandle;
   private activeSweep?: Promise<void>;
   private disposePromise?: Promise<void>;
   private initialTimer?: ReturnType<typeof setTimeout>;
@@ -125,8 +138,7 @@ abstract class SqlCacheStorage implements Storage {
   private disposed = false;
 
   protected constructor(
-    private readonly storageConfig: MochiStorage,
-    private readonly table: string,
+    private readonly target: SqlTarget,
     private readonly label: string,
     options: CommonSqlStorageOptions,
   ) {
@@ -156,11 +168,10 @@ abstract class SqlCacheStorage implements Storage {
     }
   }
 
-  protected abstract openSql(): Promise<SQL>;
-
   async getItem(key: string): Promise<unknown> {
-    const sql = await this.ensureReady();
-    const rows = (await sql.unsafe(`SELECT value FROM ${this.table} WHERE namespace = $1 AND key = $2`, [this.namespace, key])) as { value: string }[];
+    const rows = (await this.run('read', (sql, table) => sql.unsafe(`SELECT value FROM ${table} WHERE namespace = $1 AND key_hash = $2`, [this.namespace, hashKey(key)]))) as {
+      value: string;
+    }[];
     const row = rows[0];
     if (!row) {
       return null;
@@ -173,39 +184,43 @@ abstract class SqlCacheStorage implements Storage {
   }
 
   async setItem(key: string, value: unknown): Promise<void> {
-    const sql = await this.ensureReady();
     const envelope: ValueEnvelope = { __mochiValue: value === undefined ? null : encodeInlineValue(value) };
     const serialized = JSON.stringify(envelope);
-    // Ascending `$1..$4` order is required by Bun's sqlite adapter, which binds array parameters positionally.
-    await sql.unsafe(
-      `INSERT INTO ${this.table} (namespace, key, value, written_at) VALUES ($1, $2, $3, $4) ` +
-        `ON CONFLICT (namespace, key) DO UPDATE SET value = excluded.value, written_at = excluded.written_at`,
-      [this.namespace, key, serialized, Date.now()],
+    // The key is stored JSON-encoded because Postgres text cannot hold the NUL or lone surrogates a JS string can.
+    // Ascending `$1..$5` order is required by Bun's sqlite adapter, which binds array parameters positionally.
+    await this.run('write', (sql, table) =>
+      sql.unsafe(
+        `INSERT INTO ${table} (namespace, key_hash, key_json, value, written_at) VALUES ($1, $2, $3, $4, $5) ` +
+          `ON CONFLICT (namespace, key_hash) DO UPDATE SET key_json = excluded.key_json, value = excluded.value, written_at = excluded.written_at`,
+        [this.namespace, hashKey(key), JSON.stringify(key), serialized, Date.now()],
+      ),
     );
   }
 
   async removeItem(key: string): Promise<void> {
-    const sql = await this.ensureReady();
-    await sql.unsafe(`DELETE FROM ${this.table} WHERE namespace = $1 AND key = $2`, [this.namespace, key]);
+    await this.run('write', (sql, table) => sql.unsafe(`DELETE FROM ${table} WHERE namespace = $1 AND key_hash = $2`, [this.namespace, hashKey(key)]));
   }
 
   async clear(): Promise<void> {
-    const sql = await this.ensureReady();
-    await sql.unsafe(`DELETE FROM ${this.table} WHERE namespace = $1`, [this.namespace]);
+    await this.run('write', (sql, table) => sql.unsafe(`DELETE FROM ${table} WHERE namespace = $1`, [this.namespace]));
   }
 
   async count(): Promise<number> {
-    const sql = await this.ensureReady();
-    const rows = (await sql.unsafe(`SELECT count(*) AS n FROM ${this.table} WHERE namespace = $1`, [this.namespace])) as { n: number | bigint | string }[];
+    const rows = (await this.run('read', (sql, table) => sql.unsafe(`SELECT count(*) AS n FROM ${table} WHERE namespace = $1`, [this.namespace]))) as {
+      n: number | bigint | string;
+    }[];
     return Number(rows[0]?.n ?? 0);
   }
 
   async keys(): Promise<string[]> {
-    const sql = await this.ensureReady();
-    const rows = (await sql.unsafe(`SELECT key FROM ${this.table} WHERE namespace = $1`, [this.namespace])) as { key: string }[];
-    return rows.map((row) => row.key);
+    const rows = (await this.run('read', (sql, table) => sql.unsafe(`SELECT key_json FROM ${table} WHERE namespace = $1`, [this.namespace]))) as { key_json: string }[];
+    return rows.map((row) => JSON.parse(row.key_json) as string);
   }
 
+  /**
+   * Delete entries older than `maxAge`, a bounded batch per statement with a yield in between, so a large backlog
+   * neither holds SQLite's write lock (and the event loop with it) nor one long Postgres transaction.
+   */
   async sweep(now: number = Date.now(), options: SweepOptions = {}): Promise<SweepResult> {
     if (typeof now !== 'number' || !Number.isFinite(now)) {
       throw new Error(`${this.label}.sweep(): now must be a finite timestamp.`);
@@ -213,17 +228,31 @@ abstract class SqlCacheStorage implements Storage {
     if (!Number.isFinite(this.maxAge)) {
       return options.reportKeys ? { removed: 0, removedKeys: [] } : { removed: 0 };
     }
-    const sql = await this.ensureReady();
     const cutoff = Math.floor(now - this.maxAge);
-    if (options.reportKeys) {
-      const rows = (await sql.unsafe(`DELETE FROM ${this.table} WHERE namespace = $1 AND written_at < $2 RETURNING key`, [this.namespace, cutoff])) as { key: string }[];
-      return { removed: rows.length, removedKeys: rows.map((row) => row.key) };
+    const batchSize = sqlCacheTuning.sweepBatchSize;
+    let removed = 0;
+    const removedKeys: string[] = [];
+    for (;;) {
+      const result = (await this.run('sweep', (sql, table, type) =>
+        sql.unsafe(sweepBatchSql(type, table, options.reportKeys === true), [this.namespace, cutoff, batchSize, cutoff]),
+      )) as {
+        key_json: string;
+      }[] & { count?: number };
+      // The driver reports affected rows, so nothing is materialised unless the caller asked for the keys.
+      const deleted = options.reportKeys ? result.length : Number(result.count ?? 0);
+      removed += deleted;
+      for (const row of options.reportKeys ? result : []) {
+        removedKeys.push(JSON.parse(row.key_json) as string);
+      }
+      if (deleted < batchSize) {
+        break;
+      }
+      await yieldToEventLoop();
     }
-    const rows = (await sql.unsafe(`DELETE FROM ${this.table} WHERE namespace = $1 AND written_at < $2 RETURNING 1`, [this.namespace, cutoff])) as unknown[];
-    return { removed: rows.length };
+    return options.reportKeys ? { removed, removedKeys } : { removed };
   }
 
-  /** Stop the background sweep and close the underlying database connection. */
+  /** Stop the background sweep and release the shared database client, which closes once its last user has. */
   dispose(): Promise<void> {
     this.disposed = true;
     this.stopSweepTimers();
@@ -232,68 +261,46 @@ abstract class SqlCacheStorage implements Storage {
     }
     this.sweepKey = undefined;
     this.sweepOwner = undefined;
-    clearInternalMigrationsCache(this.storageConfig);
 
     this.disposePromise ??= this.runDispose();
     return this.disposePromise;
   }
 
   private async runDispose(): Promise<void> {
-    const pendingInit = this.initPromise;
-    this.initPromise = undefined;
-    if (pendingInit) {
-      await pendingInit.catch(() => {});
-    }
-    if (this.activeSweep) {
-      await this.activeSweep.catch(() => {});
-    }
-    const sql = this.sql;
-    this.sql = undefined;
-    if (sql) {
-      await sql.close().catch(() => {});
-    }
+    await this.purging?.catch(() => {});
+    await this.activeSweep?.catch(() => {});
+    await this.detach();
   }
 
-  private ensureReady(): Promise<SQL> {
-    if (this.disposed) {
-      return Promise.reject(new Error(`${this.label} has been disposed.`));
-    }
-    if (!this.initPromise) {
-      const attempt = this.init();
-      this.initPromise = attempt;
-      // Clear on transient boot/network failure so the next call retries instead of pinning a rejected promise forever.
-      attempt.catch(() => {
-        if (this.initPromise === attempt) {
-          this.initPromise = undefined;
-        }
-      });
-    }
-    return this.initPromise;
+  private detach(): Promise<void> {
+    const backend = this.backend;
+    this.backend = undefined;
+    return backend ? backend.release() : Promise.resolve();
   }
 
-  private async init(): Promise<SQL> {
-    await ensureInternalMigrations(this.storageConfig);
+  private async run<T>(kind: OpKind, op: SqlOp<T>): Promise<T> {
     if (this.disposed) {
       throw new Error(`${this.label} has been disposed.`);
     }
-    const sql = await this.openSql();
-    try {
+    // Attached on first use, and again after a newer instance took this one's reference over.
+    const backend = (this.backend ??= acquireSqlBackend(this.target));
+    if (this.purgeOnInit && !this.purged) {
+      this.purging ??= backend
+        .run('write', (sql, table) => sql.unsafe(`DELETE FROM ${table} WHERE namespace = $1`, [this.namespace]))
+        .then(() => {
+          this.purged = true;
+        })
+        .finally(() => {
+          this.purging = undefined;
+        });
+      await this.purging;
+    }
+    // A call issued before dispose() still completes on an open database; one that was waiting for it to open does not.
+    return backend.run(kind, op, () => {
       if (this.disposed) {
         throw new Error(`${this.label} has been disposed.`);
       }
-      if (this.purgeOnInit && !this.purgedOnInit) {
-        await sql.unsafe(`DELETE FROM ${this.table} WHERE namespace = $1`, [this.namespace]);
-        if (this.disposed) {
-          throw new Error(`${this.label} has been disposed.`);
-        }
-        this.purgedOnInit = true;
-      }
-      this.sql = sql;
-      return sql;
-    } catch (err) {
-      await sql.close().catch(() => {});
-      throw err;
-    }
+    });
   }
 
   private stopSweepTimers(): void {
@@ -336,10 +343,17 @@ abstract class SqlCacheStorage implements Storage {
     };
 
     // Keyed per (database, namespace) so HMR reloads replace dead sweepers while distinct namespaces keep their own maxAge schedule.
-    const key = `${storageKey(this.storageConfig)}\0${this.namespace}`;
+    const key = `${this.target.key}\0${this.namespace}`;
     sweeperOwners.get(key)?.stop();
     this.sweepKey = key;
-    this.sweepOwner = { stop: () => this.stopSweepTimers() };
+    // A superseded instance is usually a dead HMR copy nobody can dispose(), so the takeover also drops its reference
+    // on the shared client; if something still uses it, its next call simply attaches again.
+    this.sweepOwner = {
+      stop: () => {
+        this.stopSweepTimers();
+        void this.detach();
+      },
+    };
 
     this.initialTimer = setTimeout(run, 1_000);
     this.intervalTimer = setInterval(run, intervalMs);
@@ -350,58 +364,34 @@ abstract class SqlCacheStorage implements Storage {
 }
 
 /**
- * SQLite-backed `Storage` for {@link MochiCache}. Applies Mochi's internal SQLite migrations (`mochi_cache`) on first
- * access, runs in WAL mode, and isolates keys by `namespace` (default `'default'`) so multiple caches can share one `.db` file.
+ * SQLite-backed `Storage` for {@link MochiCache}. Creates its own `mochi_cache` table on first use, runs in WAL mode,
+ * and isolates keys by `namespace` (default `'default'`) so multiple caches can share one `.db` file.
  */
 export class SqliteStorage extends SqlCacheStorage {
-  private readonly filePath: string;
-
   constructor(options: SqliteStorageOptions) {
     assertAllowedKeys(options, 'path', 'SqliteStorage');
     const trimmedPath = typeof options?.path === 'string' ? options.path.trim() : (options?.path as unknown as string);
-    const storageConfig: MochiSqliteStorage = { type: 'sqlite', path: trimmedPath };
-    if (!isValidStorage(storageConfig)) {
+    if (!isValidStorage({ type: 'sqlite', path: trimmedPath })) {
       throw new Error('SqliteStorage: expected a non-empty file `path` (":memory:" and "?" URI query strings are not supported; use MemoryStorage for in-memory caching).');
     }
-    super(storageConfig, 'mochi_cache', 'SqliteStorage', options);
-    this.filePath = resolve(trimmedPath);
-  }
-
-  protected async openSql(): Promise<SQL> {
-    mkdirSync(dirname(this.filePath), { recursive: true });
-    const sql = new SQL({ adapter: 'sqlite', filename: this.filePath });
-    try {
-      // Set busy_timeout before switching journal_mode so a concurrent startup write lock waits instead of failing at 0ms.
-      await sql.unsafe('PRAGMA busy_timeout = 30000');
-      await sql.unsafe('PRAGMA journal_mode = WAL');
-      return sql;
-    } catch (err) {
-      await sql.close().catch(() => {});
-      throw err;
-    }
+    const file = resolve(trimmedPath);
+    super({ type: 'sqlite', key: `sqlite:${file}`, file }, 'SqliteStorage', options);
   }
 }
 
 /**
- * Postgres-backed `Storage` for {@link MochiCache}. Applies Mochi's internal Postgres migrations (`mochi_cache.entries`)
- * on first access and isolates keys by `namespace` (default `'default'`) so multiple caches and server replicas can share one database.
+ * Postgres-backed `Storage` for {@link MochiCache}. Creates its own `mochi_cache` table in the connection's current
+ * schema on first use and isolates keys by `namespace` (default `'default'`) so multiple caches and server replicas
+ * can share one database.
  */
 export class PostgresStorage extends SqlCacheStorage {
-  private readonly url: string;
-
   constructor(options: PostgresStorageOptions) {
     assertAllowedKeys(options, 'url', 'PostgresStorage');
     const trimmedUrl = typeof options?.url === 'string' ? options.url.trim() : (options?.url as unknown as string);
-    const storageConfig: MochiPostgresStorage = { type: 'postgres', url: trimmedUrl };
-    if (!isValidStorage(storageConfig)) {
+    if (!isValidStorage({ type: 'postgres', url: trimmedUrl })) {
       throw new Error('PostgresStorage: expected a `postgres://` or `postgresql://` connection `url`.');
     }
-    super(storageConfig, 'mochi_cache.entries', 'PostgresStorage', options);
-    this.url = trimmedUrl;
-  }
-
-  protected async openSql(): Promise<SQL> {
-    // Unnamed statements work behind transaction-mode poolers (PgBouncer/Neon) and PGlite's single-session test socket.
-    return new SQL({ adapter: 'postgres', url: this.url, prepare: false });
+    const { options: connection, key } = parsePostgresUrl(trimmedUrl);
+    super({ type: 'postgres', key, options: connection }, 'PostgresStorage', options);
   }
 }

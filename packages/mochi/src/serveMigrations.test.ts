@@ -66,12 +66,12 @@ describe('Mochi.serve({ storage })', () => {
       storage: { type: 'sqlite', path: db },
     });
 
-    expect(await tables(db)).toEqual(['mochi_cache', 'mochi_migrations', 'mochi_migrations_internal', 'users']);
+    expect(await tables(db)).toEqual(['mochi_migrations', 'users']);
 
     // Same-process re-run on the same storage (a Mochi.worker booting alongside) reuses the completed run.
     const first = await runStartupMigrations({ type: 'sqlite', path: db });
     const second = await runStartupMigrations({ type: 'sqlite', path: db });
     expect(second).toBe(first);
-    expect(first.map((m) => m.filename)).toEqual(['1_mochi_cache.sql', '1_bad.sql']);
+    expect(first.map((m) => m.filename)).toEqual(['1_bad.sql']);
   });
 });

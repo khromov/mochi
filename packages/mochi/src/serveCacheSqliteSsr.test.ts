@@ -22,7 +22,7 @@ afterAll(async () => {
 });
 
 describe('SqliteStorage inside compiled Svelte SSR pages', () => {
-  test('resolves internal migrations and caches across requests even from bundled .mochi SSR chunks', async () => {
+  test('applies its embedded schema and caches across requests from bundled .mochi SSR chunks', async () => {
     const sharedDb = toPosixPath(path.join(projectDir, 'app.db'));
     const standaloneDb = toPosixPath(path.join(projectDir, 'standalone-cache.db'));
     const srcDir = path.join(projectDir, 'src');

@@ -91,6 +91,7 @@ describe('client bundles resolve the virtual module, not utils/env.ts', () => {
     );
     expect(out).toContain('SqliteStorage');
     expect(out).toContain('PostgresStorage');
-    expect(out).not.toContain('mochi_migrations_internal');
+    expect(out).not.toContain('mochi_migrations_cache');
+    expect(out).not.toContain('CREATE TABLE mochi_cache');
   });
 });
