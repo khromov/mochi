@@ -57,6 +57,8 @@ Two tables appear in your database: `mochi_migrations` records your applied migr
 
 </Callout>
 
+Framework-internal migrations never block a boot. When an older `mochi-framework` starts against a database that a newer release has already migrated (a rollback, or a rolling deploy with mixed versions), it logs a warning such as `Database mochi migration is at version 3 … but you are booting an older version`, applies none of its own, and starts. Some features might not work correctly until every instance runs the newer release.
+
 A `-- migrate:no-transaction` comment in a file runs it outside a transaction on either database, for statements that refuse to run inside one (`CREATE INDEX CONCURRENTLY`, `VACUUM`). Write such a file idempotently (`IF NOT EXISTS`) — a crash mid-run, or a racing second process on SQLite, can execute it twice. Explicit `BEGIN`, `COMMIT`, or `ROLLBACK` statements in a file without `-- migrate:no-transaction` are rejected as an error (`SAVEPOINT` and `ROLLBACK TO` are fine).
 
 ### Workers

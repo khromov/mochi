@@ -16,6 +16,11 @@ export interface RunMigrationsOptions {
   table?: string;
   /** Log prefix distinguishing runs, e.g. `'app'` or `'mochi'`. */
   label?: string;
+  /**
+   * For framework-owned migrations: when the database's history does not match `dir` (usually because a newer
+   * mochi-framework release migrated it), warn and apply nothing instead of throwing, so an older release still boots.
+   */
+  tolerateHistoryMismatch?: boolean;
 }
 
 export interface AppliedMigration {
@@ -27,6 +32,36 @@ interface AppliedRow {
   id: number;
   name: string;
   hash: string;
+}
+
+type HistoryMismatch = { kind: 'ahead'; latest: AppliedRow; known: number } | { kind: 'changed'; row: AppliedRow; file: { id: number; filename: string } };
+
+function historyMismatch(applied: AppliedRow[], files: { id: number; hash: string; filename: string }[]): HistoryMismatch | null {
+  for (let i = 0; i < Math.min(applied.length, files.length); i++) {
+    const row = applied[i]!;
+    const file = files[i]!;
+    if (file.id !== row.id || file.hash !== row.hash) {
+      return { kind: 'changed', row, file };
+    }
+  }
+  return applied.length > files.length ? { kind: 'ahead', latest: applied[applied.length - 1]!, known: files[files.length - 1]!.id } : null;
+}
+
+let mochiVersion: Promise<string | null> | undefined;
+function readMochiVersion(): Promise<string | null> {
+  return (mochiVersion ??= Bun.file(new URL('../../package.json', import.meta.url))
+    .json()
+    .then((pkg) => (pkg as { version?: string }).version ?? null)
+    .catch(() => null));
+}
+
+async function describeMismatch(mismatch: HistoryMismatch, label: string): Promise<string> {
+  const version = await readMochiVersion();
+  const booting = version ? `mochi-framework ${version}` : 'this mochi-framework version';
+  if (mismatch.kind === 'ahead') {
+    return `Database ${label}migration is at version ${mismatch.latest.id} ("${mismatch.latest.name}") but you are booting an older version (${booting}, which knows ${label}migrations up to ${mismatch.known}).`;
+  }
+  return `Database ${label}migration ${mismatch.row.id} ("${mismatch.row.name}") does not match the "${mismatch.file.filename}" that ${booting} ships, so the database was probably migrated by a different version.`;
 }
 
 /**
@@ -55,6 +90,14 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<Applied
     try {
       const qualifiedTable = await dialect.ensureTable(sql, table);
       const applied = (await sql.unsafe(`SELECT id, name, hash FROM ${qualifiedTable} ORDER BY id`)) as AppliedRow[];
+
+      if (opts.tolerateHistoryMismatch) {
+        const mismatch = historyMismatch(applied, files);
+        if (mismatch) {
+          logger.warn(`${await describeMismatch(mismatch, label)} Some features might not work correctly. Skipping ${label}migrations for this database.`);
+          return [];
+        }
+      }
 
       if (applied.length > files.length) {
         throw new Error(
