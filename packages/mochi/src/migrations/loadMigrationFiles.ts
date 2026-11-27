@@ -11,6 +11,11 @@ const FILE_NAME_PATTERN = /^(\d+)[-_]?(.*)\.sql$/i;
 
 const FORBIDDEN_TX_KEYWORDS = new Set(['BEGIN', 'COMMIT', 'END', 'ABORT']);
 
+export interface MochiMigrationSource {
+  filename: string;
+  contents: string;
+}
+
 export interface MochiMigrationFile {
   id: number;
   name: string;
@@ -46,7 +51,7 @@ function findTransactionControlStatement(statements: string[]): string | null {
   return null;
 }
 
-async function readMigrationFile(dir: string, filename: string): Promise<MochiMigrationFile> {
+function parseMigrationFile(dir: string, filename: string, rawContents: string): MochiMigrationFile {
   const match = FILE_NAME_PATTERN.exec(filename);
   const id = match ? Number(match[1]) : 0;
   if (!match || !Number.isSafeInteger(id) || id < 1) {
@@ -54,7 +59,7 @@ async function readMigrationFile(dir: string, filename: string): Promise<MochiMi
   }
   const filePath = join(dir, filename);
   // Normalize line endings so the same file hashes identically across platforms (CRLF vs LF).
-  const contents = (await Bun.file(filePath).text()).replace(/\r\n/g, '\n');
+  const contents = rawContents.replace(/\r\n/g, '\n');
   const { positions } = parseSplits(contents, true);
   const noTransaction = positions.some((pos) => typeof pos !== 'number' && contents.startsWith('--', pos[0]) && NO_TRANSACTION_DIRECTIVE.test(contents.slice(pos[0], pos[1])));
   const statements = splitStatements(contents, positions, true).filter((s) => s.length > 0);
@@ -87,10 +92,19 @@ export async function loadMigrationFiles(dir: string): Promise<MochiMigrationFil
   }
 
   const sqlFiles = entries.filter((f) => !f.startsWith('.') && f.toLowerCase().endsWith('.sql'));
-  const migrations: MochiMigrationFile[] = [];
+  const sources: MochiMigrationSource[] = [];
   for (const filename of sqlFiles) {
-    migrations.push(await readMigrationFile(dir, filename));
+    sources.push({ filename, contents: await Bun.file(join(dir, filename)).text() });
   }
+  return parseMigrationSources(dir, sources);
+}
+
+/**
+ * Parse and validate migrations already in memory, under the same rules as `loadMigrationFiles`. Framework stores
+ * import their `.sql` files as text, which a bundler inlines, where a directory beside `import.meta.url` would not exist.
+ */
+export function parseMigrationSources(dir: string, sources: MochiMigrationSource[]): MochiMigrationFile[] {
+  const migrations = sources.map((source) => parseMigrationFile(dir, source.filename, source.contents));
 
   migrations.sort((a, b) => a.id - b.id);
 

@@ -2,7 +2,8 @@ import type { SQL } from 'bun';
 import { toPosixPath } from '../utils';
 import { logger } from '../utils/log';
 import { dialectFor } from './dialects';
-import { loadMigrationFiles } from './loadMigrationFiles';
+import { loadMigrationFiles, parseMigrationSources } from './loadMigrationFiles';
+import type { MochiMigrationFile, MochiMigrationSource } from './loadMigrationFiles';
 import { isValidStorage } from './storage';
 import type { MochiStorage } from './storage';
 
@@ -35,6 +36,15 @@ interface AppliedRow {
  * applied during this run; an empty or missing directory returns `[]` without touching the database.
  */
 export async function runMigrations(opts: RunMigrationsOptions): Promise<AppliedMigration[]> {
+  return applyMigrations(opts, () => loadMigrationFiles(opts.dir));
+}
+
+/** `runMigrations` over `.sql` files imported as text; `dir` only labels them in messages. */
+export async function runMigrationSources(opts: RunMigrationsOptions & { sources: MochiMigrationSource[] }): Promise<AppliedMigration[]> {
+  return applyMigrations(opts, async () => parseMigrationSources(opts.dir, opts.sources));
+}
+
+async function applyMigrations(opts: RunMigrationsOptions, load: () => Promise<MochiMigrationFile[]>): Promise<AppliedMigration[]> {
   if (!isValidStorage(opts.storage)) {
     throw new Error(`runMigrations({ storage }): expected { type: 'sqlite', path: 'path/to.db' } or { type: 'postgres', url }.`);
   }
@@ -42,7 +52,7 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<Applied
   if (!TABLE_NAME_PATTERN.test(table)) {
     throw new Error(`runMigrations({ table }): "${table}" is not a valid table name.`);
   }
-  const files = await loadMigrationFiles(opts.dir);
+  const files = await load();
   if (files.length === 0) {
     return [];
   }

@@ -51,6 +51,8 @@ Migrations live in `migrations/sqlite/` or `migrations/postgres/` at the project
 
 Two tables appear in your database: `mochi_migrations` records your applied migrations, and `mochi_migrations_internal` records framework-internal ones, applied before yours. Leave both to Mochi.
 
+A built-in store that keeps its own database migrates that database instead, the first time it is used. For example, the [captcha](/docs/captcha/) SQLite nonce store records its schema in `mochi_migrations_captcha` inside its `storePath` file.
+
 <Callout type="warning">
 
 **Applied migrations are immutable.** Editing, deleting, or renumbering an already-applied file is a boot error — the stored hash no longer matches. Ship changes as a new migration instead.
