@@ -66,7 +66,7 @@ interface InlineBinary {
 }
 
 function isInlineBinary(value: unknown): value is InlineBinary {
-  return typeof value === 'object' && value !== null && typeof (value as { __mochiBinary?: unknown }).__mochiBinary === 'string';
+  return typeof value === 'object' && value !== null && typeof (value as { __mochiBinary?: unknown }).__mochiBinary === 'string' && Object.keys(value).length === 1;
 }
 
 /**
@@ -575,7 +575,7 @@ export class FileStorage implements Storage {
     if (value !== null && typeof value === 'object') {
       const out: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-        out[k] = this.encodeBlobs(v, hash, blobs);
+        Object.defineProperty(out, k, { value: this.encodeBlobs(v, hash, blobs), enumerable: true, writable: true, configurable: true });
       }
       return out;
     }
@@ -598,7 +598,7 @@ export class FileStorage implements Storage {
     if (value !== null && typeof value === 'object') {
       const out: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-        out[k] = this.decodeBlobs(v);
+        Object.defineProperty(out, k, { value: this.decodeBlobs(v), enumerable: true, writable: true, configurable: true });
       }
       return out;
     }
@@ -632,3 +632,6 @@ export class FileStorage implements Storage {
     sweeperOwners.set(key, this.sweepOwner);
   }
 }
+
+export { SqliteStorage, PostgresStorage } from './sql-storage';
+export type { SqliteStorageOptions, PostgresStorageOptions } from './sql-storage';

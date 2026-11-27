@@ -52,8 +52,8 @@ export const persistenceRows: PersistenceRow[] = [
     href: '/docs/cache/',
     memory: { status: 'yes', isDefault: true },
     file: { status: 'yes' },
-    sqlite: { status: 'planned' },
-    postgres: { status: 'planned' },
+    sqlite: { status: 'yes' },
+    postgres: { status: 'yes' },
   },
   {
     key: 'image-cache',

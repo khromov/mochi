@@ -21,6 +21,7 @@ export interface RunMigrationsOptions {
 export interface AppliedMigration {
   id: number;
   filename: string;
+  label?: string;
 }
 
 interface AppliedRow {
@@ -126,8 +127,9 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<Applied
           logger.debug(`${label}migration already applied by a concurrent runner: ${m.filename}`);
           continue;
         }
+        await dialect.afterFile?.(sql);
         logger.info(`applied ${label}migration: ${m.filename}`);
-        result.push({ id: m.id, filename: m.filename });
+        result.push({ id: m.id, filename: m.filename, ...(opts.label ? { label: opts.label } : {}) });
       }
       return result;
     } finally {
