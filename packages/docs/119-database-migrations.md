@@ -46,10 +46,13 @@ Migrations live in `migrations/sqlite/` or `migrations/postgres/` at the project
 - Files are named `<id><separator><name>.sql` — `1_init.sql`, `2-add-users.sql`. Ids start at 1 and are consecutive; gaps and duplicates are boot errors.
 - Runs are **forward-only** — to undo something, add a new migration.
 - Each migration runs in its own transaction, so a failed file leaves nothing half-applied and re-runs cleanly after you fix it.
+- Session settings do not carry over between files. On Postgres, Mochi resets every `SET` value, the role (`SET ROLE`) and the session authorization after each file, so a file behaves the same whether it runs right after the previous one or in a later deploy.
 - Mochi keeps track of the migrations that have already run and never reapplies them.
 - Startup migrations run once per boot — in development, restart the dev server after adding a new `.sql` file.
 
 Two tables appear in your database: `mochi_migrations` records your applied migrations, and `mochi_migrations_internal` records framework-internal ones, applied before yours. Leave both to Mochi.
+
+A framework feature that needs tables of its own is not part of this run. It creates them the first time it is used, in the database it was pointed at, and tracks them in a table of its own — for example `mochi_migrations_cache` for the [SQLite and Postgres cache storage](/docs/cache/#sqlite-and-postgres-storage).
 
 <Callout type="warning">
 
@@ -69,7 +72,7 @@ Concurrent runners are safe: Postgres replicas serialize on a session-level advi
 
 <Callout type="info">
 
-**Use a direct or session-mode Postgres URL.** Session-level advisory locks (`pg_advisory_lock`) require one backend session for the whole migration run, so `storage.url` must not point at a transaction-mode connection pooler (such as PgBouncer in transaction mode).
+**Use a direct or session-mode Postgres URL.** Session-level advisory locks (`pg_advisory_lock`) require one backend session for the whole migration run, so `storage.url` must not point at a transaction-mode connection pooler (such as PgBouncer in transaction mode). Behind one, a run can hang or leave the lock held. This applies to your migrations only: `PostgresStorage` applies its own schema in a single transaction and may use the pooled URL.
 
 </Callout>
 

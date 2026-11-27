@@ -187,7 +187,7 @@ If a `storage` call throws, the cache degrades instead of failing the request: a
 
 <VersionNote since="0.10.0" message="SqliteStorage and PostgresStorage ship in 0.10.0." />
 
-`SqliteStorage` persists entries to a local SQLite file (in WAL mode), and `PostgresStorage` shares entries across multiple server instances in a `mochi_cache` schema. Both apply their schema migrations automatically on first use (`mochi_migrations_internal` — see [Database migrations](/docs/database-migrations/)) and round-trip JSON values plus inline `Uint8Array` / `Buffer` fields without `serialize` / `deserialize`:
+`SqliteStorage` persists entries to a local SQLite file (in WAL mode), and `PostgresStorage` shares entries across multiple server instances. Both store values exactly as `FileStorage` does without `offloadBinary` — JSON, with `Uint8Array` / `Buffer` fields at any depth read back as `Uint8Array` — so they need no `serialize` / `deserialize`:
 
 ```ts
 // src/lib/cache.ts
@@ -215,7 +215,9 @@ export const sharedFeedCache = new MochiCache({
 });
 ```
 
-Multiple `MochiCache` instances can share one SQLite file or Postgres database by setting distinct `namespace` values — `clearItems()`, `count()`, `keys()`, `purgeOnInit`, and `sweep()` only affect that cache's namespace. Only one background sweeper runs per `(database, namespace)` per process, transferring to the newest instance on dev-server reloads. Values must be JSON-serializable (`Uint8Array` / `Buffer` fields round-trip as `Uint8Array`; `Date`, `Map`, `BigInt`, and `undefined` do not). Call `await storage.dispose()` to stop the background sweeper and close the database connection (for example in tests).
+Multiple `MochiCache` instances can share one SQLite file or Postgres database by setting distinct `namespace` values — `clearItems()`, `count()`, `keys()`, `purgeOnInit`, and `sweep()` only affect that cache's namespace. Keys can be any string of any length, as with `FileStorage`.
+
+Values must be JSON-serializable: `Date`, `Map`, `BigInt`, and `undefined` do not round-trip. Only one background sweeper runs per `(database, namespace)` per process.
 
 | Option          | Default           |                                                                              |
 | --------------- | ----------------- | ---------------------------------------------------------------------------- |
@@ -225,76 +227,25 @@ Multiple `MochiCache` instances can share one SQLite file or Postgres database b
 | `purgeInterval` | `60_000` (1min)   | Background sweep interval in ms. `<= 0` disables the sweeper.                |
 | `maxAge`        | `600_000` (10min) | Entries older than this are deleted by the sweep (`>= maxTimeToLive`).       |
 
-### Subscribing to cache events
+#### Schema
 
-`MochiCache` emits these events on `mochiEvents`:
+The storage creates what it needs the first time it is used: a `mochi_cache` table and a `mochi_migrations_cache` table that tracks the cache's own migrations. Nothing is created until then — `Mochi.serve({ storage })` and `mochi-framework migrate` never touch the cache — and the tables go into the database the storage points at, which need not be the app's.
 
-| Event                     | Payload                                  | When                                                               |
-| ------------------------- | ---------------------------------------- | ------------------------------------------------------------------ |
-| `cache:read`              | `{ key, status }`                        | Every cache lookup.                                                |
-| `cache:revalidate`        | `{ key }`                                | A background refetch starts (stale read).                          |
-| `cache:delete`            | `{ key }`                                | A key was removed via `delete(key)`.                               |
-| `cache:sweep`             | `{ removed, durationMs }`                | A background storage sweep deleted expired entries.                |
-| `cache:pressure`          | `{ level, removed, caches, durationMs }` | The OS reported low memory and Mochi drained its in-memory caches. |
-| `cache:revalidate:failed` | `{ key, error }`                         | A background refetch threw; the stale value is still served.       |
-| `cache:error`             | `{ key, operation, error }`              | A `storage` `get` / `set` / `remove` call threw.                   |
+On Postgres both tables are created in the connection's current schema (the first entry of `search_path`), so apps that each have their own schema each get their own cache. The role needs `CREATE` on that schema the first time only; once the tables exist, a role without it can use them.
 
-### Memory pressure
+#### Connections
 
-<VersionNote since="0.10.0" message="Memory-pressure cache draining (and the memoryPressure serve option) ships in the next Mochi release (0.10.0). This section describes the upcoming API." />
+Every `SqliteStorage` / `PostgresStorage` on the same database shares one client, however many instances and namespaces there are. For Postgres that is a pool of at most 4 connections, closed after 30 seconds without use. `await storage.dispose()` stops the instance's background sweeper and releases its share; the client closes when the last instance has released it. A dev-server reload hands the previous copy's sweeper and share to the new one.
 
-When the operating system runs low on memory, Bun raises `process.on("memoryPressure")` and Mochi drains every
-in-memory cache before the kernel starts killing processes. `'critical'` (all platforms) clears them outright;
-`'warning'` (macOS only) drops just the aged-out entries, so a store without `maxAge` keeps everything. Each response
-emits one `cache:pressure` event and one `consoleLogger()` warning.
+`PostgresStorage` uses no session state: single statements without named prepared statements, and one transaction for its schema. It therefore works through a transaction-mode connection pooler such as PgBouncer — unlike [database migrations](/docs/database-migrations/#concurrency), which need a direct connection.
 
-Only `MemoryStorage` participates — it is the backend that holds bytes in RAM. `FileStorage`, `SqliteStorage`, and
-`PostgresStorage` live outside the JS heap, so dropping them would not help. Turn the whole thing off with
-`Mochi.serve({ memoryPressure: false })`.
+The database, user, host and port named in the URL always apply, even when `PGDATABASE` and the other `PG*` variables are set.
 
-Reclamation runs in production only. In development (`development: true`) it is always disabled — the compile-heavy
-boot hair-triggers the OS signal (Linux reports only `'critical'`), so the reclaim would be a spurious no-op.
+#### When the database is slow or unreachable
 
-The raw signal is also broadcast as a `memory:pressure` event (payload `{ level }`) the moment it arrives, before the
-cache drain. Subscribe to reclaim resources Mochi doesn't own — idle connection pools, worker queues, your own maps:
+A cache must not hold a request up, so both backends give up early and let `MochiCache` treat the call as a miss (see the `cache:error` event below):
 
-```ts
-import { mochiEvents } from 'mochi-framework';
+- **Postgres** — connecting may take 5 seconds and one statement 5 seconds. After such a failure every call fails immediately for 5 seconds, then a single call tries the database again.
+- **SQLite** — a statement waits at most 250 ms for another process's write lock, because SQLite waits by blocking the whole server. After a busy write, writes fail immediately for 1 second; reads carry on, since WAL readers never wait for the writer. Opening the file may wait up to 5 seconds, once.
 
-mochiEvents.on('memory:pressure', ({ level }) => {
-  if (level === 'critical') pool.drainIdle();
-});
-```
-
-```ts
-// file: src/index.ts
-await Mochi.serve({ memoryPressure: false, routes });
-```
-
-`consoleLogger()` surfaces `cache:revalidate:failed` and `cache:error` as warnings. Use `mochiEvents.setHandler` to attach a custom subscriber — it replaces a prior handler under the same name, so dev re-imports do not pile up listeners:
-
-```ts
-import { mochiEvents } from 'mochi-framework';
-
-mochiEvents.setHandler('metrics:cache-read', 'cache:read', ({ key, status }) => {
-  metrics.increment(`cache.${status}`, { key });
-});
-```
-
-`consoleLogger()` prints `cache:revalidate` lines by default. Pass `{ cache: 'verbose' }` to print every read, or `{ cache: false }` to silence cache logging.
-
-### Per-request memoization
-
-`MochiCache` is process-wide and outlives the request. To collapse repeated work **within** a single render, use the [request cache](/docs/request-cache/) instead. It needs no TTL because entries die with the request.
-
-### Server-only
-
-`MochiCache` lives on the server. Importing it into a hydratable island throws. Construct cache instances in `.ts` modules or page-route scripts, never inside a `mochi:hydrate` component.
-
-<SeeItInAction
-demos={[
-{ href: "/demos/data-loading/", title: "Data Loading", hook: "How server-side data loading works — fetch on the server, cache with MochiCache, and render at request time." },
-{ href: "/demos/cache-events/", title: "Cache Events", hook: "How cache events work — subscribe to MochiCache lifecycle events (hit, miss, set, evict) through mochiEvents for observability." },
-{ href: "/cookie-vary-test/", title: "Cookie Vary Test", hook: "How cookie-partitioned caching works — a page that sets Vary: Cookie so responses key on cookies." },
-]}
-/>
+The sweep deletes expired entries 1,000 at a time and yields in between, so a large backlog does not hold a lock, or the server, for long. `SqliteStorage` needs a file system that supports WAL mode.
