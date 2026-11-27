@@ -82,6 +82,8 @@ export const auth: Handle = async ({ event, resolve }) => {
 };
 ```
 
+Some requests never reach `handle`: `publicDir` files, `staticDirs` mounts, `Mochi.file` routes, WebSocket upgrades and SSE streams. Middleware cannot gate them or change their headers, so keep private files out of `publicDir`.
+
 ### `sequence`
 
 Compose multiple handles into one with `sequence(...handlers)`. Handles run in order. The first handle's pre-processing runs first, and its post-processing runs last (nested-middleware semantics).

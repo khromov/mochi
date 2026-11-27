@@ -30,7 +30,7 @@ Response compression is opt-in through the [`compress()` middleware](/docs/middl
 
 ### Asset caching
 
-In production (`development: false`), prebuilt JS/CSS bundles served from `assetPrefix` (default `/_mochi`) get `Cache-Control: public, max-age=31536000, immutable`. Filenames are content-hashed, so any change yields a new URL. In development the header is omitted so live-reload edits are not pinned in the browser cache. Public-dir files (`./public/...`) are read from `publicDir` on disk in both modes and keep Bun's default static-route headers. To override, mutate `response.headers` in a `handle` middleware.
+In production (`development: false`), prebuilt JS/CSS bundles served from `assetPrefix` (default `/_mochi`) get `Cache-Control: public, max-age=31536000, immutable`. Filenames are content-hashed, so any change yields a new URL. In development the header is omitted so live-reload edits are not pinned in the browser cache. Public-dir files (`./public/...`) are read from `publicDir` on disk in both modes and keep Bun's default static-route headers. They are native Bun routes, so `handle` middleware never sees them and cannot change those headers. Serve a file from a `Mochi.api` route when it needs custom headers.
 
 <Callout type="warning">
 
@@ -113,7 +113,7 @@ Like `publicDir`, a mount does not serve dotfiles or dot-directories (`.env`, `.
 
 <Callout type="warning">
 
-A mount is a raw Bun route, matched **before** Mochi's request pipeline — so your middleware never sees it. `handle` hooks, `filterResponseHeaders`, `transformPage`, rate limiting, CSRF, trailing-slash normalization and the `request` event all skip `/prefix/*`, and a miss returns a bare 404 rather than your `errorPage`. If you need any of that — auth, custom headers, logging — serve those files through `publicDir` (which can be gated with `protection.protectFiles`) or your own `Mochi.api` / `Mochi.file` route instead.
+A mount is a raw Bun route, matched **before** Mochi's request pipeline — so your middleware never sees it. `handle` hooks, `filterResponseHeaders`, `transformPage`, rate limiting, CSRF, trailing-slash normalization and the `request` event all skip `/prefix/*`, and a miss returns a bare 404 rather than your `errorPage`. `publicDir` files skip `handle` the same way; only `protection.protectFiles` reaches them. If you need middleware — auth, custom headers — serve those files through your own `Mochi.api` route instead. A `Mochi.file` route also skips `handle`, but it emits the `request` event and its resolver can reject the request.
 
 </Callout>
 
