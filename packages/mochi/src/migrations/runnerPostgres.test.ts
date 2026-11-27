@@ -59,6 +59,28 @@ describe('runMigrations (postgres)', () => {
     expect((await pg.query<{ n: number }>('SELECT count(*)::int AS n FROM a')).rows[0]!.n).toBe(0);
   });
 
+  test('rejects explicit BEGIN, COMMIT, or ROLLBACK while allowing dollar-quoted blocks and savepoints', async () => {
+    writeFileSync(path.join(dir, '1_sneaky.sql'), 'CREATE TABLE sneaky (x integer); ROLLBACK;');
+    await expect(migrate({ storage: { type: 'postgres', url: pg.url }, dir })).rejects.toThrow(/explicit "ROLLBACK" statement/);
+    expect((await pg.query<{ n: number }>("SELECT count(*)::int AS n FROM pg_tables WHERE schemaname = 'public' AND tablename = 'sneaky'")).rows[0]!.n).toBe(0);
+
+    writeFileSync(
+      path.join(dir, '1_sneaky.sql'),
+      `CREATE TABLE items (id integer PRIMARY KEY);
+       DO $$
+       BEGIN
+         INSERT INTO items (id) VALUES (1);
+       END
+       $$;
+       SAVEPOINT sp;
+       INSERT INTO items (id) VALUES (2);
+       ROLLBACK TO sp;`,
+    );
+    const applied = await migrate({ storage: { type: 'postgres', url: pg.url }, dir });
+    expect(applied.map((m) => m.id)).toEqual([1]);
+    expect((await pg.query<{ id: number }>('SELECT id FROM items')).rows.map((r) => r.id)).toEqual([1]);
+  });
+
   test('framework and app tracking tables coexist in one database', async () => {
     writeFileSync(path.join(dir, '1_fw.sql'), 'CREATE TABLE fw (x integer);');
     const appDir = path.join(root, `case-${n++}`);

@@ -1,12 +1,15 @@
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { toPosixPath } from '../utils';
+import { parseSplits, splitStatements } from '../vendor/postgres-semicolons';
 
 /** A directive comment that runs a migration OUTSIDE a transaction (e.g. CREATE INDEX CONCURRENTLY). */
 const NO_TRANSACTION_DIRECTIVE = /--\s*migrate:no-transaction(?![\w-])/i;
 
 /** `<id><optional _ or - separator><name>.sql` (extension is case-insensitive). */
 const FILE_NAME_PATTERN = /^(\d+)[-_]?(.*)\.sql$/i;
+
+const FORBIDDEN_TX_KEYWORDS = new Set(['BEGIN', 'COMMIT', 'END', 'ABORT']);
 
 export interface MochiMigrationFile {
   id: number;
@@ -16,59 +19,61 @@ export interface MochiMigrationFile {
   path: string;
   /** File contents with line endings normalized to LF. */
   contents: string;
+  /** Parsed executable SQL statements (comments stripped). */
+  statements: string[];
   /** sha256 hex of the normalized contents. */
   hash: string;
   noTransaction: boolean;
 }
 
-/**
- * True when `sql` contains anything beyond whitespace, semicolons, `--` line comments, and `/* … *\/` block comments.
- * Bun's SQLite driver throws on comment-only or empty queries, whereas Postgres accepts them.
- */
-export function hasExecutableSql(sql: string): boolean {
-  let i = sql.charCodeAt(0) === 0xfeff ? 1 : 0;
-  let blockDepth = 0;
-  while (i < sql.length) {
-    const ch = sql[i]!;
-    const next = sql[i + 1];
-    if (blockDepth > 0) {
-      if (ch === '/' && next === '*') {
-        blockDepth++;
-        i += 2;
-      } else if (ch === '*' && next === '/') {
-        blockDepth--;
-        i += 2;
-      } else {
-        i++;
-      }
+function findTransactionControlStatement(statements: string[]): string | null {
+  for (const stmt of statements) {
+    const match = /^[A-Za-z_][A-Za-z0-9_$]*(?:\s+[A-Za-z_][A-Za-z0-9_$]*){0,2}/.exec(stmt);
+    if (!match) {
       continue;
     }
-    if (ch === '-' && next === '-') {
-      const nl = sql.indexOf('\n', i + 2);
-      if (nl === -1) {
-        break;
-      }
-      i = nl + 1;
-      continue;
+    const [w0 = '', w1, w2] = match[0].toUpperCase().split(/\s+/);
+    if (FORBIDDEN_TX_KEYWORDS.has(w0)) {
+      return w0;
     }
-    if (ch === '/' && next === '*') {
-      blockDepth = 1;
-      i += 2;
-      continue;
+    if (w0 === 'START' && w1 === 'TRANSACTION') {
+      return 'START TRANSACTION';
     }
-    if (ch === ';' || ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || ch === '\f' || ch === '\v') {
-      i++;
-      continue;
+    if (w0 === 'ROLLBACK' && w1 !== 'TO' && !((w1 === 'TRANSACTION' || w1 === 'WORK') && w2 === 'TO')) {
+      return 'ROLLBACK';
     }
-    return true;
   }
-  // An unclosed block comment is a syntax error the database should surface rather than silently skip.
-  return blockDepth > 0;
+  return null;
+}
+
+async function readMigrationFile(dir: string, filename: string): Promise<MochiMigrationFile> {
+  const match = FILE_NAME_PATTERN.exec(filename);
+  const id = match ? Number(match[1]) : 0;
+  if (!match || !Number.isSafeInteger(id) || id < 1) {
+    throw new Error(`Invalid migration file name: "${toPosixPath(join(dir, filename))}" — expected "<id><separator><name>.sql" with an id of 1 or more, e.g. "1_init.sql".`);
+  }
+  const filePath = join(dir, filename);
+  // Normalize line endings so the same file hashes identically across platforms (CRLF vs LF).
+  const contents = (await Bun.file(filePath).text()).replace(/\r\n/g, '\n');
+  const { positions } = parseSplits(contents, true);
+  const noTransaction = positions.some((pos) => typeof pos !== 'number' && contents.startsWith('--', pos[0]) && NO_TRANSACTION_DIRECTIVE.test(contents.slice(pos[0], pos[1])));
+  const statements = splitStatements(contents, positions, true).filter((s) => s.length > 0);
+  return {
+    id,
+    name: match[2]?.trim() || String(id),
+    filename,
+    path: filePath,
+    contents,
+    statements,
+    hash: new Bun.CryptoHasher('sha256').update(contents).digest('hex'),
+    noTransaction,
+  };
 }
 
 /**
  * Read, parse and validate every `.sql` migration in `dir`. Non-`.sql` files and dotfiles are ignored and a missing
- * directory yields `[]`. Throws on invalid names, duplicate ids, or ids that aren't consecutive from 1.
+ * directory yields `[]`. Throws on invalid names, duplicate ids, ids that aren't consecutive from 1, or explicit
+ * transaction-control statements inside transactional migrations.
  */
 export async function loadMigrationFiles(dir: string): Promise<MochiMigrationFile[]> {
   let entries: string[];
@@ -81,25 +86,10 @@ export async function loadMigrationFiles(dir: string): Promise<MochiMigrationFil
     throw err;
   }
 
+  const sqlFiles = entries.filter((f) => !f.startsWith('.') && f.toLowerCase().endsWith('.sql'));
   const migrations: MochiMigrationFile[] = [];
-  for (const filename of entries.filter((f) => !f.startsWith('.') && f.toLowerCase().endsWith('.sql'))) {
-    const match = FILE_NAME_PATTERN.exec(filename);
-    const id = match ? Number(match[1]) : 0;
-    if (!match || id < 1) {
-      throw new Error(`Invalid migration file name: "${toPosixPath(join(dir, filename))}" — expected "<id><separator><name>.sql" with an id of 1 or more, e.g. "1_init.sql".`);
-    }
-    const filePath = join(dir, filename);
-    // Normalize line endings so the same file hashes identically across platforms (CRLF vs LF).
-    const contents = (await Bun.file(filePath).text()).replace(/\r\n/g, '\n');
-    migrations.push({
-      id,
-      name: match[2]?.trim() || String(id),
-      filename,
-      path: filePath,
-      contents,
-      hash: new Bun.CryptoHasher('sha256').update(contents).digest('hex'),
-      noTransaction: NO_TRANSACTION_DIRECTIVE.test(contents),
-    });
+  for (const filename of sqlFiles) {
+    migrations.push(await readMigrationFile(dir, filename));
   }
 
   migrations.sort((a, b) => a.id - b.id);
@@ -112,6 +102,14 @@ export async function loadMigrationFiles(dir: string): Promise<MochiMigrationFil
     }
     if (current.id !== i + 1) {
       throw new Error(`Migration ids in ${toPosixPath(dir)} must start at 1 and be consecutive: expected ${i + 1}, found ${current.id} ("${current.filename}").`);
+    }
+    if (!current.noTransaction) {
+      const forbidden = findTransactionControlStatement(current.statements);
+      if (forbidden) {
+        throw new Error(
+          `Migration "${toPosixPath(current.path)}" contains an explicit "${forbidden}" statement — each migration already runs inside a transaction; remove transaction control statements or add "-- migrate:no-transaction".`,
+        );
+      }
     }
   }
 

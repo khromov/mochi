@@ -108,10 +108,45 @@ describe('runMigrations (sqlite)', () => {
     expect(applied.map((m) => m.id)).toEqual([2]);
   });
 
-  test('rejects an explicit COMMIT inside a transactional migration without recording it as applied', async () => {
+  test('applies zero-prefixed migrations (001..010) in order and stays idempotent on incremental runs', async () => {
+    writeFileSync(path.join(dir, '001-log.sql'), 'CREATE TABLE seq_log (step integer NOT NULL);');
+    for (let i = 2; i <= 10; i++) {
+      writeFileSync(path.join(dir, `${String(i).padStart(3, '0')}-step-${i}.sql`), `INSERT INTO seq_log (step) VALUES (${i});`);
+    }
+    const firstRun = await runMigrations({ storage: { type: 'sqlite', path: db }, dir });
+    expect(firstRun.map((m) => m.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(firstRun[0]!.filename).toBe('001-log.sql');
+    expect(firstRun[9]!.filename).toBe('010-step-10.sql');
+    expect((await rows('SELECT step FROM seq_log')).map((r) => r.step)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10]);
+
+    expect(await runMigrations({ storage: { type: 'sqlite', path: db }, dir })).toEqual([]);
+    writeFileSync(path.join(dir, '011-step-11.sql'), 'INSERT INTO seq_log (step) VALUES (11);');
+    const nextRun = await runMigrations({ storage: { type: 'sqlite', path: db }, dir });
+    expect(nextRun).toEqual([{ id: 11, filename: '011-step-11.sql' }]);
+  });
+
+  test('rejects explicit BEGIN, COMMIT, or ROLLBACK before opening the database while allowing triggers and savepoints', async () => {
     writeFileSync(path.join(dir, '1_sneaky.sql'), 'CREATE TABLE sneaky (x integer); COMMIT;');
-    await expect(runMigrations({ storage: { type: 'sqlite', path: db }, dir })).rejects.toThrow(/ended its transaction early/);
-    expect(await rows('SELECT id FROM mochi_migrations')).toEqual([]);
+    await expect(runMigrations({ storage: { type: 'sqlite', path: db }, dir })).rejects.toThrow(/explicit "COMMIT" statement/);
+    expect(existsSync(db)).toBe(false);
+
+    writeFileSync(
+      path.join(dir, '1_sneaky.sql'),
+      `CREATE TABLE items (id integer PRIMARY KEY, label text);
+       CREATE TABLE audit (item_id integer);
+       CREATE TRIGGER tr_items AFTER INSERT ON items BEGIN
+         INSERT INTO audit (item_id) VALUES (NEW.id);
+       END;
+       SAVEPOINT sp;
+       INSERT INTO items (id, label) VALUES (99, 'temp');
+       ROLLBACK TO sp;
+       RELEASE sp;
+       INSERT INTO items (id, label) VALUES (1, 'kept');`,
+    );
+    const applied = await runMigrations({ storage: { type: 'sqlite', path: db }, dir });
+    expect(applied.map((m) => m.id)).toEqual([1]);
+    expect((await rows('SELECT id FROM items')).map((r) => r.id)).toEqual([1]);
+    expect((await rows('SELECT item_id FROM audit')).map((r) => r.item_id)).toEqual([1]);
   });
 
   test('a no-transaction migration runs unwrapped, so pre-failure statements persist', async () => {

@@ -57,7 +57,7 @@ Two tables appear in your database: `mochi_migrations` records your applied migr
 
 </Callout>
 
-A `-- migrate:no-transaction` comment in a file runs it outside a transaction on either database, for statements that refuse to run inside one (`CREATE INDEX CONCURRENTLY`, `VACUUM`). Write such a file idempotently (`IF NOT EXISTS`) — a crash mid-run, or a racing second process on SQLite, can execute it twice. Do not embed explicit `BEGIN`, `COMMIT`, or `ROLLBACK` statements inside a transactional migration file.
+A `-- migrate:no-transaction` comment in a file runs it outside a transaction on either database, for statements that refuse to run inside one (`CREATE INDEX CONCURRENTLY`, `VACUUM`). Write such a file idempotently (`IF NOT EXISTS`) — a crash mid-run, or a racing second process on SQLite, can execute it twice. Explicit `BEGIN`, `COMMIT`, or `ROLLBACK` statements in a file without `-- migrate:no-transaction` are rejected as an error (`SAVEPOINT` and `ROLLBACK TO` are fine).
 
 ### Workers
 

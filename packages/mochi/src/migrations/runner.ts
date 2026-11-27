@@ -2,7 +2,7 @@ import type { SQL } from 'bun';
 import { toPosixPath } from '../utils';
 import { logger } from '../utils/log';
 import { dialectFor } from './dialects';
-import { hasExecutableSql, loadMigrationFiles } from './loadMigrationFiles';
+import { loadMigrationFiles } from './loadMigrationFiles';
 import { isValidStorage } from './storage';
 import type { MochiStorage } from './storage';
 
@@ -86,7 +86,7 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<Applied
 
       const result: AppliedMigration[] = [];
       for (const m of pending) {
-        const executable = hasExecutableSql(m.contents);
+        const executable = m.statements.length > 0;
         let appliedNow = true;
         try {
           if (m.noTransaction) {
