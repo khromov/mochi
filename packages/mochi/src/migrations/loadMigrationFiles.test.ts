@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeEach, afterAll } from 'bun:test';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { loadMigrationFiles } from './loadMigrationFiles';
+import { hasExecutableSql, loadMigrationFiles } from './loadMigrationFiles';
 import { isValidStorage, storageKey } from './storage';
 
 const root = mkdtempSync(path.join(import.meta.dir, '..', '..', '.mochi-migrate-load-'));
@@ -28,10 +28,12 @@ describe('loadMigrationFiles', () => {
     expect(files[0]!.filename).toBe('1_init.sql');
   });
 
-  test('ignores non-.sql files (READMEs) and returns [] for a missing dir', async () => {
+  test('ignores non-.sql files, dotfiles (including macOS AppleDouble), and returns [] for a missing dir', async () => {
     writeFileSync(path.join(dir, 'README.md'), 'docs');
+    writeFileSync(path.join(dir, '.hidden.sql'), 'SELECT 1;');
+    writeFileSync(path.join(dir, '._1_a.sql'), '\x00\x05\x16\x07macos resource fork');
     writeFileSync(path.join(dir, '1_a.sql'), 'SELECT 1;');
-    expect((await loadMigrationFiles(dir)).length).toBe(1);
+    expect((await loadMigrationFiles(dir)).map((f) => f.filename)).toEqual(['1_a.sql']);
     expect(await loadMigrationFiles(path.join(dir, 'nope'))).toEqual([]);
   });
 
@@ -64,8 +66,8 @@ describe('loadMigrationFiles', () => {
     expect(a!.hash).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  test('detects the no-transaction directive case-insensitively', async () => {
-    writeFileSync(path.join(dir, '1_plain.sql'), 'SELECT 1;');
+  test('detects the no-transaction directive case-insensitively on word boundaries', async () => {
+    writeFileSync(path.join(dir, '1_plain.sql'), '-- migrate:no-transaction-needed\nSELECT 1;');
     writeFileSync(path.join(dir, '2_no_tx.sql'), '--   MIGRATE:NO-TRANSACTION\nCREATE INDEX idx ON t (id);');
     const files = await loadMigrationFiles(dir);
     expect(files.map((f) => f.noTransaction)).toEqual([false, true]);
@@ -82,19 +84,45 @@ describe('loadMigrationFiles', () => {
   });
 });
 
+describe('hasExecutableSql', () => {
+  test('treats empty, comment-only, and semicolon-only inputs as non-executable', () => {
+    expect(hasExecutableSql('')).toBe(false);
+    expect(hasExecutableSql('   \n\t  ')).toBe(false);
+    expect(hasExecutableSql('; ;; \n ;')).toBe(false);
+    expect(hasExecutableSql('-- postgres only\n-- nothing for sqlite')).toBe(false);
+    expect(hasExecutableSql('\uFEFF-- leading UTF-8 BOM + comment\n')).toBe(false);
+    expect(hasExecutableSql('/* outer /* nested */ still comment */ ; -- line')).toBe(false);
+  });
+
+  test('treats statements and unclosed block comments as executable', () => {
+    expect(hasExecutableSql('-- header\nCREATE TABLE t (id integer);')).toBe(true);
+    expect(hasExecutableSql('/* unclosed comment')).toBe(true);
+  });
+});
+
 describe('isValidStorage', () => {
-  test('accepts both variants, with and without startOnFail', () => {
+  test('accepts sqlite file paths and postgres(ql) URLs, with and without startOnFail', () => {
     expect(isValidStorage({ type: 'sqlite', path: './app.db' })).toBe(true);
     expect(isValidStorage({ type: 'postgres', url: 'postgres://localhost/db' })).toBe(true);
+    expect(isValidStorage({ type: 'postgres', url: 'postgresql://localhost:5432/db' })).toBe(true);
     expect(isValidStorage({ type: 'sqlite', path: './app.db', startOnFail: true })).toBe(true);
   });
 
-  test('rejects non-objects, wrong types, empty backings, and mismatched fields', () => {
+  test('rejects non-objects, arrays, wrong types, empty/whitespace backings, memory sqlite, ?-query paths, and non-postgres URLs', () => {
     expect(isValidStorage(undefined)).toBe(false);
+    expect(isValidStorage(null)).toBe(false);
+    expect(isValidStorage([])).toBe(false);
     expect(isValidStorage('sqlite')).toBe(false);
-    expect(isValidStorage({ type: 'mysql', url: 'x' })).toBe(false);
+    expect(isValidStorage({ type: 'mysql', url: 'mysql://localhost/db' })).toBe(false);
     expect(isValidStorage({ type: 'sqlite', path: '' })).toBe(false);
+    expect(isValidStorage({ type: 'sqlite', path: '   ' })).toBe(false);
+    expect(isValidStorage({ type: 'sqlite', path: ':memory:' })).toBe(false);
+    expect(isValidStorage({ type: 'sqlite', path: 'sqlite://:memory:' })).toBe(false);
+    expect(isValidStorage({ type: 'sqlite', path: 'file::memory:' })).toBe(false);
+    expect(isValidStorage({ type: 'sqlite', path: './app.db?mode=ro' })).toBe(false);
     expect(isValidStorage({ type: 'sqlite', url: 'postgres://x' })).toBe(false);
+    expect(isValidStorage({ type: 'postgres', url: '' })).toBe(false);
+    expect(isValidStorage({ type: 'postgres', url: 'sqlite://./app.db' })).toBe(false);
     expect(isValidStorage({ type: 'sqlite', path: './a.db', startOnFail: 'yes' })).toBe(false);
   });
 

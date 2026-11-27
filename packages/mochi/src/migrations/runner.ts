@@ -2,7 +2,8 @@ import type { SQL } from 'bun';
 import { toPosixPath } from '../utils';
 import { logger } from '../utils/log';
 import { dialectFor } from './dialects';
-import { loadMigrationFiles } from './loadMigrationFiles';
+import { hasExecutableSql, loadMigrationFiles } from './loadMigrationFiles';
+import { isValidStorage } from './storage';
 import type { MochiStorage } from './storage';
 
 const TABLE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -11,7 +12,7 @@ export interface RunMigrationsOptions {
   storage: MochiStorage;
   /** Directory of `.sql` files for the storage's database type. */
   dir: string;
-  /** Tracking table name (default `'migrations'`). */
+  /** Tracking table name (default `'mochi_migrations'`). */
   table?: string;
   /** Log prefix distinguishing runs, e.g. `'app'` or `'mochi'`. */
   label?: string;
@@ -34,7 +35,10 @@ interface AppliedRow {
  * applied during this run; an empty or missing directory returns `[]` without touching the database.
  */
 export async function runMigrations(opts: RunMigrationsOptions): Promise<AppliedMigration[]> {
-  const table = opts.table ?? 'migrations';
+  if (!isValidStorage(opts.storage)) {
+    throw new Error(`runMigrations({ storage }): expected { type: 'sqlite', path: 'path/to.db' } or { type: 'postgres', url }.`);
+  }
+  const table = opts.table ?? 'mochi_migrations';
   if (!TABLE_NAME_PATTERN.test(table)) {
     throw new Error(`runMigrations({ table }): "${table}" is not a valid table name.`);
   }
@@ -49,8 +53,8 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<Applied
   try {
     const unlock = await dialect.lock?.(sql);
     try {
-      await dialect.ensureTable(sql, table);
-      const applied = (await sql.unsafe(`SELECT id, name, hash FROM "${table}" ORDER BY id`)) as AppliedRow[];
+      const qualifiedTable = await dialect.ensureTable(sql, table);
+      const applied = (await sql.unsafe(`SELECT id, name, hash FROM ${qualifiedTable} ORDER BY id`)) as AppliedRow[];
 
       if (applied.length > files.length) {
         throw new Error(
@@ -78,27 +82,39 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<Applied
 
       // The applied-list above is read before any lock on SQLite, so a racer that just lost the write lock
       // re-checks its migration inside the transaction and skips instead of re-running the SQL.
-      const alreadyApplied = async (conn: SQL, id: number) => ((await conn.unsafe(`SELECT id FROM "${table}" WHERE id = $1`, [id])) as AppliedRow[]).length > 0;
+      const alreadyApplied = async (conn: SQL, id: number) => ((await conn.unsafe(`SELECT id FROM ${qualifiedTable} WHERE id = $1`, [id])) as AppliedRow[]).length > 0;
 
       const result: AppliedMigration[] = [];
       for (const m of pending) {
+        const executable = hasExecutableSql(m.contents);
         let appliedNow = true;
         try {
           if (m.noTransaction) {
             if (await alreadyApplied(sql, m.id)) {
-              continue;
+              appliedNow = false;
+            } else {
+              // Not atomic with the record INSERT: the file must be idempotent so a re-run after a crash — or a
+              // racing second SQLite process — succeeds; ON CONFLICT avoids a unique-key crash on the losing racer.
+              if (executable) {
+                await sql.unsafe(m.contents);
+              }
+              const inserted = (await sql.unsafe(`INSERT INTO ${qualifiedTable} (id, name, hash) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING RETURNING id`, [
+                m.id,
+                m.name,
+                m.hash,
+              ])) as { id: number }[];
+              appliedNow = inserted.length > 0;
             }
-            // Not atomic with the record INSERT: the file must be idempotent so a re-run after a crash — or a
-            // racing second SQLite process — succeeds.
-            await sql.unsafe(m.contents);
-            await sql.unsafe(`INSERT INTO "${table}" (id, name, hash) VALUES ($1, $2, $3)`, [m.id, m.name, m.hash]);
           } else {
             appliedNow = await dialect.begin(sql, async (tx) => {
               if (await alreadyApplied(tx, m.id)) {
                 return false;
               }
-              await tx.unsafe(m.contents);
-              await tx.unsafe(`INSERT INTO "${table}" (id, name, hash) VALUES ($1, $2, $3)`, [m.id, m.name, m.hash]);
+              if (executable) {
+                await tx.unsafe(m.contents);
+              }
+              await dialect.verifyTransaction?.(tx);
+              await tx.unsafe(`INSERT INTO ${qualifiedTable} (id, name, hash) VALUES ($1, $2, $3)`, [m.id, m.name, m.hash]);
               return true;
             });
           }

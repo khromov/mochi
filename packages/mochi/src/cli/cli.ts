@@ -43,10 +43,11 @@ ${SKILL_TARGETS.map((t) => {
                          Options:
                            -f, --force  Overwrite an existing MOCHI_KEY without prompting.
   migrate                Apply pending SQL migrations from migrations/<sqlite|postgres>/,
-                         against the \`storage\` read from the entry's \`Mochi.serve()\` call.
+                         against the \`storage\` read from the entry's \`Mochi.serve()\` or
+                         \`Mochi.worker()\` call.
                          Options:
-                           --entry <path>  Entry calling Mochi.serve({ storage }).
-                                           Default: ./src/index.ts
+                           --entry <path>  Entry calling Mochi.serve({ storage }) or
+                                           Mochi.worker({ storage }). Default: ./src/index.ts
                            --validate      Only check file naming/ordering in both
                                            migration folders — no entry import, no database.
 
@@ -187,6 +188,10 @@ async function main() {
   }
 
   if (cmd === 'migrate') {
+    if (positionals.length > 1) {
+      process.stderr.write(`[mochi] Unexpected argument "${positionals[1]}". Pass the entry via --entry <path>.\n`);
+      process.exit(1);
+    }
     try {
       await runMigrateCommand({ entry: values.entry, validate: Boolean(values.validate) });
     } catch (err) {

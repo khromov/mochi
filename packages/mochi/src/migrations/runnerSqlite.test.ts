@@ -20,8 +20,8 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-async function rows(query: string): Promise<Record<string, unknown>[]> {
-  const sql = new SQL(`sqlite://${db}`);
+async function rows(query: string, targetDb = db): Promise<Record<string, unknown>[]> {
+  const sql = new SQL({ adapter: 'sqlite', filename: targetDb });
   try {
     return (await sql.unsafe(query)) as Record<string, unknown>[];
   } finally {
@@ -30,13 +30,19 @@ async function rows(query: string): Promise<Record<string, unknown>[]> {
 }
 
 describe('runMigrations (sqlite)', () => {
-  test('applies pending migrations in order, records them, and is idempotent', async () => {
+  test('rejects an invalid storage option before opening any connection', async () => {
+    writeFileSync(path.join(dir, '1_a.sql'), 'CREATE TABLE a (x integer);');
+    await expect(runMigrations({ storage: { sqlite: db } as never, dir })).rejects.toThrow(/runMigrations\(\{ storage \}\): expected/);
+    expect(existsSync(db)).toBe(false);
+  });
+
+  test('applies pending migrations in order into mochi_migrations, records them, and is idempotent', async () => {
     writeFileSync(path.join(dir, '1_users.sql'), 'CREATE TABLE users (id integer PRIMARY KEY, name text);');
     writeFileSync(path.join(dir, '2_seed.sql'), "INSERT INTO users (id, name) VALUES (1, 'ada');");
     const applied = await runMigrations({ storage: { type: 'sqlite', path: db }, dir });
     expect(applied.map((m) => m.filename)).toEqual(['1_users.sql', '2_seed.sql']);
 
-    const tracked = await rows('SELECT id, name, hash, applied_at FROM migrations ORDER BY id');
+    const tracked = await rows('SELECT id, name, hash, applied_at FROM mochi_migrations ORDER BY id');
     expect(tracked.map((r) => [r.id, r.name])).toEqual([
       [1, 'users'],
       [2, 'seed'],
@@ -54,6 +60,23 @@ describe('runMigrations (sqlite)', () => {
     writeFileSync(path.join(dir, '2_b.sql'), 'CREATE TABLE b (y integer);');
     const applied = await runMigrations({ storage: { type: 'sqlite', path: db }, dir });
     expect(applied.map((m) => m.id)).toEqual([2]);
+  });
+
+  test('records comment-only and empty placeholder files without throwing', async () => {
+    writeFileSync(path.join(dir, '1_a.sql'), 'CREATE TABLE a (x integer);');
+    writeFileSync(path.join(dir, '2_pg_only.sql'), '-- Postgres-only migration; no-op on SQLite\n');
+    writeFileSync(path.join(dir, '3_empty.sql'), '');
+    const applied = await runMigrations({ storage: { type: 'sqlite', path: db }, dir });
+    expect(applied.map((m) => m.id)).toEqual([1, 2, 3]);
+    expect((await rows('SELECT id FROM mochi_migrations ORDER BY id')).map((r) => r.id)).toEqual([1, 2, 3]);
+  });
+
+  test('handles SQLite file paths containing #, %20, and spaces literally', async () => {
+    const specialDb = path.join(root, `dir#hash %20-${n++}`, 'app.db');
+    writeFileSync(path.join(dir, '1_a.sql'), 'CREATE TABLE a (x integer);');
+    await runMigrations({ storage: { type: 'sqlite', path: specialDb }, dir });
+    expect(existsSync(specialDb)).toBe(true);
+    expect((await rows('SELECT id FROM mochi_migrations', specialDb)).map((r) => r.id)).toEqual([1]);
   });
 
   test('an edited applied migration is rejected as immutable', async () => {
@@ -76,7 +99,7 @@ describe('runMigrations (sqlite)', () => {
     writeFileSync(path.join(dir, '2_bad.sql'), 'INSERT INTO a (x) VALUES (1); INSERT INTO nope (z) VALUES (1);');
     await expect(runMigrations({ storage: { type: 'sqlite', path: db }, dir })).rejects.toThrow(/no such table/);
 
-    expect((await rows('SELECT id FROM migrations')).map((r) => r.id)).toEqual([1]);
+    expect((await rows('SELECT id FROM mochi_migrations')).map((r) => r.id)).toEqual([1]);
     expect((await rows('SELECT count(*) AS n FROM a'))[0]!.n).toBe(0);
 
     // Fixing the file lets the run complete from where it left off.
@@ -85,12 +108,18 @@ describe('runMigrations (sqlite)', () => {
     expect(applied.map((m) => m.id)).toEqual([2]);
   });
 
+  test('rejects an explicit COMMIT inside a transactional migration without recording it as applied', async () => {
+    writeFileSync(path.join(dir, '1_sneaky.sql'), 'CREATE TABLE sneaky (x integer); COMMIT;');
+    await expect(runMigrations({ storage: { type: 'sqlite', path: db }, dir })).rejects.toThrow(/ended its transaction early/);
+    expect(await rows('SELECT id FROM mochi_migrations')).toEqual([]);
+  });
+
   test('a no-transaction migration runs unwrapped, so pre-failure statements persist', async () => {
     writeFileSync(path.join(dir, '1_a.sql'), 'CREATE TABLE a (x integer);');
     writeFileSync(path.join(dir, '2_no_tx.sql'), '-- migrate:no-transaction\nINSERT INTO a (x) VALUES (7); INSERT INTO nope (z) VALUES (1);');
     await expect(runMigrations({ storage: { type: 'sqlite', path: db }, dir })).rejects.toThrow(/no such table/);
     expect((await rows('SELECT count(*) AS n FROM a WHERE x = 7'))[0]!.n).toBe(1);
-    expect((await rows('SELECT id FROM migrations')).map((r) => r.id)).toEqual([1]);
+    expect((await rows('SELECT id FROM mochi_migrations')).map((r) => r.id)).toEqual([1]);
   });
 
   test('an empty or missing dir touches nothing — not even the database file', async () => {
@@ -111,13 +140,27 @@ describe('runMigrations (sqlite)', () => {
         .sort(),
     ).toEqual([1, 2]);
     expect((await rows('SELECT count(*) AS n FROM t'))[0]!.n).toBe(1);
-    expect((await rows('SELECT id FROM migrations')).map((r) => r.id)).toEqual([1, 2]);
+    expect((await rows('SELECT id FROM mochi_migrations')).map((r) => r.id)).toEqual([1, 2]);
+  });
+
+  test('two racing OS processes on an idempotent no-transaction migration both succeed cleanly', async () => {
+    writeFileSync(
+      path.join(dir, '1_notx.sql'),
+      '-- migrate:no-transaction\nCREATE TABLE IF NOT EXISTS idx_t (x integer);\nWITH RECURSIVE r(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM r WHERE n < 400000) SELECT sum(n) FROM r;',
+    );
+    const runnerPath = path.join(import.meta.dir, 'runner.ts');
+    const childCode = `import { runMigrations } from ${JSON.stringify(runnerPath)}; await runMigrations({ storage: { type: 'sqlite', path: ${JSON.stringify(db)} }, dir: ${JSON.stringify(dir)} });`;
+    const p1 = Bun.spawn([process.execPath, '-e', childCode], { stdout: 'ignore', stderr: 'pipe' });
+    const p2 = Bun.spawn([process.execPath, '-e', childCode], { stdout: 'ignore', stderr: 'pipe' });
+    const [c1, c2] = await Promise.all([p1.exited, p2.exited]);
+    expect([c1, c2]).toEqual([0, 0]);
+    expect((await rows('SELECT id FROM mochi_migrations')).map((r) => r.id)).toEqual([1]);
   });
 
   test('a custom tracking table is honored and validated', async () => {
     writeFileSync(path.join(dir, '1_a.sql'), 'CREATE TABLE a (x integer);');
-    await runMigrations({ storage: { type: 'sqlite', path: db }, dir, table: 'mochi_migrations' });
-    expect((await rows('SELECT id FROM mochi_migrations')).map((r) => r.id)).toEqual([1]);
+    await runMigrations({ storage: { type: 'sqlite', path: db }, dir, table: 'custom_migrations' });
+    expect((await rows('SELECT id FROM custom_migrations')).map((r) => r.id)).toEqual([1]);
     await expect(runMigrations({ storage: { type: 'sqlite', path: db }, dir, table: 'bad"name' })).rejects.toThrow(/not a valid table name/);
   });
 });

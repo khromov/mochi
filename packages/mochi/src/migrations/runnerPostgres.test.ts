@@ -10,7 +10,7 @@ let dir: string;
 let n = 0;
 
 beforeAll(async () => {
-  pg = await startTestPostgres();
+  pg = await startTestPostgres({ maxConnections: Infinity });
 });
 
 beforeEach(async () => {
@@ -26,13 +26,13 @@ afterAll(async () => {
 });
 
 describe('runMigrations (postgres)', () => {
-  test('applies pending migrations in order, records them, and is idempotent', async () => {
+  test('applies pending migrations in order into mochi_migrations, records them, and is idempotent', async () => {
     writeFileSync(path.join(dir, '1_users.sql'), 'CREATE TABLE users (id integer PRIMARY KEY, name text NOT NULL);');
     writeFileSync(path.join(dir, '2_seed.sql'), "INSERT INTO users (id, name) VALUES (1, 'ada');");
     const applied = await migrate({ storage: { type: 'postgres', url: pg.url }, dir });
     expect(applied.map((m) => m.filename)).toEqual(['1_users.sql', '2_seed.sql']);
 
-    const tracked = await pg.query<{ id: number; name: string; hash: string }>('SELECT id, name, hash FROM migrations ORDER BY id');
+    const tracked = await pg.query<{ id: number; name: string; hash: string }>('SELECT id, name, hash FROM mochi_migrations ORDER BY id');
     expect(tracked.rows.map((r) => [r.id, r.name])).toEqual([
       [1, 'users'],
       [2, 'seed'],
@@ -55,7 +55,7 @@ describe('runMigrations (postgres)', () => {
     writeFileSync(path.join(dir, '2_bad.sql'), 'INSERT INTO a (x) VALUES (1); INSERT INTO nope (z) VALUES (1);');
     await expect(migrate({ storage: { type: 'postgres', url: pg.url }, dir })).rejects.toThrow(/nope/);
 
-    expect((await pg.query<{ id: number }>('SELECT id FROM migrations')).rows.map((r) => r.id)).toEqual([1]);
+    expect((await pg.query<{ id: number }>('SELECT id FROM mochi_migrations')).rows.map((r) => r.id)).toEqual([1]);
     expect((await pg.query<{ n: number }>('SELECT count(*)::int AS n FROM a')).rows[0]!.n).toBe(0);
   });
 
@@ -65,11 +65,26 @@ describe('runMigrations (postgres)', () => {
     mkdirSync(appDir);
     writeFileSync(path.join(appDir, '1_app.sql'), 'CREATE TABLE app (x integer);');
 
-    await migrate({ storage: { type: 'postgres', url: pg.url }, dir, table: 'mochi_migrations', label: 'mochi' });
+    await migrate({ storage: { type: 'postgres', url: pg.url }, dir, table: 'mochi_internal_migrations', label: 'mochi' });
     await migrate({ storage: { type: 'postgres', url: pg.url }, dir: appDir, label: 'app' });
 
-    expect((await pg.query<{ name: string }>('SELECT name FROM mochi_migrations')).rows.map((r) => r.name)).toEqual(['fw']);
-    expect((await pg.query<{ name: string }>('SELECT name FROM migrations')).rows.map((r) => r.name)).toEqual(['app']);
+    expect((await pg.query<{ name: string }>('SELECT name FROM mochi_internal_migrations')).rows.map((r) => r.name)).toEqual(['fw']);
+    expect((await pg.query<{ name: string }>('SELECT name FROM mochi_migrations')).rows.map((r) => r.name)).toEqual(['app']);
+  });
+
+  test('keeps tracking writes in the initial schema even when a migration alters search_path', async () => {
+    writeFileSync(path.join(dir, '1_schema.sql'), 'CREATE SCHEMA app_s; SET search_path TO app_s; CREATE TABLE items (id integer PRIMARY KEY);');
+    writeFileSync(path.join(dir, '2_noop.sql'), '-- SQLite-only migration; no-op on Postgres\n');
+    try {
+      const applied = await migrate({ storage: { type: 'postgres', url: pg.url }, dir });
+      expect(applied.map((m) => m.id)).toEqual([1, 2]);
+      expect((await pg.query<{ id: number }>('SELECT id FROM public.mochi_migrations ORDER BY id')).rows.map((r) => r.id)).toEqual([1, 2]);
+      expect((await pg.query<{ n: number }>("SELECT count(*)::int AS n FROM pg_tables WHERE schemaname = 'app_s' AND tablename = 'items'")).rows[0]!.n).toBe(1);
+    } finally {
+      // PGlite-over-socket shares one backend session across connections; restore search_path before dropping the schema.
+      await pg.query('SET search_path TO public');
+      await pg.query('DROP SCHEMA IF EXISTS app_s CASCADE');
+    }
   });
 
   // True two-client concurrency can't run here — PGlite's socket server serves one connection at a time — but

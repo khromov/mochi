@@ -15,6 +15,9 @@ declare module '@twinkleplop/javascript' {
 declare module '@twinkleplop/json' {
   export const language: () => (code: string, options?: { line_numbers?: boolean }) => string;
 }
+declare module '@twinkleplop/sql' {
+  export const language: () => (code: string, options?: { line_numbers?: boolean }) => string;
+}
 declare module '@twinkleplop/svelte' {
   export const language: () => (code: string, options?: { line_numbers?: boolean }) => string;
 }

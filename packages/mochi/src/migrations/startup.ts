@@ -20,27 +20,18 @@ function userMigrationsDir(dbType: 'sqlite' | 'postgres'): string {
 // Keyed per database so Mochi.serve() and Mochi.worker() on the same storage share one run per process.
 const runs = pinGlobal<Map<string, Promise<AppliedMigration[]>>>('__mochi_migrations_runs__', () => new Map());
 
-/** Apply framework-internal migrations (`mochi_migrations`) and then the app's (`migrations`) against `storage`. */
-export function runStartupMigrations(storage: MochiStorage): Promise<AppliedMigration[]> {
+/** Apply framework-internal migrations (`mochi_internal_migrations`) and then the app's (`mochi_migrations`) against `storage`. */
+export async function runStartupMigrations(storage: MochiStorage): Promise<AppliedMigration[]> {
   const key = storageKey(storage);
   let run = runs.get(key);
   if (!run) {
     run = migrateAll(storage);
     runs.set(key, run);
-    // A failed boot may be retried (e.g. a worker restarting in-process) — don't poison the retry.
+    // Evict on failure before `startOnFail` is consulted so a swallowed boot never caches `[]` for later callers.
     run.catch(() => runs.delete(key));
   }
-  return run;
-}
-
-async function migrateAll(storage: MochiStorage): Promise<AppliedMigration[]> {
-  // Random jitter desynchronizes replicas booting simultaneously, so they don't contend for the lock at once.
-  await new Promise((resolve) => setTimeout(resolve, Math.random() * 500));
-  const dbType = storage.type;
   try {
-    const framework = await runMigrations({ storage, dir: path.join(FRAMEWORK_MIGRATIONS_DIR, dbType), table: 'mochi_migrations', label: 'mochi' });
-    const app = await runMigrations({ storage, dir: userMigrationsDir(dbType), table: 'migrations', label: 'app' });
-    return [...framework, ...app];
+    return await run;
   } catch (err) {
     if (storage.startOnFail) {
       logger.error('migrations failed; continuing boot because storage.startOnFail is set:', err);
@@ -48,4 +39,13 @@ async function migrateAll(storage: MochiStorage): Promise<AppliedMigration[]> {
     }
     throw err;
   }
+}
+
+async function migrateAll(storage: MochiStorage): Promise<AppliedMigration[]> {
+  // Random jitter desynchronizes replicas booting simultaneously, so they don't contend for the lock at once.
+  await new Promise((resolve) => setTimeout(resolve, Math.random() * 500));
+  const dbType = storage.type;
+  const framework = await runMigrations({ storage, dir: path.join(FRAMEWORK_MIGRATIONS_DIR, dbType), table: 'mochi_internal_migrations', label: 'mochi' });
+  const app = await runMigrations({ storage, dir: userMigrationsDir(dbType), table: 'mochi_migrations', label: 'app' });
+  return [...framework, ...app];
 }

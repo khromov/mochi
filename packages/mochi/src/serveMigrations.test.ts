@@ -24,7 +24,7 @@ afterAll(() => {
 });
 
 async function tables(db: string): Promise<string[]> {
-  const sql = new SQL(`sqlite://${db}`);
+  const sql = new SQL({ adapter: 'sqlite', filename: db });
   try {
     const rows = (await sql.unsafe("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")) as { name: string }[];
     return rows.map((r) => r.name);
@@ -47,9 +47,11 @@ describe('Mochi.serve({ storage })', () => {
     expect(existsSync(path.join(projectDir, '.mochi'))).toBe(false);
   });
 
-  test('startOnFail swallows the failure instead of rejecting the boot', async () => {
+  test('startOnFail swallows the failure for that caller without poisoning later runs on the same storage', async () => {
+    const db = path.join(projectDir, 'failing.db');
     // 1_bad.sql is still broken from the previous test.
-    expect(await runStartupMigrations({ type: 'sqlite', path: path.join(projectDir, 'failing.db'), startOnFail: true })).toEqual([]);
+    expect(await runStartupMigrations({ type: 'sqlite', path: db, startOnFail: true })).toEqual([]);
+    await expect(runStartupMigrations({ type: 'sqlite', path: db, startOnFail: false })).rejects.toThrow(/syntax error/);
   });
 
   test('applies migrations before binding, and repeat runs on the same storage are deduped', async () => {
@@ -64,7 +66,7 @@ describe('Mochi.serve({ storage })', () => {
       storage: { type: 'sqlite', path: db },
     });
 
-    expect(await tables(db)).toEqual(['migrations', 'users']);
+    expect(await tables(db)).toEqual(['mochi_migrations', 'users']);
 
     // Same-process re-run on the same storage (a Mochi.worker booting alongside) reuses the completed run.
     const first = await runStartupMigrations({ type: 'sqlite', path: db });

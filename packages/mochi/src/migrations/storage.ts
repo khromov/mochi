@@ -21,17 +21,35 @@ export interface MochiPostgresStorage extends MochiStorageBase {
  */
 export type MochiStorage = MochiSqliteStorage | MochiPostgresStorage;
 
+const SQLITE_MEMORY_RE = /^(sqlite:\/\/|file:)?(?::memory:|.*mode=memory)/i;
+const POSTGRES_URL_RE = /^postgres(?:ql)?:\/\/\S+$/i;
+
+function isValidSqlitePath(value: unknown): value is string {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  const trimmed = value.trim();
+  // `?` starts a URI query string in Bun.SQL while filesystem helpers treat `path` literally, splitting the target file.
+  return trimmed.length > 0 && !trimmed.includes('?') && !SQLITE_MEMORY_RE.test(trimmed);
+}
+
 /**
  * Runtime-validates what the types already promise, because `storage` often arrives from untyped config.
  * Deliberately strict: an unknown key (e.g. a typo'd backing field) is rejected rather than ignored.
  */
 export function isValidStorage(value: unknown): value is MochiStorage {
-  if (typeof value !== 'object' || value === null) {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return false;
   }
   const record = value as Record<string, unknown>;
   const backing = record.type === 'sqlite' ? 'path' : record.type === 'postgres' ? 'url' : null;
-  if (!backing || typeof record[backing] !== 'string' || record[backing] === '') {
+  if (!backing) {
+    return false;
+  }
+  if (backing === 'path' && !isValidSqlitePath(record.path)) {
+    return false;
+  }
+  if (backing === 'url' && (typeof record.url !== 'string' || !POSTGRES_URL_RE.test(record.url.trim()))) {
     return false;
   }
   if (record.startOnFail !== undefined && typeof record.startOnFail !== 'boolean') {

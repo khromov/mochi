@@ -1,6 +1,6 @@
 ---
-title: 'Migrations'
-slug: migrations
+title: 'Database migrations'
+slug: database-migrations
 ogTitle: 'Forward-only SQL migrations with Mochi'
 description: 'Forward-only .sql migrations for SQLite and Postgres, applied automatically on startup.'
 ---
@@ -11,7 +11,7 @@ description: 'Forward-only .sql migrations for SQLite and Postgres, applied auto
   import PersistenceTable from './_components/PersistenceTable.svelte';
 </script>
 
-## Migrations
+## Database migrations
 
 <VersionNote since="0.10.0" message="The storage option and the migrations runner ship in 0.10.0." />
 
@@ -39,7 +39,7 @@ CREATE TABLE users (
 );
 ```
 
-Migrations live in `migrations/sqlite/` or `migrations/postgres/` at the project root. Both folders can coexist — only the one matching `storage` runs, so an app that maintains both can switch database types freely.
+Migrations live in `migrations/sqlite/` or `migrations/postgres/` at the project root. Both folders can coexist — only the one matching `storage` runs, so an app that maintains both can switch database types freely. A comment-only `.sql` file is recorded without executing a statement, so a migration needed on only one database can keep a no-op placeholder at the matching id in the other folder.
 
 ### How migrations work
 
@@ -47,8 +47,9 @@ Migrations live in `migrations/sqlite/` or `migrations/postgres/` at the project
 - Runs are **forward-only** — to undo something, add a new migration.
 - Each migration runs in its own transaction, so a failed file leaves nothing half-applied and re-runs cleanly after you fix it.
 - Mochi keeps track of the migrations that have already run and never reapplies them.
+- Startup migrations run once per boot — in development, restart the dev server after adding a new `.sql` file.
 
-Two tables appear in your database: `migrations` records your applied migrations, and `mochi_migrations` records framework-internal ones, applied before yours. Leave both to Mochi.
+Two tables appear in your database: `mochi_migrations` records your applied migrations, and `mochi_internal_migrations` records framework-internal ones, applied before yours. Leave both to Mochi.
 
 <Callout type="warning">
 
@@ -56,7 +57,7 @@ Two tables appear in your database: `migrations` records your applied migrations
 
 </Callout>
 
-A `-- migrate:no-transaction` comment anywhere in a file runs it outside a transaction on either database, for statements that refuse to run inside one (`CREATE INDEX CONCURRENTLY`, `VACUUM`). Write such a file idempotently (`IF NOT EXISTS`) — a crash mid-run, or a racing second process on SQLite, can execute it twice.
+A `-- migrate:no-transaction` comment in a file runs it outside a transaction on either database, for statements that refuse to run inside one (`CREATE INDEX CONCURRENTLY`, `VACUUM`). Write such a file idempotently (`IF NOT EXISTS`) — a crash mid-run, or a racing second process on SQLite, can execute it twice. Do not embed explicit `BEGIN`, `COMMIT`, or `ROLLBACK` statements inside a transactional migration file.
 
 ### Workers
 
@@ -64,16 +65,22 @@ A `-- migrate:no-transaction` comment anywhere in a file runs it outside a trans
 
 ### Concurrency
 
-Concurrent runners are safe: Postgres replicas serialize on an advisory lock and SQLite re-checks inside a write transaction, so each migration applies exactly once.
+Concurrent runners are safe: Postgres replicas serialize on a session-level advisory lock and SQLite re-checks inside a write transaction, so each migration applies exactly once.
+
+<Callout type="info">
+
+**Use a direct or session-mode Postgres URL.** Session-level advisory locks (`pg_advisory_lock`) require one backend session for the whole migration run, so `storage.url` must not point at a transaction-mode connection pooler (such as PgBouncer in transaction mode).
+
+</Callout>
 
 ### CLI
 
-`bunx mochi-framework migrate` applies pending migrations without booting the server, reading `storage` from your entry's `Mochi.serve()` call. See [CLI](/docs/cli/).
+`bunx mochi-framework migrate` applies pending migrations without booting the server, reading `storage` from your entry's `Mochi.serve()` or `Mochi.worker()` call (ignoring `startOnFail` so a failed migration always exits non-zero). See [CLI](/docs/cli/).
 
-| Option           | Description                                                                    |
-| ---------------- | ------------------------------------------------------------------------------ |
-| `--entry <path>` | Entry calling `Mochi.serve({ storage })`. Default: `./src/index.ts`.           |
-| `--validate`     | Check file naming and ordering in both folders — no entry import, no database. |
+| Option           | Description                                                                                         |
+| ---------------- | --------------------------------------------------------------------------------------------------- |
+| `--entry <path>` | Entry calling `Mochi.serve({ storage })` or `Mochi.worker({ storage })`. Default: `./src/index.ts`. |
+| `--validate`     | Check file naming and ordering in both folders — no entry import, no database.                      |
 
 ### runMigrations
 

@@ -13,7 +13,9 @@ describe('buildSitemapXml', () => {
     expect(xml).toContain('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">');
     expect(xml).toContain('</urlset>');
     const urlCount = (xml.match(/<url>/g) ?? []).length;
-    expect(locs(xml).length).toBe(urlCount);
+    const allLocs = locs(xml);
+    expect(allLocs.length).toBe(urlCount);
+    expect(new Set(allLocs).size).toBe(allLocs.length);
   });
 
   // Parsing it back is the check string-joining could never pass: Bun.XML.stringify escapes every value,
@@ -62,8 +64,10 @@ describe('buildSitemapXml', () => {
       expect(loc).not.toContain('demos.mochi.fast');
     }
 
-    // At least one docs URL of the expected shape is present.
+    // At least one docs URL of the expected shape is present, and both migration docs resolve under distinct slugs.
     expect([...urls].some((u) => /^https:\/\/mochi\.fast\/docs\/[^/]+\/$/.test(u))).toBe(true);
+    expect(urls.has('https://mochi.fast/docs/database-migrations/')).toBe(true);
+    expect(urls.has('https://mochi.fast/docs/migrations/')).toBe(true);
   });
 
   it('includes the blog index and published posts, never drafts', async () => {

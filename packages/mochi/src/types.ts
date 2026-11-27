@@ -526,7 +526,8 @@ export interface MochiServeOptions {
   /**
    * The app database Mochi manages: `{ type: 'sqlite', path }` or `{ type: 'postgres', url }`. On startup, pending `.sql`
    * migrations from the project's `migrations/<sqlite|postgres>/` folder are applied against it (framework-internal
-   * migrations first, into `mochi_migrations`), before the server binds. Unset, no migrations run.
+   * migrations first into `mochi_internal_migrations`, then yours into `mochi_migrations`), before the server binds.
+   * Unset, no migrations run.
    */
   storage?: MochiStorage;
   /**
