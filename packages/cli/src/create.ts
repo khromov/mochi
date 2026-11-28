@@ -45,8 +45,7 @@ export async function create(opts: CreateOptions): Promise<CreateResult> {
   const dir = path.resolve(opts.dir);
   await fs.mkdir(dir, { recursive: true });
 
-  // Template files come from `khromov/mochi`'s default branch, which can be ahead of the published
-  // npm version `mochiVersion` resolves to — see `Template.source` to pin a tag instead.
+  // Templates come from this CLI release's own git tag, so a scaffold always matches the CLI that produced it.
   await downloadTemplate(template.source, {
     dir,
     force: opts.force ?? false,
