@@ -3,6 +3,7 @@
   import Hero from './components/Hero.svelte';
   import Footer from './components/Footer.svelte';
   import QuickStart from './components/QuickStart.svelte';
+  import WebMcpTools from './components/WebMcpTools.svelte';
   import PostBanner from './components/PostBanner.svelte';
   import { demos, categoryLabels, categoryOrder, type DemoCategory, type Demo } from './lib/demos';
   import { demoIconFor } from './lib/demoIcons';
@@ -47,6 +48,7 @@
     </section>
 
     <QuickStart mochi:hydrate />
+    <WebMcpTools mochi:hydrate />
 
     <section class="docs-cta">
       <h2 class="docs-cta-title">Documentation</h2>
