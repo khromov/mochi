@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { MochiServeOptions } from './types';
 import { CLIENT_BUILD_DEFINE } from './compiler/serverOnlyModuleGuard';
 import { toPosixPath } from './utils/index';
-import { applyFilter, initExtensions, runHook, type MochiFilterContext } from './extensions';
+import { applyFilter, hasFilter, initExtensions, runHook, type MochiFilterContext } from './extensions';
 import { reachedStartupMilestones, resetStartupMilestones } from './lifecycle';
 import type { IslandPropsEntry } from './islands/islandPropsRegistry';
 import type { ResolvedEmailMessage } from './email/types';
@@ -615,6 +615,16 @@ describe('new extension points', () => {
       url: new URL('http://localhost/submit'),
     });
     expect(result).toBe(blocking);
+  });
+
+  test('hasFilter distinguishes a registered filter from none, even when it delegates', () => {
+    initExtensions({});
+    expect(hasFilter('csrf:check')).toBe(false);
+    initExtensions({ filters: { 'csrf:check': (decision) => decision } });
+    expect(hasFilter('csrf:check')).toBe(true);
+    // Registering one name must not report neighbours as registered.
+    expect(hasFilter('trailingSlash:redirect')).toBe(false);
+    initExtensions({});
   });
 
   test('image:url returns the input URL unchanged when no filter registered', () => {
