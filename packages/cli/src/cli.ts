@@ -17,6 +17,8 @@ const program = new Command('create-mochi')
   .addOption(new Option('--no-eslint', 'skip ESLint setup'))
   .addOption(new Option('--prettier', 'include Prettier setup (default)'))
   .addOption(new Option('--no-prettier', 'skip Prettier setup'))
+  .addOption(new Option('--vercel', "rename the Dockerfile to Vercel's Dockerfile.vercel convention"))
+  .addOption(new Option('--no-vercel', 'keep the plain Dockerfile (default)'))
   .version(pkg.version, '-v, --version')
   .configureHelp({
     formatHelp(cmd, helper) {
@@ -43,6 +45,7 @@ interface CliOptions {
   force?: boolean;
   eslint?: boolean;
   prettier?: boolean;
+  vercel?: boolean;
 }
 
 async function runCreate(rawPath: string | undefined, opts: CliOptions): Promise<void> {
@@ -58,13 +61,14 @@ async function runCreate(rawPath: string | undefined, opts: CliOptions): Promise
   const template = await promptTemplate(opts.template);
   const eslint = await promptToggle(opts.eslint, 'Add ESLint for linting?');
   const prettier = await promptToggle(opts.prettier, 'Add Prettier for formatting?');
+  const vercel = await promptToggle(opts.vercel, 'Are you planning to deploy to Vercel?', false);
   const name = defaultNameFor(dir);
 
   const spinner = p.spinner();
   spinner.start(`Downloading ${styleText('cyan', template)} template`);
   let result;
   try {
-    result = await create({ dir, template, name, force, eslint, prettier });
+    result = await create({ dir, template, name, force, eslint, prettier, vercel });
   } catch (err) {
     spinner.stop(styleText('red', 'Failed to download template.'));
     p.cancel(err instanceof Error ? err.message : String(err));
@@ -80,6 +84,7 @@ async function runCreate(rawPath: string | undefined, opts: CliOptions): Promise
       `${styleText('dim', '1.')} cd ${rel}`,
       `${styleText('dim', '2.')} bun install`,
       `${styleText('dim', '3.')} bun run dev`,
+      ...(vercel ? ['', styleText('dim', 'Deploy:'), `   vercel deploy  ${styleText('dim', '# builds Dockerfile.vercel — see https://mochi.fast/docs/vercel/')}`] : []),
       '',
       styleText('dim', `mochi-framework pinned to ${result.mochiVersion}`),
     ].join('\n'),
@@ -143,15 +148,15 @@ async function maybePromptForce(dir: string, alreadyForced: boolean): Promise<bo
   return true;
 }
 
-async function promptToggle(provided: boolean | undefined, message: string): Promise<boolean> {
+async function promptToggle(provided: boolean | undefined, message: string, initialValue = true): Promise<boolean> {
   if (provided !== undefined) {
     return provided;
   }
   // No terminal to ask (CI, piped stdin) — take the default rather than hanging on the prompt.
   if (!process.stdin.isTTY) {
-    return true;
+    return initialValue;
   }
-  const result = await p.confirm({ message, initialValue: true });
+  const result = await p.confirm({ message, initialValue });
   if (p.isCancel(result)) {
     p.cancel('Operation cancelled.');
     process.exit(0);

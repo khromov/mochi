@@ -41,6 +41,8 @@ Options:
   --no-eslint         skip ESLint setup
   --prettier          include Prettier setup (default)
   --no-prettier       skip Prettier setup
+  --vercel            rename the Dockerfile to Vercel's Dockerfile.vercel convention
+  --no-vercel         keep the plain Dockerfile (default)
   -v, --version       show CLI version
   -h, --help          show this help
 ```
@@ -72,8 +74,13 @@ await create({
   name: 'my-app',
   eslint: true, // default
   prettier: true, // default
+  vercel: false, // default
 });
 ```
+
+## Deploying to Vercel
+
+Answering yes to the **"Are you planning to deploy to Vercel?"** prompt (or passing `--vercel`) renames the scaffolded `Dockerfile` to `Dockerfile.vercel`, strips its baked-in `ENV PORT` so the app honours Vercel's injected `$PORT`, and retargets the matching `.dockerignore` entry. See the [Mochi on Vercel](https://mochi.fast/docs/vercel/) guide.
 
 ## Requirements
 
