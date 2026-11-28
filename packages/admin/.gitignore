@@ -1,0 +1,4 @@
+node_modules
+.mochi
+*.tsbuildinfo
+src/styles/app.generated.css

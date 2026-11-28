@@ -25,6 +25,7 @@ npx create-mochi my-app
 | --------- | --------------------------------------------------------------- |
 | `minimal` | A bare-bones Mochi app with a single page.                      |
 | `demos`   | A larger reference app with multiple demos (HN clone, todo, …). |
+| `admin`   | A login + dashboard + CRUD admin panel (Tailwind UI).           |
 
 ## Flags
 
@@ -35,7 +36,7 @@ Arguments:
   path                where the project should be created
 
 Options:
-  --template <name>   starter template (minimal | demos)
+  --template <name>   starter template (minimal | demos | admin)
   --force             overwrite existing directory contents
   --eslint            include ESLint setup (default)
   --no-eslint         skip ESLint setup
